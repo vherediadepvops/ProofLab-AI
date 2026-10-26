@@ -1,0 +1,105 @@
+using System.Text.Json.Serialization;
+using ProofLab.Api;
+using ProofLab.Science;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddHttpClient("meta", client =>
+    client.Timeout = TimeSpan.FromSeconds(45));
+builder.Services.AddScoped<MetaModelClient>();
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
+    policy.WithOrigins("http://localhost:4300", "http://127.0.0.1:4300")
+          .AllowAnyMethod().AllowAnyHeader()));
+var app = builder.Build();
+
+app.UseCors("HackathonLocal");
+app.MapGet("/api/health", (MetaModelClient meta) =>
+    Results.Ok(new {
+        project = "ProofLab AI — competition edition",
+        startedLocal = "2026-10-26",
+        appVersion = "2026.10.26-alpha",
+        metaModelApiEnabled = meta.Enabled && meta.HasKey,
+        science = new[] { "pendulum", "rolling-sphere" }
+    }));
+
+app.MapGet("/api/science/experiments", () =>
+    Results.Ok(new[] {
+        new { id = "Pendulum", label = "Péndulo", needs = "lengthMeters",
+              metric = "period_seconds" },
+        new { id = "RollingSphere", label = "Rampa con esfera", needs = "angleDegrees",
+              metric = "acceleration_m_s2" }
+    }));
+
+app.MapPost("/api/science/predict", (ExperimentSetup input) =>
+{
+    try { return Results.Ok(ScientificModels.Predict(input)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
+app.MapPost("/api/science/evaluate", (EvidenceRequest input) =>
+{
+    try { return Results.Ok(EvidenceAnalyzer.Analyze(input)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
+app.MapGet("/api/science/synthetic/{kind}", (string kind) =>
+{
+    if (!Enum.TryParse<ExperimentKind>(kind, true, out var experiment))
+        return Results.BadRequest(new { error = "Unknown experiment." });
+    var spec = experiment == ExperimentKind.Pendulum
+        ? new ExperimentSetup(experiment, LengthMeters: .5)
+        : new ExperimentSetup(experiment, AngleDegrees: 15);
+    var expected = ScientificModels.Predict(spec).ExpectedValue;
+    Observation[] series;
+    if (experiment == ExperimentKind.Pendulum)
+        series = Enumerable.Range(0, 1100).Select(i =>
+        {
+            var t = i / 60.0;
+            return new Observation(t,
+                80 * Math.Cos(2 * Math.PI * t / (1.025 * expected)));
+        }).ToArray();
+    else
+        series = Enumerable.Range(0, 180).Select(i =>
+        {
+            var t = i / 120.0;
+            return new Observation(t,
+                0.03 + 0.04 * t + 0.5 * (0.96 * expected) * t * t);
+        }).ToArray();
+
+    return Results.Ok(EvidenceAnalyzer.Analyze(
+        new EvidenceRequest(spec, series, EvidenceOrigin.Simulated, "DEMO-ONLY")));
+});
+
+app.MapPost("/api/ai/plan", async (
+    HypothesisRequest input, MetaModelClient meta, CancellationToken cancellationToken) =>
+{
+    if (!meta.Enabled || !meta.HasKey)
+        return Results.Conflict(new { error = "Meta API disabled pending credit verification." });
+    try
+    {
+        var output = await meta.CreateHypothesisAsync(input, cancellationToken);
+        return Results.Ok(new { model = "muse-spark-1.3", generatedPlan = output,
+            provenance = "META_MODEL_API_LIVE_OUTPUT" });
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (HttpRequestException) { return Results.Problem("Meta planning is unavailable.", statusCode: 502); }
+    catch (FormatException) { return Results.Problem("Unexpected model output.", statusCode: 502); }
+});
+
+app.MapPost("/api/ai/segment-frame", async (
+    SegmentationRequest input, MetaModelClient meta, CancellationToken cancellationToken) =>
+{
+    if (!meta.Enabled || !meta.HasKey)
+        return Results.Conflict(new { error = "SAM API disabled pending credit verification." });
+    try
+    {
+        var raw = await meta.SegmentImageAsync(input, cancellationToken);
+        return Results.Ok(new { model = "sam-3.1", rawResponseJson = raw,
+            decodedMasks = false, provenance = "META_MODEL_API_RAW_OUTPUT" });
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (HttpRequestException) { return Results.Problem("SAM 3.1 is unavailable.", statusCode: 502); }
+});
+
+app.Run();

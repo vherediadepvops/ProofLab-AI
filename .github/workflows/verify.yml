@@ -1,0 +1,33 @@
+name: Verify ProofLab Competition Edition
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  dotnet-and-web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout original competition work
+        uses: actions/checkout@v4
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Test scientific engine
+        run: dotnet test tests/ProofLab.Tests/ProofLab.Tests.csproj --configuration Release
+      - name: Build the API
+        run: dotnet build src/ProofLab.Api/ProofLab.Api.csproj --configuration Release
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Install Angular dependencies
+        working-directory: ui
+        run: npm ci --no-audit --no-fund
+      - name: Build Angular
+        working-directory: ui
+        run: npm run build

@@ -1,0 +1,37 @@
+# .NET
+**/bin/
+**/obj/
+**/TestResults/
+.vs/
+*.user
+*.suo
+
+# Angular
+**/node_modules/
+**/dist/
+**/.angular/
+**/coverage/
+
+# Secrets and development storage
+.env
+.env.*
+!.env.example
+*.pfx
+*.key
+*.pem
+secrets.json
+appsettings.Production.json
+*.log
+*.tmp
+
+# Original recordings and user-specific evidence must not be published
+*.mp4
+*.mov
+*.avi
+*.mkv
+.private/
+local-evidence/
+!docs/README.md
+
+.local-preview/
+.vscode-test/

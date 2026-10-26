@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ProofLab.Api/ProofLab.Api.csproj" />
+    <Project Path="src/ProofLab.Science/ProofLab.Science.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ProofLab.Tests/ProofLab.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,114 @@
+# ProofLab AI — Meta Hackathon 2026
+
+**Competition edition — created October 26, 2026 after the official kickoff.**
+
+ProofLab AI is an experimental **scientific evidence engine** for adult researchers, built for the
+*Push the Frontier* theme of the Meta Global AI Developer Hackathon. It uses physical
+measurements and the models provided by Meta to make testable predictions and
+help explain why data may agree or disagree with a scientific hypothesis.
+
+**Project status: alpha.** Real Meta inference and end-to-end SAM frame parsing
+have **not yet been verified**. Calculations and demonstration data work offline.
+
+## Competition provenance
+
+This is a **new project**, distinct from the pre-event private prototype at
+`C:\PROOFLAB-AI`. No pre-kickoff source files were copied into this codebase.
+All repository history represents work performed after the October 26 kickoff,
+following an official clarification from Cerebral Valley in Discord
+that development is permitted after the October 26 kickoff.
+
+The final submission must be public, original, and disclose exactly what was built
+during the event. Do not misrepresent demonstration data as physical evidence.
+
+## What this edition implements
+
+- .NET 10 ASP.NET Core API, with independent scientific prediction and evaluation.
+- Pendulum period: small-angle theory `T=2π√(L/g)`; measured period detected from
+  observed upward center crossings, **not biased by the theoretical period**.
+- Rolling solid sphere on an incline: predicted `a=(5/7)g·sin(θ)` and
+  measured acceleration fitted from calibrated time-and-position observations.
+- Provenance labels distinguish synthetic, manually entered and tracking coordinates.
+- Angular 20 web UI, with Spanish/English switch, prediction, synthetic demonstrations
+  and JSON report export.
+- Meta Muse Spark 1.3 hypothesis-planning adapter over Chat Completions.
+- Meta SAM 3.1 single-image segmentation adapter over Responses API;
+  **returns raw output only**, without decoded masks or video tracking.
+- The Meta adapters are **disabled by default** until credits, billing, and
+  safe testing are confirmed.
+
+## Prerequisites
+
+.NET SDK 10, Node.js 20+, npm. Use a Windows PC or equivalent environment.
+
+### Start the API
+
+```powershell
+cd C:\PROOFLAB-AI-HACKATHON
+dotnet test tests/ProofLab.Tests/ProofLab.Tests.csproj
+dotnet run --project src/ProofLab.Api --urls http://127.0.0.1:5391
+```
+
+### Start the web UI (second terminal)
+
+```powershell
+cd C:\PROOFLAB-AI-HACKATHON\ui
+npm.cmd ci
+npm.cmd start -- --host 127.0.0.1 --port 4300
+```
+
+Open `http://127.0.0.1:4300/` on the same computer.
+
+### API routes
+
+| Route | Result |
+| --- | --- |
+| `GET /api/health` | Readiness and Meta usage gate |
+| `GET /api/science/experiments` | Supported physics experiments |
+| `POST /api/science/predict` | Scientific prediction |
+| `POST /api/science/evaluate` | Evaluation of timestamped observations |
+| `GET /api/science/synthetic/{kind}` | Clearly synthetic sample, never real evidence |
+| `POST /api/ai/plan` | Live Muse Spark planning; gated |
+| `POST /api/ai/segment-frame` | Live SAM 3.1 response; gated, raw grammar |
+
+Example prediction:
+
+```powershell
+Invoke-RestMethod -Uri http://127.0.0.1:5391/api/science/predict `
+  -Method Post -ContentType 'application/json' `
+  -Body '{"kind":"Pendulum","lengthMeters":0.5}'
+```
+
+Sample evaluation fields: `setup`, `observations` (array of
+`{"timeSeconds":0,"position":1.0}`), `origin` (`Simulated`,
+`ManuallyEntered`, or `TrackingCoordinates`). For the pendulum
+the position is a consistent horizontal coordinate; for rolling sphere it
+is **metres along the ramp**.
+
+### Enabling Meta API — only after verifying credit and permission
+
+On the backend, the API key is read from `MODEL_API_KEY` and paid calls are
+allowed only when `Meta:AllowPaidRequests=true`. In Windows PowerShell you may
+set process-scoped variables `$env:MODEL_API_KEY` and
+`$env:Meta__AllowPaidRequests='true'` **only after** checking the promotional
+credit in Billing and understanding that future use may be billed. Do not store
+secrets in the repo or send keys to the browser. Never rely on Spend Limit
+email notifications as hard caps.
+
+No Meta calls have been made as part of the implementation tests.
+
+## Roadmap
+
+1. Record 3×50 cm and 3×80 cm real pendulum videos; measure manual baseline.
+2. Integrate SAM 3.1 video upload + streamed masks using official Meta SAM parser.
+3. Connect masks to calibrated observations with timestamps and audit log.
+4. Run Muse Spark planning and interpretation using actual experiment results.
+5. Add rolling-sphere recordings and reproduce measurements.
+6. Publish a working demo, record a three-minute English video, and submit before
+   November 4, 2026 at 9 PM Peru time.
+
+See the bilingual project documentation: [English](docs/EXPERIMENTS.md) ·
+[Español](docs/EXPERIMENTS.es.md), [provenance](docs/PROVENANCE.md) ·
+[procedencia](docs/PROVENANCE.es.md).
+
+**Versión en español:** [README.es.md](README.es.md).
