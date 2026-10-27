@@ -30,6 +30,11 @@ appsettings.Production.json
 *.avi
 *.mkv
 .private/
+# Local SQLite experience data must never enter the public repository.
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
 local-evidence/
 !docs/README.md
 

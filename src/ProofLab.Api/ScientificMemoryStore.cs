@@ -27,22 +27,15 @@ public sealed class ScientificMemoryStore
         }.ToString();
         using var db = new SqliteConnection(connectionString);
         db.Open();
+        // The embedded, versioned SQL file is the single source for this schema.
+        // Existing local data is preserved by CREATE IF NOT EXISTS statements.
+        using var schemaStream = typeof(ScientificMemoryStore).Assembly
+            .GetManifestResourceStream(
+                "ProofLab.Api.Database.ScientificExperienceSchemaV1.sql")
+            ?? throw new InvalidOperationException("Scientific memory SQL schema is unavailable.");
+        using var reader = new StreamReader(schemaStream);
         using var setup = db.CreateCommand();
-        setup.CommandText = """
-            CREATE TABLE IF NOT EXISTS lean_experience (
-                attempt_id TEXT PRIMARY KEY,
-                research_id TEXT NOT NULL,
-                problem_id TEXT NOT NULL,
-                goal_sha256 TEXT NOT NULL,
-                lean_version TEXT NOT NULL,
-                tactic TEXT NOT NULL CHECK(tactic IN ('rfl','omega','simp')),
-                outcome TEXT NOT NULL,
-                source_sha256 TEXT NOT NULL,
-                checked_utc TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_lean_memory_goal
-                ON lean_experience(problem_id,goal_sha256,lean_version);
-            """;
+        setup.CommandText = reader.ReadToEnd();
         setup.ExecuteNonQuery();
     }
 

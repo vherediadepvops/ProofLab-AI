@@ -3,6 +3,8 @@
   <ItemGroup>
     <ProjectReference Include="..\ProofLab.Science\ProofLab.Science.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <EmbeddedResource Include="Database\001_scientific_experience.sql"
+                      LogicalName="ProofLab.Api.Database.ScientificExperienceSchemaV1.sql" />
   </ItemGroup>
 
   <PropertyGroup>

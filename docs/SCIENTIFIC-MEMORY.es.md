@@ -14,6 +14,13 @@ Recordar errores y estrategias válidas de Lean 4 entre **expedientes de investi
 - `MemoryGuidedMathFlow` utiliza el catálogo de teoremas conocidos, recupera solo coincidencias de `problemId + SHA-256 exacto del enunciado + leanprover/lean4:v4.35.0`. Ignora estrategias de objetivos ajenos y no acepta fuente Lean arbitraria.
 - Cada ciclo tiene límite de dos intentos Lean; la investigación admite hasta tres ciclos de memoria. Su decisión, fuente recordada, nuevos IDs y conclusiones se guardan en `memory-cycle-traces/*.jsonl`, también privado. Los informes de etapas 4–5 y el documento consolidado incluyen el historial **ES/EN**.
 
+## Esquema SQL versionado en el repositorio principal
+
+- **Código SQL publicado:** [`src/ProofLab.Api/Database/001_scientific_experience.sql`](../src/ProofLab.Api/Database/001_scientific_experience.sql). Contiene únicamente la definición de la tabla `lean_experience` y su índice; no contiene experiencias, identificadores de usuarios ni secretos.
+- El backend carga **ese mismo archivo como recurso incrustado** al iniciar, mediante `ScientificMemoryStore`; las instrucciones `CREATE ... IF NOT EXISTS` permiten iniciar una base nueva sin borrar la existente. Las modificaciones futuras del esquema deberán añadirse como migraciones versionadas y probadas, sin sobrescribir registros históricos.
+- **Datos reales:** `src/ProofLab.Api/.private/research/scientific-experience.sqlite` permanece exclusivamente local y excluido de Git, junto a los registros JSONL. Subir el esquema `.sql` **no** equivale a publicar la base `.sqlite`.
+- Las versiones SQL iniciales no incluyen datos de prueba ni respaldos. Hacer copias de seguridad privadas y protegidas requiere un procedimiento separado.
+
 ## Comportamiento validable
 
 1. Investigación A (memoria vacía): consulta `COLD_START`, intenta `rfl`, registra el rechazo real y reintenta `omega` tras leer el error; Lean verifica `omega`.
