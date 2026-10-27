@@ -25,3 +25,23 @@ jobs:
           else
             echo "Negative verification passed (invalid proof rejected)."
           fi
+      - name: Set up .NET 10 for research-workflow integration
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Verify five-stage scientific method and real Lean evidence
+        shell: bash
+        run: |
+          dotnet build src/ProofLab.Api/ProofLab.Api.csproj -c Release
+          dotnet run --no-build --no-launch-profile -c Release \
+            --project src/ProofLab.Api/ProofLab.Api.csproj \
+            --urls http://127.0.0.1:5392 > /tmp/prooflab-math-api.log 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+          for n in {1..30}; do
+            if curl -fsS http://127.0.0.1:5392/api/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:5392/api/health >/dev/null
+          pwsh -NoProfile -File tests/smoke-math-evidence.ps1 \
+            -BaseUrl http://127.0.0.1:5392

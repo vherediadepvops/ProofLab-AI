@@ -58,4 +58,10 @@ Private data stays in `src/ProofLab.Api/.private/research/`, excluded from Git. 
 - [EQUATOR Network](https://www.equator-network.org/about-us/what-is-a-reporting-guideline/): domain/design-specific reporting checklists such as CONSORT, STROBE or PRISMA.
 - [ISO/IEC 17025](https://www.iso.org/es/contents/data/standard/06/69/66912.html): requirements for competent **testing and calibration laboratories**; **not** a universal scientific-method checklist. ProofLab AI does not claim ISO/IEC 17025 conformance.
 
+## New: real mathematical proof evidence (Mission 1)
+
+For mathematics dossiers, stage 4 and stage 5 now require a **real server-generated Lean 4 attempt ID associated with the same research project**. The attempt can fail or succeed; reports distinguish rejected proof tactics from verified **known** theorems. The server adds the evidence ledger and SHA-256 source digests to stage exports and the consolidated paper. This goes beyond purely typed descriptions, though supporting external video/image files still lack verified upload and provenance checking.
+
+See [the mathematical evidence workflow](MISSION-001-EVIDENCE.md). The deterministic cycle does **not** run Muse Spark and does not represent a scientific discovery.
+
 **Español:** [SCIENTIFIC-METHOD.es.md](SCIENTIFIC-METHOD.es.md).

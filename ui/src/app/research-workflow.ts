@@ -21,6 +21,22 @@ interface ResearchProject {
   id: string; title: string; discipline: string; createdAtUtc: string;
   activeStage: number; reports: ResearchReport[]; disclaimer: string;
 }
+interface MathProblem {
+  id: string; titleEnglish: string; titleSpanish: string;
+}
+interface ProofVerification {
+  attemptId: string; problemId: string; strategy: string; outcome: string;
+  sourceSha256: string; checkedAtUtc: string; diagnostic: string;
+  isNewDiscovery: boolean;
+}
+interface MathAttempt {
+  researchId: string; executionMode: string; problemResearchStatus: string;
+  verification: ProofVerification;
+}
+interface MathCycle {
+  researchId: string; problemId: string; mode: string;
+  attempts: MathAttempt[]; conclusion: string; isScientificDiscovery: boolean;
+}
 type Lang = 'es'|'en';
 
 @Component({
@@ -43,6 +59,25 @@ export class ResearchWorkflow implements OnInit {
   readonly busy = signal(false);
   readonly error = signal('');
   readonly notice = signal('');
+  readonly proofProblems = signal<MathProblem[]>([]);
+  readonly proofProblemId = signal('NAT-ADD-COMM');
+  readonly proofStrategy = signal('rfl');
+  readonly proofAttempts = signal<MathAttempt[]>([]);
+  readonly proofError = signal('');
+  readonly proofBusy = signal(false);
+  readonly isMathEvidencePhase = computed(() =>
+    this.project()?.discipline === 'Mathematics' &&
+    this.project()!.activeStage >= 4 && this.stage() >= 4);
+  readonly latestProofAttempt = computed(() => this.proofAttempts().at(-1) ?? null);
+  readonly evidenceAttached = computed(() => {
+    if (!this.isMathEvidencePhase()) return true;
+    const key = this.stage()===4 ? 'manifest' : 'verification';
+    const value = this.draft()[key] ?? '';
+    return this.proofAttempts().some(item =>
+      value.includes(item.verification.attemptId));
+  });
+  readonly canApproveReport = computed(() =>
+    this.completion().ready && this.evidenceAttached() && this.reviewed());
   readonly selected = computed(() => this.stages().find(s => s.index === this.stage()) ?? null);
   readonly selectedReport = computed(() =>
     this.project()?.reports.find(x => x.index === this.stage()) ?? null);
@@ -63,6 +98,9 @@ export class ResearchWorkflow implements OnInit {
   });
 
   ngOnInit() {
+    this.http.get<MathProblem[]>('http://127.0.0.1:5391/api/math/problems')
+      .subscribe({ next: items => this.proofProblems.set(items),
+        error: () => this.proofError.set('Could not load Lean benchmark catalog.') });
     this.http.get<ResearchStage[]>(this.api + '/stages')
       .subscribe({next: data => this.stages.set(data),
         error: () => this.error.set(this.language() === 'es'
@@ -98,6 +136,69 @@ export class ResearchWorkflow implements OnInit {
     this.existingId.set(research.id);
     localStorage.setItem('prooflab-research-current',research.id);
     this.selectStage(Math.min(research.activeStage,5));
+    if (research.discipline === 'Mathematics' && research.activeStage >= 4) {
+      this.loadProofEvidence(research.id);
+    }
+  }
+  private loadProofEvidence(id:string): void {
+    this.http.get<MathAttempt[]>(this.api + '/' + id + '/math/attempts')
+      .subscribe({next: attempts => this.proofAttempts.set(attempts),
+        error: () => this.proofError.set(this.copy(
+          'No fue posible leer los intentos de Lean.',
+          'Could not read Lean proof attempts.'))});
+  }
+  async runProofCycle():Promise<void> {
+    if (!this.isMathEvidencePhase() || !this.canEdit() || this.proofBusy() || !this.project()) return;
+    this.proofBusy.set(true);
+    this.proofError.set('');
+    try {
+      const output=await firstValueFrom(this.http.post<MathCycle>(
+        this.api + '/' + this.project()!.id + '/math/cycle',
+        {problemId:this.proofProblemId()}));
+      this.proofAttempts.update(current => [...current,...output.attempts]);
+      this.notice.set(this.copy(
+        'Ciclo de referencia ejecutado. No es investigación autónoma con Muse Spark.',
+        'Controlled baseline completed. This is not autonomous Muse Spark research.'));
+    } catch (e:any) {
+      this.proofError.set(e?.error?.error || this.copy(
+        'El ciclo de Lean falló.', 'The Lean cycle failed.'));
+    } finally { this.proofBusy.set(false); }
+  }
+  async runSingleProof():Promise<void> {
+    if (!this.isMathEvidencePhase() || !this.canEdit() || this.proofBusy() || !this.project()) return;
+    this.proofBusy.set(true);this.proofError.set('');
+    try {
+      const record=await firstValueFrom(this.http.post<MathAttempt>(
+        this.api + '/' + this.project()!.id + '/math/attempts',
+        {problemId:this.proofProblemId(), strategy:this.proofStrategy()}));
+      this.proofAttempts.update(items => [...items,record]);
+    } catch(e:any) {
+      this.proofError.set(e?.error?.error || this.copy(
+        'El intento de Lean falló.','The Lean attempt failed.'));
+    } finally {this.proofBusy.set(false);}
+  }
+  attachProof(record:MathAttempt):void {
+    if (!this.isMathEvidencePhase() || !this.canEdit()) return;
+    const verified = record.verification.outcome === 'VERIFIED';
+    const text = this.copy(
+      verified
+        ? 'Lean verificó un TEOREMA YA CONOCIDO; NO es un descubrimiento original.'
+        : 'Lean NO verificó este intento. Un fallo de táctica NO refuta el teorema.',
+      verified
+        ? 'Lean verified an ALREADY KNOWN THEOREM; NOT a new discovery.'
+        : 'Lean did NOT verify this attempt. A failed tactic is NOT a counterexample.');
+    const recordText = 'ProofLab verified execution record: ' +
+      record.verification.attemptId + ' | ' +
+      record.verification.problemId + ' | ' + record.verification.strategy + ' | ' +
+      record.verification.outcome + ' | SHA-256 ' + record.verification.sourceSha256 +
+      '. ' + text;
+    const key = this.stage()===4 ? 'manifest':'verification';
+    const previous=this.draft()[key] ?? '';
+    if (previous.includes(record.verification.attemptId)) return;
+    this.updateField(key,(previous?previous+'\n\n':'')+recordText);
+    this.notice.set(this.copy(
+      'Referencia verificable incorporada al borrador; guarda el informe.',
+      'Traceable evidence reference added to draft; save the report.'));
   }
   async create() {
     if (this.busy()) return;
@@ -138,7 +239,7 @@ export class ResearchWorkflow implements OnInit {
     finally {this.busy.set(false);}
   }
   async approve() {
-    if (!this.project() || !this.canEdit() || !this.completion().ready || !this.reviewed()) return;
+    if (!this.project() || !this.canEdit() || !this.canApproveReport()) return;
     this.busy.set(true);this.error.set('');this.notice.set('');
     const researchId=this.project()!.id, index=this.stage();
     try {

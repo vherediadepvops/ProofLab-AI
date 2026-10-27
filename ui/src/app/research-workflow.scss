@@ -53,3 +53,24 @@ button:disabled{cursor:not-allowed;opacity:.46}
 @media(max-width:570px){.method-shell{padding:17px}.method-steps{grid-template-columns:repeat(2,minmax(0,1fr))}.method-step{min-height:103px}.method-heading{flex-direction:column}}
 
 .method-paper-btn{background:#a89afa;border:0;border-radius:6px;padding:8px 10px;color:#1c1635;font-size:11px;font-weight:700}
+
+/* Mission 1: server-verified evidence bridge */
+.math-evidence-panel{background:#0d1520;border:1px solid #465173;border-radius:12px;padding:22px;margin-bottom:18px}
+.math-evidence-header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
+.math-evidence-header h3{font-size:17px;line-height:1.4;margin:8px 0}
+.math-evidence-header p{font-size:11px;line-height:1.7;color:#9aaac1;max-width:680px}
+.method-flag{border:1px solid #7d719b;color:#c7b5f4;font-size:9px;letter-spacing:.7px;padding:7px;border-radius:5px;white-space:nowrap}
+.math-evidence-controls{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:14px 0}
+.math-evidence-controls select{width:100%;background:#090e18;color:#eef1fc;border:1px solid #36445c;border-radius:6px;padding:10px;font-size:12px}
+.math-evidence-actions{display:flex;gap:8px;flex-wrap:wrap}
+.math-evidence-actions button,.math-evidence-item button{border-radius:7px;border:1px solid #495875;background:#131d2c;color:#dfe3ee;padding:11px;font-size:11px;font-weight:700;cursor:pointer}
+.math-evidence-actions button.method-primary{background:#ada2f6;color:#211931;border:0}
+.math-evidence-actions button:disabled,.math-evidence-item button:disabled{opacity:.4;cursor:not-allowed}
+.math-evidence-results{display:grid;gap:10px;margin:17px 0}
+.math-evidence-item{border:1px solid #364b60;border-radius:8px;background:#101a27;padding:14px}
+.math-evidence-top{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px}
+.math-evidence-top span{border:1px solid #926868;color:#f3a99f;border-radius:5px;font-size:10px;padding:5px 8px}
+.math-evidence-top span.is-valid{border-color:#438e78;color:#9ce8c2}
+.math-evidence-detail{margin:7px 0;color:#99a9c0;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.math-evidence-item button{margin-top:8px}
+@media(max-width:650px){.math-evidence-controls{grid-template-columns:1fr}.math-evidence-header{flex-direction:column}}

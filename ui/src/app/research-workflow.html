@@ -50,6 +50,77 @@
         </button>
       }
     </div>
+    @if(isMathEvidencePhase()) {
+      <section class="math-evidence-panel">
+        <div class="math-evidence-header">
+          <div>
+            <div class="method-overline">MISSION 01 · LEAN 4 · EVIDENCE LEDGER</div>
+            <h3>{{copy('Pruebas formales vinculadas a esta investigación','Formal proof attempts linked to this research')}}</h3>
+            <p>{{copy('Ejecuta una prueba real con Lean 4 y adjunta su identificador al informe. Los problemas disponibles son teoremas conocidos, nunca descubrimientos nuevos.',
+                'Run a real Lean 4 verification and attach its attempt ID to the report. Available problems are known theorems, never new discoveries.')}}</p>
+          </div>
+          <span class="method-flag">{{copy('REFERENCIA LOCAL · NO IA','LOCAL BASELINE · NOT AI')}}</span>
+        </div>
+        <div class="math-evidence-controls">
+          <div class="method-field">
+            <label for="evidence-math-problem">{{copy('Problema de control','Benchmark problem')}}</label>
+            <select id="evidence-math-problem" [disabled]="!canEdit() || proofBusy()"
+              [ngModel]="proofProblemId()" (ngModelChange)="proofProblemId.set($event)">
+              @for(p of proofProblems();track p.id) {
+                <option [value]="p.id">{{language()==='es'?p.titleSpanish:p.titleEnglish}}</option>
+              }
+            </select>
+          </div>
+          <div class="method-field">
+            <label for="evidence-tactic">{{copy('Táctica autorizada','Approved tactic')}}</label>
+            <select id="evidence-tactic" [disabled]="!canEdit() || proofBusy()"
+              [ngModel]="proofStrategy()" (ngModelChange)="proofStrategy.set($event)">
+              <option value="rfl">rfl</option><option value="omega">omega</option>
+              <option value="simp">simp</option>
+            </select>
+          </div>
+        </div>
+        <div class="math-evidence-actions">
+          <button type="button" class="method-primary" [disabled]="!canEdit() || proofBusy() || busy()"
+            (click)="runProofCycle()">{{copy('Ejecutar ciclo de control','Run controlled test cycle')}}</button>
+          <button type="button" [disabled]="!canEdit() || proofBusy() || busy()"
+            (click)="runSingleProof()">{{copy('Probar una táctica','Test one tactic')}}</button>
+        </div>
+        @if(proofBusy()) {
+          <p class="method-progress">{{copy('Lean está comprobando la prueba...','Lean is checking the proof...')}}</p>
+        }
+        @if(proofAttempts().length) {
+          <div class="math-evidence-results">
+            @for(record of proofAttempts();track record.verification.attemptId) {
+              <div class="math-evidence-item">
+                <div class="math-evidence-top">
+                  <strong>{{record.verification.problemId}} · {{record.verification.strategy}}</strong>
+                  <span [class.is-valid]="record.verification.outcome==='VERIFIED'">{{record.verification.outcome}}</span>
+                </div>
+                <div class="math-evidence-detail">
+                  {{copy('Intento','Attempt')}}: <code>{{record.verification.attemptId}}</code>
+                </div>
+                <div class="math-evidence-detail">
+                  {{copy('Modo','Mode')}}: {{record.executionMode}} · {{record.problemResearchStatus}}
+                </div>
+                <div class="math-evidence-detail">{{record.verification.diagnostic}}</div>
+                @if(canEdit()) {
+                  <button type="button" (click)="attachProof(record)"
+                    [disabled]="busy() || proofBusy()">
+                    {{copy('Adjuntar al informe actual','Attach to current stage report')}}
+                  </button>
+                }
+              </div>
+            }
+          </div>
+        }
+        @if(proofError()) { <div class="method-alert" role="alert">{{proofError()}}</div> }
+        @if(!evidenceAttached() && canEdit()) {
+          <p class="method-tip">{{copy('Para cerrar esta etapa necesitas al menos un intento real de Lean, y su ID debe estar adjunto al campo de evidencia correspondiente.',
+             'To approve this stage, at least one real Lean attempt and its ID must be attached to the corresponding evidence field.')}}</p>
+        }
+      </section>
+    }
     @if(selected(); as selectedStage) {
       <div class="method-editor">
         <div class="method-info">
@@ -99,7 +170,7 @@
               <button type="button" [disabled]="busy()" (click)="save()">
                 {{copy('Guardar borrador','Save draft')}}
               </button>
-              <button type="button" class="method-primary" [disabled]="busy() || !completion().ready || !reviewed()"
+              <button type="button" class="method-primary" [disabled]="busy() || !canApproveReport()"
                 (click)="approve()">
                 {{copy('Cerrar informe y avanzar','Freeze report and advance')}}
               </button>

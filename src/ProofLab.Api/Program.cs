@@ -8,6 +8,7 @@ builder.Services.AddHttpClient("meta", client =>
 builder.Services.AddScoped<MetaModelClient>();
 builder.Services.AddSingleton<LeanProofVerifier>();
 builder.Services.AddSingleton<ResearchWorkflowStore>();
+builder.Services.AddSingleton<MathEvidenceWorkflow>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -50,30 +51,68 @@ app.MapPost("/api/research/{id}/stages/{stage:int}/draft", async (
 });
 app.MapPost("/api/research/{id}/stages/{stage:int}/approve", async (
     string id, int stage, ResearchApprovalRequest input,
-    ResearchWorkflowStore store, CancellationToken ct) =>
+    ResearchWorkflowStore store, MathEvidenceWorkflow evidence,
+    CancellationToken ct) =>
 {
-    try { return Results.Ok(await store.ApproveAsync(id, stage, input, ct)); }
+    try {
+        var project = await store.GetAsync(id, ct);
+        await evidence.ValidateStageEvidenceAsync(project, stage, ct);
+        return Results.Ok(await store.ApproveAsync(id, stage, input, ct));
+    }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
 });
 app.MapGet("/api/research/{id}/reports/{stage:int}", async (
     string id, int stage, string? lang,
-    ResearchWorkflowStore store, CancellationToken ct) =>
+    ResearchWorkflowStore store, MathEvidenceWorkflow evidence,
+    CancellationToken ct) =>
 {
     try {
         var markdown = await store.ReportAsync(id, stage, lang ?? "es", ct);
+        var project = await store.GetAsync(id, ct);
+        if (project.Discipline == "Mathematics" && stage >= 4)
+            markdown += await evidence.RenderLedgerMarkdownAsync(id,
+                string.Equals(lang, "es", StringComparison.OrdinalIgnoreCase), ct);
         return Results.Text(markdown, "text/markdown; charset=utf-8");
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
 });
 
+app.MapGet("/api/research/{id}/math/attempts", async (
+    string id, MathEvidenceWorkflow evidence, CancellationToken ct) =>
+{
+    try { return Results.Ok(await evidence.ListAsync(id, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+app.MapPost("/api/research/{id}/math/attempts", async (
+    string id, MathVerificationRequest input, MathEvidenceWorkflow evidence,
+    CancellationToken ct) =>
+{
+    try { return Results.Ok(await evidence.RunAttemptAsync(id, input, "MANUAL_CONTROL", ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+app.MapPost("/api/research/{id}/math/cycle", async (
+    string id, MathCycleRequest input, MathEvidenceWorkflow evidence, CancellationToken ct) =>
+{
+    try { return Results.Ok(await evidence.RunDeterministicCycleAsync(id, input, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+
 app.MapGet("/api/research/{id}/paper", async (
-    string id, string? lang, ResearchWorkflowStore store, CancellationToken ct) =>
+    string id, string? lang, ResearchWorkflowStore store,
+    MathEvidenceWorkflow evidence, CancellationToken ct) =>
 {
     try {
-        return Results.Text(await store.ScientificPaperAsync(id, lang ?? "es", ct),
-            "text/markdown; charset=utf-8");
+        var markdown = await store.ScientificPaperAsync(id, lang ?? "es", ct);
+        var project = await store.GetAsync(id, ct);
+        if (project.Discipline == "Mathematics")
+            markdown += await evidence.RenderLedgerMarkdownAsync(id,
+                string.Equals(lang, "es", StringComparison.OrdinalIgnoreCase), ct);
+        return Results.Text(markdown, "text/markdown; charset=utf-8");
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }

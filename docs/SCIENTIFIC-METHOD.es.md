@@ -58,4 +58,10 @@ Los datos se guardan únicamente en `src/ProofLab.Api/.private/research/`, exclu
 - [Red EQUATOR](https://www.equator-network.org/about-us/what-is-a-reporting-guideline/): guías específicas por tipo de investigación, como CONSORT, STROBE o PRISMA.
 - [ISO/IEC 17025](https://www.iso.org/es/contents/data/standard/06/69/66912.html): competencia de **laboratorios de ensayos y calibración**; **no** es una plantilla general de cinco pasos. ProofLab AI no afirma cumplir esa norma.
 
+## Novedad: evidencia matemática real (Misión 1)
+
+En expedientes de matemáticas, las etapas 4 y 5 **requieren un ID de intento de Lean 4 ejecutado por el servidor y asociado con la misma investigación**. El resultado puede ser fallido o correcto; el informe distingue estrategias rechazadas de teoremas **conocidos** verificados. El backend agrega la bitácora y huellas SHA-256 a informes y documento final. Es evidencia matemática real y va más allá de escribir descripciones libres; todavía no se comprueban automáticamente archivos externos de imágenes o videos.
+
+Ver [flujo de evidencia matemática](MISSION-001-EVIDENCE.es.md). El ciclo determinista **no** utiliza Muse Spark ni supone un descubrimiento científico.
+
 **English:** [SCIENTIFIC-METHOD.md](SCIENTIFIC-METHOD.md).

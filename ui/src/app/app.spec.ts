@@ -31,7 +31,7 @@ describe('ProofLab Competition Research Lab', () => {
         descriptionEs:'Pendiente',descriptionEn:'Pending',
         referenceFrameworks:['TOP'],fields:[]}))
     ]);
-    controller.expectOne('http://127.0.0.1:5391/api/math/problems').flush([{
+    const problems = [{
       id: 'NAT-ADD-COMM', titleEnglish: 'Commutative law',
       titleSpanish: 'Ley conmutativa',
       statementEnglish: 'For all a and b, a + b = b + a.',
@@ -39,7 +39,10 @@ describe('ProofLab Competition Research Lab', () => {
       researchStatus: 'KNOWN_THEOREM',
       domain: 'Number theory', source: 'Lean core arithmetic',
       allowedStrategies: ['rfl', 'omega', 'simp']
-    }]);
+    }];
+    const requests = controller.match('http://127.0.0.1:5391/api/math/problems');
+    expect(requests.length).toBe(2);
+    requests.forEach(request => request.flush(problems));
     controller.expectOne('http://127.0.0.1:5391/api/math/status')
       .flush({ leanAvailable, phase: 'KNOWN_BENCHMARK_VERIFICATION' });
     controller.expectOne('http://127.0.0.1:5391/api/health')
@@ -94,6 +97,56 @@ describe('ProofLab Competition Research Lab', () => {
     expect(ctx.root.textContent).toContain('VERIFIED');
     expect(ctx.root.textContent).toContain('New scientific discovery');
     expect(ctx.root.textContent).toContain('NO');
+  });
+
+
+  it('attaches only a real Lean attempt ID to a stage-four report draft', async () => {
+    const ctx = initialize(true);
+    const workflow = ctx.fixture.debugElement.query(
+      By.directive(ResearchWorkflow)).componentInstance as ResearchWorkflow;
+    const id = 'abcdefabcdefabcdefabcdefabcdefab';
+    const loading = workflow.load(id);
+    ctx.controller.expectOne('http://127.0.0.1:5391/api/research/' + id).flush({
+      id, title: 'Mathematical benchmark observation',
+      discipline: 'Mathematics', createdAtUtc: '2026-10-26T23:00:00Z',
+      activeStage: 4, disclaimer: 'No scientific certification.',
+      reports: [1,2,3,4,5].map(index => ({
+        index, fields: {}, status: index < 4 ? 'APPROVED_COMPLETENESS' :
+          index === 4 ? 'DRAFT' : 'LOCKED',
+        revision: 1, approvedAtUtc: index < 4 ? '2026-10-26T23:00:00Z' : null,
+        sha256: index < 4 ? 'abc' : null
+      }))
+    });
+    await loading;
+    ctx.controller.expectOne('http://127.0.0.1:5391/api/research/' + id + '/math/attempts')
+      .flush([]);
+    ctx.fixture.detectChanges();
+    expect(ctx.root.textContent).toContain('LEAN 4 · EVIDENCE LEDGER');
+    expect(workflow.evidenceAttached()).toBeFalse();
+    const cycle = workflow.runProofCycle();
+    const verified = {
+      researchId: id, executionMode: 'DETERMINISTIC_BASELINE',
+      problemResearchStatus: 'KNOWN_THEOREM',
+      verification: {
+        attemptId: 'fabc000012345678abcdefabcdedfeed',
+        problemId: 'NAT-ADD-COMM', strategy: 'omega',
+        outcome: 'VERIFIED',
+        sourceSha256: 'a'.repeat(64),
+        checkedAtUtc: '2026-10-26T23:31:00Z',
+        diagnostic: 'Known theorem verified by Lean 4.',
+        isNewDiscovery: false
+      }
+    };
+    ctx.controller.expectOne('http://127.0.0.1:5391/api/research/' + id + '/math/cycle')
+      .flush({researchId: id,problemId:'NAT-ADD-COMM',
+        mode:'DETERMINISTIC_BASELINE_NOT_AI',
+        attempts:[verified],conclusion:'Known benchmark',isScientificDiscovery:false});
+    await cycle;
+    workflow.attachProof(verified);
+    ctx.fixture.detectChanges();
+    expect(workflow.evidenceAttached()).toBeTrue();
+    expect(workflow.draft()['manifest']).toContain(verified.verification.attemptId);
+    expect(ctx.root.textContent).toContain('REFERENCIA LOCAL · NO IA');
   });
 
   it('shows scientific method before any mathematical proof attempt', () => {
