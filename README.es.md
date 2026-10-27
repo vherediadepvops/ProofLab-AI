@@ -23,6 +23,8 @@ se desarrollaron durante el evento. No presentaremos simulaciones como datos rea
 
 ## Funcionalidades actuales
 
+- **Misión 1 — Descubrimiento matemático (primera etapa):** tres teoremas conocidos, tácticas permitidas de Lean 4, verificación real, huellas SHA-256 y registro privado de intentos. **No hemos resuelto ninguna conjetura abierta.** Ver [Misión 1](docs/MISSION-001-MATH.es.md).
+
 - API ASP.NET Core .NET 10 con predicción y evaluación científica independientes.
 - Péndulo: fórmula `T=2π√(L/g)` y medición del periodo mediante cruces
   ascendentes del centro observados, **sin forzar el resultado teórico**.
@@ -66,6 +68,10 @@ Abrir `http://127.0.0.1:4300/` desde el mismo equipo.
 | Ruta | Finalidad |
 | --- | --- |
 | `GET /api/health` | Estado y bloqueo del uso de Meta |
+| `GET /api/math/problems` | Teoremas conocidos para calibrar el verificador |
+| `GET /api/math/status` | Disponibilidad de Lean y etapa de investigación |
+| `POST /api/math/verify` | Verificación Lean de un teorema curado y registro local |
+| `POST /api/math/plan` | Muse Spark propone estrategias, bloqueado hasta verificar créditos |
 | `GET /api/science/experiments` | Tipos de experimentos |
 | `POST /api/science/predict` | Predicción física |
 | `POST /api/science/evaluate` | Análisis de posiciones con marcas de tiempo |
@@ -100,6 +106,9 @@ no son límites rígidos.
 Durante las pruebas de implementación no hicimos llamadas a Meta.
 
 ## Próximos pasos
+
+**Secuencia de misiones:** (1) Descubrimiento matemático → (2) Descubrimiento físico autónomo → (3) Descubrimiento histórico y de grandes datos → (4) Director autónomo de investigación. Compartirán un registro de evidencias verificables; por ahora solo se ha implementado la primera etapa de la Misión 1.
+
 
 1. Grabar 3 videos con péndulo de 50 cm y 3 de 80 cm; cronometrar manualmente.
 2. Integrar subida de video a SAM 3.1 y decodificación de máscaras por fotograma.

@@ -1,0 +1,25 @@
+name: Verify Mathematical Discovery with Lean 4
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lean-proof-kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: 'false'
+      - name: Prove known reference theorems
+        run: lean formal/KnownBenchmarks.lean
+      - name: Confirm invalid strategy is rejected
+        run: |
+          if lean formal/InvalidProof.lean; then
+            echo "ERROR: invalid proof was unexpectedly accepted"
+            exit 1
+          else
+            echo "Negative verification passed (invalid proof rejected)."
+          fi

@@ -29,6 +29,19 @@ interface Evaluation {
   limitations: string;
 }
 interface Health { metaModelApiEnabled: boolean; appVersion: string; }
+interface MathProblem {
+  id: string; titleEnglish: string; titleSpanish: string;
+  statementEnglish: string; statementSpanish: string;
+  researchStatus: string; domain: string; source: string;
+  allowedStrategies: string[];
+}
+interface MathProofResult {
+  attemptId: string; problemId: string; strategy: string; outcome: string;
+  verificationMethod: string; sourceSha256: string; checkedAtUtc: string;
+  diagnostic: string; isNewDiscovery: boolean;
+}
+interface MathStatus { leanAvailable: boolean; phase: string; }
+interface MathPlan { suggestedApproaches: string; verifiedProof: boolean; provenance: string; }
 interface PlanResult { model: string; generatedPlan: string; provenance: string; }
 interface SamResult { model: string; rawResponseJson: string; decodedMasks: boolean; provenance: string; }
 
@@ -55,6 +68,14 @@ const COPY = {
     demoWarn: 'SIMULACIÓN — Los datos se generaron artificialmente. No son evidencia física.',
     samWarn: 'El resultado bruto de SAM todavía requiere interpretar las máscaras; no constituye seguimiento de video.',
     export: 'Exportar informe JSON',
+    mathTitle: 'Laboratorio de descubrimiento matemático',
+    mathIntro: 'Investigar conjeturas requiere verificar cada afirmación. Empezamos con teoremas conocidos para probar el verificador Lean 4.',
+    mathProblem: 'Problema matemático', mathTactic: 'Estrategia de demostración',
+    mathVerify: 'Verificar demostración con Lean 4', mathResult: 'Resultado de verificación',
+    mathMuse: 'Solicitar estrategias a Muse Spark', mathMuseWarning: 'Muse Spark propone ideas, pero no demuestra teoremas. Llamadas facturables desactivadas.',
+    mathWarning: 'Los problemas disponibles son teoremas conocidos. Verificarlos NO constituye un descubrimiento original.',
+    mathEmpty: 'Selecciona una estrategia y verifica el teorema.',
+    mathNotInstalled: 'Lean 4 todavía no está disponible en el backend.',
     ready: 'Motor local disponible', footer: 'Construido durante el Meta Global AI Developer Hackathon · 26 OCT 2026',
   },
   en: {
@@ -79,6 +100,14 @@ const COPY = {
     demoWarn: 'SIMULATION — Data was artificially generated. Not physical evidence.',
     samWarn: 'Raw SAM output still requires mask decoding; this is not video tracking.',
     export: 'Export JSON report',
+    mathTitle: 'Mathematical Discovery Laboratory',
+    mathIntro: 'Research needs independent verification. First we verify known theorems to test the Lean 4 proof engine.',
+    mathProblem: 'Mathematical problem', mathTactic: 'Proof strategy',
+    mathVerify: 'Verify proof with Lean 4', mathResult: 'Verification result',
+    mathMuse: 'Ask Muse Spark for proof strategies', mathMuseWarning: 'Muse Spark suggests ideas but cannot certify proofs. Paid calls are disabled.',
+    mathWarning: 'Available problems are known theorems. Verifying them is NOT a novel discovery.',
+    mathEmpty: 'Select a strategy and verify the theorem.',
+    mathNotInstalled: 'Lean 4 is not yet available on the backend.',
     ready: 'Local computation available', footer: 'Built during Meta Global AI Developer Hackathon · 26 OCT 2026',
   }
 };
@@ -94,6 +123,16 @@ export class App implements OnInit {
   private readonly api = 'http://127.0.0.1:5391';
   readonly language = signal<Language>('es');
   readonly words = computed(() => COPY[this.language()]);
+  readonly workspace = signal<'math' | 'physics'>('math');
+  readonly mathProblems = signal<MathProblem[]>([]);
+  readonly mathChoice = signal('NAT-ADD-COMM');
+  readonly mathStrategy = signal('omega');
+  readonly mathSelected = computed(() =>
+    this.mathProblems().find(p => p.id === this.mathChoice()) ?? null);
+  readonly mathReport = signal<MathProofResult | null>(null);
+  readonly mathPlan = signal('');
+  readonly mathEngineAvailable = signal(false);
+  readonly mathError = signal('');
   readonly kind = signal<Kind>('Pendulum');
   readonly length = signal(0.5);
   readonly angle = signal(15);
@@ -109,12 +148,51 @@ export class App implements OnInit {
   readonly recordedAt = '2026-10-26';
 
   ngOnInit(): void {
+    this.http.get<MathProblem[]>(this.api + '/api/math/problems')
+      .subscribe({ next: problems => this.mathProblems.set(problems),
+        error: () => this.mathError.set('The mathematical problem catalog is unavailable.') });
+    this.http.get<MathStatus>(this.api + '/api/math/status')
+      .subscribe({ next: info => this.mathEngineAvailable.set(info.leanAvailable),
+        error: () => this.mathEngineAvailable.set(false) });
     this.http.get<Health>(this.api + '/api/health')
       .subscribe({ next: response => this.metaAvailable.set(response.metaModelApiEnabled),
         error: () => this.error.set('Local API unavailable on port 5391.') });
   }
 
   setLanguage(value: Language) { this.language.set(value); }
+  chooseMathProblem(value: string): void {
+    this.mathChoice.set(value);
+    this.mathReport.set(null);
+    this.mathPlan.set('');
+    this.mathError.set('');
+  }
+  async planMath(): Promise<void> {
+    if (!this.metaAvailable()) return;
+    this.running.set(true);
+    this.mathPlan.set('');
+    this.mathError.set('');
+    try {
+      const output = await firstValueFrom(this.http.post<MathPlan>(
+        this.api + '/api/math/plan', { problemId: this.mathChoice() }));
+      this.mathPlan.set(output.suggestedApproaches);
+    } catch {
+      this.mathError.set('Muse Spark planning is unavailable.');
+    } finally { this.running.set(false); }
+  }
+  async verifyMath(): Promise<void> {
+    this.running.set(true);
+    this.mathReport.set(null);
+    this.mathError.set('');
+    try {
+      const result = await firstValueFrom(this.http.post<MathProofResult>(
+        this.api + '/api/math/verify', {
+          problemId: this.mathChoice(), strategy: this.mathStrategy()
+        }));
+      this.mathReport.set(result);
+    } catch (error: any) {
+      this.mathError.set(error?.error?.error || 'Proof verification was not completed.');
+    } finally { this.running.set(false); }
+  }
   chooseKind(value: Kind): void {
     this.kind.set(value); this.theory.set(null); this.evaluation.set(null); this.error.set('');
     this.question.set(value === 'Pendulum'

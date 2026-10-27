@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient("meta", client =>
     client.Timeout = TimeSpan.FromSeconds(45));
 builder.Services.AddScoped<MetaModelClient>();
+builder.Services.AddSingleton<LeanProofVerifier>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -22,6 +23,50 @@ app.MapGet("/api/health", (MetaModelClient meta) =>
         metaModelApiEnabled = meta.Enabled && meta.HasKey,
         science = new[] { "pendulum", "rolling-sphere" }
     }));
+
+app.MapGet("/api/math/problems", () =>
+    Results.Ok(MathResearchCatalog.GetProblems()));
+app.MapGet("/api/math/status", (LeanProofVerifier verifier) =>
+    Results.Ok(new {
+        mission = "Mathematical Discovery",
+        phase = "KNOWN_BENCHMARK_VERIFICATION",
+        leanAvailable = verifier.FindLean() is not null,
+        allowsArbitraryLean = false,
+        knownOpenProblemsAttempted = 0,
+        novelProofsVerified = 0
+    }));
+app.MapPost("/api/math/verify", async (
+    MathVerificationRequest input,
+    LeanProofVerifier verifier,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await verifier.VerifyAsync(input, cancellationToken);
+        await verifier.RecordAsync(result, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
+app.MapPost("/api/math/plan", async (
+    MathResearchPlanRequest input, MetaModelClient meta,
+    CancellationToken cancellationToken) =>
+{
+    if (!meta.Enabled || !meta.HasKey)
+        return Results.Conflict(new { error = "Meta API disabled pending credit verification." });
+    try
+    {
+        var problem = MathResearchCatalog.Find(input.ProblemId);
+        var suggestion = await meta.CreateMathematicalStrategyAsync(problem, cancellationToken);
+        return Results.Ok(new { problemId = problem.Id, model = "muse-spark-1.3",
+            suggestedApproaches = suggestion, verifiedProof = false,
+            provenance = "META_MODEL_API_LIVE_OUTPUT_UNVERIFIED" });
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (HttpRequestException) { return Results.Problem("Meta math planning is unavailable.", statusCode: 502); }
+    catch (FormatException) { return Results.Problem("Unexpected Meta response.", statusCode: 502); }
+});
 
 app.MapGet("/api/science/experiments", () =>
     Results.Ok(new[] {

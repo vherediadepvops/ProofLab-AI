@@ -4,9 +4,9 @@
       <div><strong>ProofLab AI</strong><small>EXPERIMENTAL INTELLIGENCE</small></div>
     </div>
     <div class="aside-label">{{words().workspace}}</div>
-    <div class="nav active">◎ <span>Experiment Studio</span></div>
-    <div class="nav">◫ <span>Evidence Ledger</span></div>
-    <div class="nav">⌁ <span>Comparative Metrics</span></div>
+    <button type="button" class="nav" [class.active]="workspace() === 'math'" (click)="workspace.set('math')">∑ <span>Mission 1 · Mathematics</span></button>
+    <button type="button" class="nav" [class.active]="workspace() === 'physics'" (click)="workspace.set('physics')">◎ <span>Physics Evidence Studio</span></button>
+    <div class="nav future">◫ <span>Missions 2–4 · Planned</span></div>
     <div class="aside-label second">{{words().tools}}</div>
     <div class="meta-engine"><i class="spark"></i><span><strong>Muse Spark 1.3</strong><small>{{metaAvailable() ? words().liveMeta : words().noMeta}}</small></span></div>
     <div class="meta-engine"><i class="sam"></i><span><strong>SAM 3.1</strong><small>{{metaAvailable() ? words().liveMeta : words().noMeta}}</small></span></div>
@@ -29,13 +29,64 @@
 
     <section class="hero">
       <div class="micro">PUSH THE FRONTIER <span>—</span> 2026 GLOBAL HACKATHON</div>
-      <h1>{{words().prepare}}</h1>
-      <p>{{words().intro}}</p>
+      <h1>{{workspace() === 'math' ? words().mathTitle : words().prepare}}</h1>
+      <p>{{workspace() === 'math' ? words().mathIntro : words().intro}}</p>
       <div class="hero-badges"><span>SCIENTIFIC RIGOR</span><span>LIVE MODEL ADAPTERS</span><span>OPEN SOURCE</span></div>
       <div class="glyph" aria-hidden="true">∿</div>
     </section>
 
     <div class="workspace">
+      @if(workspace() === 'math') {
+        <div class="section-line"><div><small>MISSION 01 / MATHEMATICAL DISCOVERY</small><h2>Lean 4 · Formal Verification</h2></div><span class="version">KNOWN BENCHMARKS · ALPHA</span></div>
+        <div class="panel-grid">
+          <section class="panel">
+            <div class="panel-header"><div class="panel-num">∑</div><div><h3>{{words().mathProblem}}</h3><p>CHOOSE · REASON · VERIFY</p></div></div>
+            <div class="field">
+              <label for="math-problem">{{words().mathProblem}}</label>
+              <select id="math-problem" [ngModel]="mathChoice()" (ngModelChange)="chooseMathProblem($event)">
+                @for(problem of mathProblems(); track problem.id) {
+                  <option [value]="problem.id">{{language() === 'es' ? problem.titleSpanish : problem.titleEnglish}}</option>
+                }
+              </select>
+            </div>
+            @if(mathSelected(); as problem) {
+              <div class="math-statement">{{language() === 'es' ? problem.statementSpanish : problem.statementEnglish}}</div>
+              <div class="provenance">KNOWN THEOREM · {{problem.source}}</div>
+            }
+            <div class="field">
+              <label for="math-tactic">{{words().mathTactic}}</label>
+              <select id="math-tactic" [ngModel]="mathStrategy()" (ngModelChange)="mathStrategy.set($event)">
+                <option value="rfl">rfl · definitional equality</option>
+                <option value="omega">omega · arithmetic reasoning</option>
+                <option value="simp">simp · simplification</option>
+              </select>
+            </div>
+            <button class="primary" [disabled]="running() || !mathSelected() || !mathEngineAvailable()" (click)="verifyMath()">{{words().mathVerify}} <span>↗</span></button>
+            <button class="outline" [disabled]="running() || !mathSelected() || !metaAvailable()" (click)="planMath()">{{words().mathMuse}} <span>✦</span></button>
+            @if(mathPlan()) { <pre class="output">{{mathPlan()}}</pre> }
+            @if(!metaAvailable()) { <p class="warning">{{words().mathMuseWarning}}</p> }
+            @if(!mathEngineAvailable()) { <p class="warning">{{words().mathNotInstalled}}</p> }
+            <p class="warning">{{words().mathWarning}}</p>
+          </section>
+          <section class="panel">
+            <div class="panel-header"><div class="panel-num blue">✓</div><div><h3>{{words().mathResult}}</h3><p>INDEPENDENT LEAN CHECK</p></div></div>
+            @if(mathReport(); as report) {
+              <div class="provenance" [class.danger]="report.outcome !== 'VERIFIED'">{{report.outcome}}</div>
+              <p class="math-statement">{{report.diagnostic}}</p>
+              <div class="small-detail"><span>Proof strategy</span><strong>{{report.strategy}}</strong></div>
+              <div class="small-detail"><span>New scientific discovery</span><strong>NO</strong></div>
+              <label class="label">SHA-256 · Lean source</label>
+              <code class="math-hash">{{report.sourceSha256}}</code>
+              <p class="model-desc">Attempt {{report.attemptId}} · {{report.checkedAtUtc}}</p>
+            } @else {
+              <div class="empty"><div>∑</div><b>FORMAL PROOF VERIFIER</b><p>{{words().mathEmpty}}</p></div>
+            }
+            @if(mathError()) { <div class="alert">{{mathError()}}</div> }
+          </section>
+        </div>
+        <p class="warning">Next research milestone: vetted open conjectures, controlled hypothesis generation with Muse Spark, and independent formal checks. Generated arbitrary Lean code is not executed on this computer.</p>
+      }
+      @if(workspace() === 'physics') {
       <div class="section-line"><div><small>EXPERIMENT / 01</small><h2>{{words().choose}}</h2></div><span class="version">v2026.10.26 · ALPHA</span></div>
 
       <div class="panel-grid">
@@ -102,6 +153,7 @@
           @if(!metaAvailable()) { <p class="warning">{{words().gated}}</p> }
         </section>
       </div>
+      }
       @if(error()) { <div class="alert">{{error()}}</div> }
       <footer><span><i class="status-dot"></i>{{words().ready}}</span><span>{{words().footer}}</span></footer>
     </div>

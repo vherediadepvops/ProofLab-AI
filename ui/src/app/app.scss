@@ -78,3 +78,10 @@ button:disabled{cursor:not-allowed;opacity:.45}
 footer{display:flex;justify-content:space-between;margin-top:20px;padding:17px 0;border-top:1px solid #252c3d;color:#78859c;font-size:10px;gap:12px}
 @media(max-width:1020px){.sidebar{width:220px}.hero{padding:34px}.workspace{padding:28px}.top{padding:0 27px}.glyph{opacity:.18}}
 @media(max-width:750px){.sidebar{display:none}.panel-grid{grid-template-columns:1fr}.hero{min-height:220px}.workspace{padding:24px 16px}.top{height:61px;padding:0 16px}.top-actions{gap:7px}.no-tokens{display:none}footer{flex-direction:column}}
+
+/* Mathematical discovery mission */
+button.nav{width:100%;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer}
+button.nav.active{background:#262841;color:#e1ddff}
+.nav.future{opacity:.55}
+.math-statement{background:#0b101b;border:1px solid #343d54;border-radius:8px;padding:16px;color:#dce4f4;font-size:14px;line-height:1.65;margin-bottom:16px}
+.math-hash{display:block;overflow-wrap:anywhere;font-family:monospace;font-size:11px;color:#b8d5c8;background:#0b101b;border-radius:6px;padding:11px}

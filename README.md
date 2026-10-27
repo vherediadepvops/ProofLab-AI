@@ -23,6 +23,8 @@ during the event. Do not misrepresent demonstration data as physical evidence.
 
 ## What this edition implements
 
+- **Mission 1 — Mathematical Discovery (first working stage):** three curated known theorems, fixed Lean 4 tactics, real compiler verification, result hashes and private local attempt ledger. **No open problem has been solved.** See [Mission 1](docs/MISSION-001-MATH.md).
+
 - .NET 10 ASP.NET Core API, with independent scientific prediction and evaluation.
 - Pendulum period: small-angle theory `T=2π√(L/g)`; measured period detected from
   observed upward center crossings, **not biased by the theoretical period**.
@@ -64,6 +66,10 @@ Open `http://127.0.0.1:4300/` on the same computer.
 | Route | Result |
 | --- | --- |
 | `GET /api/health` | Readiness and Meta usage gate |
+| `GET /api/math/problems` | Known theorem control benchmarks |
+| `GET /api/math/status` | Lean availability and truthful research status |
+| `POST /api/math/verify` | Check a curated theorem via Lean 4, save local attempt record |
+| `POST /api/math/plan` | Muse Spark suggests research tactics, gated behind verified Meta credits |
 | `GET /api/science/experiments` | Supported physics experiments |
 | `POST /api/science/predict` | Scientific prediction |
 | `POST /api/science/evaluate` | Evaluation of timestamped observations |
@@ -98,6 +104,9 @@ email notifications as hard caps.
 No Meta calls have been made as part of the implementation tests.
 
 ## Roadmap
+
+**Research mission sequence:** (1) Mathematical Discovery → (2) Autonomous Physics Discovery → (3) Historical & Big Data Discovery → (4) Autonomous Research Director. All four share a future independently verifiable research ledger; only an initial part of Mission 1 is implemented today.
+
 
 1. Record 3×50 cm and 3×80 cm real pendulum videos; measure manual baseline.
 2. Integrate SAM 3.1 video upload + streamed masks using official Meta SAM parser.
