@@ -94,7 +94,7 @@ app.MapPost("/api/research/{id}/stages/{stage:int}/muse-draft", async (
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
     catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
-    catch (HttpRequestException) { return Results.Problem("Meta Model API request failed.", statusCode: 502); }
+    catch (HttpRequestException ex) { return MetaSafeDiagnostics.ProviderFailure(ex, "muse-spark-1.3"); }
     catch (FormatException) { return Results.Problem("Meta returned invalid research draft JSON.", statusCode: 502); }
 });
 app.MapPost("/api/research/{id}/stages/{stage:int}/draft", async (
@@ -298,7 +298,7 @@ app.MapPost("/api/math/plan", async (
             provenance = "META_MODEL_API_LIVE_OUTPUT_UNVERIFIED" });
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
-    catch (HttpRequestException) { return Results.Problem("Meta math planning is unavailable.", statusCode: 502); }
+    catch (HttpRequestException ex) { return MetaSafeDiagnostics.ProviderFailure(ex, "muse-spark-1.3"); }
     catch (FormatException) { return Results.Problem("Unexpected Meta response.", statusCode: 502); }
 });
 
@@ -362,7 +362,7 @@ app.MapPost("/api/ai/plan", async (
             provenance = "META_MODEL_API_LIVE_OUTPUT" });
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
-    catch (HttpRequestException) { return Results.Problem("Meta planning is unavailable.", statusCode: 502); }
+    catch (HttpRequestException ex) { return MetaSafeDiagnostics.ProviderFailure(ex, "muse-spark-1.3"); }
     catch (FormatException) { return Results.Problem("Unexpected model output.", statusCode: 502); }
 });
 
@@ -378,7 +378,7 @@ app.MapPost("/api/ai/segment-frame", async (
             decodedMasks = false, provenance = "META_MODEL_API_RAW_OUTPUT" });
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
-    catch (HttpRequestException) { return Results.Problem("SAM 3.1 is unavailable.", statusCode: 502); }
+    catch (HttpRequestException ex) { return MetaSafeDiagnostics.ProviderFailure(ex, "sam-3.1"); }
 });
 
 app.Run();

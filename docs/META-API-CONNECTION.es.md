@@ -73,4 +73,6 @@ Documentación actual: https://dev.meta.ai/docs/protocols/chat-completions · ht
 - **No verificado:** autenticación real con token, permisos reales de tu equipo, crédito promocional disponible, respuestas Muse Spark/SAM de pago, costo por uso y generación científica autónoma. No declarar integración Meta operativa antes de esas pruebas.
 - **Regla científica:** ninguna inferencia Muse es una prueba Lean. Lean sólo verifica objetivos conocidos y tácticas curadas hasta que se valide un sandbox independiente.
 
+**Pruebas de conexión desde el frontend, con sesión temporal operada por el usuario:** [META-MANUAL-TESTS.es.md](META-MANUAL-TESTS.es.md).
+
 **English:** [META-API-CONNECTION.md](META-API-CONNECTION.md).

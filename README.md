@@ -112,7 +112,9 @@ is **metres along the ramp**.
 
 The key belongs **only to the backend process** as `MODEL_API_KEY`, never Angular or GitHub. `GET /api/meta/readiness` reports key presence **without returning the secret**. Live calls require four simultaneous gates: key configured, `Meta:CreditsConfirmedByOwner=true`, `Meta:OwnerApprovedPaidRequests=true`, and `Meta:AllowPaidRequests=true`. The app also imposes **2 live Meta calls per process startup**, which is not a hard dollar cap. Billing credit status is not verified automatically. When genuinely authorized, the Goldbach interface can request unverified Muse Spark drafts, still requiring human review.
 
-**Step-by-step token instructions:** [Meta Model API connection EN](docs/META-API-CONNECTION.md). Do not enable charges until Billing credits and owner approval are confirmed. Spending alert emails are not hard limits.
+**Step-by-step token instructions:** [Meta Model API connection EN](docs/META-API-CONNECTION.md).
+
+**Two model manual tests:** choose **Meta API Tests** in the sidebar, personally open a temporary/consented API session on `5393` using `scripts/Start-MetaTest.cmd`, submit **one request per click** to Muse Spark or SAM and view sanitized HTTP diagnostics. The main `5391` API remains payment-disabled. [English test guide](docs/META-MANUAL-TESTS.md). Do not enable charges until Billing credits and owner approval are confirmed. Spending alert emails are not hard limits.
 
 No Meta calls have been made as part of the implementation tests.
 

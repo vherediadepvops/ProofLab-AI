@@ -45,6 +45,23 @@ interface MathStatus { leanAvailable: boolean; phase: string; }
 interface MathPlan { suggestedApproaches: string; verifiedProof: boolean; provenance: string; }
 interface PlanResult { model: string; generatedPlan: string; provenance: string; }
 interface SamResult { model: string; rawResponseJson: string; decodedMasks: boolean; provenance: string; }
+interface MetaTestReadiness {
+  apiKeyConfigured: boolean;
+  creditsConfirmedByOwner: boolean;
+  ownerApprovedPaidRequests: boolean;
+  paidRequestsSwitchEnabled: boolean;
+  liveCallsPermitted: boolean;
+  usedRequests: number;
+  remainingRequests: number;
+  maxRequestsPerProcess: number;
+  museModel: string;
+  samModel: string;
+}
+interface MetaTestProblem {
+  error?: string;
+  category?: string;
+  providerHttpStatus?: number | null;
+}
 
 const COPY = {
   es: {
@@ -79,6 +96,10 @@ const COPY = {
     mathNotInstalled: 'Lean 4 todavía no está disponible en el backend.',
     sidebarMath: 'Misión 1 · Matemáticas',
     sidebarPhysics: 'Laboratorio de física', sidebarFuture: 'Misiones 2–4 · Planificadas',
+    sidebarMetaTests: 'Pruebas Meta API',
+    metaTestTitle: 'Pruebas de conexión · Meta Model API',
+    metaTestIntro: 'Comprueba Muse Spark 1.3 y SAM 3.1 por separado, con una sesión local temporal, sin modificar investigaciones.',
+    metaTestHeading: 'SESIÓN TEMPORAL · PUERTO 5393',
     competition: 'EDICIÓN DE COMPETENCIA',
     topArea: 'LABORATORIO', topWorkspace: 'Espacio de investigación',
     topOffline: 'META API SIN CONEXIÓN · 0 TOKENS', topActive: 'META API ACTIVA',
@@ -142,6 +163,10 @@ const COPY = {
     mathNotInstalled: 'Lean 4 is not yet available on the backend.',
     sidebarMath: 'Mission 1 · Mathematics',
     sidebarPhysics: 'Physics Evidence Studio', sidebarFuture: 'Missions 2–4 · Planned',
+    sidebarMetaTests: 'Meta API Tests',
+    metaTestTitle: 'Connection tests · Meta Model API',
+    metaTestIntro: 'Test Muse Spark 1.3 and SAM 3.1 separately through a temporary local session, without changing research dossiers.',
+    metaTestHeading: 'TEMPORARY SESSION · PORT 5393',
     competition: 'COMPETITION EDITION',
     topArea: 'LABORATORY', topWorkspace: 'Research workspace',
     topOffline: 'META API OFFLINE · 0 TOKENS', topActive: 'META API ACTIVE',
@@ -186,7 +211,7 @@ export class App implements OnInit {
   private readonly api = 'http://127.0.0.1:5391';
   readonly language = signal<Language>('es');
   readonly words = computed(() => COPY[this.language()]);
-  readonly workspace = signal<'math' | 'physics'>('math');
+  readonly workspace = signal<'math' | 'physics' | 'meta'>('math');
   readonly mathProblems = signal<MathProblem[]>([]);
   readonly mathChoice = signal('NAT-ADD-COMM');
   readonly mathStrategy = signal('omega');
@@ -209,6 +234,17 @@ export class App implements OnInit {
   readonly imageDataUri = signal('');
   readonly segmentation = signal('');
   readonly recordedAt = '2026-10-26';
+  private readonly metaTestApi = 'http://127.0.0.1:5393';
+  readonly metaTestReadiness = signal<MetaTestReadiness | null>(null);
+  readonly metaTestRunning = signal(false);
+  readonly metaTestError = signal('');
+  readonly metaTestMuseQuestion = signal(
+    'En una frase, explica por qué la suma de dos números primos puede ser par.');
+  readonly metaTestMuseAnswer = signal('');
+  readonly metaTestSamConcept = signal('red ball');
+  readonly metaTestImage = signal('');
+  readonly metaTestSamAnswer = signal('');
+  readonly metaTestLastResult = signal('');
 
   ngOnInit(): void {
     const saved = localStorage.getItem('prooflab-ui-language');
@@ -227,6 +263,152 @@ export class App implements OnInit {
         error: () => this.error.set(this.language() === 'es'
           ? 'La API local no está disponible en el puerto 5391.'
           : 'Local API unavailable on port 5391.') });
+  }
+
+  openMetaTests(): void {
+    this.workspace.set('meta');
+    this.refreshMetaTest();
+  }
+
+  async refreshMetaTest(): Promise<void> {
+    try {
+      const ready = await firstValueFrom(this.http.get<MetaTestReadiness>(
+        this.metaTestApi + '/api/meta/readiness'));
+      this.metaTestReadiness.set(ready);
+      if (!this.metaTestLastResult()) this.metaTestError.set('');
+    } catch {
+      this.metaTestReadiness.set(null);
+      this.metaTestError.set(this.language() === 'es'
+        ? 'No está iniciada la sesión temporal. Abre scripts\\Start-MetaTest.cmd desde el PC autorizado, confirma los créditos y vuelve a consultar.'
+        : 'No temporary session is running. Start scripts\\Start-MetaTest.cmd on the authorized PC, acknowledge credits and refresh.');
+    }
+  }
+
+  private metaTestFailure(error: any, model: 'Muse Spark' | 'SAM 3.1'): string {
+    const info = error?.error as MetaTestProblem | undefined;
+    const code = info?.providerHttpStatus;
+    const title = this.language() === 'es'
+      ? 'Solicitud fallida' : 'Request failed';
+    const reason = info?.category || (error?.status === 409
+      ? 'BILLING_GATE_CLOSED' : error?.status === 0
+      ? 'LOCAL_TEST_SESSION_UNAVAILABLE' : 'UNCLASSIFIED_FAILURE');
+    return title + ' · ' + model + ' · HTTP local ' +
+      (typeof error?.status === 'number' ? error.status : '?') +
+      (typeof code === 'number' ? ' · Meta HTTP ' + code : '') +
+      ' · ' + reason + '. ' + (this.language() === 'es'
+        ? 'Puede haber consumido créditos; no hay reintentos automáticos.'
+        : 'Credits may have been consumed; there are no automatic retries.');
+  }
+
+  async testMuseConnection(): Promise<void> {
+    const ready = this.metaTestReadiness();
+    const question = this.metaTestMuseQuestion().trim();
+    if (!ready?.liveCallsPermitted || ready.remainingRequests < 1 ||
+        this.metaTestRunning() || question.length < 10 || question.length > 250) return;
+    if (!window.confirm(this.language() === 'es'
+      ? '¿Enviar UNA solicitud real y potencialmente facturable a Muse Spark 1.3? No hay reintentos automáticos.'
+      : 'Send ONE real, potentially billable request to Muse Spark 1.3? No automatic retries.')) return;
+    this.metaTestRunning.set(true);
+    this.metaTestMuseAnswer.set('');
+    this.metaTestError.set('');
+    this.metaTestLastResult.set('');
+    try {
+      const response = await firstValueFrom(this.http.post<PlanResult>(
+        this.metaTestApi + '/api/ai/plan', {
+          experiment: 'ProofLab API connectivity check, not a discovery',
+          researchQuestion: question, language: this.language()
+        }));
+      this.metaTestMuseAnswer.set(response.generatedPlan);
+      this.metaTestLastResult.set('Muse Spark 1.3 · HTTP 200 · LIVE_UNVERIFIED');
+    } catch (error: any) {
+      this.metaTestError.set(this.metaTestFailure(error, 'Muse Spark'));
+      this.metaTestLastResult.set('Muse Spark 1.3 · FAILED_OR_INCONCLUSIVE');
+    } finally {
+      this.metaTestRunning.set(false);
+      await this.refreshMetaTest();
+    }
+  }
+
+  prepareSyntheticSamImage(): void {
+    // A local synthetic image only. No photo or private media is uploaded here.
+    const canvas = document.createElement('canvas');
+    canvas.width = 480;
+    canvas.height = 320;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      this.metaTestError.set('Canvas image generation is unavailable.');
+      return;
+    }
+    context.fillStyle = '#f9fafc';
+    context.fillRect(0, 0, 480, 320);
+    context.fillStyle = '#d9dde7';
+    context.fillRect(0, 266, 480, 54);
+    context.beginPath();
+    context.ellipse(240, 269, 103, 14, 0, 0, 2 * Math.PI);
+    context.fillStyle = 'rgba(35,42,50,0.20)';
+    context.fill();
+    const gradient = context.createRadialGradient(207, 130, 10, 246, 185, 100);
+    gradient.addColorStop(0, '#ff8580');
+    gradient.addColorStop(0.4, '#eb3133');
+    gradient.addColorStop(1, '#930e18');
+    context.fillStyle = gradient;
+    context.beginPath();
+    context.arc(240, 174, 92, 0, Math.PI * 2);
+    context.fill();
+    this.metaTestImage.set(canvas.toDataURL('image/png'));
+    this.metaTestSamConcept.set('red ball');
+    this.metaTestSamAnswer.set('');
+    this.metaTestError.set('');
+  }
+
+  onMetaTestImage(event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) ||
+        file.size < 1 || file.size > 1_500_000) {
+      this.metaTestError.set(this.language() === 'es'
+        ? 'Solo se permiten PNG/JPEG/WebP de hasta 1,5 MB.'
+        : 'Only PNG/JPEG/WebP files up to 1.5 MB are allowed.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result || '');
+      if (value.startsWith('data:image/')) this.metaTestImage.set(value);
+    };
+    reader.onerror = () => this.metaTestError.set('Unable to load test image.');
+    reader.readAsDataURL(file);
+    this.metaTestSamAnswer.set('');
+    this.metaTestError.set('');
+  }
+
+  async testSamConnection(): Promise<void> {
+    const ready = this.metaTestReadiness();
+    const concept = this.metaTestSamConcept().trim();
+    if (!ready?.liveCallsPermitted || ready.remainingRequests < 1 ||
+        this.metaTestRunning() || !this.metaTestImage() ||
+        concept.length < 3 || concept.length > 90) return;
+    if (!window.confirm(this.language() === 'es'
+      ? '¿Enviar UNA imagen y su descripción a SAM 3.1? Puede consumir créditos. Evita fotos de personas o contenido privado.'
+      : 'Send ONE image and description to SAM 3.1? This may consume credits. Avoid private or personal images.')) return;
+    this.metaTestRunning.set(true);
+    this.metaTestSamAnswer.set('');
+    this.metaTestError.set('');
+    this.metaTestLastResult.set('');
+    try {
+      const result = await firstValueFrom(this.http.post<SamResult>(
+        this.metaTestApi + '/api/ai/segment-frame', {
+          concept, imageDataUrl: this.metaTestImage()
+        }));
+      this.metaTestSamAnswer.set(result.rawResponseJson.slice(0, 3000));
+      this.metaTestLastResult.set('SAM 3.1 · HTTP 200 · RAW_OUTPUT_NOT_DECODED');
+    } catch (error: any) {
+      this.metaTestError.set(this.metaTestFailure(error, 'SAM 3.1'));
+      this.metaTestLastResult.set('SAM 3.1 · FAILED_OR_INCONCLUSIVE');
+    } finally {
+      this.metaTestRunning.set(false);
+      await this.refreshMetaTest();
+    }
   }
 
   setLanguage(value: Language): void {

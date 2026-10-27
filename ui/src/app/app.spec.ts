@@ -240,4 +240,116 @@ describe('ProofLab Competition Research Lab', () => {
     expect(ctx.root.textContent).toContain('Informe de planteamiento');
     expect((ctx.root.querySelectorAll('.method-buttons .method-primary')[0] as HTMLButtonElement).disabled).toBeTrue();
   });
+
+  it('provides separate Muse and SAM test buttons but never enables them without a temporary session', () => {
+    const ctx = initialize();
+    ctx.app.openMetaTests();
+    ctx.controller.expectOne('http://127.0.0.1:5393/api/meta/readiness').flush({
+      apiKeyConfigured:true, creditsConfirmedByOwner:false,
+      ownerApprovedPaidRequests:false, paidRequestsSwitchEnabled:false,
+      liveCallsPermitted:false, usedRequests:0,
+      remainingRequests:2, maxRequestsPerProcess:2,
+      museModel:'muse-spark-1.3', samModel:'sam-3.1'
+    });
+    ctx.fixture.detectChanges();
+    expect(ctx.root.textContent).toContain('Pruebas de conexión · Meta Model API');
+    const buttons = Array.from(ctx.root.querySelectorAll('button'));
+    expect(buttons.find(x => x.textContent?.includes('Enviar UNA solicitud a Muse'))?.disabled)
+      .toBeTrue();
+    expect(buttons.find(x => x.textContent?.includes('Enviar UNA imagen a SAM'))?.disabled)
+      .toBeTrue();
+    ctx.controller.expectNone('http://127.0.0.1:5393/api/ai/plan');
+    ctx.controller.expectNone('http://127.0.0.1:5393/api/ai/segment-frame');
+  });
+
+  it('sends one explicitly confirmed Muse request to only the temporary test API', async () => {
+    const ctx = initialize();
+    ctx.app.openMetaTests();
+    const ready = {
+      apiKeyConfigured:true, creditsConfirmedByOwner:true,
+      ownerApprovedPaidRequests:true, paidRequestsSwitchEnabled:true,
+      liveCallsPermitted:true, usedRequests:0,
+      remainingRequests:2, maxRequestsPerProcess:2,
+      museModel:'muse-spark-1.3', samModel:'sam-3.1'
+    };
+    ctx.controller.expectOne('http://127.0.0.1:5393/api/meta/readiness').flush(ready);
+    const confirmation = spyOn(window, 'confirm').and.returnValue(false);
+    await ctx.app.testMuseConnection();
+    ctx.controller.expectNone('http://127.0.0.1:5393/api/ai/plan');
+    confirmation.and.returnValue(true);
+    const oneCall = ctx.app.testMuseConnection();
+    const request = ctx.controller.expectOne('http://127.0.0.1:5393/api/ai/plan');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body.language).toBe('es');
+    request.flush({model:'muse-spark-1.3',
+      generatedPlan:'Respuesta de prueba no verificada.',
+      provenance:'META_MODEL_API_LIVE_OUTPUT'});
+    await Promise.resolve();
+    ctx.controller.expectOne('http://127.0.0.1:5393/api/meta/readiness')
+      .flush({...ready,usedRequests:1,remainingRequests:1});
+    await oneCall;
+    ctx.fixture.detectChanges();
+    expect(ctx.app.metaTestMuseAnswer()).toContain('Respuesta de prueba');
+    expect(ctx.app.metaTestReadiness()?.usedRequests).toBe(1);
+    expect(ctx.root.textContent).toContain('RESPUESTA REAL · NO VERIFICADA');
+    ctx.controller.expectNone('http://127.0.0.1:5391/api/ai/plan');
+  });
+
+  it('shows sanitized upstream status and never retries Muse automatically', async () => {
+    const ctx = initialize();
+    ctx.app.openMetaTests();
+    const ready = {
+      apiKeyConfigured:true, creditsConfirmedByOwner:true,
+      ownerApprovedPaidRequests:true, paidRequestsSwitchEnabled:true,
+      liveCallsPermitted:true, usedRequests:0,
+      remainingRequests:2, maxRequestsPerProcess:2,
+      museModel:'muse-spark-1.3', samModel:'sam-3.1'
+    };
+    ctx.controller.expectOne('http://127.0.0.1:5393/api/meta/readiness').flush(ready);
+    await Promise.resolve();
+    spyOn(window, 'confirm').and.returnValue(true);
+    const oneCall = ctx.app.testMuseConnection();
+    ctx.controller.expectOne('http://127.0.0.1:5393/api/ai/plan')
+      .flush({error:'META_PROVIDER_TEST_FAILED',
+        providerHttpStatus:401,category:'TOKEN_REJECTED_OR_EXPIRED'},
+        {status:502,statusText:'Bad Gateway'});
+    await Promise.resolve();
+    ctx.controller.expectOne('http://127.0.0.1:5393/api/meta/readiness')
+      .flush({...ready,usedRequests:1,remainingRequests:1});
+    await oneCall;
+    expect(ctx.app.metaTestError()).toContain('Meta HTTP 401');
+    expect(ctx.app.metaTestMuseAnswer()).toBe('');
+    ctx.controller.expectNone('http://127.0.0.1:5393/api/ai/plan');
+  });
+
+  it('creates a synthetic sample and sends one confirmed SAM image request', async () => {
+    const ctx = initialize();
+    ctx.app.openMetaTests();
+    const ready = {
+      apiKeyConfigured:true, creditsConfirmedByOwner:true,
+      ownerApprovedPaidRequests:true, paidRequestsSwitchEnabled:true,
+      liveCallsPermitted:true, usedRequests:0,
+      remainingRequests:2, maxRequestsPerProcess:2,
+      museModel:'muse-spark-1.3', samModel:'sam-3.1'
+    };
+    ctx.controller.expectOne('http://127.0.0.1:5393/api/meta/readiness').flush(ready);
+    await Promise.resolve();
+    ctx.app.prepareSyntheticSamImage();
+    expect(ctx.app.metaTestImage()).toMatch(/^data:image\/png;base64,/);
+    spyOn(window, 'confirm').and.returnValue(true);
+    const samCall = ctx.app.testSamConnection();
+    const request = ctx.controller.expectOne('http://127.0.0.1:5393/api/ai/segment-frame');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body.concept).toBe('red ball');
+    expect(request.request.body.imageDataUrl).toMatch(/^data:image\/png;base64,/);
+    request.flush({model:'sam-3.1',rawResponseJson:'{"output":[{"test":"synthetic"}]}',
+      decodedMasks:false,provenance:'META_MODEL_API_RAW_OUTPUT'});
+    await Promise.resolve();
+    ctx.controller.expectOne('http://127.0.0.1:5393/api/meta/readiness')
+      .flush({...ready,usedRequests:1,remainingRequests:1});
+    await samCall;
+    expect(ctx.app.metaTestSamAnswer()).toContain('synthetic');
+    expect(ctx.app.metaTestLastResult()).toContain('RAW_OUTPUT_NOT_DECODED');
+    ctx.controller.expectNone('http://127.0.0.1:5393/api/ai/segment-frame');
+  });
 });

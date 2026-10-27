@@ -6,6 +6,7 @@
     <div class="aside-label">{{words().workspace}}</div>
     <button type="button" class="nav" [class.active]="workspace() === 'math'" (click)="workspace.set('math')">∑ <span>{{words().sidebarMath}}</span></button>
     <button type="button" class="nav" [class.active]="workspace() === 'physics'" (click)="workspace.set('physics')">◎ <span>{{words().sidebarPhysics}}</span></button>
+    <button type="button" class="nav" [class.active]="workspace() === 'meta'" (click)="openMetaTests()">✦ <span>{{words().sidebarMetaTests}}</span></button>
     <div class="nav future">◫ <span>{{words().sidebarFuture}}</span></div>
     <div class="aside-label second">{{words().tools}}</div>
     <div class="meta-engine"><i class="spark"></i><span><strong>Muse Spark 1.3</strong><small>{{metaAvailable() ? words().liveMeta : words().noMeta}}</small></span></div>
@@ -29,13 +30,126 @@
 
     <section class="hero">
       <div class="micro">PUSH THE FRONTIER <span>—</span> 2026 GLOBAL HACKATHON</div>
-      <h1>{{workspace() === 'math' ? words().mathTitle : words().prepare}}</h1>
-      <p>{{workspace() === 'math' ? words().mathIntro : words().intro}}</p>
+      <h1>{{workspace() === 'math' ? words().mathTitle : workspace() === 'meta' ? words().metaTestTitle : words().prepare}}</h1>
+      <p>{{workspace() === 'math' ? words().mathIntro : workspace() === 'meta' ? words().metaTestIntro : words().intro}}</p>
       <div class="hero-badges"><span>{{words().heroMethod}}</span><span>{{words().heroAdapters}}</span><span>{{words().heroOpen}}</span></div>
       <div class="glyph" aria-hidden="true">∿</div>
     </section>
 
     <div class="workspace">
+      @if(workspace() === 'meta') {
+        <div class="section-line">
+          <div><small>{{words().metaTestHeading}}</small>
+            <h2>{{language() === 'es' ? 'Dos pruebas, una solicitud por clic' : 'Two tests, one request per click'}}</h2>
+          </div>
+          <span class="version">muse-spark-1.3 · sam-3.1</span>
+        </div>
+        <section class="panel meta-test-overview">
+          <div class="panel-header">
+            <div class="panel-num purple">API</div>
+            <div>
+              <h3>{{language() === 'es' ? 'Estado de la sesión temporal' : 'Temporary test session'}}</h3>
+              <p>http://127.0.0.1:5393 · {{language() === 'es' ? 'token solo en backend' : 'backend-only key'}}</p>
+            </div>
+          </div>
+          <p class="warning">
+            {{language() === 'es'
+              ? 'La aplicación principal (5391) conserva los pagos apagados. Para probar modelos reales, inicia tú mismo la sesión 5393 mediante el archivo scripts/Start-MetaTest.cmd de este proyecto. El archivo exige tu confirmación. No escribas el token en esta web.'
+              : 'The main API (5391) stays payment-disabled. For real tests, personally start the temporary 5393 session using scripts/Start-MetaTest.cmd in the project; the script requires your confirmation. Never paste the API key here.'}}
+          </p>
+          <div class="meta-test-session-file">C:\PROOFLAB-AI-HACKATHON\scripts\Start-MetaTest.cmd</div>
+          <button type="button" class="outline" [disabled]="metaTestRunning()" (click)="refreshMetaTest()">
+            {{language() === 'es' ? 'Comprobar conexión de prueba' : 'Refresh test connection'}}
+          </button>
+          @if(metaTestReadiness(); as session) {
+            <div class="meta-test-status">
+              <div><small>{{language() === 'es' ? 'API Key detectada' : 'API key detected'}}</small>
+                <strong>{{session.apiKeyConfigured ? 'SÍ' : 'NO'}}</strong></div>
+              <div><small>{{language() === 'es' ? 'Créditos confirmados' : 'Credits confirmed'}}</small>
+                <strong>{{session.creditsConfirmedByOwner ? 'SÍ' : 'NO'}}</strong></div>
+              <div><small>{{language() === 'es' ? 'Autorización del propietario' : 'Owner consent'}}</small>
+                <strong>{{session.ownerApprovedPaidRequests ? 'SÍ' : 'NO'}}</strong></div>
+              <div><small>{{language() === 'es' ? 'Solicitudes restantes' : 'Requests remaining'}}</small>
+                <strong>{{session.remainingRequests}} / {{session.maxRequestsPerProcess}}</strong></div>
+            </div>
+            <p class="provenance" [class.danger]="!session.liveCallsPermitted">
+              {{session.liveCallsPermitted
+                ? (language() === 'es' ? 'LISTA PARA PRUEBAS FACTURABLES' : 'READY FOR BILLABLE TESTS')
+                : (language() === 'es' ? 'SESION NO AUTORIZADA PARA LLAMADAS' : 'LIVE TEST SESSION NOT AUTHORIZED')}}
+            </p>
+          } @else {
+            <p class="warning">
+              {{language() === 'es' ? 'La sesión 5393 está apagada. No se ha enviado ninguna solicitud desde esta pantalla.'
+                                      : 'Port 5393 is not active. No request has been sent from this screen.'}}
+            </p>
+          }
+          <p class="warning">
+            {{language() === 'es'
+              ? 'Los créditos promocionales no son un tope monetario garantizado. Meta puede utilizar contenido enviado con créditos gratuitos para mejorar sus productos. Usa solo preguntas públicas e imágenes sintéticas.'
+              : 'Promotional credits are not a guaranteed spending cap. Meta may use content sent with free credits to improve its products. Use public prompts and synthetic images.'}}
+          </p>
+        </section>
+        <div class="panel-grid meta-test-panels">
+          <section class="panel compact">
+            <div class="panel-header">
+              <div class="panel-num purple">M</div>
+              <div><h3>Muse Spark 1.3</h3><p>CHAT COMPLETIONS · {{language() === 'es' ? 'texto' : 'text'}}</p></div>
+            </div>
+            <label for="meta-test-prompt">{{language() === 'es' ? 'Pregunta de prueba, sin datos privados' : 'Test question, no private data'}}</label>
+            <textarea id="meta-test-prompt" rows="3" maxlength="250"
+              [ngModel]="metaTestMuseQuestion()" (ngModelChange)="metaTestMuseQuestion.set($event)"
+              [disabled]="metaTestRunning()"></textarea>
+            <button type="button" class="primary"
+              [disabled]="metaTestRunning() || !metaTestReadiness()?.liveCallsPermitted ||
+                          !metaTestMuseQuestion().trim() || metaTestMuseQuestion().trim().length < 10"
+              (click)="testMuseConnection()">
+              {{language() === 'es' ? 'Enviar UNA solicitud a Muse' : 'Send ONE Muse request'}} <span>↗</span>
+            </button>
+            @if(metaTestMuseAnswer()) {
+              <div class="provenance">{{language() === 'es' ? 'RESPUESTA REAL · NO VERIFICADA' : 'LIVE RESPONSE · UNVERIFIED'}}</div>
+              <pre class="output">{{metaTestMuseAnswer()}}</pre>
+            }
+          </section>
+          <section class="panel compact">
+            <div class="panel-header">
+              <div class="panel-num blue">S</div>
+              <div><h3>SAM 3.1</h3><p>RESPONSES · {{language() === 'es' ? 'imagen y segmentación' : 'image segmentation'}}</p></div>
+            </div>
+            <button type="button" class="outline" [disabled]="metaTestRunning()"
+              (click)="prepareSyntheticSamImage()">
+              {{language() === 'es' ? 'Preparar imagen sintética de una pelota' : 'Create synthetic test ball image'}}
+            </button>
+            <label for="meta-test-image">{{language() === 'es' ? 'O elegir una imagen no personal' : 'Or choose a non-personal image'}}</label>
+            <input id="meta-test-image" class="upload" type="file" accept="image/png,image/jpeg,image/webp"
+              [disabled]="metaTestRunning()" (change)="onMetaTestImage($event)"/>
+            <label for="meta-test-concept">{{language() === 'es' ? 'Descripción corta del objeto' : 'Short object description'}}</label>
+            <input id="meta-test-concept" class="meta-test-input" type="text" maxlength="90"
+              [ngModel]="metaTestSamConcept()" (ngModelChange)="metaTestSamConcept.set($event)"
+              [disabled]="metaTestRunning()"/>
+            @if(metaTestImage()) { <img class="sample-frame" [src]="metaTestImage()" alt="Synthetic or user-selected test image"/> }
+            <button type="button" class="primary"
+              [disabled]="metaTestRunning() || !metaTestReadiness()?.liveCallsPermitted ||
+                          !metaTestImage() || metaTestSamConcept().trim().length < 3"
+              (click)="testSamConnection()">
+              {{language() === 'es' ? 'Enviar UNA imagen a SAM' : 'Send ONE image to SAM'}} <span>↗</span>
+            </button>
+            @if(metaTestSamAnswer()) {
+              <div class="provenance">{{language() === 'es' ? 'RESPUESTA BRUTA · MÁSCARAS NO DECODIFICADAS' : 'RAW RESPONSE · MASKS NOT DECODED'}}</div>
+              <pre class="output">{{metaTestSamAnswer()}}</pre>
+            }
+            <p class="warning">
+              {{language() === 'es'
+                ? 'La imagen de ejemplo es artificial y solo prueba la conexión; no es una observación científica.'
+                : 'The sample image is synthetic and tests connectivity only; it is not scientific evidence.'}}
+            </p>
+          </section>
+        </div>
+        @if(metaTestRunning()) {
+          <p class="warning">{{language() === 'es' ? 'Enviando una solicitud. No cierres la sesión hasta obtener resultado.' : 'Sending one request. Keep the session open until completion.'}}</p>
+        }
+        @if(metaTestLastResult()) { <p class="provenance">{{metaTestLastResult()}}</p> }
+        @if(metaTestError()) { <div class="alert" role="alert">{{metaTestError()}}</div> }
+      }
       @if(workspace() === 'math') {
         <app-research-workflow [language]="language()" />
         <div class="section-line"><div><small>{{words().mathSection}}</small><h2>{{words().mathFormal}}</h2></div><span class="version">{{words().mathBenchmark}}</span></div>

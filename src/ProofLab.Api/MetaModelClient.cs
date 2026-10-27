@@ -56,7 +56,7 @@ public sealed class MetaModelClient(IHttpClientFactory clients, MetaLiveAccess a
         using var response = await clients.CreateClient("meta")
             .SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Meta planning returned HTTP {(int)response.StatusCode}.");
+            throw new HttpRequestException("Meta planning request rejected.", null, response.StatusCode);
 
         using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
         return result.RootElement.GetProperty("choices")[0]
@@ -101,7 +101,7 @@ public sealed class MetaModelClient(IHttpClientFactory clients, MetaLiveAccess a
         using var response = await clients.CreateClient("meta")
             .SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Meta math planning returned HTTP {(int)response.StatusCode}.");
+            throw new HttpRequestException("Meta mathematical planning request rejected.", null, response.StatusCode);
 
         using var result = JsonDocument.Parse(
             await response.Content.ReadAsStringAsync(cancellationToken));
@@ -177,8 +177,7 @@ public sealed class MetaModelClient(IHttpClientFactory clients, MetaLiveAccess a
         using var response = await clients.CreateClient("meta")
             .SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException(
-                $"Meta scientific drafting returned HTTP {(int)response.StatusCode}.");
+            throw new HttpRequestException("Meta scientific draft request rejected.", null, response.StatusCode);
         using var raw = JsonDocument.Parse(
             await response.Content.ReadAsStringAsync(cancellationToken));
         var content = raw.RootElement.GetProperty("choices")[0]
@@ -235,7 +234,7 @@ public sealed class MetaModelClient(IHttpClientFactory clients, MetaLiveAccess a
         using var response = await clients.CreateClient("meta")
             .SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Meta segmentation returned HTTP {(int)response.StatusCode}.");
+            throw new HttpRequestException("Meta segmentation request rejected.", null, response.StatusCode);
 
         // Raw SAM output is a special-token grammar. Do NOT pretend it is a decoded mask.
         // Mask decoding, identity tracking and visible overlay are separate future milestones.

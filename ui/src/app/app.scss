@@ -79,6 +79,31 @@ footer{display:flex;justify-content:space-between;margin-top:20px;padding:17px 0
 @media(max-width:1020px){.sidebar{width:220px}.hero{padding:34px}.workspace{padding:28px}.top{padding:0 27px}.glyph{opacity:.18}}
 @media(max-width:750px){.sidebar{display:none}.panel-grid{grid-template-columns:1fr}.hero{min-height:220px}.workspace{padding:24px 16px}.top{height:61px;padding:0 16px}.top-actions{gap:7px}.no-tokens{display:none}footer{flex-direction:column}}
 
+
+/* User-operated, temporary Meta API connectivity checks. */
+.meta-test-overview { margin-bottom: 18px; }
+.meta-test-session-file {
+  border:1px solid #3b465d; border-radius:7px; background:#0a101a;
+  font:12px/1.55 monospace; color:#b4c7e3; padding:12px 14px;
+  margin:12px 0; overflow-wrap:anywhere;
+}
+.meta-test-status {
+  display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px; margin:18px 0;
+}
+.meta-test-status > div {
+  padding:12px; border:1px solid #354158; border-radius:8px;
+  background:#0d1320;
+}
+.meta-test-status small { display:block; color:#91a0b8; font-size:10px; line-height:1.5; }
+.meta-test-status strong { display:block; margin-top:6px; color:#d0c4ff; font-size:15px; }
+.meta-test-panels label { margin:12px 0 8px; }
+.meta-test-input { width:100%;padding:13px;border:1px solid #3a465e;border-radius:7px;
+  background:#0b101b;color:#ecf0fa;font-size:13px; }
+.meta-test-panels .sample-frame { max-height:250px; }
+.meta-test-panels .output { max-height:320px; }
+@media(max-width:960px) {.meta-test-status {grid-template-columns:repeat(2,minmax(0,1fr));}}
+
 /* Mathematical discovery mission */
 button.nav{width:100%;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer}
 button.nav.active{background:#262841;color:#e1ddff}

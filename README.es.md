@@ -114,7 +114,9 @@ rampa, se mide en **metros sobre la pendiente**.
 
 El token se almacena únicamente como `MODEL_API_KEY` del **proceso backend**, nunca en el navegador o GitHub. El nuevo `GET /api/meta/readiness` muestra su presencia **sin revelar el secreto**. La conexión está desactivada por defecto y necesita simultáneamente clave, `Meta:CreditsConfirmedByOwner=true`, `Meta:OwnerApprovedPaidRequests=true` y `Meta:AllowPaidRequests=true`. Además hay un límite inicial de **2 solicitudes Meta reales por proceso**; esto no es un límite de dinero. El saldo no se comprueba automáticamente y la promoción no está confirmada. La interfaz puede proponer borradores con Muse Spark únicamente tras todos los controles, sin aprobarlos.
 
-**Pasos para obtener y colocar el token de manera segura:** [Conexión Meta Model API ES](docs/META-API-CONNECTION.es.md). Las alertas por correo no son topes rígidos; no habilitar gastos hasta verificar Billing y tener aprobación explícita.
+**Pasos para obtener y colocar el token de manera segura:** [Conexión Meta Model API ES](docs/META-API-CONNECTION.es.md).
+
+**Pruebas manuales con dos modelos:** en la barra lateral elige **«Pruebas Meta API»**. El operador puede abrir una sesión temporal y confirmada en `5393` mediante `scripts/Start-MetaTest.cmd`, realizar **una solicitud por clic** a Muse Spark o SAM, y ver códigos HTTP sin exponer el token. La API principal en `5391` sigue con los pagos desactivados. [Guía ES](docs/META-MANUAL-TESTS.es.md). Las alertas por correo no son topes rígidos; no habilitar gastos hasta verificar Billing y tener aprobación explícita.
 
 Durante las pruebas de implementación no hicimos llamadas a Meta.
 

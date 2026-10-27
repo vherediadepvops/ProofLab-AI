@@ -71,4 +71,6 @@ Current sources: https://dev.meta.ai/docs/protocols/chat-completions · https://
 - **Not yet validated:** real token authentication, team credit balance, live Muse or SAM inference, actual charges or autonomous scientific discovery. Do not market the integration as working until checked in an explicitly authorized live experiment.
 - **Scientific safeguards:** Muse prose never equals a Lean proof; Lean runs curated known benchmarks only until a sandbox is fully validated.
 
+**User-operated temporary test session for Muse/SAM in the frontend:** [META-MANUAL-TESTS.md](META-MANUAL-TESTS.md).
+
 **Español:** [META-API-CONNECTION.es.md](META-API-CONNECTION.es.md).
