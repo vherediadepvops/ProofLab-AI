@@ -2,8 +2,43 @@ param([string]$BaseUrl = 'http://127.0.0.1:5392')
 $ErrorActionPreference='Stop'
 $base=$BaseUrl.TrimEnd('/') + '/api/research'
 $stages=Invoke-RestMethod "$base/stages"
+# Meta readiness is a read-only local preflight. CI MUST NOT contact Meta or
+# accidentally authorize paid requests, even when the UI exposes Muse buttons.
+$meta=Invoke-RestMethod "$BaseUrl/api/meta/readiness"
+if($meta.apiKeyConfigured -or $meta.creditsConfirmedByOwner -or
+   $meta.ownerApprovedPaidRequests -or $meta.paidRequestsSwitchEnabled -or
+   $meta.liveCallsPermitted -or $meta.promotionalBalanceVerifiedAutomatically -or
+   $meta.maxRequestsPerProcess -ne 2 -or
+   $meta.museModel -ne 'muse-spark-1.3' -or
+   $meta.samModel -ne 'sam-3.1') {
+  throw 'ERROR: CI Meta billing and credential safeguards are not closed'
+}
+Write-Host 'META_READINESS=NO_KEY,NO_BILLING_CONFIRMATION,NO_OWNER_AUTHORIZATION,PAID_DISABLED; REQUEST_CAP=2'
+try {
+  Invoke-RestMethod "$BaseUrl/api/math/plan" -Method Post -ContentType 'application/json' -Body '{"problemId":"NAT-ADD-COMM","language":"es"}' | Out-Null
+  throw 'ERROR: Muse plan allowed paid traffic without gates'
+} catch {
+  if($_.Exception.Message -like 'ERROR:*') { throw }
+  if([int]$_.Exception.Response.StatusCode -ne 409) { throw }
+}
+try {
+  Invoke-RestMethod "$BaseUrl/api/ai/segment-frame" -Method Post -ContentType 'application/json' -Body '{"concept":"ball","imageDataUrl":"data:image/png;base64,dGVzdA=="}' | Out-Null
+  throw 'ERROR: SAM allowed paid traffic without gates'
+} catch {
+  if($_.Exception.Message -like 'ERROR:*') { throw }
+  if([int]$_.Exception.Response.StatusCode -ne 409) { throw }
+}
+Write-Host 'META_MODELS=SPARK_BLOCKED_409,SAM_BLOCKED_409; NO_PAID_CALLS=True'
 $study=Invoke-RestMethod $base -Method Post -ContentType 'application/json' -Body '{"title":"CONTROL STUDY: Goldbach finite range and real Lean artifacts","discipline":"Mathematics"}'
 Write-Host "PROJECT=$($study.id)"
+try {
+  Invoke-RestMethod "$base/$($study.id)/stages/1/muse-draft?lang=es" -Method Post -ContentType 'application/json' -Body '{}' | Out-Null
+  throw 'ERROR: Muse generated a paid scientific draft with gates disabled'
+} catch {
+  if($_.Exception.Message -like 'ERROR:*') { throw }
+  if([int]$_.Exception.Response.StatusCode -ne 409) { throw }
+}
+Write-Host 'MUSE_DRAFT_BLOCKED=409; NO_MODEL_INFERENCE=True'
 try {
   Invoke-RestMethod "$base/$($study.id)/math/offline-cycle" -Method Post -ContentType 'application/json' -Body '{}' | Out-Null
   throw 'ERROR: offline rehearsal allowed before stages 1-3'

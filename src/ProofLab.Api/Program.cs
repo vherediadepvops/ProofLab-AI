@@ -5,10 +5,13 @@ using ProofLab.Science;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient("meta", client =>
     client.Timeout = TimeSpan.FromSeconds(45));
+builder.Services.AddSingleton<MetaCallSafetyBudget>();
+builder.Services.AddSingleton<MetaLiveAccess>();
 builder.Services.AddScoped<MetaModelClient>();
 builder.Services.AddSingleton<LeanProofVerifier>();
 builder.Services.AddSingleton<ResearchWorkflowStore>();
 builder.Services.AddSingleton<GuidedResearchDrafts>();
+builder.Services.AddScoped<MuseResearchDrafts>();
 builder.Services.AddSingleton<ScientificMemoryStore>();
 builder.Services.AddSingleton<MathEvidenceWorkflow>();
 builder.Services.AddSingleton<MemoryGuidedMathFlow>();
@@ -31,6 +34,28 @@ app.MapGet("/api/health", (MetaModelClient meta) =>
         science = new[] { "pendulum", "rolling-sphere" }
     }));
 
+app.MapGet("/api/meta/readiness", (MetaLiveAccess meta) =>
+{
+    var x = meta.Status();
+    return Results.Ok(new {
+        provider = "Meta Model API",
+        museModel = "muse-spark-1.3",
+        samModel = "sam-3.1",
+        apiBaseUrl = "https://api.meta.ai/v1",
+        apiKeyConfigured = x.ApiKeyConfigured,
+        creditsConfirmedByOwner = x.CreditsConfirmedByOwner,
+        ownerApprovedPaidRequests = x.OwnerApprovedPaidRequests,
+        paidRequestsSwitchEnabled = x.PaidRequestsSwitchEnabled,
+        liveCallsPermitted = x.LiveCallsPermitted,
+        usedRequests = x.RequestsUsed,
+        remainingRequests = x.RequestsRemaining,
+        maxRequestsPerProcess = x.MaxRequestsPerProcess,
+        promotionalBalanceVerifiedAutomatically = false,
+        museInferenceValidatedLive = false,
+        samSegmentationValidatedLive = false,
+        keyLocation = "Backend-only MODEL_API_KEY environment variable"
+    });
+});
 app.MapGet("/api/research/stages", () =>
     Results.Ok(ScientificMethodWorkflow.Stages));
 app.MapPost("/api/research", async (
@@ -54,6 +79,23 @@ app.MapGet("/api/research/{id}/stages/{stage:int}/guided-draft", async (
     try { return Results.Ok(await suggestions.PrepareAsync(id, stage, lang ?? "es", ct)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+// This explicit user-triggered endpoint is billable ONLY after four independent
+// safety gates; it returns an unverified draft without saving or approving it.
+app.MapPost("/api/research/{id}/stages/{stage:int}/muse-draft", async (
+    string id, int stage, string? lang, MuseResearchDrafts muse,
+    MetaLiveAccess access, CancellationToken ct) =>
+{
+    if (!access.Status().LiveCallsPermitted)
+        return Results.Conflict(new {
+            error = "Meta live calls are blocked pending key, owner-confirmed credits, permission and request budget."
+        });
+    try { return Results.Ok(await muse.PrepareAsync(id, stage, lang ?? "es", ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+    catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
+    catch (HttpRequestException) { return Results.Problem("Meta Model API request failed.", statusCode: 502); }
+    catch (FormatException) { return Results.Problem("Meta returned invalid research draft JSON.", statusCode: 502); }
 });
 app.MapPost("/api/research/{id}/stages/{stage:int}/draft", async (
     string id, int stage, ResearchDraftRequest input,

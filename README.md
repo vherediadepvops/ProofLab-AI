@@ -75,9 +75,11 @@ Open `http://127.0.0.1:4300/` on the same computer.
 | Route | Result |
 | --- | --- |
 | `GET /api/health` | Readiness and Meta usage gate |
+| `GET /api/meta/readiness` | Secret-free key, credit confirmation, consent and request-budget status |
 | `GET /api/research/stages` | Scientific method stage definitions and mandatory fields |
 | `POST /api/research` | Create a mathematical research dossier |
 | `POST /api/research/{id}/stages/{n}/draft` | Save a local report draft |
+| `POST /api/research/{id}/stages/{n}/muse-draft` | Gated Muse Spark suggestion, unverified and never autosaved |
 | `POST /api/research/{id}/stages/{n}/approve` | Lock a complete report after declared human review |
 | `GET /api/research/{id}/reports/{n}` | Download each stage report (Markdown) |
 | `GET /api/research/{id}/paper` | Download consolidated paper after all stages |
@@ -108,13 +110,9 @@ is **metres along the ramp**.
 
 ### Enabling Meta API — only after verifying credit and permission
 
-On the backend, the API key is read from `MODEL_API_KEY` and paid calls are
-allowed only when `Meta:AllowPaidRequests=true`. In Windows PowerShell you may
-set process-scoped variables `$env:MODEL_API_KEY` and
-`$env:Meta__AllowPaidRequests='true'` **only after** checking the promotional
-credit in Billing and understanding that future use may be billed. Do not store
-secrets in the repo or send keys to the browser. Never rely on Spend Limit
-email notifications as hard caps.
+The key belongs **only to the backend process** as `MODEL_API_KEY`, never Angular or GitHub. `GET /api/meta/readiness` reports key presence **without returning the secret**. Live calls require four simultaneous gates: key configured, `Meta:CreditsConfirmedByOwner=true`, `Meta:OwnerApprovedPaidRequests=true`, and `Meta:AllowPaidRequests=true`. The app also imposes **2 live Meta calls per process startup**, which is not a hard dollar cap. Billing credit status is not verified automatically. When genuinely authorized, the Goldbach interface can request unverified Muse Spark drafts, still requiring human review.
+
+**Step-by-step token instructions:** [Meta Model API connection EN](docs/META-API-CONNECTION.md). Do not enable charges until Billing credits and owner approval are confirmed. Spending alert emails are not hard limits.
 
 No Meta calls have been made as part of the implementation tests.
 

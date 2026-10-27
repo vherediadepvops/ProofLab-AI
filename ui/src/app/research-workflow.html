@@ -226,6 +226,44 @@
               )}}</small>
             </div>
           }
+          @if(isGuidedGoldbach()) {
+            <div class="method-field">
+              <strong>{{copy('Conexión Meta Model API · Muse Spark 1.3',
+                            'Meta Model API connection · Muse Spark 1.3')}}</strong>
+              @if(metaReadiness(); as meta) {
+                <small>
+                  {{copy('Clave en backend', 'Backend API key')}}:
+                  {{meta.apiKeyConfigured ? copy('configurada','configured') : copy('pendiente','missing')}}
+                  · {{copy('Créditos confirmados por el propietario','Credits confirmed by owner')}}:
+                  {{meta.creditsConfirmedByOwner ? copy('sí','yes') : copy('no','no')}}
+                  · {{copy('Autorización de gasto','Spending approval')}}:
+                  {{meta.ownerApprovedPaidRequests ? copy('sí','yes') : copy('no','no')}}
+                </small>
+                <small>
+                  {{copy('Llamadas Meta disponibles en este arranque','Meta calls left in this process')}}:
+                  {{meta.remainingRequests}} / {{meta.maxRequestsPerProcess}}.
+                  {{copy('La aplicación NO puede verificar automáticamente tu saldo.',
+                         'The application cannot independently verify your billing balance.')}}
+                </small>
+                @if(canEdit()) {
+                  <button type="button" class="method-primary"
+                    [disabled]="busy() || proofBusy() || finiteBusy() || !meta.liveCallsPermitted"
+                    (click)="prepareMuseDraft()">
+                    {{copy('Preparar con Muse Spark (puede gastar créditos Meta)',
+                           'Draft with Muse Spark (may spend Meta credits)')}}
+                  </button>
+                }
+              } @else {
+                <small>{{copy('Consultando configuración local de Meta...', 'Checking local Meta settings...')}}</small>
+              }
+              <button type="button" (click)="refreshMetaReadiness()" [disabled]="busy()">
+                {{copy('Actualizar estado Meta','Refresh Meta status')}}
+              </button>
+              <small>{{copy('La clave solo se configura en el backend. No la escribas aquí. Las propuestas del modelo no son pruebas científicas.',
+                            'Configure the key only on the backend. Never paste it here. Model proposals are not scientific proofs.')}}</small>
+              @if(metaError()) { <small role="alert">{{metaError()}}</small> }
+            </div>
+          }
           @for(field of selectedStage.fields;track field.key) {
             <div class="method-field">
               <label [for]="'report-'+field.key">

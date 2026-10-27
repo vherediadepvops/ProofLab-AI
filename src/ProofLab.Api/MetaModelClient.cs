@@ -8,8 +8,10 @@ namespace ProofLab.Api;
 public sealed record HypothesisRequest(string Experiment, string ResearchQuestion, string Language = "es");
 public sealed record MathResearchPlanRequest(string ProblemId, string Language = "es");
 public sealed record SegmentationRequest(string Concept, string ImageDataUrl);
+public sealed record MetaStageDraftModelOutput(
+    Dictionary<string, string> Fields, int? InputTokens, int? OutputTokens);
 
-public sealed class MetaModelClient(IHttpClientFactory clients, IConfiguration configuration)
+public sealed class MetaModelClient(IHttpClientFactory clients, MetaLiveAccess access)
 {
     // Keep human-readable scientific prose in the UI-selected language.
     // Canonical math symbols, Lean tactics and API identifiers remain unchanged.
@@ -18,12 +20,8 @@ public sealed class MetaModelClient(IHttpClientFactory clients, IConfiguration c
             ? "Write the entire human-readable response in English. Keep theorem symbols and Lean tactics unchanged."
             : "Responde íntegramente en español. Conserva los símbolos matemáticos y las tácticas de Lean sin traducir.";
 
-    public bool Enabled =>
-        string.Equals(configuration["Meta:AllowPaidRequests"], "true",
-            StringComparison.OrdinalIgnoreCase);
-
-    public bool HasKey => !string.IsNullOrWhiteSpace(
-        Environment.GetEnvironmentVariable("MODEL_API_KEY"));
+    public bool Enabled => access.Status().LiveCallsPermitted;
+    public bool HasKey => access.KeyConfigured;
 
     public async Task<string> CreateHypothesisAsync(
         HypothesisRequest input, CancellationToken cancellationToken)
@@ -112,6 +110,95 @@ public sealed class MetaModelClient(IHttpClientFactory clients, IConfiguration c
                 ?? throw new FormatException("Meta response did not contain text.");
     }
 
+    /// <summary>
+    /// One gated paid call returning JSON-schema-constrained stage prose.
+    /// It never executes tools, writes reports, or approves research.
+    /// </summary>
+    public async Task<MetaStageDraftModelOutput> CreateResearchDraftAsync(
+        int stage, string language, ResearchField[] definitions,
+        IReadOnlyDictionary<string, string> curatedEvidence,
+        CancellationToken cancellationToken)
+    {
+        if (!Enabled || !HasKey)
+            throw new InvalidOperationException("Meta Model API is not authorized for live calls.");
+        if (stage is < 1 or > 5 || language is not ("es" or "en") ||
+            definitions.Length is < 1 or > 6 ||
+            definitions.Any(f => !curatedEvidence.ContainsKey(f.Key)))
+            throw new ArgumentException("Invalid, ungrounded scientific draft request.");
+
+        var keys = definitions.Select(f => f.Key).ToArray();
+        var fieldSchema = keys.ToDictionary(
+            key => key, _ => (object)new { type = "string" }, StringComparer.Ordinal);
+        var payload = new
+        {
+            model = "muse-spark-1.3",
+            messages = new[] {
+                new {
+                    role = "developer",
+                    content = "You are a careful scientific RESEARCH DRAFTING ASSISTANT, NOT a proof kernel. "
+                        + "Given only a curated mathematical catalog and verified observation summaries, "
+                        + "draft clear, falsifiable research stage content. "
+                        + "Never invent sources, proof IDs, test results or experiments. "
+                        + "A bounded Goldbach observation is NOT a proof of the open conjecture. "
+                        + "Any Lean proof in the context refers to a DIFFERENT KNOWN theorem. "
+                        + "Never claim novel mathematical discovery, peer review, or human approval. "
+                        + "Return only JSON fields matching the requested schema; no shell, no code, no tools. "
+                        + LocaleInstruction(language)
+                },
+                new {
+                    role = "user",
+                    content = JsonSerializer.Serialize(new {
+                        stage, language,
+                        requiredFields = definitions.Select(x => new {
+                            key = x.Key, guidance = language == "es" ? x.GuidanceEs : x.GuidanceEn,
+                            minCharacters = x.MinimumCharacters
+                        }),
+                        verifiedOrCuratedBaseline = curatedEvidence
+                    })
+                }
+            },
+            reasoning_effort = "low",
+            max_completion_tokens = 1800,
+            response_format = new {
+                type = "json_schema",
+                json_schema = new {
+                    name = "prooflab_scientific_stage_draft",
+                    strict = true,
+                    schema = new {
+                        type = "object",
+                        properties = fieldSchema,
+                        required = keys,
+                        additionalProperties = false
+                    }
+                }
+            }
+        };
+        using var request = Request("chat/completions", payload);
+        using var response = await clients.CreateClient("meta")
+            .SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException(
+                $"Meta scientific drafting returned HTTP {(int)response.StatusCode}.");
+        using var raw = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(cancellationToken));
+        var content = raw.RootElement.GetProperty("choices")[0]
+            .GetProperty("message").GetProperty("content").GetString()
+            ?? throw new FormatException("Meta scientific draft did not contain JSON text.");
+        if (content.Length > 26000)
+            throw new FormatException("Meta returned an oversized research draft.");
+        var fields = JsonSerializer.Deserialize<Dictionary<string, string>>(content)
+            ?? throw new FormatException("Meta returned an empty research draft.");
+        if (fields.Count != keys.Length ||
+            keys.Any(k => !fields.TryGetValue(k, out var s) || s is null))
+            throw new FormatException("Meta returned unexpected research draft fields.");
+
+        int? Token(string name) =>
+            raw.RootElement.TryGetProperty("usage", out var u) &&
+            u.TryGetProperty(name, out var v) && v.TryGetInt32(out var n) ? n : null;
+        return new MetaStageDraftModelOutput(fields,
+            Token("prompt_tokens"), Token("completion_tokens"));
+    }
+
     public async Task<string> SegmentImageAsync(
         SegmentationRequest input, CancellationToken cancellationToken)
     {
@@ -159,6 +246,7 @@ public sealed class MetaModelClient(IHttpClientFactory clients, IConfiguration c
 
     private HttpRequestMessage Request(string path, object json)
     {
+        access.ReserveOrThrow();
         var request = new HttpRequestMessage(HttpMethod.Post,
             "https://api.meta.ai/v1/" + path);
         request.Headers.Authorization = new AuthenticationHeaderValue(

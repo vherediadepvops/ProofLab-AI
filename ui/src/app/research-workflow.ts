@@ -23,6 +23,17 @@ interface GuidedDraft {
   fields: Record<string,string>; evidenceSource: string;
   humanReviewRequired: boolean; isAutonomousAi: boolean; isScientificDiscovery: boolean;
 }
+interface MetaReadiness {
+  provider: string; museModel: string; samModel: string;
+  apiKeyConfigured: boolean; creditsConfirmedByOwner: boolean;
+  ownerApprovedPaidRequests: boolean; paidRequestsSwitchEnabled: boolean;
+  liveCallsPermitted: boolean; usedRequests: number; remainingRequests: number;
+  maxRequestsPerProcess: number;
+}
+interface MuseDraftResponse {
+  draft: GuidedDraft; model: string; provenance: string; responseSha256: string;
+  generatedAtUtc: string; inputTokens: number | null; outputTokens: number | null;
+}
 interface ResearchProject {
   id: string; title: string; discipline: string; createdAtUtc: string;
   activeStage: number; reports: ResearchReport[]; disclaimer: string;
@@ -90,6 +101,8 @@ export class ResearchWorkflow implements OnInit, OnChanges {
   readonly finiteAttempts = signal<FiniteAttempt[]>([]);
   readonly finiteBusy = signal(false);
   readonly finiteError = signal('');
+  readonly metaReadiness = signal<MetaReadiness | null>(null);
+  readonly metaError = signal('');
   readonly isGuidedGoldbach = computed(() =>
     this.project()?.discipline === 'Mathematics' &&
     this.project()?.title.toLowerCase().includes('goldbach') === true);
@@ -132,10 +145,12 @@ export class ResearchWorkflow implements OnInit, OnChanges {
       this.error.set('');
       this.proofError.set('');
       this.finiteError.set('');
+      this.metaError.set('');
     }
   }
 
   ngOnInit() {
+    this.refreshMetaReadiness();
     this.http.get<MathProblem[]>('http://127.0.0.1:5391/api/math/problems')
       .subscribe({ next: items => this.proofProblems.set(items),
         error: () => this.proofError.set('Could not load Lean benchmark catalog.') });
@@ -153,6 +168,14 @@ export class ResearchWorkflow implements OnInit, OnChanges {
       this.existingId.set(previous);
       this.load(previous);
     }
+  }
+  refreshMetaReadiness(): void {
+    this.http.get<MetaReadiness>('http://127.0.0.1:5391/api/meta/readiness')
+      .subscribe({
+        next: state => { this.metaReadiness.set(state); this.metaError.set(''); },
+        error: () => this.metaError.set(this.language()==='es'
+          ? 'Estado de conexión Meta no disponible.' : 'Meta connection status unavailable.')
+      });
   }
   copy(es:string,en:string) { return this.language()==='es'?es:en; }
   proofStatus(outcome:string):string { return leanOutcome(outcome,this.language()); }
@@ -344,6 +367,50 @@ export class ResearchWorkflow implements OnInit, OnChanges {
     this.error.set(friendlyApiError(e,this.language(),
       'No se pudo completar la operación. Revisa los datos e inténtalo nuevamente.',
       'Could not complete the operation. Check the inputs and retry.'));
+  }
+  async prepareMuseDraft(): Promise<void> {
+    if (!this.project() || !this.isGuidedGoldbach() || !this.canEdit() ||
+        !this.metaReadiness()?.liveCallsPermitted || this.busy()) return;
+    const approvedThisRequest = window.confirm(this.copy(
+      'Esta acción enviará un protocolo científico curado a Muse Spark 1.3 y puede consumir créditos de Meta. La respuesta no estará verificada. ¿Continuar?',
+      'This sends a curated scientific protocol to Muse Spark 1.3 and may consume Meta API credits. Its output is unverified. Continue?'));
+    if (!approvedThisRequest) return;
+    this.busy.set(true);
+    this.error.set('');
+    this.notice.set('');
+    const researchId = this.project()!.id;
+    const stage = this.stage();
+    try {
+      const result = await firstValueFrom(this.http.post<MuseDraftResponse>(
+        this.api + '/' + researchId + '/stages/' + stage +
+        '/muse-draft?lang=' + this.language(), {}));
+      const draft = result.draft;
+      if (draft.researchId !== researchId || draft.stage !== stage ||
+          !draft.humanReviewRequired || draft.isScientificDiscovery ||
+          draft.mode !== 'MUSE_SPARK_LIVE_UNVERIFIED_DRAFT') {
+        throw new Error('Meta research draft failed provenance checks.');
+      }
+      this.draft.update(current => {
+        const updated = { ...current };
+        for (const [key, value] of Object.entries(draft.fields))
+          if (!(updated[key] ?? '').trim()) updated[key] = value;
+        return updated;
+      });
+      this.reviewed.set(false);
+      this.notice.set(this.copy(
+        'Muse Spark propuso texto NO verificado. Revisa las afirmaciones y evidencias, guarda y confirma personalmente.',
+        'Muse Spark suggested UNVERIFIED prose. Review claims/evidence, save and acknowledge personally.'));
+    } catch (e: any) {
+      const reason = String(e?.error?.error ?? '');
+      this.error.set(reason.includes('blocked') ? this.copy(
+        'Meta todavía no está habilitado: revisa clave, saldo, autorización y límite de solicitudes.',
+        'Meta remains blocked: check API key, credits, consent and request limit.') :
+        this.copy('No se obtuvo un borrador válido de Meta. No se cambió el informe.',
+                  'Meta did not return a valid draft. The report was not changed.'));
+    } finally {
+      this.busy.set(false);
+      this.refreshMetaReadiness();
+    }
   }
   async prepareGuidedDraft(): Promise<void> {
     if (!this.project() || !this.isGuidedGoldbach() || !this.canEdit() ||

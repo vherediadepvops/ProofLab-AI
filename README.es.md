@@ -77,9 +77,11 @@ Abrir `http://127.0.0.1:4300/` desde el mismo equipo.
 | Ruta | Finalidad |
 | --- | --- |
 | `GET /api/health` | Estado y bloqueo del uso de Meta |
+| `GET /api/meta/readiness` | Estado de credencial y cuatro controles de pago, sin revelar token |
 | `GET /api/research/stages` | Etapas del método científico y campos obligatorios |
 | `POST /api/research` | Crear expediente de investigación matemática |
 | `POST /api/research/{id}/stages/{n}/draft` | Guardar borrador de informe local |
+| `POST /api/research/{id}/stages/{n}/muse-draft` | Propuesta de Muse Spark no verificada, bloqueada hasta verificar créditos y autorización |
 | `POST /api/research/{id}/stages/{n}/approve` | Cerrar informe completo tras declarar revisión humana |
 | `GET /api/research/{id}/reports/{n}` | Descargar informe de etapa (Markdown) |
 | `GET /api/research/{id}/paper` | Descargar informe global al completar todo |
@@ -110,13 +112,9 @@ rampa, se mide en **metros sobre la pendiente**.
 
 ### Activación posterior de Meta API
 
-La clave se lee de `MODEL_API_KEY` exclusivamente en el backend y las
-llamadas pagadas solo se permiten con `Meta:AllowPaidRequests=true`.
-En PowerShell se pueden usar las variables de proceso `$env:MODEL_API_KEY`
-y `$env:Meta__AllowPaidRequests='true'` **solo después** de verificar
-el saldo promocional en Billing y comprender los posibles cobros posteriores.
-No se guardarán secretos en Git ni en Angular. Las alertas de gasto por correo
-no son límites rígidos.
+El token se almacena únicamente como `MODEL_API_KEY` del **proceso backend**, nunca en el navegador o GitHub. El nuevo `GET /api/meta/readiness` muestra su presencia **sin revelar el secreto**. La conexión está desactivada por defecto y necesita simultáneamente clave, `Meta:CreditsConfirmedByOwner=true`, `Meta:OwnerApprovedPaidRequests=true` y `Meta:AllowPaidRequests=true`. Además hay un límite inicial de **2 solicitudes Meta reales por proceso**; esto no es un límite de dinero. El saldo no se comprueba automáticamente y la promoción no está confirmada. La interfaz puede proponer borradores con Muse Spark únicamente tras todos los controles, sin aprobarlos.
+
+**Pasos para obtener y colocar el token de manera segura:** [Conexión Meta Model API ES](docs/META-API-CONNECTION.es.md). Las alertas por correo no son topes rígidos; no habilitar gastos hasta verificar Billing y tener aprobación explícita.
 
 Durante las pruebas de implementación no hicimos llamadas a Meta.
 
