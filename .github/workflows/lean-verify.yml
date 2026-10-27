@@ -10,9 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: leanprover/lean-action@v1
-        with:
-          auto-config: 'false'
+      - name: Install pinned Lean 4 using elan
+        shell: bash
+        run: |
+          curl --fail --silent --show-error https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.35.0
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Prove known reference theorems
         run: lean formal/KnownBenchmarks.lean
       - name: Confirm invalid strategy is rejected
