@@ -5,6 +5,14 @@ $stages=Invoke-RestMethod "$base/stages"
 $study=Invoke-RestMethod $base -Method Post -ContentType 'application/json' -Body '{"title":"CONTROL STUDY: report gates and real Lean artifacts","discipline":"Mathematics"}'
 Write-Host "PROJECT=$($study.id)"
 try {
+  Invoke-RestMethod "$base/$($study.id)/math/offline-cycle" -Method Post -ContentType 'application/json' -Body '{}' | Out-Null
+  throw 'ERROR: offline rehearsal allowed before stages 1-3'
+} catch {
+  if($_.Exception.Message -like 'ERROR:*') { throw }
+  if([int]$_.Exception.Response.StatusCode -ne 400) { throw }
+  Write-Host 'OFFLINE_BEFORE_PROTOCOL_BLOCKED=400'
+}
+try {
   Invoke-RestMethod "$base/$($study.id)/math/attempts" -Method Post -ContentType 'application/json' -Body '{"problemId":"NAT-ADD-COMM","strategy":"omega"}' | Out-Null
   throw 'ERROR: early proof attempts allowed'
 } catch {
@@ -39,6 +47,47 @@ if(-not ($finiteHistory | Where-Object {$_.result.experimentId -eq $finiteId})) 
   throw 'ERROR: finite evidence was not persisted'
 }
 Write-Host "FINITE_GOLDBACH_CASES=$($finite.result.evenCasesExamined) PROOF=$($finite.result.formalProofVerified) ID=$finiteId"
+# Scripted agent rehearsal: real controlled scientific tools, no inference.
+$cap=Invoke-RestMethod "$BaseUrl/api/math/agent/capabilities"
+if(-not $cap.offlineRehearsalAvailable -or $cap.museLiveValidated -or
+   $cap.arbitraryLeanExecutionEnabled -or $cap.maxToolCallsPerCycle -ne 3) {
+  throw 'ERROR: unsafe offline rehearsal capabilities'
+}
+$rehearsal=Invoke-RestMethod "$base/$($study.id)/math/offline-cycle" -Method Post -ContentType 'application/json' -Body '{}'
+$steps=@($rehearsal.events | Where-Object {$_.kind -eq 'TOOL'})
+if($rehearsal.toolCallCount -ne 3 -or $steps.Count -ne 3 -or
+   $rehearsal.isAutonomousAi -or $rehearsal.isScientificDiscovery -or
+   $rehearsal.goldbachFormalProofVerified -or
+   $steps[0].tool -ne 'CHECK_GOLDBACH_FINITE' -or
+   $steps[0].outcome -ne 'NO_COUNTEREXAMPLE_IN_FINITE_RANGE' -or
+   $steps[1].outcome -ne 'REJECTED' -or
+   $steps[2].outcome -ne 'VERIFIED' -or
+   $rehearsal.conclusionEn -notmatch 'Goldbach.*UNSOLVED') {
+  throw 'ERROR: scripted scientific feedback cycle not correct or incorrectly claims discovery'
+}
+$offlineEvents=Invoke-RestMethod "$base/$($study.id)/math/offline-events"
+if(-not ($offlineEvents | Where-Object {$_.cycleId -eq $rehearsal.cycleId -and $_.kind -eq 'CONCLUSION'})) {
+  throw 'ERROR: offline decisions or conclusions were not persisted'
+}
+$goldbachEvidence=Invoke-RestMethod "$base/$($study.id)/math/finite-checks"
+$proofEvidence=Invoke-RestMethod "$base/$($study.id)/math/attempts"
+foreach($step in $steps) {
+  if(-not $step.evidenceId -or $step.evidenceSha256.Length -ne 64) {
+    throw 'ERROR: tool event lacks a real evidence identifier or hash'
+  }
+}
+if(-not ($goldbachEvidence | Where-Object {$_.result.experimentId -eq $steps[0].evidenceId}) -or
+   -not ($proofEvidence | Where-Object {$_.verification.attemptId -eq $steps[1].evidenceId}) -or
+   -not ($proofEvidence | Where-Object {$_.verification.attemptId -eq $steps[2].evidenceId})) {
+  throw 'ERROR: offline decision trace is not linked to real tool results'
+}
+$after=Invoke-RestMethod "$base/$($study.id)"
+if($after.activeStage -ne 4 -or
+   ($after.reports | Where-Object {$_.index -eq 4}).status -ne 'DRAFT') {
+  throw 'ERROR: rehearsal improperly autoapproved scientific reports'
+}
+Write-Host "OFFLINE_MODE=$($rehearsal.mode) OFFLINE_CYCLE=$($rehearsal.cycleId) TOOLS=$($rehearsal.toolCallCount) RESULTS=$(($steps | ForEach-Object {$_.outcome}) -join ',') AI=$($rehearsal.isAutonomousAi) DISCOVERY=$($rehearsal.isScientificDiscovery)"
+
 $fields4=@{}
 foreach($field in (($stages | Where-Object {$_.index -eq 4}).fields)) {
   $fields4[$field.key]='CONTROL DATA ONLY. This is a synthetic description of a documentation stage, not physical or mathematical discovery.'
@@ -113,4 +162,12 @@ if(-not $report.Content.Contains($finiteId) -or
    -not $paperEs.Content.Contains($finiteId)) {
   throw 'ERROR: bounded finite evidence must appear in stage/paper reports in both languages'
 }
-Write-Host 'BILINGUAL_REPORTS=ES_OK,EN_OK; CANONICAL_IDS_AND_HASHES_UNCHANGED=True; FINITE_EVIDENCE=ES_OK,EN_OK'
+if(-not $report.Content.Contains($rehearsal.cycleId) -or
+   -not $reportEn.Content.Contains($rehearsal.cycleId) -or
+   -not $paper.Content.Contains($rehearsal.cycleId) -or
+   -not $paperEs.Content.Contains($rehearsal.cycleId) -or
+   -not $report.Content.Contains('Ensayo del flujo científico SIN Muse Spark') -or
+   -not $reportEn.Content.Contains('WITHOUT Muse Spark')) {
+  throw 'ERROR: offline tool decisions must appear in both research report languages'
+}
+Write-Host 'BILINGUAL_REPORTS=ES_OK,EN_OK; CANONICAL_IDS_AND_HASHES_UNCHANGED=True; FINITE_EVIDENCE=ES_OK,EN_OK; OFFLINE_TRACE=ES_OK,EN_OK'

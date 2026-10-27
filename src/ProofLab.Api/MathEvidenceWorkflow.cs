@@ -81,7 +81,7 @@ public sealed class MathEvidenceWorkflow(
         var project = await research.GetAsync(researchId, cancellationToken);
         EnsureExecutablePhase(project);
         var problem = MathResearchCatalog.Find(request.ProblemId);
-        if (mode is not ("MANUAL_CONTROL" or "DETERMINISTIC_BASELINE"))
+        if (mode is not ("MANUAL_CONTROL" or "DETERMINISTIC_BASELINE" or "SCRIPTED_OFFLINE_VALIDATION"))
             throw new ArgumentException("Unknown execution mode.");
 
         await gate.WaitAsync(cancellationToken);
@@ -161,9 +161,14 @@ public sealed class MathEvidenceWorkflow(
             lines.Add("- **" + LeanResultLanguage.Outcome(x.Outcome, spanish) +
                 "** | " + x.AttemptId + " | " + x.ProblemId +
                 (spanish ? " | táctica " : " | tactic ") + x.Strategy +
-                " | " + (a.ExecutionMode == "DETERMINISTIC_BASELINE"
-                    ? spanish ? "CICLO DETERMINISTA (SIN IA)" : "DETERMINISTIC BASELINE (NO AI)"
-                    : spanish ? "CONTROL MANUAL" : "MANUAL CONTROL") +
+                " | " + (a.ExecutionMode switch
+                {
+                    "DETERMINISTIC_BASELINE" =>
+                        spanish ? "CICLO DETERMINISTA (SIN IA)" : "DETERMINISTIC BASELINE (NO AI)",
+                    "SCRIPTED_OFFLINE_VALIDATION" =>
+                        spanish ? "ENSAYO GUIADO SIN MUSE" : "SCRIPTED REHEARSAL WITHOUT MUSE",
+                    _ => spanish ? "CONTROL MANUAL" : "MANUAL CONTROL"
+                }) +
                 " | " + x.CheckedAtUtc.ToString("O"));
             lines.Add("  - SHA-256 " +
                 (spanish ? "del código Lean" : "of Lean source") + ": `" +

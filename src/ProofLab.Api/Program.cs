@@ -10,6 +10,7 @@ builder.Services.AddSingleton<LeanProofVerifier>();
 builder.Services.AddSingleton<ResearchWorkflowStore>();
 builder.Services.AddSingleton<MathEvidenceWorkflow>();
 builder.Services.AddSingleton<OpenConjectureEvidenceWorkflow>();
+builder.Services.AddSingleton<OfflineMathResearchFlow>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -66,7 +67,8 @@ app.MapPost("/api/research/{id}/stages/{stage:int}/approve", async (
 app.MapGet("/api/research/{id}/reports/{stage:int}", async (
     string id, int stage, string? lang,
     ResearchWorkflowStore store, MathEvidenceWorkflow evidence,
-    OpenConjectureEvidenceWorkflow finiteEvidence, CancellationToken ct) =>
+    OpenConjectureEvidenceWorkflow finiteEvidence,
+    OfflineMathResearchFlow offline, CancellationToken ct) =>
 {
     try {
         var markdown = await store.ReportAsync(id, stage, lang ?? "es", ct);
@@ -76,6 +78,7 @@ app.MapGet("/api/research/{id}/reports/{stage:int}", async (
             var spanish = !string.Equals(lang, "en", StringComparison.OrdinalIgnoreCase);
             markdown += await evidence.RenderLedgerMarkdownAsync(id, spanish, ct);
             markdown += await finiteEvidence.RenderLedgerMarkdownAsync(id, spanish, ct);
+            markdown += await offline.RenderLedgerMarkdownAsync(id, spanish, ct);
         }
         return Results.Text(markdown, "text/markdown; charset=utf-8");
     }
@@ -109,7 +112,7 @@ app.MapPost("/api/research/{id}/math/cycle", async (
 app.MapGet("/api/research/{id}/paper", async (
     string id, string? lang, ResearchWorkflowStore store,
     MathEvidenceWorkflow evidence, OpenConjectureEvidenceWorkflow finiteEvidence,
-    CancellationToken ct) =>
+    OfflineMathResearchFlow offline, CancellationToken ct) =>
 {
     try {
         var markdown = await store.ScientificPaperAsync(id, lang ?? "es", ct);
@@ -119,6 +122,7 @@ app.MapGet("/api/research/{id}/paper", async (
             var spanish = !string.Equals(lang, "en", StringComparison.OrdinalIgnoreCase);
             markdown += await evidence.RenderLedgerMarkdownAsync(id, spanish, ct);
             markdown += await finiteEvidence.RenderLedgerMarkdownAsync(id, spanish, ct);
+            markdown += await offline.RenderLedgerMarkdownAsync(id, spanish, ct);
         }
         return Results.Text(markdown, "text/markdown; charset=utf-8");
     }
@@ -151,9 +155,24 @@ app.MapPost("/api/research/{id}/math/conjectures/{conjectureId}/finite-check", a
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
 });
+app.MapGet("/api/research/{id}/math/offline-events", async (
+    string id, OfflineMathResearchFlow offline, CancellationToken ct) =>
+{
+    try { return Results.Ok(await offline.ListAsync(id, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+app.MapPost("/api/research/{id}/math/offline-cycle", async (
+    string id, OfflineMathResearchFlow offline, CancellationToken ct) =>
+{
+    try { return Results.Ok(await offline.RunAsync(id, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
 app.MapGet("/api/math/agent/capabilities", () =>
     Results.Ok(new {
-        mode = "SCHEMA_VALIDATION_ONLY_NO_MODEL_INFERENCE",
+        mode = "SCRIPTED_OFFLINE_VALIDATION_AVAILABLE_NO_MODEL_INFERENCE",
+        offlineRehearsalAvailable = true,
         allowedTools = ResearchAgentToolPolicy.AllowedTools,
         maxToolCallsPerCycle = ResearchAgentToolPolicy.MaxToolCallsPerCycle,
         museLiveValidated = false,
