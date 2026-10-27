@@ -22,7 +22,8 @@ public sealed record MathCycleResult(
 public sealed class MathEvidenceWorkflow(
     IWebHostEnvironment environment,
     ResearchWorkflowStore research,
-    LeanProofVerifier verifier)
+    LeanProofVerifier verifier,
+    ScientificMemoryStore memory)
 {
     private readonly SemaphoreSlim gate = new(1, 1);
     private const int MaximumAttemptsPerResearch = 24;
@@ -81,7 +82,7 @@ public sealed class MathEvidenceWorkflow(
         var project = await research.GetAsync(researchId, cancellationToken);
         EnsureExecutablePhase(project);
         var problem = MathResearchCatalog.Find(request.ProblemId);
-        if (mode is not ("MANUAL_CONTROL" or "DETERMINISTIC_BASELINE" or "SCRIPTED_OFFLINE_VALIDATION"))
+        if (mode is not ("MANUAL_CONTROL" or "DETERMINISTIC_BASELINE" or "SCRIPTED_OFFLINE_VALIDATION" or "MEMORY_GUIDED_OFFLINE"))
             throw new ArgumentException("Unknown execution mode.");
 
         await gate.WaitAsync(cancellationToken);
@@ -99,6 +100,7 @@ public sealed class MathEvidenceWorkflow(
             await File.AppendAllTextAsync(PathFor(researchId),
                 JsonSerializer.Serialize(result, Json) + Environment.NewLine,
                 cancellationToken);
+            await memory.RememberAsync(result, cancellationToken);
             return result;
         }
         finally { gate.Release(); }
@@ -167,6 +169,8 @@ public sealed class MathEvidenceWorkflow(
                         spanish ? "CICLO DETERMINISTA (SIN IA)" : "DETERMINISTIC BASELINE (NO AI)",
                     "SCRIPTED_OFFLINE_VALIDATION" =>
                         spanish ? "ENSAYO GUIADO SIN MUSE" : "SCRIPTED REHEARSAL WITHOUT MUSE",
+                    "MEMORY_GUIDED_OFFLINE" =>
+                        spanish ? "MEMORIA LOCAL (SIN IA)" : "LOCAL MEMORY (NO AI)",
                     _ => spanish ? "CONTROL MANUAL" : "MANUAL CONTROL"
                 }) +
                 " | " + x.CheckedAtUtc.ToString("O"));

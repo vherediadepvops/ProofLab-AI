@@ -8,7 +8,9 @@ builder.Services.AddHttpClient("meta", client =>
 builder.Services.AddScoped<MetaModelClient>();
 builder.Services.AddSingleton<LeanProofVerifier>();
 builder.Services.AddSingleton<ResearchWorkflowStore>();
+builder.Services.AddSingleton<ScientificMemoryStore>();
 builder.Services.AddSingleton<MathEvidenceWorkflow>();
+builder.Services.AddSingleton<MemoryGuidedMathFlow>();
 builder.Services.AddSingleton<OpenConjectureEvidenceWorkflow>();
 builder.Services.AddSingleton<OfflineMathResearchFlow>();
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -68,7 +70,8 @@ app.MapGet("/api/research/{id}/reports/{stage:int}", async (
     string id, int stage, string? lang,
     ResearchWorkflowStore store, MathEvidenceWorkflow evidence,
     OpenConjectureEvidenceWorkflow finiteEvidence,
-    OfflineMathResearchFlow offline, CancellationToken ct) =>
+    OfflineMathResearchFlow offline, MemoryGuidedMathFlow guided,
+    CancellationToken ct) =>
 {
     try {
         var markdown = await store.ReportAsync(id, stage, lang ?? "es", ct);
@@ -79,6 +82,7 @@ app.MapGet("/api/research/{id}/reports/{stage:int}", async (
             markdown += await evidence.RenderLedgerMarkdownAsync(id, spanish, ct);
             markdown += await finiteEvidence.RenderLedgerMarkdownAsync(id, spanish, ct);
             markdown += await offline.RenderLedgerMarkdownAsync(id, spanish, ct);
+            markdown += await guided.RenderMarkdownAsync(id, spanish, ct);
         }
         return Results.Text(markdown, "text/markdown; charset=utf-8");
     }
@@ -112,7 +116,8 @@ app.MapPost("/api/research/{id}/math/cycle", async (
 app.MapGet("/api/research/{id}/paper", async (
     string id, string? lang, ResearchWorkflowStore store,
     MathEvidenceWorkflow evidence, OpenConjectureEvidenceWorkflow finiteEvidence,
-    OfflineMathResearchFlow offline, CancellationToken ct) =>
+    OfflineMathResearchFlow offline, MemoryGuidedMathFlow guided,
+    CancellationToken ct) =>
 {
     try {
         var markdown = await store.ScientificPaperAsync(id, lang ?? "es", ct);
@@ -123,6 +128,7 @@ app.MapGet("/api/research/{id}/paper", async (
             markdown += await evidence.RenderLedgerMarkdownAsync(id, spanish, ct);
             markdown += await finiteEvidence.RenderLedgerMarkdownAsync(id, spanish, ct);
             markdown += await offline.RenderLedgerMarkdownAsync(id, spanish, ct);
+            markdown += await guided.RenderMarkdownAsync(id, spanish, ct);
         }
         return Results.Text(markdown, "text/markdown; charset=utf-8");
     }
@@ -166,6 +172,27 @@ app.MapPost("/api/research/{id}/math/offline-cycle", async (
     string id, OfflineMathResearchFlow offline, CancellationToken ct) =>
 {
     try { return Results.Ok(await offline.RunAsync(id, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+app.MapGet("/api/math/memory/{problemId}", async (
+    string problemId, ScientificMemoryStore store, CancellationToken ct) =>
+{
+    try { return Results.Ok(await store.RecallAsync(problemId, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+app.MapGet("/api/research/{id}/math/memory-cycles", async (
+    string id, MemoryGuidedMathFlow guided, CancellationToken ct) =>
+{
+    try { return Results.Ok(await guided.ListAsync(id, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+app.MapPost("/api/research/{id}/math/memory-cycle", async (
+    string id, MemoryCycleRequest input, MemoryGuidedMathFlow guided,
+    CancellationToken ct) =>
+{
+    try { return Results.Ok(await guided.RunAsync(id, input, ct)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
 });

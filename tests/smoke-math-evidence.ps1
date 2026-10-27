@@ -11,6 +11,14 @@ try {
   if($_.Exception.Message -like 'ERROR:*') { throw }
   if([int]$_.Exception.Response.StatusCode -ne 400) { throw }
   Write-Host 'OFFLINE_BEFORE_PROTOCOL_BLOCKED=400'
+  try {
+    Invoke-RestMethod "$base/$($study.id)/math/memory-cycle" -Method Post -ContentType 'application/json' -Body '{"problemId":"NAT-ADD-COMM"}' | Out-Null
+    throw 'ERROR: memory verification ran before the protocol was acknowledged'
+  } catch {
+    if($_.Exception.Message -like 'ERROR:*') { throw }
+    if([int]$_.Exception.Response.StatusCode -ne 400) { throw }
+    Write-Host 'MEMORY_BEFORE_PROTOCOL_BLOCKED=400'
+  }
 }
 try {
   Invoke-RestMethod "$base/$($study.id)/math/attempts" -Method Post -ContentType 'application/json' -Body '{"problemId":"NAT-ADD-COMM","strategy":"omega"}' | Out-Null
@@ -31,6 +39,86 @@ foreach($step in 1..3) {
   $study=Invoke-RestMethod "$base/$($study.id)/stages/$step/approve" -Method Post -ContentType 'application/json' -Body '{"reviewedByHuman":true}'
 }
 Write-Host "PREPARED_PHASE=$($study.activeStage)"
+# Memory experiment A: exact known theorem, cold start then compiler-driven retry.
+$empty=Invoke-RestMethod "$BaseUrl/api/math/memory/NAT-ADD-COMM"
+if($empty.selectionMode -ne 'COLD_START' -or $empty.strategy -ne 'rfl') {
+  throw 'ERROR: clean memory should initially select rfl'
+}
+$memA=Invoke-RestMethod "$base/$($study.id)/math/memory-cycle" -Method Post -ContentType 'application/json' -Body '{"problemId":"NAT-ADD-COMM"}'
+if($memA.advice.selectionMode -ne 'COLD_START' -or $memA.attempts.Count -ne 2 -or
+   $memA.attempts[0].verification.outcome -ne 'REJECTED' -or
+   $memA.attempts[1].verification.outcome -ne 'VERIFIED' -or
+   $memA.isAutonomousAi -or $memA.isNewDiscovery) {
+  throw 'ERROR: cold memory experience must observe a real Lean rejection and retry'
+}
+$sourceAttempt=$memA.attempts[1].verification.attemptId
+$afterMemory=Invoke-RestMethod "$BaseUrl/api/math/memory/NAT-ADD-COMM"
+if($afterMemory.strategy -ne 'omega' -or
+   $afterMemory.selectionMode -ne 'RECHECK_VERIFIED_MEMORY' -or
+   $afterMemory.sourceAttemptId -ne $sourceAttempt -or
+   $afterMemory.sourceResearchId -ne $study.id) {
+  throw 'ERROR: memory should select only exact previously verified tactic'
+}
+$unrelated=Invoke-RestMethod "$BaseUrl/api/math/memory/NAT-ADD-ZERO"
+if($unrelated.selectionMode -ne 'COLD_START') {
+  throw 'ERROR: memory improperly transferred tactics between theorems'
+}
+try {
+  Invoke-RestMethod "$BaseUrl/api/math/memory/GOLDBACH-STRONG" | Out-Null
+  throw 'ERROR: open conjecture must never use known theorem Lean memory'
+} catch {
+  if($_.Exception.Message -like 'ERROR:*') { throw }
+  if([int]$_.Exception.Response.StatusCode -ne 400) { throw }
+}
+# Independent research B: re-use A evidence, but Lean creates a new proof attempt.
+$studyB=Invoke-RestMethod $base -Method Post -ContentType 'application/json' -Body '{"title":"MEMORY REPLAY CONTROL B: separate test-only dossier","discipline":"Mathematics"}'
+foreach($step in 1..3) {
+  $fields=@{}
+  $definition=$stages | Where-Object {$_.index -eq $step}
+  foreach($field in $definition.fields) {
+    $fields[$field.key]='TEST FIXTURE ONLY. Synthetic completeness fields for software validation; no scientific peer review or new discovery.'
+  }
+  if($step -eq 1) { $fields.sources='https://lean-lang.org/doc/reference/latest/Tactic-Proofs/Tactic-Reference/' }
+  $body=@{fields=$fields}|ConvertTo-Json -Depth 6
+  $studyB=Invoke-RestMethod "$base/$($studyB.id)/stages/$step/draft" -Method Post -ContentType 'application/json' -Body $body
+  $studyB=Invoke-RestMethod "$base/$($studyB.id)/stages/$step/approve" -Method Post -ContentType 'application/json' -Body '{"reviewedByHuman":true}'
+}
+$memB=Invoke-RestMethod "$base/$($studyB.id)/math/memory-cycle" -Method Post -ContentType 'application/json' -Body '{"problemId":"NAT-ADD-COMM"}'
+$afterB=Invoke-RestMethod "$base/$($studyB.id)"
+if($memB.attempts.Count -ne 1 -or $memB.advice.strategy -ne 'omega' -or
+   $memB.advice.sourceAttemptId -ne $sourceAttempt -or
+   $memB.advice.sourceResearchId -ne $study.id -or
+   $memB.attempts[0].verification.outcome -ne 'VERIFIED' -or
+   $memB.attempts[0].verification.attemptId -eq $sourceAttempt -or
+   $memB.isNewDiscovery -or $memB.isAutonomousAi -or
+   $afterB.activeStage -ne 4) {
+  throw 'ERROR: warm memory must re-verify independently in another dossier'
+}
+$memoryRecord=Invoke-RestMethod "$base/$($studyB.id)/math/memory-cycles"
+$memoryReport=Invoke-WebRequest "$base/$($studyB.id)/reports/4?lang=es" -UseBasicParsing
+$memoryReportEn=Invoke-WebRequest "$base/$($studyB.id)/reports/4?lang=en" -UseBasicParsing
+if($memoryRecord.Count -ne 1 -or
+   -not $memoryReport.Content.Contains($memB.cycleId) -or
+   -not $memoryReportEn.Content.Contains($memB.cycleId)) {
+  throw 'ERROR: bilingual memory evidence has not been recorded'
+}
+Write-Host "MEMORY_COLD=$(($memA.attempts|ForEach-Object {$_.verification.outcome}) -join ',') MEMORY_WARM=$($memB.attempts[0].verification.outcome) MEMORY_REUSED=$sourceAttempt NEW_ID=$($memB.attempts[0].verification.attemptId) CROSS_GOAL_BLOCKED=True"
+# The same dossier has a strict budget of three memory-guided cycles.
+$memB2=Invoke-RestMethod "$base/$($studyB.id)/math/memory-cycle" -Method Post -ContentType 'application/json' -Body '{"problemId":"NAT-ADD-COMM"}'
+$memB3=Invoke-RestMethod "$base/$($studyB.id)/math/memory-cycle" -Method Post -ContentType 'application/json' -Body '{"problemId":"NAT-ADD-COMM"}'
+try {
+  Invoke-RestMethod "$base/$($studyB.id)/math/memory-cycle" -Method Post -ContentType 'application/json' -Body '{"problemId":"NAT-ADD-COMM"}' | Out-Null
+  throw 'ERROR: fourth memory cycle must be blocked'
+} catch {
+  if($_.Exception.Message -like 'ERROR:*') { throw }
+  if([int]$_.Exception.Response.StatusCode -ne 400) { throw }
+}
+$allMemoryCycles=Invoke-RestMethod "$base/$($studyB.id)/math/memory-cycles"
+if($allMemoryCycles.Count -ne 3) {
+  throw 'ERROR: memory cycle limit or history persistence is incorrect'
+}
+Write-Host 'MEMORY_CYCLE_LIMIT=3 FOURTH_BLOCKED=400'
+
 $conjectures=Invoke-RestMethod "$BaseUrl/api/math/conjectures"
 if(-not ($conjectures | Where-Object {$_.id -eq 'GOLDBACH-STRONG' -and -not $_.isExecutableLeanGoal})) {
   throw 'ERROR: curated open conjecture missing or incorrectly executable'
