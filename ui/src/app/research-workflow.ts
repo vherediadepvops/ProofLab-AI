@@ -1,8 +1,9 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, input, OnChanges, OnInit, signal, SimpleChanges } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
+import { Language, leanExplanation, leanOutcome, scientificStatus, executionMode, friendlyApiError } from './locale';
 
 interface ResearchField {
   key: string; nameEs: string; nameEn: string; guidanceEs: string; guidanceEn: string;
@@ -37,7 +38,7 @@ interface MathCycle {
   researchId: string; problemId: string; mode: string;
   attempts: MathAttempt[]; conclusion: string; isScientificDiscovery: boolean;
 }
-type Lang = 'es'|'en';
+type Lang = Language;
 
 @Component({
   selector: 'app-research-workflow',
@@ -45,7 +46,7 @@ type Lang = 'es'|'en';
   templateUrl: './research-workflow.html',
   styleUrl: './research-workflow.scss'
 })
-export class ResearchWorkflow implements OnInit {
+export class ResearchWorkflow implements OnInit, OnChanges {
   private readonly http = inject(HttpClient);
   private readonly api = 'http://127.0.0.1:5391/api/research';
   readonly language = input<Lang>('es');
@@ -97,6 +98,15 @@ export class ResearchWorkflow implements OnInit {
     return {ready:n===definition.fields.length, count:n,total:definition.fields.length};
   });
 
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['language'] && !changes['language'].firstChange) {
+      // Avoid showing a previous-language notification after toggling ES/EN.
+      this.notice.set('');
+      this.error.set('');
+      this.proofError.set('');
+    }
+  }
+
   ngOnInit() {
     this.http.get<MathProblem[]>('http://127.0.0.1:5391/api/math/problems')
       .subscribe({ next: items => this.proofProblems.set(items),
@@ -113,6 +123,12 @@ export class ResearchWorkflow implements OnInit {
     }
   }
   copy(es:string,en:string) { return this.language()==='es'?es:en; }
+  proofStatus(outcome:string):string { return leanOutcome(outcome,this.language()); }
+  proofExplanation(record:MathAttempt):string {
+    return leanExplanation(record.verification,this.language());
+  }
+  proofMode(mode:string):string { return executionMode(mode,this.language()); }
+  proofResearchStatus(status:string):string { return scientificStatus(status,this.language()); }
   stageStatus(index:number) {
     const status = this.project()?.reports.find(x => x.index===index)?.status ?? 'LOCKED';
     if (status === 'APPROVED_COMPLETENESS') return this.copy('Informe cerrado','Report frozen');
@@ -160,8 +176,8 @@ export class ResearchWorkflow implements OnInit {
         'Ciclo de referencia ejecutado. No es investigación autónoma con Muse Spark.',
         'Controlled baseline completed. This is not autonomous Muse Spark research.'));
     } catch (e:any) {
-      this.proofError.set(e?.error?.error || this.copy(
-        'El ciclo de Lean falló.', 'The Lean cycle failed.'));
+      this.proofError.set(friendlyApiError(e,this.language(),
+        'No se pudo ejecutar el ciclo de Lean.', 'The Lean cycle failed.'));
     } finally { this.proofBusy.set(false); }
   }
   async runSingleProof():Promise<void> {
@@ -173,20 +189,13 @@ export class ResearchWorkflow implements OnInit {
         {problemId:this.proofProblemId(), strategy:this.proofStrategy()}));
       this.proofAttempts.update(items => [...items,record]);
     } catch(e:any) {
-      this.proofError.set(e?.error?.error || this.copy(
-        'El intento de Lean falló.','The Lean attempt failed.'));
+      this.proofError.set(friendlyApiError(e,this.language(),
+        'No se pudo ejecutar el intento de Lean.', 'The Lean attempt failed.'));
     } finally {this.proofBusy.set(false);}
   }
   attachProof(record:MathAttempt):void {
     if (!this.isMathEvidencePhase() || !this.canEdit()) return;
-    const verified = record.verification.outcome === 'VERIFIED';
-    const text = this.copy(
-      verified
-        ? 'Lean verificó un TEOREMA YA CONOCIDO; NO es un descubrimiento original.'
-        : 'Lean NO verificó este intento. Un fallo de táctica NO refuta el teorema.',
-      verified
-        ? 'Lean verified an ALREADY KNOWN THEOREM; NOT a new discovery.'
-        : 'Lean did NOT verify this attempt. A failed tactic is NOT a counterexample.');
+    const text = leanExplanation(record.verification,this.language());
     const recordText = 'ProofLab verified execution record: ' +
       record.verification.attemptId + ' | ' +
       record.verification.problemId + ' | ' + record.verification.strategy + ' | ' +
@@ -222,8 +231,8 @@ export class ResearchWorkflow implements OnInit {
     finally {this.busy.set(false);}
   }
   private fail(e:any) {
-    this.error.set(e?.error?.error || this.copy(
-      'No se pudo completar la operación. Revisa los datos y vuelve a intentar.',
+    this.error.set(friendlyApiError(e,this.language(),
+      'No se pudo completar la operación. Revisa los datos e inténtalo nuevamente.',
       'Could not complete the operation. Check the inputs and retry.'));
   }
   async save() {

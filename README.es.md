@@ -23,6 +23,8 @@ se desarrollaron durante el evento. No presentaremos simulaciones como datos rea
 
 ## Funcionalidades actuales
 
+- **Respuestas bilingües ES/EN:** explicaciones de Lean, resultados, mensajes e informes generados respetan el idioma seleccionado, sin alterar el resultado formal ni generar nuevas llamadas de pago. Consulta [política de idioma](docs/LOCALIZATION.es.md).
+
 - **Scientific Method Engine (Misión 1):** cinco etapas visibles, campos obligatorios por informe, bloqueos en el servidor, borradores locales persistentes, confirmación humana de completitud, huella SHA-256 y exportación Markdown de cada etapa y del informe global. **No** certifica validez científica. Ver [metodología](docs/SCIENTIFIC-METHOD.es.md).
 
 - **Evidencia real de Lean vinculada (Misión 1):** un ciclo determinista y las tácticas controladas ejecutan Lean 4; las etapas 4–5 exigen IDs auténticos de intentos y las bitácoras se agregan a los informes. Es un control de teoremas conocidos, no un descubrimiento de IA. [Flujo de evidencias](docs/MISSION-001-EVIDENCE.es.md).

@@ -74,3 +74,8 @@ button:disabled{cursor:not-allowed;opacity:.46}
 .math-evidence-detail{margin:7px 0;color:#99a9c0;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
 .math-evidence-item button{margin-top:8px}
 @media(max-width:650px){.math-evidence-controls{grid-template-columns:1fr}.math-evidence-header{flex-direction:column}}
+
+.lean-original-diagnostic{margin:9px 0;color:#a0aec0;font-size:10px}
+.lean-original-diagnostic summary{cursor:pointer;color:#afacdf}
+.lean-original-diagnostic pre{max-height:150px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
+  font:10px/1.5 monospace;color:#a9b4c6;background:#0a101a;border:1px solid #394354;border-radius:6px;padding:10px}

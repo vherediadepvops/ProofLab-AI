@@ -1,12 +1,12 @@
 <section class="method-shell">
   <header class="method-heading">
     <div>
-      <span class="method-kicker">SCIENTIFIC METHOD ENGINE · MISSION 01</span>
+      <span class="method-kicker">{{copy('MOTOR DEL MÉTODO CIENTÍFICO · MISIÓN 01','SCIENTIFIC METHOD ENGINE · MISSION 01')}}</span>
       <h2>{{copy('Método científico · 5 etapas','Scientific method · 5 stages')}}</h2>
       <p>{{copy('Cada fase crea un informe y debe cumplir requisitos antes de avanzar. Es un control documental, no una acreditación.',
                  'Each phase creates a report and must pass checks before advancing. These are documentation gates, not accreditation.')}}</p>
     </div>
-    @if(project()) { <span class="method-id">ID {{project()!.id.slice(0,10)}}</span> }
+    @if(project()) { <span class="method-id">{{copy('Expediente','Research ID')}} {{project()!.id.slice(0,10)}}</span> }
   </header>
 
   @if(!project()) {
@@ -54,7 +54,7 @@
       <section class="math-evidence-panel">
         <div class="math-evidence-header">
           <div>
-            <div class="method-overline">MISSION 01 · LEAN 4 · EVIDENCE LEDGER</div>
+            <div class="method-overline">{{copy('MISIÓN 01 · LEAN 4 · BITÁCORA DE EVIDENCIAS','MISSION 01 · LEAN 4 · EVIDENCE LEDGER')}}</div>
             <h3>{{copy('Pruebas formales vinculadas a esta investigación','Formal proof attempts linked to this research')}}</h3>
             <p>{{copy('Ejecuta una prueba real con Lean 4 y adjunta su identificador al informe. Los problemas disponibles son teoremas conocidos, nunca descubrimientos nuevos.',
                 'Run a real Lean 4 verification and attach its attempt ID to the report. Available problems are known theorems, never new discoveries.')}}</p>
@@ -95,15 +95,19 @@
               <div class="math-evidence-item">
                 <div class="math-evidence-top">
                   <strong>{{record.verification.problemId}} · {{record.verification.strategy}}</strong>
-                  <span [class.is-valid]="record.verification.outcome==='VERIFIED'">{{record.verification.outcome}}</span>
+                  <span [class.is-valid]="record.verification.outcome==='VERIFIED'">{{proofStatus(record.verification.outcome)}}</span>
                 </div>
                 <div class="math-evidence-detail">
                   {{copy('Intento','Attempt')}}: <code>{{record.verification.attemptId}}</code>
                 </div>
                 <div class="math-evidence-detail">
-                  {{copy('Modo','Mode')}}: {{record.executionMode}} · {{record.problemResearchStatus}}
+                  {{copy('Modo','Mode')}}: {{proofMode(record.executionMode)}} · {{proofResearchStatus(record.problemResearchStatus)}}
                 </div>
-                <div class="math-evidence-detail">{{record.verification.diagnostic}}</div>
+                <div class="math-evidence-detail">{{proofExplanation(record)}}</div>
+                <details class="lean-original-diagnostic">
+                  <summary>{{copy('Ver diagnóstico original de Lean (texto técnico)','View original Lean technical diagnostic')}}</summary>
+                  <pre>{{record.verification.diagnostic}}</pre>
+                </details>
                 @if(canEdit()) {
                   <button type="button" (click)="attachProof(record)"
                     [disabled]="busy() || proofBusy()">

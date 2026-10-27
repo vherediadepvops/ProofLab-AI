@@ -4,8 +4,8 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ResearchWorkflow } from './research-workflow';
+import { Language, leanExplanation, leanOutcome, mathematicalAssumptions, scientificStatus, strategyDescription, friendlyApiError } from './locale';
 
-type Language = 'es' | 'en';
 type Kind = 'Pendulum' | 'RollingSphere';
 
 interface Theory {
@@ -77,6 +77,37 @@ const COPY = {
     mathWarning: 'Los problemas disponibles son teoremas conocidos. Verificarlos NO constituye un descubrimiento original.',
     mathEmpty: 'Selecciona una estrategia y verifica el teorema.',
     mathNotInstalled: 'Lean 4 todavía no está disponible en el backend.',
+    sidebarMath: 'Misión 1 · Matemáticas',
+    sidebarPhysics: 'Laboratorio de física', sidebarFuture: 'Misiones 2–4 · Planificadas',
+    competition: 'EDICIÓN DE COMPETENCIA',
+    topArea: 'LABORATORIO', topWorkspace: 'Espacio de investigación',
+    topOffline: 'META API SIN CONEXIÓN · 0 TOKENS', topActive: 'META API ACTIVA',
+    heroMethod: 'RIGOR CIENTÍFICO', heroAdapters: 'ADAPTADORES META',
+    heroOpen: 'CÓDIGO ABIERTO', mathSection: 'MISIÓN 01 · DESCUBRIMIENTO MATEMÁTICO',
+    mathFormal: 'Lean 4 · Verificación formal',
+    mathBenchmark: 'TEOREMAS CONOCIDOS · ALFA',
+    mathChoose: 'SELECCIONAR · RAZONAR · VERIFICAR',
+    mathIndependent: 'COMPROBACIÓN INDEPENDIENTE DE LEAN',
+    mathTheoryLabel: 'Teorema conocido · Aritmética de Lean 4',
+    mathResultProof: 'Resultado de la prueba', mathProofStrategy: 'Estrategia utilizada',
+    mathNewDiscovery: 'Nuevo descubrimiento científico', mathNo: 'NO',
+    mathTrace: 'Diagnóstico técnico original de Lean (puede estar en inglés)',
+    mathAttempt: 'Intento', mathEvidenceSource: 'Huella SHA-256 del código Lean',
+    mathProofEngine: 'VERIFICADOR DE DEMOSTRACIONES FORMALES',
+    mathNext: 'Próximo avance: conjeturas abiertas verificadas, hipótesis con Muse Spark y comprobaciones independientes. No se ejecuta código Lean arbitrario generado por modelos.',
+    experimentHeading: 'EXPERIMENTO / 01',
+    setupTitle: 'Configuración física',
+    gConstant: 'g · GRAVEDAD ESTÁNDAR',
+    theoryMark: 'PREDICCIÓN TEÓRICA',
+    noEvidence: 'SIN EVIDENCIA TODAVÍA',
+    simulatedMark: 'SIMULACIÓN · NO ES EVIDENCIA FÍSICA',
+    aiPipeline: 'HERRAMIENTAS DE IA / 02',
+    metaMultimodal: 'Inteligencia multimodal de Meta',
+    aiConnection: 'CONEXIÓN EN VIVO',
+    aiReady: 'LISTA', aiOff: 'DESACTIVADA',
+    aiPromptDescription: 'HIPÓTESIS Y DISEÑO EXPERIMENTAL',
+    samDescription: 'SEGMENTACIÓN Y GEOMETRÍA',
+    mathSuccessKnown: 'Teorema conocido verificado',
     ready: 'Motor local disponible', footer: 'Construido durante el Meta Global AI Developer Hackathon · 26 OCT 2026',
   },
   en: {
@@ -109,6 +140,37 @@ const COPY = {
     mathWarning: 'Available problems are known theorems. Verifying them is NOT a novel discovery.',
     mathEmpty: 'Select a strategy and verify the theorem.',
     mathNotInstalled: 'Lean 4 is not yet available on the backend.',
+    sidebarMath: 'Mission 1 · Mathematics',
+    sidebarPhysics: 'Physics Evidence Studio', sidebarFuture: 'Missions 2–4 · Planned',
+    competition: 'COMPETITION EDITION',
+    topArea: 'LABORATORY', topWorkspace: 'Research workspace',
+    topOffline: 'META API OFFLINE · 0 TOKENS', topActive: 'META API ACTIVE',
+    heroMethod: 'SCIENTIFIC RIGOR', heroAdapters: 'META MODEL ADAPTERS',
+    heroOpen: 'OPEN SOURCE', mathSection: 'MISSION 01 · MATHEMATICAL DISCOVERY',
+    mathFormal: 'Lean 4 · Formal verification',
+    mathBenchmark: 'KNOWN BENCHMARKS · ALPHA',
+    mathChoose: 'CHOOSE · REASON · VERIFY',
+    mathIndependent: 'INDEPENDENT LEAN CHECK',
+    mathTheoryLabel: 'Known theorem · Lean 4 core arithmetic',
+    mathResultProof: 'Proof result', mathProofStrategy: 'Proof strategy',
+    mathNewDiscovery: 'New scientific discovery', mathNo: 'NO',
+    mathTrace: 'Original technical Lean diagnostic (may be in English)',
+    mathAttempt: 'Attempt', mathEvidenceSource: 'Lean source SHA-256',
+    mathProofEngine: 'FORMAL PROOF VERIFIER',
+    mathNext: 'Next: vetted open conjectures, Muse Spark hypothesis generation, and independent verification. Arbitrary model-generated Lean code is not executed.',
+    experimentHeading: 'EXPERIMENT / 01',
+    setupTitle: 'Physical setup',
+    gConstant: 'g · STANDARD GRAVITY',
+    theoryMark: 'THEORETICAL ESTIMATE',
+    noEvidence: 'NO EVIDENCE YET',
+    simulatedMark: 'SIMULATION · NOT PHYSICAL EVIDENCE',
+    aiPipeline: 'AI TOOLS / 02',
+    metaMultimodal: 'Meta multimodal intelligence',
+    aiConnection: 'LIVE CONNECTION',
+    aiReady: 'READY', aiOff: 'OFF',
+    aiPromptDescription: 'HYPOTHESIS & EXPERIMENT DESIGN',
+    samDescription: 'SEGMENTATION & GEOMETRY',
+    mathSuccessKnown: 'Known theorem verified',
     ready: 'Local computation available', footer: 'Built during Meta Global AI Developer Hackathon · 26 OCT 2026',
   }
 };
@@ -142,25 +204,62 @@ export class App implements OnInit {
   readonly metaAvailable = signal(false);
   readonly running = signal(false);
   readonly error = signal('');
-  readonly question = signal('How does changing the pendulum length affect its period?');
+  readonly question = signal('¿Cómo afecta la longitud del péndulo a su período?');
   readonly aiAnswer = signal('');
   readonly imageDataUri = signal('');
   readonly segmentation = signal('');
   readonly recordedAt = '2026-10-26';
 
   ngOnInit(): void {
+    const saved = localStorage.getItem('prooflab-ui-language');
+    if (saved === 'es' || saved === 'en') this.setLanguage(saved);
+    document.documentElement.lang = this.language();
     this.http.get<MathProblem[]>(this.api + '/api/math/problems')
       .subscribe({ next: problems => this.mathProblems.set(problems),
-        error: () => this.mathError.set('The mathematical problem catalog is unavailable.') });
+        error: () => this.mathError.set(this.language() === 'es'
+          ? 'No se pudo cargar el catálogo de problemas matemáticos.'
+          : 'The mathematical problem catalog is unavailable.') });
     this.http.get<MathStatus>(this.api + '/api/math/status')
       .subscribe({ next: info => this.mathEngineAvailable.set(info.leanAvailable),
         error: () => this.mathEngineAvailable.set(false) });
     this.http.get<Health>(this.api + '/api/health')
       .subscribe({ next: response => this.metaAvailable.set(response.metaModelApiEnabled),
-        error: () => this.error.set('Local API unavailable on port 5391.') });
+        error: () => this.error.set(this.language() === 'es'
+          ? 'La API local no está disponible en el puerto 5391.'
+          : 'Local API unavailable on port 5391.') });
   }
 
-  setLanguage(value: Language) { this.language.set(value); }
+  setLanguage(value: Language): void {
+    if (this.language() === value) return;
+    this.language.set(value);
+    const q = this.question();
+    if (q === '¿Cómo afecta la longitud del péndulo a su período?' ||
+        q === 'How does changing the pendulum length affect its period?' ||
+        q === '¿Cómo afecta la inclinación de la rampa a la aceleración de una esfera?' ||
+        q === 'How does the ramp inclination change the acceleration of a rolling sphere?') {
+      this.question.set(value === 'es'
+        ? (this.kind() === 'Pendulum'
+          ? '¿Cómo afecta la longitud del péndulo a su período?'
+          : '¿Cómo afecta la inclinación de la rampa a la aceleración de una esfera?')
+        : (this.kind() === 'Pendulum'
+          ? 'How does changing the pendulum length affect its period?'
+          : 'How does the ramp inclination change the acceleration of a rolling sphere?'));
+    }
+    localStorage.setItem('prooflab-ui-language', value);
+    document.documentElement.lang = value;
+    // A model's previous prose cannot be reliably translated without a new
+    // model call. Clear it rather than presenting it in the wrong language.
+    // No new (potentially paid) request is triggered by switching language.
+    this.mathPlan.set('');
+    this.aiAnswer.set('');
+    this.mathError.set('');
+    this.error.set('');
+  }
+  proofStatus(outcome: string) { return leanOutcome(outcome, this.language()); }
+  proofExplanation(report: MathProofResult) { return leanExplanation(report, this.language()); }
+  proofTactic(tactic: string) { return strategyDescription(tactic, this.language()); }
+  proofResearchStatus(status: string) { return scientificStatus(status, this.language()); }
+  theoryAssumptions(kind: string) { return mathematicalAssumptions(kind, this.language()); }
   chooseMathProblem(value: string): void {
     this.mathChoice.set(value);
     this.mathReport.set(null);
@@ -174,10 +273,13 @@ export class App implements OnInit {
     this.mathError.set('');
     try {
       const output = await firstValueFrom(this.http.post<MathPlan>(
-        this.api + '/api/math/plan', { problemId: this.mathChoice() }));
+        this.api + '/api/math/plan', { problemId: this.mathChoice(),
+          language: this.language() }));
       this.mathPlan.set(output.suggestedApproaches);
     } catch {
-      this.mathError.set('Muse Spark planning is unavailable.');
+      this.mathError.set(this.language() === 'es'
+        ? 'No se pudo obtener el plan de Muse Spark.'
+        : 'Muse Spark planning is unavailable.');
     } finally { this.running.set(false); }
   }
   async verifyMath(): Promise<void> {
@@ -191,14 +293,20 @@ export class App implements OnInit {
         }));
       this.mathReport.set(result);
     } catch (error: any) {
-      this.mathError.set(error?.error?.error || 'Proof verification was not completed.');
+      this.mathError.set(friendlyApiError(error,this.language(),
+        'No se pudo completar la verificación matemática.',
+        'Proof verification was not completed.'));
     } finally { this.running.set(false); }
   }
   chooseKind(value: Kind): void {
     this.kind.set(value); this.theory.set(null); this.evaluation.set(null); this.error.set('');
-    this.question.set(value === 'Pendulum'
-      ? 'How does changing the pendulum length affect its period?'
-      : 'How does the ramp inclination change the acceleration of a rolling sphere?');
+    this.question.set(this.language() === 'es'
+      ? (value === 'Pendulum'
+        ? '¿Cómo afecta la longitud del péndulo a su período?'
+        : '¿Cómo afecta la inclinación de la rampa a la aceleración de una esfera?')
+      : (value === 'Pendulum'
+        ? 'How does changing the pendulum length affect its period?'
+        : 'How does the ramp inclination change the acceleration of a rolling sphere?'));
   }
   setLength(value: number): void { this.length.set(Number(value)); this.theory.set(null); this.evaluation.set(null); }
   setAngle(value: number): void { this.angle.set(Number(value)); this.theory.set(null); this.evaluation.set(null); }
@@ -213,7 +321,9 @@ export class App implements OnInit {
         this.http.post<Theory>(this.api + '/api/science/predict', this.setup()));
       this.theory.set(result); this.evaluation.set(null);
     } catch (error: any) {
-      this.error.set(error?.error?.error || 'The API could not calculate this experiment.');
+      this.error.set(this.language() === 'es'
+        ? 'No se pudo calcular la predicción. Comprueba los parámetros del experimento.'
+        : 'The API could not calculate this experiment. Check the experiment parameters.');
     } finally { this.running.set(false); }
   }
 
@@ -223,7 +333,9 @@ export class App implements OnInit {
       const report = await firstValueFrom(
         this.http.get<Evaluation>(this.api + '/api/science/synthetic/' + this.kind()));
       this.evaluation.set(report); this.theory.set(null);
-    } catch { this.error.set('The synthetic test could not be completed.'); }
+    } catch { this.error.set(this.language() === 'es'
+      ? 'No se pudo ejecutar la demostración sintética.'
+      : 'The synthetic test could not be completed.'); }
     finally { this.running.set(false); }
   }
 
@@ -233,9 +345,12 @@ export class App implements OnInit {
     try {
       const output = await firstValueFrom(this.http.post<PlanResult>(
         this.api + '/api/ai/plan',
-        { experiment: this.kind(), researchQuestion: this.question() }));
+        { experiment: this.kind(), researchQuestion: this.question(),
+          language: this.language() }));
       this.aiAnswer.set(output.generatedPlan);
-    } catch { this.error.set('Muse Spark request failed. Review the API server logs.'); }
+    } catch { this.error.set(this.language() === 'es'
+      ? 'La solicitud a Muse Spark falló. Revisa los registros de la API.'
+      : 'Muse Spark request failed. Review the API server logs.'); }
     finally { this.running.set(false); }
   }
 
@@ -243,7 +358,9 @@ export class App implements OnInit {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 1_500_000) {
-      this.error.set('Choose a PNG/JPEG/WebP smaller than 1.5MB.');
+      this.error.set(this.language() === 'es'
+        ? 'Selecciona una imagen PNG, JPEG o WebP de menos de 1,5 MB.'
+        : 'Choose a PNG/JPEG/WebP smaller than 1.5MB.');
       return;
     }
     this.segmentation.set(''); this.error.set('');
@@ -261,7 +378,9 @@ export class App implements OnInit {
         { concept: this.kind() === 'Pendulum' ? 'pendulum bob' : 'rolling sphere',
           imageDataUrl: this.imageDataUri() }));
       this.segmentation.set(result.rawResponseJson.slice(0, 900));
-    } catch { this.error.set('SAM 3.1 request failed. Review API server logs.'); }
+    } catch { this.error.set(this.language() === 'es'
+      ? 'La solicitud a SAM 3.1 falló. Revisa los registros de la API.'
+      : 'SAM 3.1 request failed. Review API server logs.'); }
     finally { this.running.set(false); }
   }
 
@@ -269,7 +388,10 @@ export class App implements OnInit {
     if (!this.evaluation()) return;
     const object = { platform: 'ProofLab AI', edition: this.recordedAt,
       generatedUtc: new Date().toISOString(), result: this.evaluation(),
-      warning: 'Simulated data must never be claimed as real evidence.' };
+      language: this.language(),
+      warning: this.language() === 'es'
+        ? 'Los datos simulados nunca deben presentarse como observaciones reales.'
+        : 'Simulated data must never be claimed as real evidence.' };
     const url = URL.createObjectURL(new Blob(
       [JSON.stringify(object, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');

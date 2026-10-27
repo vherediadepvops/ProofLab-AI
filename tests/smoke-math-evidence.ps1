@@ -74,3 +74,21 @@ $study=Invoke-RestMethod "$base/$($study.id)/stages/5/approve" -Method Post -Con
 $paper=Invoke-WebRequest "$base/$($study.id)/paper?lang=en" -UseBasicParsing
 $report=Invoke-WebRequest "$base/$($study.id)/reports/4?lang=es" -UseBasicParsing
 Write-Host "FINISHED=$($study.activeStage) PAPER_HTTP=$($paper.StatusCode) PAPER_EVIDENCE=$($paper.Content.Contains($record.verification.attemptId)) REPORT4_EVIDENCE=$($report.Content.Contains($record.verification.attemptId))"
+$reportEn=Invoke-WebRequest "$base/$($study.id)/reports/4?lang=en" -UseBasicParsing
+$paperEs=Invoke-WebRequest "$base/$($study.id)/paper?lang=es" -UseBasicParsing
+if(-not $report.Content.Contains('**RECHAZADO**') -or
+   -not $report.Content.Contains('**VERIFICADO**') -or
+   -not $report.Content.Contains('Lean rech') -or
+   $report.Content.Contains("Tactic `'rfl`' failed")) {
+  throw 'ERROR: Spanish report must explain Lean outcomes in Spanish, not raw English.'
+}
+if(-not $reportEn.Content.Contains('**REJECTED**') -or
+   -not $reportEn.Content.Contains('**VERIFIED**') -or
+   -not $reportEn.Content.Contains('Lean rejected')) {
+  throw 'ERROR: English report must explain Lean outcomes in English.'
+}
+if(-not $paperEs.Content.Contains('**VERIFICADO**') -or
+   -not $paperEs.Content.Contains('Generado en UTC:')) {
+  throw 'ERROR: Spanish consolidated report was not localized.'
+}
+Write-Host 'BILINGUAL_REPORTS=ES_OK,EN_OK; CANONICAL_IDS_AND_HASHES_UNCHANGED=True'

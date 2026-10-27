@@ -8,6 +8,7 @@ import { ResearchWorkflow } from './research-workflow';
 describe('ProofLab Competition Research Lab', () => {
   beforeEach(async () => {
     localStorage.removeItem('prooflab-research-current');
+    localStorage.removeItem('prooflab-ui-language');
     await TestBed.configureTestingModule({
       imports: [App],
       providers: [provideHttpClient(), provideHttpClientTesting()]
@@ -79,7 +80,7 @@ describe('ProofLab Competition Research Lab', () => {
         limitations: 'Not experimental' });
     await promise;
     ctx.fixture.detectChanges();
-    expect(ctx.root.textContent).toContain('SYNTHETIC TEST ONLY');
+    expect(ctx.root.textContent).toContain('SIMULACIÓN · NO ES EVIDENCIA FÍSICA');
   });
 
   it('displays Lean result without claiming original discovery', async () => {
@@ -94,9 +95,15 @@ describe('ProofLab Competition Research Lab', () => {
       });
     await promise;
     ctx.fixture.detectChanges();
-    expect(ctx.root.textContent).toContain('VERIFIED');
-    expect(ctx.root.textContent).toContain('New scientific discovery');
+    expect(ctx.root.textContent).toContain('VERIFICADO');
+    expect(ctx.root.textContent).toContain('Lean 4 verificó correctamente');
+    expect(ctx.root.textContent).toContain('Nuevo descubrimiento científico');
     expect(ctx.root.textContent).toContain('NO');
+    ctx.app.setLanguage('en');
+    ctx.fixture.detectChanges();
+    expect(ctx.root.textContent).toContain('VERIFIED');
+    expect(ctx.root.textContent).toContain('previously known theorem');
+    expect(ctx.root.textContent).toContain('New scientific discovery');
   });
 
 
@@ -121,7 +128,7 @@ describe('ProofLab Competition Research Lab', () => {
     ctx.controller.expectOne('http://127.0.0.1:5391/api/research/' + id + '/math/attempts')
       .flush([]);
     ctx.fixture.detectChanges();
-    expect(ctx.root.textContent).toContain('LEAN 4 · EVIDENCE LEDGER');
+    expect(ctx.root.textContent).toContain('LEAN 4 · BITÁCORA DE EVIDENCIAS');
     expect(workflow.evidenceAttached()).toBeFalse();
     const cycle = workflow.runProofCycle();
     const verified = {
@@ -147,6 +154,59 @@ describe('ProofLab Competition Research Lab', () => {
     expect(workflow.evidenceAttached()).toBeTrue();
     expect(workflow.draft()['manifest']).toContain(verified.verification.attemptId);
     expect(ctx.root.textContent).toContain('REFERENCIA LOCAL · NO IA');
+    expect(ctx.root.textContent).toContain('VERIFICADO');
+    ctx.app.setLanguage('en');
+    ctx.fixture.detectChanges();
+    expect(ctx.root.textContent).toContain('VERIFIED');
+    expect(ctx.root.textContent).toContain('LEAN 4 · EVIDENCE LEDGER');
+  });
+
+  it('translates rejected Lean tactics immediately after changing ES to EN', async () => {
+    const ctx = initialize(true);
+    ctx.app.mathStrategy.set('rfl');
+    const execution = ctx.app.verifyMath();
+    ctx.controller.expectOne('http://127.0.0.1:5391/api/math/verify')
+      .flush({
+        attemptId:'rejected-01',problemId:'NAT-ADD-COMM',strategy:'rfl',
+        outcome:'REJECTED',diagnostic:"Tactic 'rfl' failed",
+        sourceSha256:'abc123',checkedAtUtc:'2026-10-27T00:20:00Z',
+        verificationMethod:'Lean 4',isNewDiscovery:false
+      });
+    await execution;
+    ctx.fixture.detectChanges();
+    expect(ctx.root.textContent).toContain('RECHAZADO');
+    expect(ctx.root.textContent).toContain('no son idénticos por definición');
+    expect((ctx.root.querySelector('details.lean-original-diagnostic') as HTMLDetailsElement).open).toBeFalse();
+    ctx.app.setLanguage('en');
+    ctx.fixture.detectChanges();
+    expect(ctx.root.textContent).toContain('REJECTED');
+    expect(ctx.root.textContent).toContain('not equal by definition');
+  });
+
+  it('sends the selected language to Muse Spark without sending actual API requests', async () => {
+    const ctx = initialize(true, true);
+    const spanishPlan = ctx.app.planMath();
+    const spanishCall = ctx.controller.expectOne('http://127.0.0.1:5391/api/math/plan');
+    expect(spanishCall.request.body.language).toBe('es');
+    spanishCall.flush({
+      problemId:'NAT-ADD-COMM', model:'muse-spark-1.3',
+      suggestedApproaches:'Prueba la táctica omega.',
+      verifiedProof:false,provenance:'TEST_ONLY'
+    });
+    await spanishPlan;
+    expect(ctx.app.mathPlan()).toContain('Prueba');
+    ctx.app.setLanguage('en');
+    expect(ctx.app.mathPlan()).toBe('');
+    const englishPlan = ctx.app.planMath();
+    const englishCall = ctx.controller.expectOne('http://127.0.0.1:5391/api/math/plan');
+    expect(englishCall.request.body.language).toBe('en');
+    englishCall.flush({
+      problemId:'NAT-ADD-COMM',model:'muse-spark-1.3',
+      suggestedApproaches:'Try the omega tactic.',
+      verifiedProof:false,provenance:'TEST_ONLY'
+    });
+    await englishPlan;
+    expect(ctx.app.mathPlan()).toContain('Try the');
   });
 
   it('shows scientific method before any mathematical proof attempt', () => {

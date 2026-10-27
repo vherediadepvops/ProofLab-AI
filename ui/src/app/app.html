@@ -4,14 +4,14 @@
       <div><strong>ProofLab AI</strong><small>EXPERIMENTAL INTELLIGENCE</small></div>
     </div>
     <div class="aside-label">{{words().workspace}}</div>
-    <button type="button" class="nav" [class.active]="workspace() === 'math'" (click)="workspace.set('math')">∑ <span>Mission 1 · Mathematics</span></button>
-    <button type="button" class="nav" [class.active]="workspace() === 'physics'" (click)="workspace.set('physics')">◎ <span>Physics Evidence Studio</span></button>
-    <div class="nav future">◫ <span>Missions 2–4 · Planned</span></div>
+    <button type="button" class="nav" [class.active]="workspace() === 'math'" (click)="workspace.set('math')">∑ <span>{{words().sidebarMath}}</span></button>
+    <button type="button" class="nav" [class.active]="workspace() === 'physics'" (click)="workspace.set('physics')">◎ <span>{{words().sidebarPhysics}}</span></button>
+    <div class="nav future">◫ <span>{{words().sidebarFuture}}</span></div>
     <div class="aside-label second">{{words().tools}}</div>
     <div class="meta-engine"><i class="spark"></i><span><strong>Muse Spark 1.3</strong><small>{{metaAvailable() ? words().liveMeta : words().noMeta}}</small></span></div>
     <div class="meta-engine"><i class="sam"></i><span><strong>SAM 3.1</strong><small>{{metaAvailable() ? words().liveMeta : words().noMeta}}</small></span></div>
     <div class="side-foot">
-      <span class="status-dot"></span> COMPETITION EDITION
+      <span class="status-dot"></span> {{words().competition}}
       <p>Meta Global AI Developer Hackathon</p>
       <b>26 OCT 2026</b>
     </div>
@@ -19,9 +19,9 @@
 
   <main class="content">
     <header class="top">
-      <div><span class="muted">LABORATORY</span><span class="crumb">/</span><strong>Experimental workspace</strong></div>
+      <div><span class="muted">{{words().topArea}}</span><span class="crumb">/</span><strong>{{words().topWorkspace}}</strong></div>
       <div class="top-actions">
-        <span class="no-tokens">{{metaAvailable() ? 'META API ACTIVE' : 'META API OFFLINE · 0 TOKENS'}}</span>
+        <span class="no-tokens">{{metaAvailable() ? words().topActive : words().topOffline}}</span>
         <div class="languages"><button [class.on]="language() === 'es'" (click)="setLanguage('es')">ES</button>
           <button [class.on]="language() === 'en'" (click)="setLanguage('en')">EN</button></div>
       </div>
@@ -31,17 +31,17 @@
       <div class="micro">PUSH THE FRONTIER <span>—</span> 2026 GLOBAL HACKATHON</div>
       <h1>{{workspace() === 'math' ? words().mathTitle : words().prepare}}</h1>
       <p>{{workspace() === 'math' ? words().mathIntro : words().intro}}</p>
-      <div class="hero-badges"><span>SCIENTIFIC RIGOR</span><span>LIVE MODEL ADAPTERS</span><span>OPEN SOURCE</span></div>
+      <div class="hero-badges"><span>{{words().heroMethod}}</span><span>{{words().heroAdapters}}</span><span>{{words().heroOpen}}</span></div>
       <div class="glyph" aria-hidden="true">∿</div>
     </section>
 
     <div class="workspace">
       @if(workspace() === 'math') {
         <app-research-workflow [language]="language()" />
-        <div class="section-line"><div><small>MISSION 01 / MATHEMATICAL DISCOVERY</small><h2>Lean 4 · Formal Verification</h2></div><span class="version">KNOWN BENCHMARKS · ALPHA</span></div>
+        <div class="section-line"><div><small>{{words().mathSection}}</small><h2>{{words().mathFormal}}</h2></div><span class="version">{{words().mathBenchmark}}</span></div>
         <div class="panel-grid">
           <section class="panel">
-            <div class="panel-header"><div class="panel-num">∑</div><div><h3>{{words().mathProblem}}</h3><p>CHOOSE · REASON · VERIFY</p></div></div>
+            <div class="panel-header"><div class="panel-num">∑</div><div><h3>{{words().mathProblem}}</h3><p>{{words().mathChoose}}</p></div></div>
             <div class="field">
               <label for="math-problem">{{words().mathProblem}}</label>
               <select id="math-problem" [ngModel]="mathChoice()" (ngModelChange)="chooseMathProblem($event)">
@@ -52,14 +52,14 @@
             </div>
             @if(mathSelected(); as problem) {
               <div class="math-statement">{{language() === 'es' ? problem.statementSpanish : problem.statementEnglish}}</div>
-              <div class="provenance">KNOWN THEOREM · {{problem.source}}</div>
+              <div class="provenance">{{words().mathTheoryLabel}}</div>
             }
             <div class="field">
               <label for="math-tactic">{{words().mathTactic}}</label>
               <select id="math-tactic" [ngModel]="mathStrategy()" (ngModelChange)="mathStrategy.set($event)">
-                <option value="rfl">rfl · definitional equality</option>
-                <option value="omega">omega · arithmetic reasoning</option>
-                <option value="simp">simp · simplification</option>
+                <option value="rfl">{{proofTactic('rfl')}}</option>
+                <option value="omega">{{proofTactic('omega')}}</option>
+                <option value="simp">{{proofTactic('simp')}}</option>
               </select>
             </div>
             <button class="primary" [disabled]="running() || !mathSelected() || !mathEngineAvailable()" (click)="verifyMath()">{{words().mathVerify}} <span>↗</span></button>
@@ -70,29 +70,30 @@
             <p class="warning">{{words().mathWarning}}</p>
           </section>
           <section class="panel">
-            <div class="panel-header"><div class="panel-num blue">✓</div><div><h3>{{words().mathResult}}</h3><p>INDEPENDENT LEAN CHECK</p></div></div>
+            <div class="panel-header"><div class="panel-num blue">✓</div><div><h3>{{words().mathResult}}</h3><p>{{words().mathIndependent}}</p></div></div>
             @if(mathReport(); as report) {
-              <div class="provenance" [class.danger]="report.outcome !== 'VERIFIED'">{{report.outcome}}</div>
-              <p class="math-statement">{{report.diagnostic}}</p>
-              <div class="small-detail"><span>Proof strategy</span><strong>{{report.strategy}}</strong></div>
-              <div class="small-detail"><span>New scientific discovery</span><strong>NO</strong></div>
-              <label class="label">SHA-256 · Lean source</label>
+              <div class="provenance" [class.danger]="report.outcome !== 'VERIFIED'">{{proofStatus(report.outcome)}}</div>
+              <p class="math-statement">{{proofExplanation(report)}}</p>
+              <div class="small-detail"><span>{{words().mathProofStrategy}}</span><strong>{{proofTactic(report.strategy)}}</strong></div>
+              <div class="small-detail"><span>{{words().mathNewDiscovery}}</span><strong>{{words().mathNo}}</strong></div>
+              <label class="label">{{words().mathEvidenceSource}}</label>
               <code class="math-hash">{{report.sourceSha256}}</code>
-              <p class="model-desc">Attempt {{report.attemptId}} · {{report.checkedAtUtc}}</p>
+              <p class="model-desc">{{words().mathAttempt}} {{report.attemptId}} · {{report.checkedAtUtc}}</p>
+              <details class="lean-original-diagnostic"><summary>{{words().mathTrace}}</summary><pre>{{report.diagnostic}}</pre></details>
             } @else {
-              <div class="empty"><div>∑</div><b>FORMAL PROOF VERIFIER</b><p>{{words().mathEmpty}}</p></div>
+              <div class="empty"><div>∑</div><b>{{words().mathProofEngine}}</b><p>{{words().mathEmpty}}</p></div>
             }
             @if(mathError()) { <div class="alert">{{mathError()}}</div> }
           </section>
         </div>
-        <p class="warning">Next research milestone: vetted open conjectures, controlled hypothesis generation with Muse Spark, and independent formal checks. Generated arbitrary Lean code is not executed on this computer.</p>
+        <p class="warning">{{words().mathNext}}</p>
       }
       @if(workspace() === 'physics') {
-      <div class="section-line"><div><small>EXPERIMENT / 01</small><h2>{{words().choose}}</h2></div><span class="version">v2026.10.26 · ALPHA</span></div>
+      <div class="section-line"><div><small>{{words().experimentHeading}}</small><h2>{{words().choose}}</h2></div><span class="version">v2026.10.26 · ALPHA</span></div>
 
       <div class="panel-grid">
         <section class="panel">
-          <div class="panel-header"><div class="panel-num">01</div><div><h3>Physical setup</h3><p>{{words().choose}}</p></div></div>
+          <div class="panel-header"><div class="panel-num">01</div><div><h3>{{words().setupTitle}}</h3><p>{{words().choose}}</p></div></div>
           <div class="field"><label for="experiment-kind">{{words().choose}}</label>
             <select id="experiment-kind" [ngModel]="kind()" (ngModelChange)="chooseKind($event)">
               <option value="Pendulum">{{words().pendulum}}</option>
@@ -108,15 +109,15 @@
               <input id="angle" type="number" min="2" max="40" step="1"
                 [ngModel]="angle()" (ngModelChange)="setAngle($event)"/></div>
           }
-          <div class="small-detail"><span>g · STANDARD GRAVITY</span><strong>9.80665 m/s²</strong></div>
+          <div class="small-detail"><span>{{words().gConstant}}</span><strong>9.80665 m/s²</strong></div>
           <button class="primary" [disabled]="running()" (click)="calculate()">{{words().calculate}} <span>↗</span></button>
           <button class="outline" [disabled]="running()" (click)="demo()">{{words().synthetic}} <span>→</span></button>
         </section>
 
         <section class="panel">
-          <div class="panel-header"><div class="panel-num blue">02</div><div><h3>{{words().result}}</h3><p>MEASURE · CHECK · EXPLAIN</p></div></div>
+          <div class="panel-header"><div class="panel-num blue">02</div><div><h3>{{words().result}}</h3><p>{{words().expected}} · {{words().observed}} · {{words().deviation}}</p></div></div>
           @if(evaluation(); as e) {
-            <div class="provenance danger">SYNTHETIC TEST ONLY · NOT PHYSICAL EVIDENCE</div>
+            <div class="provenance danger">{{words().simulatedMark}}</div>
             <div class="measure"><span>{{words().expected}}</span><strong>{{e.predictedValue | number:'1.3-3'}} <small>{{e.unit}}</small></strong></div>
             <div class="measure"><span>{{words().observed}}</span><strong>{{e.observedValue | number:'1.3-3'}} <small>{{e.unit}}</small></strong></div>
             <div class="measure"><span>{{words().deviation}}</span><strong>{{e.differencePercent | number:'1.2-2'}} <small>%</small></strong></div>
@@ -124,20 +125,20 @@
             <p class="warning">{{words().demoWarn}}</p>
             <button class="outline" (click)="download()">{{words().export}} <span>↓</span></button>
           } @else if(theory(); as p) {
-            <div class="provenance">THEORETICAL ESTIMATE</div>
+            <div class="provenance">{{words().theoryMark}}</div>
             <div class="big-value">{{p.expectedValue | number:'1.3-3'}} <small>{{p.unit}}</small></div>
             <div class="model-equation">{{p.scientificModel}}</div>
-            <p class="model-desc">{{p.assumptions}}</p>
+            <p class="model-desc">{{theoryAssumptions(p.kind)}}</p>
           } @else {
-            <div class="empty"><div>◌</div><b>NO EVIDENCE YET</b><p>{{words().waiting}}</p></div>
+            <div class="empty"><div>◌</div><b>{{words().noEvidence}}</b><p>{{words().waiting}}</p></div>
           }
         </section>
       </div>
 
-      <div class="section-line ai-section"><div><small>AGENTIC PIPELINE / 02</small><h2>Meta multimodal intelligence</h2></div><span class="version">LIVE CONNECTION: {{metaAvailable() ? 'READY' : 'OFF'}}</span></div>
+      <div class="section-line ai-section"><div><small>{{words().aiPipeline}}</small><h2>{{words().metaMultimodal}}</h2></div><span class="version">{{words().aiConnection}}: {{metaAvailable() ? words().aiReady : words().aiOff}}</span></div>
       <div class="panel-grid">
         <section class="panel compact">
-          <div class="panel-header"><div class="panel-num purple">M</div><div><h3>{{words().hypothesis}}</h3><p>HYPOTHESIS & EXPERIMENT DESIGN</p></div></div>
+          <div class="panel-header"><div class="panel-num purple">M</div><div><h3>{{words().hypothesis}}</h3><p>{{words().aiPromptDescription}}</p></div></div>
           <label class="label" for="research-question">{{words().prompt}}</label>
           <textarea id="research-question" rows="3" [ngModel]="question()" (ngModelChange)="question.set($event)"></textarea>
           <button class="primary" [disabled]="running() || !metaAvailable()" (click)="plan()">{{words().muse}} <span>↗</span></button>
@@ -145,7 +146,7 @@
           @if(!metaAvailable()) { <p class="warning">{{words().gated}}</p> }
         </section>
         <section class="panel compact">
-          <div class="panel-header"><div class="panel-num blue">S</div><div><h3>{{words().vision}}</h3><p>SEGMENTATION · OBJECT GEOMETRY</p></div></div>
+          <div class="panel-header"><div class="panel-num blue">S</div><div><h3>{{words().vision}}</h3><p>{{words().samDescription}}</p></div></div>
           <label class="label" for="image-file">{{words().image}}</label>
           <input id="image-file" class="upload" type="file" accept="image/png,image/jpeg,image/webp" (change)="onImage($event)"/>
           @if(imageDataUri()) { <img class="sample-frame" [src]="imageDataUri()" alt="Selected experiment frame"/> }

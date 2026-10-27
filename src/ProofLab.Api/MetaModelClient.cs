@@ -5,12 +5,19 @@ using ProofLab.Science;
 
 namespace ProofLab.Api;
 
-public sealed record HypothesisRequest(string Experiment, string ResearchQuestion);
-public sealed record MathResearchPlanRequest(string ProblemId);
+public sealed record HypothesisRequest(string Experiment, string ResearchQuestion, string Language = "es");
+public sealed record MathResearchPlanRequest(string ProblemId, string Language = "es");
 public sealed record SegmentationRequest(string Concept, string ImageDataUrl);
 
 public sealed class MetaModelClient(IHttpClientFactory clients, IConfiguration configuration)
 {
+    // Keep human-readable scientific prose in the UI-selected language.
+    // Canonical math symbols, Lean tactics and API identifiers remain unchanged.
+    public static string LocaleInstruction(string? language) =>
+        string.Equals(language, "en", StringComparison.OrdinalIgnoreCase)
+            ? "Write the entire human-readable response in English. Keep theorem symbols and Lean tactics unchanged."
+            : "Responde íntegramente en español. Conserva los símbolos matemáticos y las tácticas de Lean sin traducir.";
+
     public bool Enabled =>
         string.Equals(configuration["Meta:AllowPaidRequests"], "true",
             StringComparison.OrdinalIgnoreCase);
@@ -36,7 +43,8 @@ public sealed class MetaModelClient(IHttpClientFactory clients, IConfiguration c
                     content = "You are a scientific experiment planner for adult researchers. " +
                         "State one falsifiable hypothesis, controlled variables, a safe and measurable " +
                         "procedure, a possible null outcome and uncertainty sources. " +
-                        "Never invent measurements or claim that an experiment has occurred."
+                        "Never invent measurements or claim that an experiment has occurred. " +
+                        LocaleInstruction(input.Language)
                 },
                 new {
                     role = "user",
@@ -59,7 +67,7 @@ public sealed class MetaModelClient(IHttpClientFactory clients, IConfiguration c
     }
 
     public async Task<string> CreateMathematicalStrategyAsync(
-        MathProblem problem, CancellationToken cancellationToken)
+        MathProblem problem, string language, CancellationToken cancellationToken)
     {
         if (!Enabled || !HasKey) throw new InvalidOperationException("Meta API is disabled.");
 
@@ -77,7 +85,8 @@ public sealed class MetaModelClient(IHttpClientFactory clients, IConfiguration c
                         "Clearly distinguish hypotheses from kernel-verified proofs. " +
                         "Never claim the problem has been solved by this session. " +
                         "Never request running arbitrary scripts, commands, or imported code. " +
-                        "Use only rfl, omega, or simp as tactics for the current constrained evaluator."
+                        "Use only rfl, omega, or simp as tactics for the current constrained evaluator. " +
+                        LocaleInstruction(language)
                 },
                 new {
                     role = "user",

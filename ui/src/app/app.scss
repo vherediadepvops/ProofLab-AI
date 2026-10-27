@@ -85,3 +85,10 @@ button.nav.active{background:#262841;color:#e1ddff}
 .nav.future{opacity:.55}
 .math-statement{background:#0b101b;border:1px solid #343d54;border-radius:8px;padding:16px;color:#dce4f4;font-size:14px;line-height:1.65;margin-bottom:16px}
 .math-hash{display:block;overflow-wrap:anywhere;font-family:monospace;font-size:11px;color:#b8d5c8;background:#0b101b;border-radius:6px;padding:11px}
+
+/* Original Lean output is preserved for auditing, but hidden behind a localized disclosure. */
+.lean-original-diagnostic{font-size:11px;margin-top:14px;color:#a6b2ca}
+.lean-original-diagnostic summary{cursor:pointer;line-height:1.5;color:#aaa8d4}
+.lean-original-diagnostic pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;
+  margin-top:8px;padding:12px;border-radius:6px;background:#0a0e18;border:1px solid #394458;
+  color:#b5bccb;font:11px/1.5 monospace}

@@ -23,6 +23,8 @@ during the event. Do not misrepresent demonstration data as physical evidence.
 
 ## What this edition implements
 
+- **Bilingual ES/EN responses:** Lean explanations, visible results, UI messages and generated reports follow the selected language without changing the underlying proof or triggering new billable requests. See [language policy](docs/LOCALIZATION.md).
+
 - **Scientific Method Engine (Mission 1):** five visible research stages, documented required fields, server-side gates, locally stored draft reports, human completeness acknowledgement, SHA-256 freeze and Markdown exports, plus a consolidated research report. These controls do **not** certify scientific validity. See [methodology](docs/SCIENTIFIC-METHOD.md).
 
 - **Linked Lean evidence (Mission 1):** deterministic proof cycles and manually selected tactics execute in a curated Lean 4 sandbox-free local verifier; genuine attempt IDs and hashes are required by stages 4–5 of a mathematics dossier, and the report includes those records. This is a known-theorem control, not a novel AI discovery. [Evidence workflow](docs/MISSION-001-EVIDENCE.md).

@@ -152,7 +152,7 @@ app.MapPost("/api/math/plan", async (
     try
     {
         var problem = MathResearchCatalog.Find(input.ProblemId);
-        var suggestion = await meta.CreateMathematicalStrategyAsync(problem, cancellationToken);
+        var suggestion = await meta.CreateMathematicalStrategyAsync(problem, input.Language, cancellationToken);
         return Results.Ok(new { problemId = problem.Id, model = "muse-spark-1.3",
             suggestedApproaches = suggestion, verifiedProof = false,
             provenance = "META_MODEL_API_LIVE_OUTPUT_UNVERIFIED" });

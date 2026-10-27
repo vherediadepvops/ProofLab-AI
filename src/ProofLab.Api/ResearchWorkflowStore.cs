@@ -88,14 +88,19 @@ public sealed class ResearchWorkflowStore(IWebHostEnvironment environment)
         var es = string.Equals(lang, "es", StringComparison.OrdinalIgnoreCase);
         var sb = new StringBuilder();
         sb.AppendLine("# ProofLab AI — " + (es ? definition.ReportEs : definition.ReportEn))
-            .AppendLine().AppendLine("**Research ID:** " + project.Id)
-            .AppendLine("**Title:** " + project.Title)
-            .AppendLine("**Discipline:** " + project.Discipline)
-            .AppendLine("**Stage:** " + stage + "/5")
-            .AppendLine("**Status:** " + report.Status)
-            .AppendLine("**Version:** " + report.Revision)
-            .AppendLine("**UTC approved:** " + (report.ApprovedAtUtc?.ToString("O") ?? "not approved"))
-            .AppendLine("**SHA-256:** " + (report.Sha256 ?? "not frozen"))
+            .AppendLine().AppendLine("**" + (es ? "ID de investigación" : "Research ID") + ":** " + project.Id)
+            .AppendLine("**" + (es ? "Título" : "Title") + ":** " + project.Title)
+            .AppendLine("**" + (es ? "Disciplina" : "Discipline") + ":** " +
+                (es && project.Discipline == "Mathematics" ? "Matemáticas" : project.Discipline))
+            .AppendLine("**" + (es ? "Etapa" : "Stage") + ":** " + stage + "/5")
+            .AppendLine("**" + (es ? "Estado" : "Status") + ":** " +
+                (report.Status == "APPROVED_COMPLETENESS"
+                    ? es ? "INFORME COMPLETO (SIN VALIDACIÓN CIENTÍFICA)" : "DOCUMENT COMPLETE (NOT SCIENTIFIC VALIDATION)"
+                    : es ? "BORRADOR" : "DRAFT"))
+            .AppendLine("**" + (es ? "Versión" : "Version") + ":** " + report.Revision)
+            .AppendLine("**" + (es ? "Aprobado en UTC" : "UTC approved") + ":** " +
+                (report.ApprovedAtUtc?.ToString("O") ?? (es ? "sin aprobar" : "not approved")))
+            .AppendLine("**SHA-256:** " + (report.Sha256 ?? (es ? "sin congelar" : "not frozen")))
             .AppendLine()
             .AppendLine("## " + (es ? "Campos del informe" : "Report fields"));
         foreach (var field in definition.Fields)
@@ -125,7 +130,7 @@ public sealed class ResearchWorkflowStore(IWebHostEnvironment environment)
         string Read(int stage, string key)
         {
             var report = project.Reports.Single(r => r.Index == stage);
-            return report.Fields.TryGetValue(key, out var value) ? value : "_Not reported_";
+            return report.Fields.TryGetValue(key, out var value) ? value : (es ? "_Sin información_" : "_Not reported_");
         }
 
         var sb = new StringBuilder();
@@ -135,7 +140,8 @@ public sealed class ResearchWorkflowStore(IWebHostEnvironment environment)
                 : "**Research report assembled from approved documentation stages.**")
             .AppendLine()
             .AppendLine("ProofLab AI | " + project.Id)
-            .AppendLine("Generated UTC: " + DateTimeOffset.UtcNow.ToString("O"))
+            .AppendLine((es ? "Generado en UTC: " : "Generated UTC: ") +
+                DateTimeOffset.UtcNow.ToString("O"))
             .AppendLine()
             .AppendLine("## " + (es ? "Resumen" : "Abstract"))
             .AppendLine()
@@ -192,8 +198,10 @@ public sealed class ResearchWorkflowStore(IWebHostEnvironment environment)
             .AppendLine()
             .AppendLine("## " + (es ? "Procedencia documental" : "Document provenance"));
         foreach (var report in project.Reports)
-            sb.AppendLine("- Stage " + report.Index + ": " + (report.Sha256 ?? "none") +
-                " | " + (report.ApprovedAtUtc?.ToString("O") ?? "unknown"));
+            sb.AppendLine((es ? "- Etapa " : "- Stage ") + report.Index + ": " +
+                (report.Sha256 ?? (es ? "ninguna" : "none")) +
+                " | " + (report.ApprovedAtUtc?.ToString("O") ??
+                    (es ? "desconocido" : "unknown")));
         sb.AppendLine().AppendLine("> " + (es
             ? "Documento estructurado automáticamente. Ninguna aprobación de etapa certifica resultados, revisión por pares o descubrimientos originales."
             : "Automatically structured document. Stage approvals do not certify results, peer review or original discoveries."));

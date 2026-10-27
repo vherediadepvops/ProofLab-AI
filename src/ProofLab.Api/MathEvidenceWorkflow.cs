@@ -158,12 +158,17 @@ public sealed class MathEvidenceWorkflow(
         foreach (var a in attempts)
         {
             var x = a.Verification;
-            lines.Add("- **" + x.Outcome + "** | " + x.AttemptId +
-                " | " + x.ProblemId + " | tactic " + x.Strategy +
-                " | " + a.ExecutionMode +
+            lines.Add("- **" + LeanResultLanguage.Outcome(x.Outcome, spanish) +
+                "** | " + x.AttemptId + " | " + x.ProblemId +
+                (spanish ? " | táctica " : " | tactic ") + x.Strategy +
+                " | " + (a.ExecutionMode == "DETERMINISTIC_BASELINE"
+                    ? spanish ? "CICLO DETERMINISTA (SIN IA)" : "DETERMINISTIC BASELINE (NO AI)"
+                    : spanish ? "CONTROL MANUAL" : "MANUAL CONTROL") +
                 " | " + x.CheckedAtUtc.ToString("O"));
-            lines.Add("  - SHA-256 Lean source: `" + x.SourceSha256 + "`");
-            lines.Add("  - " + x.Diagnostic.Replace('\n', ' ').Replace('\r', ' '));
+            lines.Add("  - SHA-256 " +
+                (spanish ? "del código Lean" : "of Lean source") + ": `" +
+                x.SourceSha256 + "`");
+            lines.Add("  - " + LeanResultLanguage.Explain(x, spanish));
         }
         return string.Join(Environment.NewLine, lines) + Environment.NewLine;
     }
