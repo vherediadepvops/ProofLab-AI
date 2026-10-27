@@ -18,6 +18,11 @@ interface ResearchReport {
   index: number; fields: Record<string,string>; status: string;
   revision: number; approvedAtUtc: string|null; sha256: string|null;
 }
+interface GuidedDraft {
+  researchId: string; stage: number; language: Language; mode: string;
+  fields: Record<string,string>; evidenceSource: string;
+  humanReviewRequired: boolean; isAutonomousAi: boolean; isScientificDiscovery: boolean;
+}
 interface ResearchProject {
   id: string; title: string; discipline: string; createdAtUtc: string;
   activeStage: number; reports: ResearchReport[]; disclaimer: string;
@@ -85,6 +90,9 @@ export class ResearchWorkflow implements OnInit, OnChanges {
   readonly finiteAttempts = signal<FiniteAttempt[]>([]);
   readonly finiteBusy = signal(false);
   readonly finiteError = signal('');
+  readonly isGuidedGoldbach = computed(() =>
+    this.project()?.discipline === 'Mathematics' &&
+    this.project()?.title.toLowerCase().includes('goldbach') === true);
   readonly isMathEvidencePhase = computed(() =>
     this.project()?.discipline === 'Mathematics' &&
     this.project()!.activeStage >= 4 && this.stage() >= 4);
@@ -231,6 +239,40 @@ export class ResearchWorkflow implements OnInit, OnChanges {
           'No fue posible leer los intentos de Lean.',
           'Could not read Lean proof attempts.'))});
   }
+  async runGuidedExperiment(): Promise<void> {
+    if (!this.isMathEvidencePhase() || !this.isGuidedGoldbach() || !this.canEdit() ||
+        this.proofBusy() || this.finiteBusy() || this.busy() || !this.project()) return;
+    this.proofBusy.set(true);
+    this.finiteBusy.set(true);
+    this.error.set('');
+    this.notice.set('');
+    const researchId = this.project()!.id;
+    try {
+      const result = await firstValueFrom(this.http.post<{
+        toolCallCount: number; isAutonomousAi: boolean; isScientificDiscovery: boolean;
+        goldbachFormalProofVerified: boolean;
+      }>(this.api + '/' + researchId + '/math/offline-cycle', {}));
+      if (result.isAutonomousAi || result.isScientificDiscovery ||
+          result.goldbachFormalProofVerified || result.toolCallCount < 1 ||
+          result.toolCallCount > 3) {
+        throw new Error('Unexpected scripted experiment provenance.');
+      }
+      this.loadProofEvidence(researchId);
+      this.loadFiniteEvidence(researchId);
+      this.notice.set(this.copy(
+        'Experimento ejecutado: Goldbach finito y controles Lean registrados. Ahora prepara el borrador; no es un descubrimiento.',
+        'Experiment executed: bounded Goldbach and Lean controls recorded. Now prepare the draft; this is not a discovery.'));
+    } catch (e: any) {
+      this.error.set(friendlyApiError(e, this.language(),
+        'No se pudo ejecutar el experimento guiado; verifica los límites de intentos y los registros.',
+        'Could not run the guided experiment; check attempt limits and logs.'));
+      this.loadProofEvidence(researchId);
+      this.loadFiniteEvidence(researchId);
+    } finally {
+      this.proofBusy.set(false);
+      this.finiteBusy.set(false);
+    }
+  }
   async runProofCycle():Promise<void> {
     if (!this.isMathEvidencePhase() || !this.canEdit() || this.proofBusy() || !this.project()) return;
     this.proofBusy.set(true);
@@ -302,6 +344,46 @@ export class ResearchWorkflow implements OnInit, OnChanges {
     this.error.set(friendlyApiError(e,this.language(),
       'No se pudo completar la operación. Revisa los datos e inténtalo nuevamente.',
       'Could not complete the operation. Check the inputs and retry.'));
+  }
+  async prepareGuidedDraft(): Promise<void> {
+    if (!this.project() || !this.isGuidedGoldbach() || !this.canEdit() ||
+        this.busy() || this.proofBusy() || this.finiteBusy()) return;
+    this.busy.set(true);
+    this.error.set('');
+    this.notice.set('');
+    try {
+      const report = await firstValueFrom(this.http.get<GuidedDraft>(
+        this.api + '/' + this.project()!.id + '/stages/' + this.stage() +
+        '/guided-draft?lang=' + this.language()));
+      if (report.researchId !== this.project()!.id || report.stage !== this.stage() ||
+          report.isAutonomousAi || report.isScientificDiscovery || !report.humanReviewRequired) {
+        throw new Error('Unexpected guided draft provenance.');
+      }
+      this.draft.update(current => {
+        const updated = {...current};
+        for (const [key, value] of Object.entries(report.fields)) {
+          if (!(updated[key] ?? '').trim()) updated[key] = value;
+        }
+        return updated;
+      });
+      this.reviewed.set(false);
+      this.notice.set(this.copy(
+        'Borrador preparado con datos curados o evidencias reales. Revisa, ajusta y guarda antes de confirmar el informe.',
+        'Draft prepared from curated material or real evidence. Review, edit, and save before acknowledging the report.'));
+    } catch (e: any) {
+      const message = String(e?.error?.error ?? '');
+      if (message.includes('Before preparing stage 4/5')) {
+        this.error.set(this.copy(
+          'Antes de redactar esta etapa, ejecuta la comprobación finita de Goldbach y al menos un intento Lean real en el panel superior.',
+          'Before drafting this stage, run the finite Goldbach check and at least one genuine Lean attempt in the evidence panel.'));
+      } else {
+        this.error.set(this.copy(
+          'No se pudo preparar el borrador guiado. Solo está disponible para expedientes de Goldbach.',
+          'Unable to prepare a guided draft. This feature currently supports Goldbach dossiers only.'));
+      }
+    } finally {
+      this.busy.set(false);
+    }
   }
   async save() {
     if (!this.project() || !this.canEdit()) return;

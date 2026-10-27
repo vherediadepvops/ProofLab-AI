@@ -2,7 +2,7 @@ param([string]$BaseUrl = 'http://127.0.0.1:5392')
 $ErrorActionPreference='Stop'
 $base=$BaseUrl.TrimEnd('/') + '/api/research'
 $stages=Invoke-RestMethod "$base/stages"
-$study=Invoke-RestMethod $base -Method Post -ContentType 'application/json' -Body '{"title":"CONTROL STUDY: report gates and real Lean artifacts","discipline":"Mathematics"}'
+$study=Invoke-RestMethod $base -Method Post -ContentType 'application/json' -Body '{"title":"CONTROL STUDY: Goldbach finite range and real Lean artifacts","discipline":"Mathematics"}'
 Write-Host "PROJECT=$($study.id)"
 try {
   Invoke-RestMethod "$base/$($study.id)/math/offline-cycle" -Method Post -ContentType 'application/json' -Body '{}' | Out-Null
@@ -34,11 +34,37 @@ foreach($step in 1..3) {
     $fields[$field.key]='CONTROL DATA ONLY. This report belongs to a testing fixture, not a peer-reviewed research result or novel scientific finding.'
   }
   if($step -eq 1) { $fields.sources='https://lean-lang.org/doc/reference/latest/Tactic-Proofs/Tactic-Reference/' }
+  $guided=Invoke-RestMethod "$base/$($study.id)/stages/$step/guided-draft?lang=es"
+  $guidedEn=Invoke-RestMethod "$base/$($study.id)/stages/$step/guided-draft?lang=en"
+  $guidedFields=@($guided.fields.PSObject.Properties.Name)
+  $guidedEnFields=@($guidedEn.fields.PSObject.Properties.Name)
+  if($guided.mode -ne 'CURATED_DETERMINISTIC_OFFLINE_TEMPLATE_NOT_AI' -or
+     $guided.isAutonomousAi -or $guided.isScientificDiscovery -or
+     -not $guided.humanReviewRequired -or
+     $guidedFields.Count -ne $definition.fields.Count -or
+     $guidedEnFields.Count -ne $definition.fields.Count) {
+    throw "ERROR: stage $step did not produce complete bilingual, non-AI drafts"
+  }
+  foreach($field in $definition.fields) {
+    if($guided.fields.($field.key).Length -lt $field.minimumCharacters -or
+       $guidedEn.fields.($field.key).Length -lt $field.minimumCharacters) {
+      throw "ERROR: stage $step guided draft missing required detail"
+    }
+  }
+  Write-Host "GUIDED_STAGE_$($step)=ES_EN_FIELDS_OK; AUTO_APPROVAL=False"
   $payload=@{fields=$fields}|ConvertTo-Json -Depth 6
   $study=Invoke-RestMethod "$base/$($study.id)/stages/$step/draft" -Method Post -ContentType 'application/json' -Body $payload
   $study=Invoke-RestMethod "$base/$($study.id)/stages/$step/approve" -Method Post -ContentType 'application/json' -Body '{"reviewedByHuman":true}'
 }
 Write-Host "PREPARED_PHASE=$($study.activeStage)"
+try {
+  Invoke-RestMethod "$base/$($study.id)/stages/4/guided-draft?lang=es" | Out-Null
+  throw 'ERROR: stage4 draft preview invented evidence before tools ran'
+} catch {
+  if($_.Exception.Message -like 'ERROR:*') { throw }
+  if([int]$_.Exception.Response.StatusCode -ne 400) { throw }
+  Write-Host 'GUIDED_STAGE4_NO_EVIDENCE_BLOCKED=400'
+}
 # Memory experiment A: exact known theorem, cold start then compiler-driven retry.
 $empty=Invoke-RestMethod "$BaseUrl/api/math/memory/NAT-ADD-COMM"
 if($empty.selectionMode -ne 'COLD_START' -or $empty.strategy -ne 'rfl') {
@@ -176,6 +202,15 @@ if($after.activeStage -ne 4 -or
 }
 Write-Host "OFFLINE_MODE=$($rehearsal.mode) OFFLINE_CYCLE=$($rehearsal.cycleId) TOOLS=$($rehearsal.toolCallCount) RESULTS=$(($steps | ForEach-Object {$_.outcome}) -join ',') AI=$($rehearsal.isAutonomousAi) DISCOVERY=$($rehearsal.isScientificDiscovery)"
 
+$suggest4=Invoke-RestMethod "$base/$($study.id)/stages/4/guided-draft?lang=es"
+$suggest4En=Invoke-RestMethod "$base/$($study.id)/stages/4/guided-draft?lang=en"
+if(-not $suggest4.fields.manifest.Contains($steps[2].evidenceId) -or
+   -not $suggest4.fields.manifest.Contains($steps[0].evidenceId) -or
+   -not $suggest4En.fields.manifest.Contains($steps[0].evidenceId) -or
+   $suggest4.isAutonomousAi -or $suggest4.isScientificDiscovery) {
+  throw 'ERROR: stage4 guided draft lacks genuine Lean or finite evidence'
+}
+Write-Host 'GUIDED_STAGE_4=ACTUAL_IDS_ONLY; GOLDBACH_PROOF=False'
 $fields4=@{}
 foreach($field in (($stages | Where-Object {$_.index -eq 4}).fields)) {
   $fields4[$field.key]='CONTROL DATA ONLY. This is a synthetic description of a documentation stage, not physical or mathematical discovery.'
@@ -206,6 +241,15 @@ $payload4=@{fields=$fields4}|ConvertTo-Json -Depth 7
 $study=Invoke-RestMethod "$base/$($study.id)/stages/4/draft" -Method Post -ContentType 'application/json' -Body $payload4
 $study=Invoke-RestMethod "$base/$($study.id)/stages/4/approve" -Method Post -ContentType 'application/json' -Body '{"reviewedByHuman":true}'
 Write-Host "STAGE4_APPROVED_NEXT=$($study.activeStage)"
+$suggest5=Invoke-RestMethod "$base/$($study.id)/stages/5/guided-draft?lang=es"
+$suggest5En=Invoke-RestMethod "$base/$($study.id)/stages/5/guided-draft?lang=en"
+if(-not $suggest5.fields.verification.Contains($record.verification.attemptId) -or
+   -not $suggest5.fields.results.Contains($steps[0].evidenceId) -or
+   -not $suggest5En.fields.verification.Contains($record.verification.attemptId) -or
+   $suggest5.isAutonomousAi -or $suggest5.isScientificDiscovery) {
+  throw 'ERROR: stage5 guided draft must cite genuine, distinct formal and finite evidence'
+}
+Write-Host 'GUIDED_STAGE_5=ACTUAL_IDS_ONLY; NO_AUTO_DISCOVERY=True'
 $fields5=@{}
 foreach($field in (($stages | Where-Object {$_.index -eq 5}).fields)) {
   $fields5[$field.key]='CONTROL DATA ONLY. This is a known math theorem verification benchmark, not a new theorem or open problem solution.'

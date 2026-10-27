@@ -8,6 +8,7 @@ builder.Services.AddHttpClient("meta", client =>
 builder.Services.AddScoped<MetaModelClient>();
 builder.Services.AddSingleton<LeanProofVerifier>();
 builder.Services.AddSingleton<ResearchWorkflowStore>();
+builder.Services.AddSingleton<GuidedResearchDrafts>();
 builder.Services.AddSingleton<ScientificMemoryStore>();
 builder.Services.AddSingleton<MathEvidenceWorkflow>();
 builder.Services.AddSingleton<MemoryGuidedMathFlow>();
@@ -42,6 +43,15 @@ app.MapGet("/api/research/{id}", async (
     string id, ResearchWorkflowStore store, CancellationToken ct) =>
 {
     try { return Results.Ok(await store.GetAsync(id, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+// Read-only server-curated draft preview. Never saves or approves the report.
+app.MapGet("/api/research/{id}/stages/{stage:int}/guided-draft", async (
+    string id, int stage, string? lang,
+    GuidedResearchDrafts suggestions, CancellationToken ct) =>
+{
+    try { return Results.Ok(await suggestions.PrepareAsync(id, stage, lang ?? "es", ct)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
 });

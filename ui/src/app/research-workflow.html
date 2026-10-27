@@ -81,6 +81,13 @@
           </div>
         </div>
         <div class="math-evidence-actions">
+          @if(isGuidedGoldbach()) {
+            <button type="button" class="method-primary"
+              [disabled]="!canEdit() || proofBusy() || finiteBusy() || busy()"
+              (click)="runGuidedExperiment()">
+              {{copy('Ejecutar controles guiados (sin IA)','Run guided checks (no AI)')}}
+            </button>
+          }
           <button type="button" class="method-primary" [disabled]="!canEdit() || proofBusy() || busy()"
             (click)="runProofCycle()">{{copy('Ejecutar ciclo de control','Run controlled test cycle')}}</button>
           <button type="button" [disabled]="!canEdit() || proofBusy() || busy()"
@@ -206,6 +213,19 @@
           }
         </div>
         <div class="method-form">
+          @if(canEdit() && isGuidedGoldbach()) {
+            <div class="method-field">
+              <button type="button" class="method-primary"
+                [disabled]="busy() || proofBusy() || finiteBusy()"
+                (click)="prepareGuidedDraft()">
+                {{copy('Preparar borrador guiado (sin IA)','Prepare guided draft (no AI)')}}
+              </button>
+              <small>{{copy(
+                'Completa solo los campos vacíos con información curada (etapas 1–3) o evidencia real (4–5). Revisa cada dato antes de aprobar; Goldbach no está demostrado.',
+                'Fills empty fields only, from curated sources (stages 1–3) or real evidence (4–5). Review before approval; Goldbach is not proven.'
+              )}}</small>
+            </div>
+          }
           @for(field of selectedStage.fields;track field.key) {
             <div class="method-field">
               <label [for]="'report-'+field.key">
