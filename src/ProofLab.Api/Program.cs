@@ -7,6 +7,7 @@ builder.Services.AddHttpClient("meta", client =>
     client.Timeout = TimeSpan.FromSeconds(45));
 builder.Services.AddScoped<MetaModelClient>();
 builder.Services.AddSingleton<LeanProofVerifier>();
+builder.Services.AddSingleton<ResearchWorkflowStore>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -23,6 +24,60 @@ app.MapGet("/api/health", (MetaModelClient meta) =>
         metaModelApiEnabled = meta.Enabled && meta.HasKey,
         science = new[] { "pendulum", "rolling-sphere" }
     }));
+
+app.MapGet("/api/research/stages", () =>
+    Results.Ok(ScientificMethodWorkflow.Stages));
+app.MapPost("/api/research", async (
+    ResearchCreateRequest input, ResearchWorkflowStore store, CancellationToken ct) =>
+{
+    try { return Results.Ok(await store.CreateAsync(input, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+app.MapGet("/api/research/{id}", async (
+    string id, ResearchWorkflowStore store, CancellationToken ct) =>
+{
+    try { return Results.Ok(await store.GetAsync(id, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+app.MapPost("/api/research/{id}/stages/{stage:int}/draft", async (
+    string id, int stage, ResearchDraftRequest input,
+    ResearchWorkflowStore store, CancellationToken ct) =>
+{
+    try { return Results.Ok(await store.SaveDraftAsync(id, stage, input, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+app.MapPost("/api/research/{id}/stages/{stage:int}/approve", async (
+    string id, int stage, ResearchApprovalRequest input,
+    ResearchWorkflowStore store, CancellationToken ct) =>
+{
+    try { return Results.Ok(await store.ApproveAsync(id, stage, input, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+app.MapGet("/api/research/{id}/reports/{stage:int}", async (
+    string id, int stage, string? lang,
+    ResearchWorkflowStore store, CancellationToken ct) =>
+{
+    try {
+        var markdown = await store.ReportAsync(id, stage, lang ?? "es", ct);
+        return Results.Text(markdown, "text/markdown; charset=utf-8");
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+
+app.MapGet("/api/research/{id}/paper", async (
+    string id, string? lang, ResearchWorkflowStore store, CancellationToken ct) =>
+{
+    try {
+        return Results.Text(await store.ScientificPaperAsync(id, lang ?? "es", ct),
+            "text/markdown; charset=utf-8");
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
 
 app.MapGet("/api/math/problems", () =>
     Results.Ok(MathResearchCatalog.GetProblems()));

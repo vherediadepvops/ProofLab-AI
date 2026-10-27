@@ -37,6 +37,7 @@
 
     <div class="workspace">
       @if(workspace() === 'math') {
+        <app-research-workflow [language]="language()" />
         <div class="section-line"><div><small>MISSION 01 / MATHEMATICAL DISCOVERY</small><h2>Lean 4 · Formal Verification</h2></div><span class="version">KNOWN BENCHMARKS · ALPHA</span></div>
         <div class="panel-grid">
           <section class="panel">

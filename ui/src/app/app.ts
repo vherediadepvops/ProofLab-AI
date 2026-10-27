@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
+import { ResearchWorkflow } from './research-workflow';
 
 type Language = 'es' | 'en';
 type Kind = 'Pendulum' | 'RollingSphere';
@@ -114,7 +115,7 @@ const COPY = {
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ResearchWorkflow],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })

@@ -23,6 +23,8 @@ during the event. Do not misrepresent demonstration data as physical evidence.
 
 ## What this edition implements
 
+- **Scientific Method Engine (Mission 1):** five visible research stages, documented required fields, server-side gates, locally stored draft reports, human completeness acknowledgement, SHA-256 freeze and Markdown exports, plus a consolidated research report. These controls do **not** certify scientific validity. See [methodology](docs/SCIENTIFIC-METHOD.md).
+
 - **Mission 1 — Mathematical Discovery (first working stage):** three curated known theorems, fixed Lean 4 tactics, real compiler verification, result hashes and private local attempt ledger. **No open problem has been solved.** See [Mission 1](docs/MISSION-001-MATH.md).
 
 - .NET 10 ASP.NET Core API, with independent scientific prediction and evaluation.
@@ -66,6 +68,12 @@ Open `http://127.0.0.1:4300/` on the same computer.
 | Route | Result |
 | --- | --- |
 | `GET /api/health` | Readiness and Meta usage gate |
+| `GET /api/research/stages` | Scientific method stage definitions and mandatory fields |
+| `POST /api/research` | Create a mathematical research dossier |
+| `POST /api/research/{id}/stages/{n}/draft` | Save a local report draft |
+| `POST /api/research/{id}/stages/{n}/approve` | Lock a complete report after declared human review |
+| `GET /api/research/{id}/reports/{n}` | Download each stage report (Markdown) |
+| `GET /api/research/{id}/paper` | Download consolidated paper after all stages |
 | `GET /api/math/problems` | Known theorem control benchmarks |
 | `GET /api/math/status` | Lean availability and truthful research status |
 | `POST /api/math/verify` | Check a curated theorem via Lean 4, save local attempt record |

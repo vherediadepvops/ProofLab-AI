@@ -1,0 +1,125 @@
+<section class="method-shell">
+  <header class="method-heading">
+    <div>
+      <span class="method-kicker">SCIENTIFIC METHOD ENGINE · MISSION 01</span>
+      <h2>{{copy('Método científico · 5 etapas','Scientific method · 5 stages')}}</h2>
+      <p>{{copy('Cada fase crea un informe y debe cumplir requisitos antes de avanzar. Es un control documental, no una acreditación.',
+                 'Each phase creates a report and must pass checks before advancing. These are documentation gates, not accreditation.')}}</p>
+    </div>
+    @if(project()) { <span class="method-id">ID {{project()!.id.slice(0,10)}}</span> }
+  </header>
+
+  @if(!project()) {
+    <div class="method-init">
+      <div class="method-field">
+        <label for="study-title">{{copy('Título de la investigación','Research title')}}</label>
+        <input id="study-title" type="text" maxlength="160"
+          [placeholder]="copy('Ej.: Estudio matemático de una conjetura','E.g. Mathematical study of a conjecture')"
+          [ngModel]="title()" (ngModelChange)="title.set($event)"/>
+      </div>
+      <button type="button" class="method-primary" [disabled]="busy() || title().trim().length < 8"
+        (click)="create()">{{copy('Iniciar investigación matemática','Start mathematical research')}}</button>
+      <div class="method-separator">{{copy('o abrir una investigación existente','or open an existing research project')}}</div>
+      <div class="method-open">
+        <input aria-label="Research ID" placeholder="Research ID" type="text" [ngModel]="existingId()" (ngModelChange)="existingId.set($event)"/>
+        <button type="button" [disabled]="busy() || !existingId().trim()" (click)="load()">{{copy('Abrir','Open')}}</button>
+      </div>
+    </div>
+  } @else {
+    <div class="method-intro">
+      <strong>{{project()!.title}}</strong>
+      <span>{{copy('Disciplina','Discipline')}}: {{project()!.discipline}}</span>
+      @if(project()!.activeStage > 5) {
+        <span class="method-finished">{{copy('Los cinco informes están cerrados. Las conclusiones no son certificaciones.','Five reports frozen. Conclusions are not certified.')}}</span>
+        <button type="button" class="method-paper-btn" (click)="downloadPaper()">
+          {{copy('Descargar informe científico global (.md)','Download consolidated scientific report (.md)')}}
+        </button>
+      }
+    </div>
+    <div class="method-steps">
+      @for(item of stages(); track item.index) {
+        <button type="button" class="method-step"
+          [class.selected]="stage()===item.index"
+          [class.done]="project()!.reports[item.index-1].status === 'APPROVED_COMPLETENESS'"
+          [disabled]="item.index > project()!.activeStage || busy()"
+          (click)="selectStage(item.index)"
+          [attr.aria-current]="stage()===item.index?'step':null">
+          <span class="step-counter">{{item.index}}</span>
+          <strong>{{language()==='es'?item.nameEs:item.nameEn}}</strong>
+          <small>{{stageStatus(item.index)}}</small>
+        </button>
+      }
+    </div>
+    @if(selected(); as selectedStage) {
+      <div class="method-editor">
+        <div class="method-info">
+          <div class="method-overline">{{copy('INFORME DE ETAPA','STAGE REPORT')}} · 0{{selectedStage.index}}/05</div>
+          <h3>{{language()==='es'?selectedStage.reportEs:selectedStage.reportEn}}</h3>
+          <p>{{language()==='es'?selectedStage.descriptionEs:selectedStage.descriptionEn}}</p>
+          <p class="method-progress">
+            {{completion().count}} / {{completion().total}}
+            {{copy('campos completados','required fields completed')}}
+          </p>
+          <div class="method-standards">
+            <strong>{{copy('Referencias metodológicas','Methodology references')}}</strong>
+            @for(standard of selectedStage.referenceFrameworks;track standard) {
+              <span>{{standard}}</span>
+            }
+          </div>
+          @if(selectedReport()?.sha256; as digest) {
+            <div class="method-hash">
+              <strong>{{copy('Huella del informe aprobado','Approved report digest')}}</strong>
+              <code>SHA-256: {{digest}}</code>
+            </div>
+          }
+        </div>
+        <div class="method-form">
+          @for(field of selectedStage.fields;track field.key) {
+            <div class="method-field">
+              <label [for]="'report-'+field.key">
+                {{language()==='es'?field.nameEs:field.nameEn}}
+                <span>({{copy('mín.','min.')}} {{field.minimumCharacters}})</span>
+              </label>
+              <small>{{language()==='es'?field.guidanceEs:field.guidanceEn}}</small>
+              <textarea [id]="'report-'+field.key" rows="3" maxlength="12000"
+                [disabled]="!canEdit() || busy()"
+                [ngModel]="draft()[field.key]"
+                (ngModelChange)="updateField(field.key,$event)"></textarea>
+            </div>
+          }
+          @if(canEdit()) {
+            <label class="method-review">
+              <input type="checkbox" [checked]="reviewed()" (change)="reviewed.set($any($event.target).checked)"/>
+              {{copy('He revisado la completitud del informe. Entiendo que no implica verificación científica ni revisión por pares.',
+                     'I reviewed report completeness. This is not scientific verification or peer review.')}}
+            </label>
+          }
+          <div class="method-buttons">
+            @if(canEdit()) {
+              <button type="button" [disabled]="busy()" (click)="save()">
+                {{copy('Guardar borrador','Save draft')}}
+              </button>
+              <button type="button" class="method-primary" [disabled]="busy() || !completion().ready || !reviewed()"
+                (click)="approve()">
+                {{copy('Cerrar informe y avanzar','Freeze report and advance')}}
+              </button>
+            }
+            <button type="button" (click)="download()" [disabled]="busy()">
+              {{copy('Descargar informe (.md)','Download report (.md)')}}
+            </button>
+          </div>
+          @if(!completion().ready && canEdit()) {
+            <p class="method-tip">{{copy('Para avanzar, completa todos los campos. La primera etapa exige al menos una URL o DOI rastreable.',
+              'To advance, complete every field. Stage one requires at least one traceable URL or DOI.')}}</p>
+          }
+        </div>
+      </div>
+    }
+  }
+  @if(error()) { <div class="method-alert" role="alert">{{error()}}</div> }
+  @if(notice()) { <div class="method-notice" role="status">{{notice()}}</div> }
+  <footer class="method-foot">
+    {{copy('Basado en buenas prácticas TOP, OSF, FAIR, W3C PROV-O e IMRaD. No certifica cumplimiento de estándares.',
+           'Informed by TOP, OSF, FAIR, W3C PROV-O and IMRaD. No standards compliance is certified.')}}
+  </footer>
+</section>
