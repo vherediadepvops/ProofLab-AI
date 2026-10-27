@@ -9,6 +9,7 @@ builder.Services.AddScoped<MetaModelClient>();
 builder.Services.AddSingleton<LeanProofVerifier>();
 builder.Services.AddSingleton<ResearchWorkflowStore>();
 builder.Services.AddSingleton<MathEvidenceWorkflow>();
+builder.Services.AddSingleton<OpenConjectureEvidenceWorkflow>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -65,14 +66,17 @@ app.MapPost("/api/research/{id}/stages/{stage:int}/approve", async (
 app.MapGet("/api/research/{id}/reports/{stage:int}", async (
     string id, int stage, string? lang,
     ResearchWorkflowStore store, MathEvidenceWorkflow evidence,
-    CancellationToken ct) =>
+    OpenConjectureEvidenceWorkflow finiteEvidence, CancellationToken ct) =>
 {
     try {
         var markdown = await store.ReportAsync(id, stage, lang ?? "es", ct);
         var project = await store.GetAsync(id, ct);
         if (project.Discipline == "Mathematics" && stage >= 4)
-            markdown += await evidence.RenderLedgerMarkdownAsync(id,
-                string.Equals(lang, "es", StringComparison.OrdinalIgnoreCase), ct);
+        {
+            var spanish = !string.Equals(lang, "en", StringComparison.OrdinalIgnoreCase);
+            markdown += await evidence.RenderLedgerMarkdownAsync(id, spanish, ct);
+            markdown += await finiteEvidence.RenderLedgerMarkdownAsync(id, spanish, ct);
+        }
         return Results.Text(markdown, "text/markdown; charset=utf-8");
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
@@ -104,14 +108,18 @@ app.MapPost("/api/research/{id}/math/cycle", async (
 
 app.MapGet("/api/research/{id}/paper", async (
     string id, string? lang, ResearchWorkflowStore store,
-    MathEvidenceWorkflow evidence, CancellationToken ct) =>
+    MathEvidenceWorkflow evidence, OpenConjectureEvidenceWorkflow finiteEvidence,
+    CancellationToken ct) =>
 {
     try {
         var markdown = await store.ScientificPaperAsync(id, lang ?? "es", ct);
         var project = await store.GetAsync(id, ct);
         if (project.Discipline == "Mathematics")
-            markdown += await evidence.RenderLedgerMarkdownAsync(id,
-                string.Equals(lang, "es", StringComparison.OrdinalIgnoreCase), ct);
+        {
+            var spanish = !string.Equals(lang, "en", StringComparison.OrdinalIgnoreCase);
+            markdown += await evidence.RenderLedgerMarkdownAsync(id, spanish, ct);
+            markdown += await finiteEvidence.RenderLedgerMarkdownAsync(id, spanish, ct);
+        }
         return Results.Text(markdown, "text/markdown; charset=utf-8");
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
@@ -120,10 +128,44 @@ app.MapGet("/api/research/{id}/paper", async (
 
 app.MapGet("/api/math/problems", () =>
     Results.Ok(MathResearchCatalog.GetProblems()));
+
+app.MapGet("/api/math/conjectures", () =>
+    Results.Ok(OpenConjectureCatalog.GetAll()));
+app.MapGet("/api/math/conjectures/{id}", (string id) =>
+{
+    try { return Results.Ok(OpenConjectureCatalog.Find(id)); }
+    catch (ArgumentException ex) { return Results.NotFound(new { error = ex.Message }); }
+});
+app.MapGet("/api/research/{id}/math/finite-checks", async (
+    string id, OpenConjectureEvidenceWorkflow evidence, CancellationToken ct) =>
+{
+    try { return Results.Ok(await evidence.ListAsync(id, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+app.MapPost("/api/research/{id}/math/conjectures/{conjectureId}/finite-check", async (
+    string id, string conjectureId, GoldbachFiniteRequest input,
+    OpenConjectureEvidenceWorkflow evidence, CancellationToken ct) =>
+{
+    try { return Results.Ok(await evidence.RunAsync(id, conjectureId, input, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Research not found." }); }
+});
+app.MapGet("/api/math/agent/capabilities", () =>
+    Results.Ok(new {
+        mode = "SCHEMA_VALIDATION_ONLY_NO_MODEL_INFERENCE",
+        allowedTools = ResearchAgentToolPolicy.AllowedTools,
+        maxToolCallsPerCycle = ResearchAgentToolPolicy.MaxToolCallsPerCycle,
+        museLiveValidated = false,
+        arbitraryLeanExecutionEnabled = false,
+        paidRequestsRequireExplicitAuthorization = true
+    }));
 app.MapGet("/api/math/status", (LeanProofVerifier verifier) =>
     Results.Ok(new {
         mission = "Mathematical Discovery",
-        phase = "KNOWN_BENCHMARK_VERIFICATION",
+        phase = "CURATED_OPEN_CONJECTURE_FINITE_EXPLORATION",
+        curatedOpenConjectures = OpenConjectureCatalog.GetAll().Count,
+        arbitraryLeanSandboxValidated = false,
         leanAvailable = verifier.FindLean() is not null,
         allowsArbitraryLean = false,
         knownOpenProblemsAttempted = 0,

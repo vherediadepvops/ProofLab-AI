@@ -38,6 +38,20 @@ interface MathCycle {
   researchId: string; problemId: string; mode: string;
   attempts: MathAttempt[]; conclusion: string; isScientificDiscovery: boolean;
 }
+interface OpenConjecture {
+  id: string; titleEs: string; titleEn: string;
+  statementEs: string; statementEn: string; researchStatus: string;
+  statusSourceUrl: string; formalizationStatus: string;
+}
+interface FiniteAttempt {
+  researchId: string; executionMode: string;
+  result: {
+    experimentId: string; checkedThrough: number; evenCasesExamined: number;
+    casesWithPrimePair: number; outcome: string; resultSha256: string;
+    inputSha256: string; formalProofVerified: boolean; isNewDiscovery: boolean;
+    limitationsEs: string; limitationsEn: string;
+  };
+}
 type Lang = Language;
 
 @Component({
@@ -66,6 +80,11 @@ export class ResearchWorkflow implements OnInit, OnChanges {
   readonly proofAttempts = signal<MathAttempt[]>([]);
   readonly proofError = signal('');
   readonly proofBusy = signal(false);
+  readonly conjectures = signal<OpenConjecture[]>([]);
+  readonly finiteLimit = signal(100);
+  readonly finiteAttempts = signal<FiniteAttempt[]>([]);
+  readonly finiteBusy = signal(false);
+  readonly finiteError = signal('');
   readonly isMathEvidencePhase = computed(() =>
     this.project()?.discipline === 'Mathematics' &&
     this.project()!.activeStage >= 4 && this.stage() >= 4);
@@ -104,6 +123,7 @@ export class ResearchWorkflow implements OnInit, OnChanges {
       this.notice.set('');
       this.error.set('');
       this.proofError.set('');
+      this.finiteError.set('');
     }
   }
 
@@ -111,6 +131,10 @@ export class ResearchWorkflow implements OnInit, OnChanges {
     this.http.get<MathProblem[]>('http://127.0.0.1:5391/api/math/problems')
       .subscribe({ next: items => this.proofProblems.set(items),
         error: () => this.proofError.set('Could not load Lean benchmark catalog.') });
+    this.http.get<OpenConjecture[]>('http://127.0.0.1:5391/api/math/conjectures')
+      .subscribe({next: items => this.conjectures.set(items),
+        error: () => this.finiteError.set(this.copy(
+          'Catálogo de conjeturas no disponible.', 'Open conjecture catalog unavailable.'))});
     this.http.get<ResearchStage[]>(this.api + '/stages')
       .subscribe({next: data => this.stages.set(data),
         error: () => this.error.set(this.language() === 'es'
@@ -154,7 +178,51 @@ export class ResearchWorkflow implements OnInit, OnChanges {
     this.selectStage(Math.min(research.activeStage,5));
     if (research.discipline === 'Mathematics' && research.activeStage >= 4) {
       this.loadProofEvidence(research.id);
+      this.loadFiniteEvidence(research.id);
     }
+  }
+  private loadFiniteEvidence(id: string): void {
+    this.http.get<FiniteAttempt[]>(this.api + '/' + id + '/math/finite-checks')
+      .subscribe({next: rows => this.finiteAttempts.set(rows),
+        error: () => this.finiteError.set(this.copy(
+          'No fue posible consultar la evidencia finita.',
+          'Could not load finite computational evidence.'))});
+  }
+  async runFiniteCheck(): Promise<void> {
+    if (!this.isMathEvidencePhase() || !this.canEdit() ||
+        this.finiteBusy() || this.proofBusy() || !this.project()) return;
+    this.finiteBusy.set(true);
+    this.finiteError.set('');
+    try {
+      const check = await firstValueFrom(this.http.post<FiniteAttempt>(
+        this.api + '/' + this.project()!.id +
+        '/math/conjectures/GOLDBACH-STRONG/finite-check',
+        {evenLimit: Number(this.finiteLimit())}));
+      this.finiteAttempts.update(items => [...items, check]);
+      this.notice.set(this.copy(
+        'Observación finita registrada. No es una demostración de Goldbach.',
+        'Bounded observation recorded. This does not prove Goldbach.'));
+    } catch (e:any) {
+      this.finiteError.set(friendlyApiError(e,this.language(),
+        'Error en la comprobación finita.', 'Finite check failed.'));
+    } finally {this.finiteBusy.set(false);}
+  }
+  attachFinite(record: FiniteAttempt): void {
+    if (!this.canEdit() || !this.isMathEvidencePhase()) return;
+    const r = record.result;
+    const note = this.copy(
+      'Observación computacional FINITA, no prueba Lean ni descubrimiento.',
+      'FINITE computational observation, not a Lean proof or discovery.');
+    const detail = 'Goldbach evidence ' + r.experimentId + ' | 4..' +
+      r.checkedThrough + ' | ' + r.outcome +
+      ' | SHA-256 ' + r.resultSha256 + '. ' + note;
+    const key = this.stage() === 4 ? 'manifest' : 'verification';
+    const previous = this.draft()[key] ?? '';
+    if (previous.includes(r.experimentId)) return;
+    this.updateField(key, (previous ? previous + '\n\n' : '') + detail);
+    this.notice.set(this.copy(
+      'Observación agregada al borrador. La etapa sigue exigiendo evidencia Lean.',
+      'Observation added to draft. Lean evidence is still required.'));
   }
   private loadProofEvidence(id:string): void {
     this.http.get<MathAttempt[]>(this.api + '/' + id + '/math/attempts')

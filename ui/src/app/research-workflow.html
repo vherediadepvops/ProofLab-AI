@@ -118,6 +118,63 @@
             }
           </div>
         }
+        @if(conjectures()[0]; as conjecture) {
+          <div class="method-separator">{{copy('INVESTIGACIÓN ABIERTA · OBSERVACIÓN FINITA',
+              'OPEN RESEARCH · FINITE OBSERVATION')}}</div>
+          <h3>{{language()==='es'?conjecture.titleEs:conjecture.titleEn}}</h3>
+          <p>{{language()==='es'?conjecture.statementEs:conjecture.statementEn}}</p>
+          <p class="method-tip">
+            {{copy('Problema abierto al 27/10/2026. La traducción formal a Lean aún no está revisada. Este cálculo no prueba la conjetura.',
+                    'Open as of 2026-10-27. No reviewed Lean formalization yet. This computation does not prove the conjecture.')}}
+            <a [href]="conjecture.statusSourceUrl" target="_blank" rel="noopener noreferrer">
+              {{copy('Fuente matemática','Mathematical source')}}
+            </a>
+          </p>
+          <div class="math-evidence-controls">
+            <div class="method-field">
+              <label for="finite-limit">{{copy('Comprobar pares desde 4 hasta','Check even numbers from 4 through')}}</label>
+              <input id="finite-limit" type="number" min="4" max="2000" step="2"
+                [disabled]="!canEdit() || finiteBusy() || proofBusy()"
+                [ngModel]="finiteLimit()" (ngModelChange)="finiteLimit.set(+$event)"/>
+            </div>
+          </div>
+          <button type="button" class="method-primary"
+            [disabled]="!canEdit() || finiteBusy() || proofBusy() || busy() ||
+              finiteLimit()<4 || finiteLimit()>2000 || finiteLimit()%2!==0"
+            (click)="runFiniteCheck()">
+            {{copy('Registrar comprobación finita (sin IA)','Record finite check (no AI)')}}
+          </button>
+          @if(finiteAttempts().length) {
+            <div class="math-evidence-results">
+              @for(record of finiteAttempts(); track record.result.experimentId) {
+                <div class="math-evidence-item">
+                  <strong>{{copy('Rango comprobado','Checked range')}}: 4..{{record.result.checkedThrough}}</strong>
+                  <div class="math-evidence-detail">
+                    {{record.result.evenCasesExamined}} {{copy('pares examinados','even cases checked')}} ·
+                    {{record.result.casesWithPrimePair}} {{copy('con testigos primos','with prime witnesses')}}
+                  </div>
+                  <div class="math-evidence-detail">
+                    {{copy('Estado: sin contraejemplo en el rango; NO demuestra la conjetura.',
+                      'Status: no counterexample in the range; does NOT prove the conjecture.')}}
+                  </div>
+                  <div class="math-evidence-detail">
+                    ID: <code>{{record.result.experimentId}}</code>
+                  </div>
+                  <div class="math-evidence-detail">SHA-256:
+                    <code>{{record.result.resultSha256}}</code>
+                  </div>
+                  @if(canEdit()) {
+                    <button type="button" (click)="attachFinite(record)" [disabled]="busy() || finiteBusy()">
+                      {{copy('Adjuntar observación complementaria al informe',
+                        'Attach supplementary observation to report')}}
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+          }
+        }
+        @if(finiteError()) { <div class="method-alert" role="alert">{{finiteError()}}</div> }
         @if(proofError()) { <div class="method-alert" role="alert">{{proofError()}}</div> }
         @if(!evidenceAttached() && canEdit()) {
           <p class="method-tip">{{copy('Para cerrar esta etapa necesitas al menos un intento real de Lean, y su ID debe estar adjunto al campo de evidencia correspondiente.',

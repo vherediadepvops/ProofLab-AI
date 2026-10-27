@@ -23,6 +23,22 @@ foreach($step in 1..3) {
   $study=Invoke-RestMethod "$base/$($study.id)/stages/$step/approve" -Method Post -ContentType 'application/json' -Body '{"reviewedByHuman":true}'
 }
 Write-Host "PREPARED_PHASE=$($study.activeStage)"
+$conjectures=Invoke-RestMethod "$BaseUrl/api/math/conjectures"
+if(-not ($conjectures | Where-Object {$_.id -eq 'GOLDBACH-STRONG' -and -not $_.isExecutableLeanGoal})) {
+  throw 'ERROR: curated open conjecture missing or incorrectly executable'
+}
+$finite=Invoke-RestMethod "$base/$($study.id)/math/conjectures/GOLDBACH-STRONG/finite-check" -Method Post -ContentType 'application/json' -Body '{"evenLimit":100}'
+if($finite.result.evenCasesExamined -ne 49 -or
+   $finite.result.casesWithPrimePair -ne 49 -or
+   $finite.result.formalProofVerified -or $finite.result.isNewDiscovery) {
+  throw 'ERROR: bounded computation incorrectly reported'
+}
+$finiteId=$finite.result.experimentId
+$finiteHistory=Invoke-RestMethod "$base/$($study.id)/math/finite-checks"
+if(-not ($finiteHistory | Where-Object {$_.result.experimentId -eq $finiteId})) {
+  throw 'ERROR: finite evidence was not persisted'
+}
+Write-Host "FINITE_GOLDBACH_CASES=$($finite.result.evenCasesExamined) PROOF=$($finite.result.formalProofVerified) ID=$finiteId"
 $fields4=@{}
 foreach($field in (($stages | Where-Object {$_.index -eq 4}).fields)) {
   $fields4[$field.key]='CONTROL DATA ONLY. This is a synthetic description of a documentation stage, not physical or mathematical discovery.'
@@ -91,4 +107,10 @@ if(-not $paperEs.Content.Contains('**VERIFICADO**') -or
    -not $paperEs.Content.Contains('Generado en UTC:')) {
   throw 'ERROR: Spanish consolidated report was not localized.'
 }
-Write-Host 'BILINGUAL_REPORTS=ES_OK,EN_OK; CANONICAL_IDS_AND_HASHES_UNCHANGED=True'
+if(-not $report.Content.Contains($finiteId) -or
+   -not $reportEn.Content.Contains($finiteId) -or
+   -not $paper.Content.Contains($finiteId) -or
+   -not $paperEs.Content.Contains($finiteId)) {
+  throw 'ERROR: bounded finite evidence must appear in stage/paper reports in both languages'
+}
+Write-Host 'BILINGUAL_REPORTS=ES_OK,EN_OK; CANONICAL_IDS_AND_HASHES_UNCHANGED=True; FINITE_EVIDENCE=ES_OK,EN_OK'
