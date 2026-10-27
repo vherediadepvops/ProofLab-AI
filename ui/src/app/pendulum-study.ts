@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { Component, inject, input, signal } from '@angular/core';
+import { Component, OnInit, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 
@@ -20,6 +20,39 @@ interface Preregistration {
   };
   predictionSha256: string;
   limitation: string;
+}
+interface VideoFormats {
+  decoderAvailable: boolean;
+  supportedExtensions: string[];
+  maximumVideoBytes: number;
+  maximumDurationSeconds: number;
+  maxTakesPerCondition: number;
+  processingMethod: string;
+}
+interface VideoRecord {
+  videoId: string;
+  condition: 'baseline' | 'followup';
+  take: number;
+  originalFilename: string;
+  sourceSha256: string;
+  posterAvailable: boolean;
+  sizeBytes: number;
+  media: { codec: string; width: number; height: number; durationSeconds: number; nominalFramesPerSecond: number };
+  tracking: { detectedFrames: number; framesAnalyzed: number; detectionRate: number; outcome: string; observations?: Point[] };
+  preliminaryPeriodSeconds: number | null;
+  outcome: string;
+  provenanceNote: string;
+}
+interface VideoComparison {
+  predictedIncreasePercent: number;
+  observedIncreasePercent: number | null;
+  baselineMeanPeriodSeconds: number | null;
+  followUpMeanPeriodSeconds: number | null;
+  baselineVideos: number;
+  followUpVideos: number;
+  differencePercentagePoints: number | null;
+  scientificStatus: string;
+  limitations: string;
 }
 interface Comparison {
   evaluationId: string;
@@ -43,7 +76,7 @@ interface Comparison {
   templateUrl: './pendulum-study.html',
   styleUrl: './pendulum-study.scss'
 })
-export class PendulumStudy {
+export class PendulumStudy implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly api = 'http://127.0.0.1:5391';
   readonly language = input<Language>('es');
@@ -55,8 +88,154 @@ export class PendulumStudy {
   readonly result = signal<Comparison | null>(null);
   readonly busy = signal(false);
   readonly error = signal('');
+  readonly formats = signal<VideoFormats | null>(null);
+  readonly videos = signal<VideoRecord[]>([]);
+  readonly uploadingVideo = signal('');
+  readonly videoComparison = signal<VideoComparison | null>(null);
+  readonly videoError = signal('');
 
   get isSpanish(): boolean { return this.language() === 'es'; }
+
+  newStudy(): void {
+    if (this.busy() || this.uploadingVideo()) return;
+    localStorage.removeItem('prooflab-pendulum-study-id');
+    this.study.set(null);
+    this.videos.set([]);
+    this.videoComparison.set(null);
+    this.firstSeries.set(null);
+    this.secondSeries.set(null);
+    this.result.set(null);
+    this.error.set('');
+    this.videoError.set('');
+  }
+
+  ngOnInit(): void {
+    void this.loadFormats();
+    const id = localStorage.getItem('prooflab-pendulum-study-id');
+    if (id && /^[0-9a-f]{32}$/.test(id)) void this.restoreStudy(id);
+  }
+
+  private async loadFormats(): Promise<void> {
+    try {
+      this.formats.set(await firstValueFrom(this.http.get<VideoFormats>(
+        this.api + '/api/science/pendulum/video-formats')));
+    } catch {
+      this.formats.set(null);
+    }
+  }
+
+  async restoreStudy(id: string): Promise<void> {
+    try {
+      const result = await firstValueFrom(this.http.get<Preregistration>(
+        this.api + '/api/science/pendulum/preregistrations/' + id));
+      this.study.set(result);
+      this.firstLength.set(result.hypothesis.baselineLengthMeters);
+      this.secondLength.set(result.hypothesis.followUpLengthMeters);
+      await this.refreshVideos();
+    } catch { localStorage.removeItem('prooflab-pendulum-study-id'); }
+  }
+
+  async refreshVideos(): Promise<void> {
+    const study = this.study();
+    if (!study) return;
+    try {
+      this.videos.set(await firstValueFrom(this.http.get<VideoRecord[]>(
+        this.api + '/api/science/pendulum/preregistrations/' + study.id + '/videos')));
+    } catch { this.videos.set([]); }
+  }
+
+  videoPosterUrl(videoId: string): string {
+    const s = this.study();
+    return s ? this.api + '/api/science/pendulum/preregistrations/' +
+      s.id + '/videos/' + videoId + '/poster' : '';
+  }
+
+  videoStatus(record: VideoRecord): string {
+    if (record.preliminaryPeriodSeconds !== null) {
+      return this.isSpanish
+        ? 'Seguimiento local estimado; pendiente de revisión visual'
+        : 'Local tracking estimated; visual review required';
+    }
+    return this.isSpanish
+      ? 'Video recibido; seguimiento requiere revisión manual'
+      : 'Video received; tracking requires manual review';
+  }
+
+  trajectoryPoints(samples: Point[]): string {
+    if (!samples || samples.length < 2) return '';
+    const timeStart = samples[0].timeSeconds;
+    const duration = Math.max(0.0001, samples[samples.length - 1].timeSeconds - timeStart);
+    const positions = samples.map(x => x.position);
+    const low = Math.min(...positions);
+    const range = Math.max(0.0001, Math.max(...positions) - low);
+    return samples.map(x =>
+      (7 + 386 * (x.timeSeconds - timeStart) / duration).toFixed(1) + ',' +
+      (99 - 84 * (x.position - low) / range).toFixed(1)).join(' ');
+  }
+
+  videoFor(condition: 'baseline' | 'followup', take: number): VideoRecord | undefined {
+    return this.videos().find(x => x.condition === condition && x.take === take);
+  }
+
+  get canCompareVideos(): boolean {
+    return this.videos().some(x => x.condition === 'baseline' && x.preliminaryPeriodSeconds !== null) &&
+      this.videos().some(x => x.condition === 'followup' && x.preliminaryPeriodSeconds !== null);
+  }
+
+  async uploadVideo(event: Event, condition: 'baseline' | 'followup', take: number): Promise<void> {
+    const fileInput = event.target as HTMLInputElement;
+    const file = fileInput.files?.[0];
+    const study = this.study();
+    if (!file || !study || this.uploadingVideo()) return;
+    this.videoComparison.set(null);
+    this.videoError.set('');
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!extension || !['mov','mp4','m4v','webm','mkv','avi','3gp','3g2'].includes(extension) ||
+        file.size > 240_000_000 || file.size < 10_000) {
+      this.videoError.set(this.isSpanish
+        ? 'Formato o tamaño no permitido. Usa MOV/MP4/WebM/MKV/AVI/3GP, hasta 240 MB.'
+        : 'Unsupported format or size. Use MOV/MP4/WebM/MKV/AVI/3GP, up to 240 MB.');
+      fileInput.value = '';
+      return;
+    }
+    this.uploadingVideo.set(condition + '-' + take);
+    try {
+      const uploaded = await firstValueFrom(this.http.post<VideoRecord>(
+        this.api + '/api/science/pendulum/preregistrations/' + study.id +
+          '/video/' + condition + '/' + take + '?filename=' + encodeURIComponent(file.name),
+        file));
+      this.videos.update(all => [...all.filter(x => !(x.condition === condition && x.take === take)), uploaded]);
+    } catch (err: unknown) {
+      this.videoError.set(this.isSpanish
+        ? 'No se pudo decodificar/subir el video. Comprueba que FFmpeg esté disponible y que el archivo sea legible; puede necesitar revisión manual.'
+        : 'Video upload/decode failed. Check FFmpeg availability and media file validity; manual review may be needed.');
+    } finally {
+      this.uploadingVideo.set('');
+      fileInput.value = '';
+    }
+  }
+
+  async compareVideos(): Promise<void> {
+    const s = this.study();
+    if (!s || !this.canCompareVideos || this.busy()) return;
+    this.busy.set(true);
+    this.videoError.set('');
+    this.videoComparison.set(null);
+    try {
+      const choose = (side: 'baseline' | 'followup') =>
+        this.videos().filter(x => x.condition === side && x.preliminaryPeriodSeconds !== null)
+          .sort((a,b) => a.take - b.take).slice(0,3).map(x => x.videoId);
+      const r = await firstValueFrom(this.http.post<VideoComparison>(
+        this.api + '/api/science/pendulum/preregistrations/' + s.id + '/compare-videos', {
+          baselineVideoIds: choose('baseline'), followUpVideoIds: choose('followup')
+        }));
+      this.videoComparison.set(r);
+    } catch {
+      this.videoError.set(this.isSpanish
+        ? 'El seguimiento local aún no permite comparar estos videos. Requiere revisar las coordenadas.'
+        : 'Local tracking cannot yet compare these videos. Review the detected coordinates.');
+    } finally { this.busy.set(false); }
+  }
 
   async preregister(): Promise<void> {
     if (this.busy()) return;
@@ -66,6 +245,8 @@ export class PendulumStudy {
     this.result.set(null);
     this.firstSeries.set(null);
     this.secondSeries.set(null);
+    this.videos.set([]);
+    this.videoComparison.set(null);
     try {
       const prediction = await firstValueFrom(this.http.post<Preregistration>(
         this.api + '/api/science/pendulum/preregister', {
@@ -73,6 +254,7 @@ export class PendulumStudy {
           followUpLengthMeters: this.secondLength()
         }));
       this.study.set(prediction);
+      localStorage.setItem('prooflab-pendulum-study-id', prediction.id);
     } catch {
       this.error.set(this.isSpanish
         ? 'No se pudo registrar la predicción. Verifica la API y las longitudes.'

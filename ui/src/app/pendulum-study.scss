@@ -25,6 +25,25 @@ input[type=number], input[type=file] { padding: 12px; border-radius: 9px; backgr
 .hash { word-break: break-all; }
 .caution { color: #825d19; background: #fff9e9; padding: 12px; border-radius: 8px; font-size: 12px; line-height: 1.6; }
 .error { background: #fff0f0; border: 1px solid #eeb7b7; color: #8c2626; border-radius: 8px; padding: 10px; }
+
+.video-upload-area { margin: 25px 0; padding: 20px; border: 1px solid #d8e5ee; background: #f8fbfd; border-radius: 14px; }
+.video-upload-area h3 { font-size: 18px; margin: 9px 0; }
+.video-list { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.video-entry { border: 1px solid #d8e4f0; border-radius: 10px; padding: 12px; background: white; }
+.video-entry label { font-size: 12px; }
+.video-entry input { margin-top: 4px; }
+.video-result { color: #193a56; font-size: 12px; overflow-wrap: anywhere; line-height: 1.5; margin: 9px 0 0; }
+.processing { display: flex; align-items: center; gap: 9px; color: #2568a0; font-size: 13px; }
+.spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid #c5dbea; border-top-color: #236ba5; border-radius: 50%; animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.csv-advanced { margin: 24px 0; padding: 13px; border: 1px solid #d7e4ee; border-radius: 10px; }
+.csv-advanced summary { cursor: pointer; color: #225d94; font-weight: 650; font-size: 13px; }
+.csv-advanced[open] > summary { margin-bottom: 16px; }
+.video-list > strong { color: #18436b; font-size: 14px; }
+.study-reset { margin: 4px 0 10px; padding: 7px 11px; border: 1px solid #b9cddc; color: #1f557a; background: #fff; border-radius: 8px; cursor: pointer; font-size: 12px; }
+.study-reset:disabled { opacity: .5; cursor: not-allowed; }
+.video-poster { width: min(100%, 320px); display: block; margin: 8px 0; border: 1px solid #cbdfe9; border-radius: 8px; object-fit: contain; max-height: 200px; background: #111; }
+.video-curve { display: block; width: 100%; max-height: 105px; margin: 6px 0; border-radius: 8px; background: #f0f5fa; border: 1px solid #d7e6f1; }
 @media (max-width: 780px) {
   .study-title { flex-direction: column; }
   .study-grid, .metrics { grid-template-columns: 1fr; }

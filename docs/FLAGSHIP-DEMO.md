@@ -46,4 +46,10 @@ These endpoints and UI make NO paid Meta requests and do not change `Meta:AllowP
 
 **Never present an unimplemented video/agent step as working.** English submission materials must show authentic executions and limitations. Source of truth: `vherediadepvops/ProofLab-AI`. Never commit private experiment footage, credentials or datasets.
 
+## Mobile-video interoperability increment — October 27, 2026
+
+ProofLab now implements **direct video upload** for up to three baseline 50 cm and three follow-up 80 cm clips. The local API accepts MOV, MP4, M4V, WebM, MKV, AVI and 3GP/3G2 containers, checks actual codecs through FFprobe and decodes with server FFmpeg without any Meta provider calls. The server generates a browser-compatible JPEG thumbnail and an *experimental local* motion trace, retaining original bytes and source SHA-256 privately in the gitignored evidence directory. The user must assign clips to their actual length; coordinate CSV remains an advanced manual fallback.
+
+**Actual codec-validation evidence:** a real 1920×1080, ~60 FPS, 30.5-second iPhone HEVC MOV was uploaded and decoded successfully. Local candidates were detected in 316/366 normalized sampled frames, **but no trustworthy period was established**: `UPLOADED_NEEDS_MANUAL_TRACKING_REVIEW`. A synthetic H.264 MP4 fixture successfully exercised the poster HTTP 200 path. This does NOT demonstrate SAM video tracking or universally reliable device/codec processing. See [VIDEO-UPLOAD.md](VIDEO-UPLOAD.md). A future public judge-facing deployment will require upload authentication, quotas and privacy controls.
+
 **Español:** [FLAGSHIP-DEMO.es.md](FLAGSHIP-DEMO.es.md).

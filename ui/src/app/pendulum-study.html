@@ -4,8 +4,8 @@
       <span class="eyebrow">FLAGSHIP DEMO · MISSION 02</span>
       <h2>{{isSpanish ? 'Péndulo: predicción antes de medir' : 'Pendulum: predict before measuring'}}</h2>
       <p>{{isSpanish
-        ? 'Fijamos la predicción del segundo experimento antes de recibir observaciones. Por ahora se admiten CSV de coordenadas: el seguimiento automático de video con SAM todavía no está implementado.'
-        : 'We register the second experiment prediction before accepting observations. For now, coordinate CSVs are supported; automatic SAM video tracking is not yet implemented.'}}</p>
+        ? 'Aceptamos videos originales MOV/MP4 de distintos teléfonos, hasta tres por longitud, sin conversión manual. El seguimiento inicial es local; la integración SAM 3.1 aún está pendiente.'
+        : 'Upload original MOV/MP4 phone videos, up to three per length, without manual conversion. Initial tracking is local; SAM 3.1 integration is still pending.'}}</p>
     </div>
     <span class="offline">0 META TOKENS</span>
   </div>
@@ -39,6 +39,136 @@
       <p class="tiny">{{s.hypothesis.formula}}</p>
       <p class="tiny">{{isSpanish ? 'UTC registrado' : 'Registered UTC'}}: {{s.preregisteredAtUtc}}</p>
       <p class="hash">SHA-256: {{s.predictionSha256}}</p>
+      <button type="button" class="study-reset" (click)="newStudy()"
+        [disabled]="busy() || !!uploadingVideo()">
+        {{isSpanish ? 'Crear otra investigación (conservar esta en el servidor)' : 'Start another study (preserve this one on server)'}}
+      </button>
+      <section class="video-upload-area">
+        <span class="eyebrow">{{isSpanish ? 'CARGA DIRECTA DE VIDEO · IPHONE / SAMSUNG / OTROS' : 'DIRECT VIDEO UPLOAD · IPHONE / SAMSUNG / OTHER'}}</span>
+        <h3>{{isSpanish ? 'Subir hasta tres videos por longitud' : 'Upload up to three videos per length'}}</h3>
+        <p class="tiny">{{isSpanish
+          ? 'MOV, MP4, M4V, WebM, MKV, AVI o 3GP. Máximo 240 MB y 80 segundos cada uno. Se decodifican localmente con FFmpeg: no es necesario convertir archivos en el teléfono. No subas grabaciones con personas.'
+          : 'MOV, MP4, M4V, WebM, MKV, AVI or 3GP. Max 240 MB and 80 seconds each. FFmpeg decodes server-side; no phone conversion required. Do not upload footage containing people.'}}</p>
+        @if(formats(); as f) {
+          <p class="tiny">
+            {{f.decoderAvailable
+              ? (isSpanish ? 'Decodificador FFmpeg disponible' : 'FFmpeg decoder available')
+              : (isSpanish ? 'FFmpeg no está instalado en el servidor' : 'FFmpeg is not installed on the server')}}
+          </p>
+        }
+        <div class="study-grid">
+          <div class="video-list">
+            <strong>{{isSpanish ? 'Primera condición' : 'Baseline'}} · {{s.hypothesis.baselineLengthMeters * 100 | number:'1.0-0'}} cm</strong>
+            @for(take of [1, 2, 3]; track take) {
+              <div class="video-entry">
+                <label>
+                  {{isSpanish ? 'Grabación' : 'Take'}} {{take}}
+                  <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
+                    (change)="uploadVideo($event, 'baseline', take)"
+                    [disabled]="busy() || !!uploadingVideo() || !!videoFor('baseline', take) || formats()?.decoderAvailable === false"/>
+                </label>
+                @if(videoFor('baseline', take); as v) {
+                  <p class="video-result"><strong>{{v.originalFilename}}</strong>
+                    · {{v.media.codec.toUpperCase()}} · {{v.media.width}}×{{v.media.height}}
+                    · {{v.media.durationSeconds | number:'1.1-1'}} s
+                  </p>
+                  <p class="tiny">{{videoStatus(v)}}
+                    @if(v.preliminaryPeriodSeconds !== null) {
+                      · {{isSpanish ? 'Período preliminar' : 'Preliminary period'}}:
+                      {{v.preliminaryPeriodSeconds | number:'1.3-3'}} s
+                    }
+                  </p>
+                  @if(v.posterAvailable) {
+                    <img class="video-poster" [src]="videoPosterUrl(v.videoId)"
+                      [alt]="isSpanish ? 'Fotograma obtenido del video, sin SAM' : 'Original video frame, without SAM'"/>
+                  }
+                  @if((v.tracking.observations?.length ?? 0) > 10) {
+                    <svg class="video-curve" viewBox="0 0 400 110"
+                      [attr.aria-label]="isSpanish ? 'Trayectoria local preliminar' : 'Preliminary local motion trace'">
+                      <polyline [attr.points]="trajectoryPoints(v.tracking.observations ?? [])"
+                        fill="none" stroke="#1869a5" stroke-width="2"/>
+                    </svg>
+                    <p class="tiny">{{v.tracking.detectedFrames}}/{{v.tracking.framesAnalyzed}}
+                      {{isSpanish ? 'fotogramas con detección local' : 'frames detected locally'}}</p>
+                  }
+                }
+              </div>
+            }
+          </div>
+          <div class="video-list">
+            <strong>{{isSpanish ? 'Segunda condición' : 'Follow-up'}} · {{s.hypothesis.followUpLengthMeters * 100 | number:'1.0-0'}} cm</strong>
+            @for(take of [1, 2, 3]; track take) {
+              <div class="video-entry">
+                <label>
+                  {{isSpanish ? 'Grabación' : 'Take'}} {{take}}
+                  <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
+                    (change)="uploadVideo($event, 'followup', take)"
+                    [disabled]="busy() || !!uploadingVideo() || !!videoFor('followup', take) || formats()?.decoderAvailable === false"/>
+                </label>
+                @if(videoFor('followup', take); as v) {
+                  <p class="video-result"><strong>{{v.originalFilename}}</strong>
+                    · {{v.media.codec.toUpperCase()}} · {{v.media.width}}×{{v.media.height}}
+                    · {{v.media.durationSeconds | number:'1.1-1'}} s
+                  </p>
+                  <p class="tiny">{{videoStatus(v)}}
+                    @if(v.preliminaryPeriodSeconds !== null) {
+                      · {{isSpanish ? 'Período preliminar' : 'Preliminary period'}}:
+                      {{v.preliminaryPeriodSeconds | number:'1.3-3'}} s
+                    }
+                  </p>
+                  @if(v.posterAvailable) {
+                    <img class="video-poster" [src]="videoPosterUrl(v.videoId)"
+                      [alt]="isSpanish ? 'Fotograma obtenido del video, sin SAM' : 'Original video frame, without SAM'"/>
+                  }
+                  @if((v.tracking.observations?.length ?? 0) > 10) {
+                    <svg class="video-curve" viewBox="0 0 400 110"
+                      [attr.aria-label]="isSpanish ? 'Trayectoria local preliminar' : 'Preliminary local motion trace'">
+                      <polyline [attr.points]="trajectoryPoints(v.tracking.observations ?? [])"
+                        fill="none" stroke="#1869a5" stroke-width="2"/>
+                    </svg>
+                    <p class="tiny">{{v.tracking.detectedFrames}}/{{v.tracking.framesAnalyzed}}
+                      {{isSpanish ? 'fotogramas con detección local' : 'frames detected locally'}}</p>
+                  }
+                }
+              </div>
+            }
+          </div>
+        </div>
+        @if(uploadingVideo()) {
+          <p class="processing"><span class="spinner"></span>
+            {{isSpanish ? 'Subiendo y analizando video localmente. No se está llamando a Meta.' : 'Uploading and processing locally. No Meta call is made.'}}
+          </p>
+        }
+        <p class="caution">
+          {{isSpanish
+            ? 'AVISO CIENTÍFICO: el seguimiento preliminar usa sustracción local de fondo, NO SAM 3.1. Debe revisarse visualmente antes de considerar válidos los resultados. Un códec admitido no garantiza que todas las escenas puedan analizarse.'
+            : 'SCIENTIFIC NOTICE: preliminary tracking uses local background subtraction, NOT SAM 3.1. Visually review detections before trusting results. Supported codecs do not guarantee successful tracking of all scenes.'}}
+        </p>
+        <button class="study-action" type="button" (click)="compareVideos()"
+          [disabled]="busy() || !!uploadingVideo() || !canCompareVideos">
+          {{isSpanish ? 'Comparar videos procesados' : 'Compare processed videos'}}
+        </button>
+        @if(videoError()) { <p class="error" role="alert">{{videoError()}}</p> }
+        @if(videoComparison(); as r) {
+          <div class="comparison">
+            <span class="eyebrow">{{isSpanish ? 'SEGUIMIENTO LOCAL PRELIMINAR · SIN SAM' : 'PRELIMINARY LOCAL TRACKING · NOT SAM'}}</span>
+            <div class="metrics">
+              <div><small>{{isSpanish ? 'Promedio inicial' : 'Baseline average'}}</small>
+                <strong>{{r.baselineMeanPeriodSeconds | number:'1.3-3'}} s</strong></div>
+              <div><small>{{isSpanish ? 'Promedio segunda condición' : 'Follow-up average'}}</small>
+                <strong>{{r.followUpMeanPeriodSeconds | number:'1.3-3'}} s</strong></div>
+              <div><small>{{isSpanish ? 'Cambio medido (preliminar)' : 'Measured change (preliminary)'}}</small>
+                <strong>{{r.observedIncreasePercent | number:'1.2-2'}}%</strong></div>
+            </div>
+            <p class="tiny">{{r.baselineVideos}} + {{r.followUpVideos}}
+              {{isSpanish ? 'videos considerados' : 'videos included'}}.
+              {{r.scientificStatus}}</p>
+            <p class="caution">{{r.limitations}}</p>
+          </div>
+        }
+      </section>
+      <details class="csv-advanced">
+        <summary>{{isSpanish ? 'Opcional: análisis avanzado con CSV de coordenadas' : 'Optional: advanced coordinate-CSV analysis'}}</summary>
       <div class="study-grid">
         <label>{{isSpanish ? 'Coordenadas de prueba inicial (CSV)' : 'Baseline coordinates (CSV)'}}
           <input type="file" accept=".csv,text/csv" (change)="loadCsv($event, 'first')" [disabled]="busy()"/>
@@ -58,6 +188,7 @@
         [disabled]="busy() || !firstSeries() || !secondSeries()">
         {{isSpanish ? 'Comparar las dos observaciones' : 'Compare both observation series'}}
       </button>
+      </details>
     </div>
   }
 

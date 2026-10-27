@@ -46,4 +46,10 @@ Ni esta pantalla ni el endpoint realizan peticiones a Meta ni cambian la bandera
 
 **No se debe grabar ningún paso todavía no implementado como si ya funcionara.** El material final en inglés debe mostrar salidas auténticas y sus límites. Fuente de verdad del código: `vherediadepvops/ProofLab-AI`. Datos científicos privados y secretos nunca al repositorio público.
 
+## Incremento de interoperabilidad móvil — 27/10/2026
+
+ProofLab ya dispone de un mecanismo de **carga directa de video** para hasta tres archivos 50 cm y tres archivos 80 cm. Acepta contenedores MOV, MP4, M4V, WebM, MKV, AVI y 3GP/3G2 por la API local, verifica el códec con FFprobe y decodifica con FFmpeg sin pasar datos a Meta. El servidor genera una miniatura JPEG compatible con navegador y un seguimiento local preliminar, preservando archivo original y SHA-256 en carpeta privada ignorada por Git. El usuario debe indicar a qué longitud pertenece cada archivo. El flujo CSV previo continúa como opción avanzada.
+
+**Prueba auténtica del formato:** se subió a la API un MOV HEVC real de iPhone 14 Pro Max (1920×1080, ~60 FPS, 30,5 s); decodificación exitosa, detecciones locales en 316/366 muestras, pero **no se obtuvo período científicamente fiable**; quedó `UPLOADED_NEEDS_MANUAL_TRACKING_REVIEW`. Se comprobó también un MP4 H.264 sintético con poster JPEG y HTTP 200. Esto no demuestra SAM sobre video ni garantiza todas las combinaciones de móvil/códec. Guía técnica [VIDEO-UPLOAD.es.md](VIDEO-UPLOAD.es.md). En un despliegue público de jurado harán falta autenticación, cuotas y privacidad.
+
 **English:** [FLAGSHIP-DEMO.md](FLAGSHIP-DEMO.md).

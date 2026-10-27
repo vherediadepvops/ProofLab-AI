@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Mvc;
 using ProofLab.Api;
 using ProofLab.Science;
 
@@ -18,6 +19,8 @@ builder.Services.AddSingleton<MemoryGuidedMathFlow>();
 builder.Services.AddSingleton<OpenConjectureEvidenceWorkflow>();
 builder.Services.AddSingleton<OfflineMathResearchFlow>();
 builder.Services.AddSingleton<PendulumResearchStore>();
+builder.Services.AddSingleton<VideoMediaDecoder>();
+builder.Services.AddSingleton<PendulumVideoWorkflow>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -348,6 +351,64 @@ app.MapPost("/api/science/pendulum/preregistrations/{id}/compare", async (
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (FileNotFoundException) { return Results.NotFound(new { error = "Study not found." }); }
     catch (InvalidDataException) { return Results.Conflict(new { error = "Integrity check failed." }); }
+});
+
+// Local upload of original phone media. The binary contents stay private and
+// never reach Muse/SAM or Git. This prototype is local-only, not a public
+// multi-user upload service. Uploaded footage must not contain people.
+app.MapGet("/api/science/pendulum/video-formats", (PendulumVideoWorkflow workflow) =>
+    Results.Ok(new {
+        decoderAvailable = workflow.DecoderAvailable,
+        supportedExtensions = VideoClipPolicy.AllowedExtensions.OrderBy(x => x),
+        supportedCodecs = VideoClipPolicy.AllowedCodecs.OrderBy(x => x),
+        maximumVideoBytes = VideoClipPolicy.MaximumBytes,
+        maximumDurationSeconds = VideoClipPolicy.MaximumDurationSeconds,
+        maxTakesPerCondition = 3,
+        processingMethod = "LOCAL_FFMPEG_AND_EXPERIMENTAL_TRACKER_NOT_SAM",
+        metaCalls = 0,
+        requiresHumanVideoVerification = true
+    }));
+app.MapPost("/api/science/pendulum/preregistrations/{id}/video/{condition}/{take:int}",
+    async (string id, string condition, int take, string? filename,
+        HttpRequest request, PendulumVideoWorkflow workflow, CancellationToken ct) =>
+{
+    if (request.ContentLength is null)
+        return Results.BadRequest(new { error = "Content-Length is required." });
+    try {
+        return Results.Ok(await workflow.UploadAsync(id, condition, take,
+            filename ?? "", request.Body, request.ContentLength.Value, ct));
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Study not found." }); }
+    catch (InvalidOperationException ex) { return Results.Problem(ex.Message, statusCode: 503); }
+    catch (InvalidDataException) { return Results.BadRequest(new { error = "Invalid or corrupt video file." }); }
+})
+.WithMetadata(new RequestSizeLimitAttribute(250_000_000));
+app.MapGet("/api/science/pendulum/preregistrations/{id}/videos",
+    async (string id, PendulumVideoWorkflow workflow, CancellationToken ct) =>
+{
+    try { return Results.Ok(await workflow.ListAsync(id, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Study not found." }); }
+    catch (InvalidDataException) { return Results.Conflict(new { error = "Video ledger check failed." }); }
+});
+app.MapGet("/api/science/pendulum/preregistrations/{id}/videos/{videoId}/poster",
+    async (string id, string videoId, PendulumVideoWorkflow workflow, CancellationToken ct) =>
+{
+    try {
+        var jpeg = await workflow.ReadPosterAsync(id, videoId, ct);
+        return Results.File(jpeg, "image/jpeg");
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Poster not available." }); }
+});
+app.MapPost("/api/science/pendulum/preregistrations/{id}/compare-videos",
+    async (string id, PendulumVideoComparisonRequest request,
+        PendulumVideoWorkflow workflow, CancellationToken ct) =>
+{
+    try { return Results.Ok(await workflow.CompareAsync(id, request, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Study not found." }); }
 });
 
 app.MapGet("/api/science/synthetic/{kind}", (string kind) =>
