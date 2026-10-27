@@ -104,6 +104,15 @@ footer{display:flex;justify-content:space-between;margin-top:20px;padding:17px 0
 .meta-test-panels .output { max-height:320px; }
 @media(max-width:960px) {.meta-test-status {grid-template-columns:repeat(2,minmax(0,1fr));}}
 
+/* SAM overlay */
+.sam-image-preview{position:relative;width:100%;margin:12px 0}
+.sam-image-preview .sample-frame{display:block;width:100%;max-height:none;margin:0}
+.sam-detection-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.sam-detected-mask{fill:#21ad8e55;stroke:#19efcc;fill-rule:evenodd}
+.sam-detected-box{fill:none;stroke:#ffda57;stroke-width:2.5;stroke-dasharray:7 4}
+.sam-detection-detail{background:#0b101b;border:1px solid #354358;border-radius:8px;padding:10px;color:#b8d5c8}
+.sam-previous-response{margin:18px 0 8px;border-top:1px solid #293244;padding-top:12px}
+
 /* Mathematical discovery mission */
 button.nav{width:100%;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer}
 button.nav.active{background:#262841;color:#e1ddff}

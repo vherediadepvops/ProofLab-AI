@@ -7,8 +7,7 @@ ProofLab AI is an experimental **scientific evidence engine** for adult research
 measurements and the models provided by Meta to make testable predictions and
 help explain why data may agree or disagree with a scientific hypothesis.
 
-**Project status: alpha.** Real Meta inference and end-to-end SAM frame parsing
-have **not yet been verified**. Calculations and demonstration data work offline.
+**Project status: alpha.** The owner obtained a **real SAM 3.1 `status: completed` response** with a bounding box and encoded mask for a synthetic red ball. Local mask decoder/overlay code is tested against **official synthetic sample data**; replay of that specific live response in the updated UI remains to be tested. Successful Muse Spark inference is still unverified; no original discovery is claimed.
 
 ## Competition provenance
 
@@ -114,7 +113,7 @@ The key belongs **only to the backend process** as `MODEL_API_KEY`, never Angula
 
 **Step-by-step token instructions:** [Meta Model API connection EN](docs/META-API-CONNECTION.md).
 
-**Two model manual tests:** choose **Meta API Tests** in the sidebar, personally open a temporary/consented API session on `5393` using `scripts/Start-MetaTest.cmd`, submit **one request per click** to Muse Spark or SAM and view sanitized HTTP diagnostics. The main `5391` API remains payment-disabled. [English test guide](docs/META-MANUAL-TESTS.md). Do not enable charges until Billing credits and owner approval are confirmed. Spending alert emails are not hard limits.
+**Two model manual tests:** choose **Meta API Tests** in the sidebar. SAM 3.1 responses are now decoded locally from Meta's base85 mask format into a source-aligned mask/box overlay, and prior complete JSON responses can be replayed offline without another model call. Uses pinned `@meta-sam/parser@0.1.0` under Meta's SAM License, copied to `ui/third-party/META-SAM-LICENSE.txt`.  personally open a temporary/consented API session on `5393` using `scripts/Start-MetaTest.cmd`, submit **one request per click** to Muse Spark or SAM and view sanitized HTTP diagnostics. The main `5391` API remains payment-disabled. [English test guide](docs/META-MANUAL-TESTS.md). Do not enable charges until Billing credits and owner approval are confirmed. Spending alert emails are not hard limits.
 
 No Meta calls have been made as part of the implementation tests.
 

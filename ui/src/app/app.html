@@ -126,7 +126,28 @@
             <input id="meta-test-concept" class="meta-test-input" type="text" maxlength="90"
               [ngModel]="metaTestSamConcept()" (ngModelChange)="metaTestSamConcept.set($event)"
               [disabled]="metaTestRunning()"/>
-            @if(metaTestImage()) { <img class="sample-frame" [src]="metaTestImage()" alt="Synthetic or user-selected test image"/> }
+            @if(metaTestImage()) {
+              <div class="sam-image-preview">
+                <img class="sample-frame" [src]="metaTestImage()" alt="Synthetic or user-selected test image"/>
+                @if(samVisualization(); as viz) {
+                  @if(viz.frameWidth > 0 && viz.frameHeight > 0) {
+                    <svg class="sam-detection-overlay"
+                      [attr.viewBox]="'0 0 ' + viz.frameWidth + ' ' + viz.frameHeight"
+                      preserveAspectRatio="xMidYMid meet"
+                      aria-label="SAM 3.1 segmentation masks and boxes">
+                      @for(object of viz.objects; track object.id) {
+                        <path class="sam-detected-mask" [attr.d]="object.path"
+                          [attr.transform]="'translate(' + object.left + ' ' + object.top + ')'"></path>
+                        <rect class="sam-detected-box"
+                          [attr.x]="object.left" [attr.y]="object.top"
+                          [attr.width]="object.right - object.left"
+                          [attr.height]="object.bottom - object.top"></rect>
+                      }
+                    </svg>
+                  }
+                }
+              </div>
+            }
             <button type="button" class="primary"
               [disabled]="metaTestRunning() || !metaTestReadiness()?.liveCallsPermitted ||
                           !metaTestImage() || metaTestSamConcept().trim().length < 3"
@@ -134,9 +155,37 @@
               {{language() === 'es' ? 'Enviar UNA imagen a SAM' : 'Send ONE image to SAM'}} <span>↗</span>
             </button>
             @if(metaTestSamAnswer()) {
-              <div class="provenance">{{language() === 'es' ? 'RESPUESTA BRUTA · MÁSCARAS NO DECODIFICADAS' : 'RAW RESPONSE · MASKS NOT DECODED'}}</div>
-              <pre class="output">{{metaTestSamAnswer()}}</pre>
+              <div class="provenance">{{language() === 'es' ? 'INTERPRETACIÓN LOCAL · SIN NUEVA LLAMADA' : 'LOCAL DECODING · NO NEW API CALL'}}</div>
+              <p class="warning">{{metaTestSamAnswer()}}</p>
             }
+            @if(samVisualization(); as viz) {
+              <div class="sam-detection-detail">
+                @for(object of viz.objects; track object.id) {
+                  <p><strong>{{language() === 'es' ? 'Objeto' : 'Object'}} {{object.id}}</strong>
+                    · box ({{object.left}}, {{object.top}}) – ({{object.right - 1}}, {{object.bottom - 1}})
+                    · {{language() === 'es' ? 'píxeles de máscara' : 'mask pixels'}}:
+                    {{object.foregroundPixels}}
+                  </p>
+                }
+              </div>
+            }
+            <details class="sam-previous-response">
+              <summary>{{language() === 'es'
+                ? 'Visualizar una respuesta anterior, sin usar créditos'
+                : 'Visualize a previous response without using credits'}}</summary>
+              <p class="warning">{{language() === 'es'
+                ? 'Pega el JSON completo de SAM 3.1 (no una copia recortada). Debes seleccionar la misma imagen original. Esta operación ocurre solo en tu navegador y no contacta a Meta.'
+                : 'Paste the COMPLETE SAM 3.1 JSON response (not a truncated copy). Select the original corresponding image. This runs locally in your browser, without contacting Meta.'}}</p>
+              <textarea rows="4" maxlength="1000000"
+                [ngModel]="samOfflineResponse()" (ngModelChange)="samOfflineResponse.set($event)"
+                [disabled]="metaTestRunning()"
+                [placeholder]="language() === 'es' ? 'Pega aquí el JSON completo...' : 'Paste complete JSON here...'"></textarea>
+              <button type="button" class="outline"
+                [disabled]="metaTestRunning() || !samOfflineResponse().trim()"
+                (click)="previewPreviousSam()">
+                {{language() === 'es' ? 'Decodificar sin enviar a Meta' : 'Decode without a Meta request'}}
+              </button>
+            </details>
             <p class="warning">
               {{language() === 'es'
                 ? 'La imagen de ejemplo es artificial y solo prueba la conexión; no es una observación científica.'

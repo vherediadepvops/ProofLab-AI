@@ -7,8 +7,7 @@ desarrollado para la temática *Push the Frontier* del Meta Global AI Developer 
 Combina mediciones físicas con modelos de Meta para formular hipótesis comprobables,
 predecir resultados y explicar diferencias entre la teoría y las observaciones.
 
-**Estado: alfa.** La inferencia real con Meta y la interpretación completa de máscaras
-de SAM **aún no han sido verificadas**. Los cálculos y ejemplos funcionan localmente.
+**Estado: alfa.** La prueba del propietario obtuvo **respuesta real `status: completed` de SAM 3.1** con caja y máscara codificada para una pelota sintética. El decodificador/overlay local de máscaras se verificó **con muestras sintéticas oficiales**, pero aún falta comprobar ese mismo resultado real en la nueva interfaz. La inferencia exitosa de Muse Spark sigue pendiente; no hay descubrimiento científico original.
 
 ## Procedencia del código competitivo
 
@@ -116,7 +115,7 @@ El token se almacena únicamente como `MODEL_API_KEY` del **proceso backend**, n
 
 **Pasos para obtener y colocar el token de manera segura:** [Conexión Meta Model API ES](docs/META-API-CONNECTION.es.md).
 
-**Pruebas manuales con dos modelos:** en la barra lateral elige **«Pruebas Meta API»**. El operador puede abrir una sesión temporal y confirmada en `5393` mediante `scripts/Start-MetaTest.cmd`, realizar **una solicitud por clic** a Muse Spark o SAM, y ver códigos HTTP sin exponer el token. La API principal en `5391` sigue con los pagos desactivados. [Guía ES](docs/META-MANUAL-TESTS.es.md). Las alertas por correo no son topes rígidos; no habilitar gastos hasta verificar Billing y tener aprobación explícita.
+**Pruebas manuales con dos modelos:** en la barra lateral elige **«Pruebas Meta API»**. Para SAM 3.1, la interfaz ahora interpreta la máscara base85 y dibuja su contorno y caja sobre la imagen; también permite pegar el JSON completo de una prueba anterior para decodificarlo sin enviar una nueva solicitud a Meta. Se usa `@meta-sam/parser@0.1.0` bajo la licencia SAM de Meta, copiada en `ui/third-party/META-SAM-LICENSE.txt`. El operador puede abrir una sesión temporal y confirmada en `5393` mediante `scripts/Start-MetaTest.cmd`, realizar **una solicitud por clic** a Muse Spark o SAM, y ver códigos HTTP sin exponer el token. La API principal en `5391` sigue con los pagos desactivados. [Guía ES](docs/META-MANUAL-TESTS.es.md). Las alertas por correo no son topes rígidos; no habilitar gastos hasta verificar Billing y tener aprobación explícita.
 
 Durante las pruebas de implementación no hicimos llamadas a Meta.
 

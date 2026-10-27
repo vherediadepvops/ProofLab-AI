@@ -4,6 +4,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ResearchWorkflow } from './research-workflow';
+import { decodeSamResponse, type SamVisualization } from './sam-visualization';
 import { Language, leanExplanation, leanOutcome, mathematicalAssumptions, scientificStatus, strategyDescription, friendlyApiError } from './locale';
 
 type Kind = 'Pendulum' | 'RollingSphere';
@@ -244,6 +245,8 @@ export class App implements OnInit {
   readonly metaTestSamConcept = signal('red ball');
   readonly metaTestImage = signal('');
   readonly metaTestSamAnswer = signal('');
+  readonly samVisualization = signal<SamVisualization | null>(null);
+  readonly samOfflineResponse = signal('');
   readonly metaTestLastResult = signal('');
 
   ngOnInit(): void {
@@ -358,6 +361,7 @@ export class App implements OnInit {
     this.metaTestImage.set(canvas.toDataURL('image/png'));
     this.metaTestSamConcept.set('red ball');
     this.metaTestSamAnswer.set('');
+    this.samVisualization.set(null);
     this.metaTestError.set('');
   }
 
@@ -379,7 +383,31 @@ export class App implements OnInit {
     reader.onerror = () => this.metaTestError.set('Unable to load test image.');
     reader.readAsDataURL(file);
     this.metaTestSamAnswer.set('');
+    this.samVisualization.set(null);
     this.metaTestError.set('');
+  }
+
+  async visualizeSamRaw(raw: string): Promise<void> {
+    try {
+      const decoded = await decodeSamResponse(raw);
+      this.samVisualization.set(decoded);
+      this.metaTestSamAnswer.set(this.language() === 'es'
+        ? decoded.objects.length + ' objeto(s) detectado(s), máscara decodificada localmente sin llamadas nuevas a Meta.'
+        : decoded.objects.length + ' detected object(s), locally decoded without new Meta requests.');
+      this.metaTestError.set('');
+    } catch {
+      this.samVisualization.set(null);
+      this.metaTestSamAnswer.set(this.language() === 'es'
+        ? 'La respuesta llegó, pero no pudo decodificarse como una máscara SAM 3.1 válida.'
+        : 'A response was received but it could not be decoded as a valid SAM 3.1 mask.');
+    }
+  }
+
+  async previewPreviousSam(): Promise<void> {
+    // User-supplied offline replay only, with no Meta request.
+    if (this.samOfflineResponse().trim().length === 0) return;
+    await this.visualizeSamRaw(this.samOfflineResponse().trim());
+    this.metaTestLastResult.set('SAM 3.1 · OFFLINE_REPLAY_NO_BILLING');
   }
 
   async testSamConnection(): Promise<void> {
@@ -393,6 +421,7 @@ export class App implements OnInit {
       : 'Send ONE image and description to SAM 3.1? This may consume credits. Avoid private or personal images.')) return;
     this.metaTestRunning.set(true);
     this.metaTestSamAnswer.set('');
+    this.samVisualization.set(null);
     this.metaTestError.set('');
     this.metaTestLastResult.set('');
     try {
@@ -400,8 +429,9 @@ export class App implements OnInit {
         this.metaTestApi + '/api/ai/segment-frame', {
           concept, imageDataUrl: this.metaTestImage()
         }));
-      this.metaTestSamAnswer.set(result.rawResponseJson.slice(0, 3000));
-      this.metaTestLastResult.set('SAM 3.1 · HTTP 200 · RAW_OUTPUT_NOT_DECODED');
+      await this.visualizeSamRaw(result.rawResponseJson);
+      this.metaTestLastResult.set('SAM 3.1 · HTTP 200 · ' +
+        (this.samVisualization() ? 'MASK_DECODED_OFFLINE' : 'RAW_ONLY'));
     } catch (error: any) {
       this.metaTestError.set(this.metaTestFailure(error, 'SAM 3.1'));
       this.metaTestLastResult.set('SAM 3.1 · FAILED_OR_INCONCLUSIVE');

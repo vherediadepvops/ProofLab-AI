@@ -342,14 +342,27 @@ describe('ProofLab Competition Research Lab', () => {
     expect(request.request.method).toBe('POST');
     expect(request.request.body.concept).toBe('red ball');
     expect(request.request.body.imageDataUrl).toMatch(/^data:image\/png;base64,/);
-    request.flush({model:'sam-3.1',rawResponseJson:'{"output":[{"test":"synthetic"}]}',
+    const wire =
+      "<0f>0<|box;x1=211;y1=228;x2=270;y2=254;w=320;h=334|>" +
+      "<|mask;x=0;y=0;data=27,60,~!!!!M!0c[0o91w?q1!pIH4pPRVp2B3'7\`e.ioeAf6-k/#Xd8%dX9x(|>";
+    const rawResponseJson=JSON.stringify({
+      model:'sam-3.1',status:'completed',
+      output:[{content:[{type:'output_text',text:wire}]}]
+    });
+    request.flush({model:'sam-3.1',rawResponseJson,
       decodedMasks:false,provenance:'META_MODEL_API_RAW_OUTPUT'});
-    await Promise.resolve();
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
     ctx.controller.expectOne('http://127.0.0.1:5393/api/meta/readiness')
       .flush({...ready,usedRequests:1,remainingRequests:1});
     await samCall;
-    expect(ctx.app.metaTestSamAnswer()).toContain('synthetic');
-    expect(ctx.app.metaTestLastResult()).toContain('RAW_OUTPUT_NOT_DECODED');
+    expect(ctx.app.samVisualization()?.objects.length).toBe(1);
+    expect(ctx.app.metaTestLastResult()).toContain('MASK_DECODED_OFFLINE');
+    ctx.fixture.detectChanges();
+    const box = ctx.root.querySelector('svg.sam-detection-overlay rect.sam-detected-box');
+    const mask = ctx.root.querySelector('svg.sam-detection-overlay path.sam-detected-mask');
+    expect(box?.getAttribute('x')).toBe('211');
+    expect(box?.getAttribute('y')).toBe('228');
+    expect(mask?.getAttribute('d')?.startsWith('M')).toBeTrue();
     ctx.controller.expectNone('http://127.0.0.1:5393/api/ai/segment-frame');
   });
 });
