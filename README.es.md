@@ -33,6 +33,8 @@ se desarrollaron durante el evento. No presentaremos simulaciones como datos rea
 - **Memoria científica SQLite:** almacena resultados Lean reales y recupera experiencias de otros expedientes para priorizar estrategias ya verificadas en el mismo teorema. Cada táctica recuperada vuelve a comprobarse con Lean y produce un nuevo ID. Sin IA, sin aprendizaje de pesos ni prueba de conjeturas abiertas. [Memoria científica](docs/SCIENTIFIC-MEMORY.es.md). El [esquema SQL versionado](src/ProofLab.Api/Database/001_scientific_experience.sql) se publica aquí; los datos reales `.sqlite` siguen privados.
 - **Borradores guiados ES/EN (sin IA):** botón para proponer campos de las cinco etapas usando información Goldbach curada (1–3) o evidencia real del expediente (4–5); un segundo botón ejecuta Goldbach finito + control Lean conocido en etapa 4. No sobrescribe campos, no aprueba automáticamente ni demuestra Goldbach. [Guía de borradores](docs/MISSION-001-GUIDED-DRAFTS.es.md).
 
+- **Demo estrella · Péndulo (primer incremento sin Meta):** registra la predicción 50→80 cm con fecha/huella local y permite comparar dos series CSV sin fingir video real. La integración automática SAM→video, Muse y el director siguen pendientes. [Plan y evidencia ES](docs/FLAGSHIP-DEMO.es.md).
+
 - API ASP.NET Core .NET 10 con predicción y evaluación científica independientes.
 - Péndulo: fórmula `T=2π√(L/g)` y medición del periodo mediante cruces
   ascendentes del centro observados, **sin forzar el resultado teórico**.
@@ -44,8 +46,8 @@ se desarrollaron durante el evento. No presentaremos simulaciones como datos rea
 - Interfaz Angular 20 en español e inglés, cálculos, demostraciones sintéticas
   y exportación de reportes JSON.
 - Adaptador de Muse Spark 1.3 para planificación de hipótesis.
-- Adaptador SAM 3.1 para segmentación de una imagen; por ahora devuelve
-  **una respuesta sin decodificar**, no máscaras interpretadas ni seguimiento de video.
+- Adaptador SAM 3.1 para segmentación de imagen y decodificador local de máscaras
+  mediante el parser oficial; probado con datos sintéticos. Aún **no** hay seguimiento de video.
 - Las llamadas a Meta están **desactivadas por defecto** hasta comprobar créditos,
   facturación y condiciones de prueba.
 

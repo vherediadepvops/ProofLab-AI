@@ -1,0 +1,83 @@
+<section class="study">
+  <div class="study-title">
+    <div>
+      <span class="eyebrow">FLAGSHIP DEMO · MISSION 02</span>
+      <h2>{{isSpanish ? 'Péndulo: predicción antes de medir' : 'Pendulum: predict before measuring'}}</h2>
+      <p>{{isSpanish
+        ? 'Fijamos la predicción del segundo experimento antes de recibir observaciones. Por ahora se admiten CSV de coordenadas: el seguimiento automático de video con SAM todavía no está implementado.'
+        : 'We register the second experiment prediction before accepting observations. For now, coordinate CSVs are supported; automatic SAM video tracking is not yet implemented.'}}</p>
+    </div>
+    <span class="offline">0 META TOKENS</span>
+  </div>
+  <div class="study-grid">
+    <label>
+      {{isSpanish ? 'Longitud inicial (metros)' : 'Baseline length (metres)'}}
+      <input type="number" min="0.1" max="5" step="0.1" [disabled]="busy() || !!study()"
+        [ngModel]="firstLength()" (ngModelChange)="firstLength.set(+$event)"/>
+    </label>
+    <label>
+      {{isSpanish ? 'Longitud de segunda prueba (metros)' : 'Follow-up length (metres)'}}
+      <input type="number" min="0.1" max="5" step="0.1" [disabled]="busy() || !!study()"
+        [ngModel]="secondLength()" (ngModelChange)="secondLength.set(+$event)"/>
+    </label>
+  </div>
+  <button class="study-action" type="button" (click)="preregister()" [disabled]="busy() || !!study()">
+    {{isSpanish ? 'Registrar predicción (sin Meta)' : 'Preregister prediction (no Meta)'}}
+  </button>
+
+  @if(study(); as s) {
+    <div class="registered">
+      <span class="eyebrow">{{isSpanish ? 'PREDICCIÓN REGISTRADA · TODAVÍA SIN MEDICIONES' : 'PREREGISTERED · NO MEASUREMENTS YET'}}</span>
+      <div class="metrics">
+        <div><small>{{isSpanish ? 'Período inicial previsto' : 'Predicted baseline period'}}</small>
+          <strong>{{s.hypothesis.expectedBaselinePeriodSeconds | number:'1.3-3'}} s</strong></div>
+        <div><small>{{isSpanish ? 'Período previsto a nueva longitud' : 'Predicted follow-up period'}}</small>
+          <strong>{{s.hypothesis.expectedFollowUpPeriodSeconds | number:'1.3-3'}} s</strong></div>
+        <div><small>{{isSpanish ? 'Variación esperada' : 'Expected change'}}</small>
+          <strong>{{s.hypothesis.predictedIncreasePercent | number:'1.2-2'}}%</strong></div>
+      </div>
+      <p class="tiny">{{s.hypothesis.formula}}</p>
+      <p class="tiny">{{isSpanish ? 'UTC registrado' : 'Registered UTC'}}: {{s.preregisteredAtUtc}}</p>
+      <p class="hash">SHA-256: {{s.predictionSha256}}</p>
+      <div class="study-grid">
+        <label>{{isSpanish ? 'Coordenadas de prueba inicial (CSV)' : 'Baseline coordinates (CSV)'}}
+          <input type="file" accept=".csv,text/csv" (change)="loadCsv($event, 'first')" [disabled]="busy()"/>
+          <span class="tiny">{{firstSeries()?.filename || (isSpanish ? 'Sin cargar' : 'Not loaded')}}
+            @if(firstSeries(); as x) { ({{x.observations.length}} {{isSpanish ? 'muestras' : 'samples'}}) }</span>
+        </label>
+        <label>{{isSpanish ? 'Coordenadas de segunda prueba (CSV)' : 'Follow-up coordinates (CSV)'}}
+          <input type="file" accept=".csv,text/csv" (change)="loadCsv($event, 'second')" [disabled]="busy()"/>
+          <span class="tiny">{{secondSeries()?.filename || (isSpanish ? 'Sin cargar' : 'Not loaded')}}
+            @if(secondSeries(); as x) { ({{x.observations.length}} {{isSpanish ? 'muestras' : 'samples'}}) }</span>
+        </label>
+      </div>
+      <p class="caution">{{isSpanish
+        ? 'CSV: tiempo en segundos y posición en una unidad constante (por ejemplo píxeles). Estos archivos son entradas aportadas por el usuario, no videos verificados. El sistema no declara evidencia física autenticada.'
+        : 'CSV: time in seconds and position in a consistent unit (for example pixels). These are user-provided coordinates, not verified videos. The system cannot claim authenticated physical evidence.'}}</p>
+      <button class="study-action" type="button" (click)="compare()"
+        [disabled]="busy() || !firstSeries() || !secondSeries()">
+        {{isSpanish ? 'Comparar las dos observaciones' : 'Compare both observation series'}}
+      </button>
+    </div>
+  }
+
+  @if(result(); as r) {
+    <div class="comparison">
+      <span class="eyebrow">{{isSpanish ? 'COMPARACIÓN DESCRIPTIVA · NO DESCUBRIMIENTO' : 'DESCRIPTIVE COMPARISON · NOT A DISCOVERY'}}</span>
+      <div class="metrics">
+        <div><small>{{isSpanish ? 'Medido, 1ª serie' : 'Measured first series'}}</small>
+          <strong>{{r.comparison.baseline.observedValue | number:'1.3-3'}} s</strong></div>
+        <div><small>{{isSpanish ? 'Medido, 2ª serie' : 'Measured second series'}}</small>
+          <strong>{{r.comparison.followUp.observedValue | number:'1.3-3'}} s</strong></div>
+        <div><small>{{isSpanish ? 'Variación observada' : 'Observed change'}}</small>
+          <strong>{{r.comparison.observedIncreasePercent | number:'1.2-2'}}%</strong></div>
+      </div>
+      <p>{{isSpanish ? 'Diferencia entre cambio observado y predicho:' : 'Observed vs predicted change gap:'}}
+        <strong>{{r.comparison.differencePercentagePoints | number:'1.2-2'}} {{isSpanish ? 'puntos porcentuales' : 'percentage points'}}</strong></p>
+      <p class="caution">{{r.comparison.evidenceClassification}} · {{r.comparison.scientificConclusion}}</p>
+      <p class="tiny">SHA-256 input: {{r.inputSha256}}</p>
+    </div>
+  }
+
+  @if(error()) { <p class="error" role="alert">{{error()}}</p> }
+</section>

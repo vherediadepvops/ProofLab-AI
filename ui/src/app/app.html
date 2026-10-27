@@ -6,6 +6,7 @@
     <div class="aside-label">{{words().workspace}}</div>
     <button type="button" class="nav" [class.active]="workspace() === 'math'" (click)="workspace.set('math')">∑ <span>{{words().sidebarMath}}</span></button>
     <button type="button" class="nav" [class.active]="workspace() === 'physics'" (click)="workspace.set('physics')">◎ <span>{{words().sidebarPhysics}}</span></button>
+    <button type="button" class="nav" [class.active]="workspace() === 'pendulum'" (click)="workspace.set('pendulum')">◉ <span>{{words().sidebarPendulum}}</span></button>
     <button type="button" class="nav" [class.active]="workspace() === 'meta'" (click)="openMetaTests()">✦ <span>{{words().sidebarMetaTests}}</span></button>
     <div class="nav future">◫ <span>{{words().sidebarFuture}}</span></div>
     <div class="aside-label second">{{words().tools}}</div>
@@ -30,8 +31,8 @@
 
     <section class="hero">
       <div class="micro">PUSH THE FRONTIER <span>—</span> 2026 GLOBAL HACKATHON</div>
-      <h1>{{workspace() === 'math' ? words().mathTitle : workspace() === 'meta' ? words().metaTestTitle : words().prepare}}</h1>
-      <p>{{workspace() === 'math' ? words().mathIntro : workspace() === 'meta' ? words().metaTestIntro : words().intro}}</p>
+      <h1>{{workspace() === 'math' ? words().mathTitle : workspace() === 'meta' ? words().metaTestTitle : workspace() === 'pendulum' ? (language() === 'es' ? 'Demo estrella · Péndulo' : 'Flagship Demo · Pendulum') : words().prepare}}</h1>
+      <p>{{workspace() === 'math' ? words().mathIntro : workspace() === 'meta' ? words().metaTestIntro : workspace() === 'pendulum' ? (language() === 'es' ? 'Predicción registrada antes de evaluar evidencias. Integración de video con SAM pendiente.' : 'Prediction locked before comparing observations. SAM video integration pending.') : words().intro}}</p>
       <div class="hero-badges"><span>{{words().heroMethod}}</span><span>{{words().heroAdapters}}</span><span>{{words().heroOpen}}</span></div>
       <div class="glyph" aria-hidden="true">∿</div>
     </section>
@@ -198,6 +199,9 @@
         }
         @if(metaTestLastResult()) { <p class="provenance">{{metaTestLastResult()}}</p> }
         @if(metaTestError()) { <div class="alert" role="alert">{{metaTestError()}}</div> }
+      }
+      @if(workspace() === 'pendulum') {
+        <app-pendulum-study [language]="language()" />
       }
       @if(workspace() === 'math') {
         <app-research-workflow [language]="language()" />

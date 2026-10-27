@@ -17,6 +17,7 @@ builder.Services.AddSingleton<MathEvidenceWorkflow>();
 builder.Services.AddSingleton<MemoryGuidedMathFlow>();
 builder.Services.AddSingleton<OpenConjectureEvidenceWorkflow>();
 builder.Services.AddSingleton<OfflineMathResearchFlow>();
+builder.Services.AddSingleton<PendulumResearchStore>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -320,6 +321,33 @@ app.MapPost("/api/science/evaluate", (EvidenceRequest input) =>
 {
     try { return Results.Ok(EvidenceAnalyzer.Analyze(input)); }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+
+// No model calls: register the 50→80 cm theoretical prediction before submitting
+// either coordinate series. Not evidence that the videos were filmed afterwards.
+app.MapPost("/api/science/pendulum/preregister", async (
+    PendulumPreregisterRequest request, PendulumResearchStore study,
+    CancellationToken ct) =>
+{
+    try { return Results.Ok(await study.PreregisterAsync(request, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+});
+app.MapGet("/api/science/pendulum/preregistrations/{id}", async (
+    string id, PendulumResearchStore study, CancellationToken ct) =>
+{
+    try { return Results.Ok(await study.GetAsync(id, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Study not found." }); }
+    catch (InvalidDataException) { return Results.Conflict(new { error = "Integrity check failed." }); }
+});
+app.MapPost("/api/science/pendulum/preregistrations/{id}/compare", async (
+    string id, PendulumCompareRequest request, PendulumResearchStore study,
+    CancellationToken ct) =>
+{
+    try { return Results.Ok(await study.CompareAsync(id, request, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Study not found." }); }
+    catch (InvalidDataException) { return Results.Conflict(new { error = "Integrity check failed." }); }
 });
 
 app.MapGet("/api/science/synthetic/{kind}", (string kind) =>

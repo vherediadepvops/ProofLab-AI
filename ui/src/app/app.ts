@@ -4,6 +4,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ResearchWorkflow } from './research-workflow';
+import { PendulumStudy } from './pendulum-study';
 import { decodeSamResponse, type SamVisualization } from './sam-visualization';
 import { Language, leanExplanation, leanOutcome, mathematicalAssumptions, scientificStatus, strategyDescription, friendlyApiError } from './locale';
 
@@ -96,7 +97,7 @@ const COPY = {
     mathEmpty: 'Selecciona una estrategia y verifica el teorema.',
     mathNotInstalled: 'Lean 4 todavía no está disponible en el backend.',
     sidebarMath: 'Misión 1 · Matemáticas',
-    sidebarPhysics: 'Laboratorio de física', sidebarFuture: 'Misiones 2–4 · Planificadas',
+    sidebarPhysics: 'Laboratorio de física', sidebarPendulum: 'Demo estrella · Péndulo', sidebarFuture: 'Misiones 2–4 · Planificadas',
     sidebarMetaTests: 'Pruebas Meta API',
     metaTestTitle: 'Pruebas de conexión · Meta Model API',
     metaTestIntro: 'Comprueba Muse Spark 1.3 y SAM 3.1 por separado, con una sesión local temporal, sin modificar investigaciones.',
@@ -163,7 +164,7 @@ const COPY = {
     mathEmpty: 'Select a strategy and verify the theorem.',
     mathNotInstalled: 'Lean 4 is not yet available on the backend.',
     sidebarMath: 'Mission 1 · Mathematics',
-    sidebarPhysics: 'Physics Evidence Studio', sidebarFuture: 'Missions 2–4 · Planned',
+    sidebarPhysics: 'Physics Evidence Studio', sidebarPendulum: 'Flagship Demo · Pendulum', sidebarFuture: 'Missions 2–4 · Planned',
     sidebarMetaTests: 'Meta API Tests',
     metaTestTitle: 'Connection tests · Meta Model API',
     metaTestIntro: 'Test Muse Spark 1.3 and SAM 3.1 separately through a temporary local session, without changing research dossiers.',
@@ -203,7 +204,7 @@ const COPY = {
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, ResearchWorkflow],
+  imports: [CommonModule, FormsModule, ResearchWorkflow, PendulumStudy],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
@@ -212,7 +213,7 @@ export class App implements OnInit {
   private readonly api = 'http://127.0.0.1:5391';
   readonly language = signal<Language>('es');
   readonly words = computed(() => COPY[this.language()]);
-  readonly workspace = signal<'math' | 'physics' | 'meta'>('math');
+  readonly workspace = signal<'math' | 'physics' | 'meta' | 'pendulum'>('math');
   readonly mathProblems = signal<MathProblem[]>([]);
   readonly mathChoice = signal('NAT-ADD-COMM');
   readonly mathStrategy = signal('omega');

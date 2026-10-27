@@ -33,6 +33,8 @@ during the event. Do not misrepresent demonstration data as physical evidence.
 - **SQLite scientific experience memory:** stores genuine Lean outcomes and recalls earlier compatible proofs across research dossiers, while rechecking every recalled tactic to produce a new evidence ID. No AI inference, parameter learning or open-conjecture proof. [Scientific memory](docs/SCIENTIFIC-MEMORY.md). The [versioned SQL schema](src/ProofLab.Api/Database/001_scientific_experience.sql) lives in this repository; actual `.sqlite` data stays private.
 - **Bilingual guided research drafts (NO AI):** generate empty fields for stages 1–3 from curated Goldbach material and 4–5 from actual recorded evidence; a separate stage-4 control runs bounded Goldbach/known-Lean tools. Never overwrite user work or autoapprove; not a Goldbach proof. [Guided draft protocol](docs/MISSION-001-GUIDED-DRAFTS.md).
 
+- **Flagship pendulum demo (first Meta-free increment):** preregisters the 50→80 cm theoretical prediction with local timestamp/hash and compares two CSV coordinate sequences without claiming real video provenance. Automatic SAM video tracking, Muse decision-making and the director remain pending. [Plan/evidence EN](docs/FLAGSHIP-DEMO.md).
+
 - .NET 10 ASP.NET Core API, with independent scientific prediction and evaluation.
 - Pendulum period: small-angle theory `T=2π√(L/g)`; measured period detected from
   observed upward center crossings, **not biased by the theoretical period**.
@@ -42,8 +44,8 @@ during the event. Do not misrepresent demonstration data as physical evidence.
 - Angular 20 web UI, with Spanish/English switch, prediction, synthetic demonstrations
   and JSON report export.
 - Meta Muse Spark 1.3 hypothesis-planning adapter over Chat Completions.
-- Meta SAM 3.1 single-image segmentation adapter over Responses API;
-  **returns raw output only**, without decoded masks or video tracking.
+- Meta SAM 3.1 single-image segmentation adapter with an official-parser-based
+  local mask decoder tested on synthetic fixtures; **no video tracking yet**.
 - The Meta adapters are **disabled by default** until credits, billing, and
   safe testing are confirmed.
 
