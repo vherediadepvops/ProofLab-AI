@@ -1,8 +1,14 @@
 import {
-  AfterViewInit, Component, ElementRef, OnDestroy, ViewChild,
-  input, signal
+  AfterViewInit, Component, ElementRef, OnChanges, OnDestroy, ViewChild,
+  inject, input, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+import {
+  type KinematicRevision, type KinematicFrame, pivotFromClick,
+  sampleAtTime, vectorAt, idealAngularSpeedAtAngle
+} from './pendulum-kinematics';
 import {
   type CandidatePixelPoint, formatMediaTime, motionAt,
   seekByFrame, trailingMotion
@@ -21,7 +27,11 @@ import {
   templateUrl: './pendulum-master-player.html',
   styleUrl: './pendulum-master-player.scss'
 })
-export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
+export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy {
+  private readonly http=inject(HttpClient,{optional:true});
+  private readonly api='http://127.0.0.1:5391/api/science/director/pendulum/sessions';
+  private revisionSerial=0;
+  private revisionKey='';
   @ViewChild('masterVideo') masterVideo?: ElementRef<HTMLVideoElement>;
   @ViewChild('vectorCanvas') vectorCanvas?: ElementRef<HTMLCanvasElement>;
   @ViewChild('ghostCanvas') ghostCanvas?: ElementRef<HTMLCanvasElement>;
@@ -34,6 +44,15 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
   readonly proxyFps = input(12);
   readonly points = input<CandidatePixelPoint[] | null>(null);
   readonly language = input<'es'|'en'>('es');
+  readonly studyId = input('');
+  readonly videoSha256 = input('');
+  readonly videoRole = input<'baseline'|'followup'>('baseline');
+  readonly initialAngleDegrees = input(15);
+  readonly pivotMode = signal(false);
+  readonly pivotSaving = signal(false);
+  readonly pivotError = signal('');
+  readonly pivotRevision = signal<KinematicRevision|null>(null);
+  readonly currentKinematics = signal<KinematicFrame|null>(null);
 
   readonly playing = signal(false);
   readonly currentTime = signal(0);
@@ -48,6 +67,11 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
   readonly viewSlots = signal<('combined'|'original'|'vectors'|'ghost')[]>(
     ['combined','original','vectors','ghost']);
   readonly zoomed = signal(false);
+  readonly panOffset = signal({x:0,y:0});
+  readonly dragging = signal(false);
+  private activeDrag:{pointerId:number,startX:number,startY:number,
+    originalX:number,originalY:number,width:number,height:number,moved:boolean}|null=null;
+  private suppressSurfaceClick=false;
   private frameCallbackId:number|null=null;
   private fallbackRafId:number|null=null;
   private disposed=false;
@@ -74,11 +98,175 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
     // The HTMLVideoElement remains in the DOM with its original clock.
   }
 
-  toggleZoom():void { this.zoomed.update(value=>!value); }
+  toggleZoom():void {
+    this.zoomed.update(value=>!value);
+    this.panOffset.set({x:0,y:0});
+    this.activeDrag=null;
+    this.dragging.set(false);
+  }
+
+  imageTransform():string {
+    if(!this.zoomed())return 'none';
+    const offset=this.panOffset();
+    return 'translate('+offset.x+'%, '+offset.y+'%) scale(1.6)';
+  }
+
+  onSurfaceClick(view:'combined'|'original'|'vectors'|'ghost',
+      event:MouseEvent):void {
+    if(this.suppressSurfaceClick){this.suppressSurfaceClick=false;return;}
+    if(this.pivotMode()){
+      if(view==='original')void this.selectPivot(event);
+      return;
+    }
+    this.selectView(view);
+  }
+
+  onPanStart(event:PointerEvent):void {
+    this.suppressSurfaceClick=false;
+    if(!this.zoomed() || event.button!==0)return;
+    const surface=event.currentTarget as HTMLElement;
+    const rect=surface.getBoundingClientRect();
+    if(rect.width<=0 || rect.height<=0)return;
+    const current=this.panOffset();
+    this.activeDrag={pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,
+      originalX:current.x,originalY:current.y,width:rect.width,height:rect.height,moved:false};
+    this.dragging.set(true);
+    surface.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  onPanMove(event:PointerEvent):void {
+    const drag=this.activeDrag;
+    if(!drag || drag.pointerId!==event.pointerId)return;
+    const dx=event.clientX-drag.startX,dy=event.clientY-drag.startY;
+    drag.moved=drag.moved||Math.abs(dx)>4||Math.abs(dy)>4;
+    if(!drag.moved)return;
+    // 1.6x zoom exposes 30% scrollable image extent each way.
+    const clamp=(v:number)=>Math.max(-30,Math.min(30,v));
+    this.panOffset.set({
+      x:clamp(drag.originalX+100*dx/drag.width),
+      y:clamp(drag.originalY+100*dy/drag.height)
+    });
+    event.preventDefault();
+  }
+
+  onPanEnd(event:PointerEvent):void {
+    const drag=this.activeDrag;
+    if(!drag || drag.pointerId!==event.pointerId)return;
+    this.suppressSurfaceClick=drag.moved;
+    this.activeDrag=null;
+    this.dragging.set(false);
+    const surface=event.currentTarget as HTMLElement;
+    if(surface.hasPointerCapture(event.pointerId))
+      surface.releasePointerCapture(event.pointerId);
+  }
+
+  private pivotUrl():string{
+    return this.api+'/'+this.studyId()+'/kinematics/'+this.videoRole();
+  }
+
+  private matchingRevision(value:KinematicRevision):boolean {
+    return value.studyId===this.studyId() &&
+      value.role===this.videoRole() &&
+      value.videoSha256?.toLowerCase()===this.videoSha256().toLowerCase() &&
+      value.analysis?.method==='LOCAL_2D_PIVOT_FINITE_DIFFERENCE_V1_NOT_SAM' &&
+      value.analysis?.physicalUnitsEnabled===false &&
+      value.analysis?.sourceWidth===480 && value.analysis?.sourceHeight===270 &&
+      Array.isArray(value.analysis?.samples);
+  }
+
+  ngOnChanges():void{
+    const key=this.studyId()+'|'+this.videoRole()+'|'+this.videoSha256();
+    if(this.revisionKey===key)return;
+    this.revisionKey=key;
+    const serial=++this.revisionSerial;
+    this.pivotRevision.set(null);
+    this.currentKinematics.set(null);
+    this.pivotMode.set(false);
+    this.pivotError.set('');
+    this.pivotSaving.set(false);
+    if(this.http && /^[a-f0-9]{32}$/i.test(this.studyId()) &&
+       /^[a-f0-9]{64}$/i.test(this.videoSha256()))
+      void this.loadPivot(serial);
+  }
+
+  private async loadPivot(serial:number):Promise<void>{
+    try{
+      const result=await firstValueFrom(this.http!.get<KinematicRevision>(this.pivotUrl()));
+      if(serial!==this.revisionSerial || this.disposed)return;
+      if(!this.matchingRevision(result)){
+        this.pivotError.set(this.es
+          ? 'La revisión guardada no corresponde a este video.'
+          : 'Stored pivot revision does not match this video.');
+        return;
+      }
+      this.pivotRevision.set(result);
+      this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
+    }catch(error:unknown){
+      if(serial!==this.revisionSerial || this.disposed)return;
+      if((error as {status?:number})?.status!==404)
+        this.pivotError.set(this.es
+          ? 'No se pudo recuperar el pivote guardado.'
+          : 'Could not restore the saved pivot.');
+    }
+  }
+
+  beginPivotSelection():void{
+    if(!this.http || !/^[a-f0-9]{32}$/i.test(this.studyId()) ||
+       !/^[a-f0-9]{64}$/i.test(this.videoSha256()) ||
+       (this.points()?.length??0)<5 || this.pivotSaving())return;
+    this.masterVideo?.nativeElement.pause();
+    this.pivotMode.set(true);
+    this.pivotError.set('');
+    this.zoomed.set(false);
+    this.panOffset.set({x:0,y:0});
+    this.activeDrag=null;this.dragging.set(false);
+    this.selectView('original');
+  }
+
+  cancelPivotSelection():void{
+    if(!this.pivotSaving())this.pivotMode.set(false);
+  }
+
+  private async selectPivot(event:MouseEvent):Promise<void>{
+    const video=this.masterVideo?.nativeElement;
+    if(!video || !this.http || !this.pivotMode() || this.pivotSaving())return;
+    const position=pivotFromClick(event.clientX,event.clientY,
+      video.getBoundingClientRect(),video.videoWidth,video.videoHeight);
+    if(!position){
+      this.pivotError.set(this.es
+        ? 'Elige un punto dentro de la imagen, no sobre la banda negra.'
+        : 'Choose a point inside the image, not a black bar.');
+      return;
+    }
+    const serial=++this.revisionSerial;
+    this.pivotSaving.set(true);
+    this.pivotError.set('');
+    try{
+      const result=await firstValueFrom(this.http.post<KinematicRevision>(
+        this.pivotUrl(),{pivotXpx:position.pivotXpx,pivotYpx:position.pivotYpx,
+          videoSha256:this.videoSha256()}));
+      if(serial!==this.revisionSerial || this.disposed)return;
+      if(!this.matchingRevision(result)){
+        this.pivotError.set(this.es
+          ? 'Los resultados no corresponden a este video.'
+          : 'Analysis response does not match this video.');
+        return;
+      }
+      this.pivotRevision.set(result);
+      this.pivotMode.set(false);
+      this.paintFrame(video.currentTime);
+    }catch{
+      if(serial===this.revisionSerial && !this.disposed)
+        this.pivotError.set(this.es
+          ? 'No se pudo registrar el pivote. Revisa el punto e inténtalo otra vez.'
+          : 'Could not save the pivot. Check the point and retry.');
+    }finally{
+      if(serial===this.revisionSerial)this.pivotSaving.set(false);
+    }
+  }
 
   ngAfterViewInit():void{
-    // Angular may create the video after a study response. This component
-    // mounts only when a server-side preview is available.
     this.setCanvasSizes();
     this.paintFrame(0);
   }
@@ -86,6 +274,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
   ngOnDestroy():void{
     this.disposed=true;
     this.stopFrameLoop();
+    ++this.revisionSerial;
     this.masterVideo?.nativeElement.pause();
   }
 
@@ -208,6 +397,66 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
     }
   }
 
+  formatMetric(value:number|null|undefined,digits=2):string {
+    return value!=null && Number.isFinite(value)?value.toFixed(digits):'—';
+  }
+
+  idealAtFrame():number|null {
+    const revision=this.pivotRevision(),frame=this.currentKinematics();
+    if(!revision || !frame || !frame.isValid)return null;
+    const max=revision.analysis.theoreticalMaxAngularSpeedRadPerSec;
+    return max===null?null:idealAngularSpeedAtAngle(
+      frame.angleDegrees,this.initialAngleDegrees(),max);
+  }
+
+  private drawArrow(ctx:CanvasRenderingContext2D,
+    x:number,y:number,dx:number,dy:number,color:string,scale:number):void{
+    const size=Math.hypot(dx,dy);
+    if(!Number.isFinite(size)||size<.01)return;
+    const length=Math.min(96,Math.max(0,size*scale));
+    if(length<2)return;
+    const angle=Math.atan2(dy,dx);
+    const endX=x+Math.cos(angle)*length,endY=y+Math.sin(angle)*length;
+    ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(endX,endY);ctx.stroke();
+    const head=9;
+    ctx.beginPath();ctx.moveTo(endX,endY);
+    ctx.lineTo(endX-head*Math.cos(angle-.46),endY-head*Math.sin(angle-.46));
+    ctx.lineTo(endX-head*Math.cos(angle+.46),endY-head*Math.sin(angle+.46));
+    ctx.closePath();ctx.fill();
+  }
+
+  /** Draw candidate geometric measurements; never paint metric XY. */
+  private paintAngular(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
+      frame:KinematicFrame|null,revision:KinematicRevision,showArrows:boolean):void {
+    const fx=canvas.width/480,fy=canvas.height/270;
+    const pivotX=revision.analysis.pivotXpx*fx;
+    const pivotY=revision.analysis.pivotYpx*fy;
+    ctx.save();
+    ctx.lineWidth=2.5;ctx.strokeStyle='#ffcc55';
+    ctx.beginPath();ctx.arc(pivotX,pivotY,6,0,2*Math.PI);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(pivotX-11,pivotY);
+    ctx.lineTo(pivotX+11,pivotY);ctx.moveTo(pivotX,pivotY-11);
+    ctx.lineTo(pivotX,pivotY+11);ctx.stroke();
+    if(frame && Number.isFinite(frame.bobXpx) && Number.isFinite(frame.bobYpx)){
+      const bx=frame.bobXpx*fx,by=frame.bobYpx*fy;
+      ctx.strokeStyle='#ffcc5580';ctx.lineWidth=1.6;
+      ctx.beginPath();ctx.moveTo(pivotX,pivotY);ctx.lineTo(bx,by);ctx.stroke();
+      ctx.beginPath();ctx.arc(bx,by,7,0,2*Math.PI);
+      ctx.strokeStyle='#ffe6a3';ctx.lineWidth=2;ctx.stroke();
+      if(showArrows){
+        const v=vectorAt(frame,{pivotXpx:revision.analysis.pivotXpx,
+          pivotYpx:revision.analysis.pivotYpx});
+        if(v){
+          this.drawArrow(ctx,bx,by,v.vx*fx,v.vy*fy,'#3cf2da',.22);
+          this.drawArrow(ctx,bx,by,v.atx*fx,v.aty*fy,'#ffb34d',.035);
+          this.drawArrow(ctx,bx,by,v.arx*fx,v.ary*fy,'#fb83ff',.035);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
   /**
    * All overlays use one media timestamp; no incremental state clock.
    * Canvas content is just visualization: source tracker may be incorrect.
@@ -243,9 +492,15 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
     }
 
     const samples=this.points()??[];
+    const revision=this.pivotRevision();
+    const frame=revision?sampleAtTime(revision.analysis.samples,time):null;
+    this.currentKinematics.set(frame);
     const detected=motionAt(samples,time);
     if(detected){
-      this.overlayStatus.set('LOCAL_PIXEL_CANDIDATE_NOT_SAM');
+      this.overlayStatus.set(revision
+        ? (frame?.isValid?'LOCAL_ANGULAR_CANDIDATE_NOT_SAM'
+          :'ANGULAR_DERIVATIVE_UNAVAILABLE')
+        :'LOCAL_PIXEL_CANDIDATE_NOT_SAM');
       const canvas=canvases[0]!;
       const factorX=canvas.width/480, factorY=canvas.height/270;
       const x=detected.x*factorX,y=detected.y*factorY;
@@ -254,6 +509,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
       const magnitude=Math.hypot(vx,vy);
       const length=magnitude<3?0:Math.min(94,magnitude*.12);
       const angle=Math.atan2(vy,vx);
+      if(!revision){
       for(const ctx of [ctxs[0]!,ctxs[2]!]){
       ctx.lineWidth=Math.max(2,canvas.width/275);
       ctx.strokeStyle='#46e0e2';
@@ -271,6 +527,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
       ctx.font='600 13px system-ui';ctx.fillStyle='#46e0e2';
       ctx.fillText('v '+detected.speedPixelsPerSecond.toFixed(1)+' px/s',
         14,Math.max(23,canvas.height-16));
+      }
       }
       const trail=trailingMotion(samples,time);
       const ghostCanvas=canvases[1]!;
@@ -294,9 +551,16 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
       if(trail.length>1)ghostCtx.stroke();
       }
     }else{
-      this.overlayStatus.set(samples.length>0
-        ? 'NO_RELIABLE_LOCAL_SAMPLE_AT_THIS_FRAME'
-        : 'NO_2D_TRACK_FOR_THIS_VIDEO');
+      this.overlayStatus.set(revision
+        ? 'NO_RELIABLE_TRACK_FOR_THIS_FRAME'
+        : (samples.length>0
+          ? 'NO_RELIABLE_LOCAL_SAMPLE_AT_THIS_FRAME'
+          : 'NO_2D_TRACK_FOR_THIS_VIDEO'));
+    }
+    if(revision){
+      this.paintAngular(ctxs[0]!,canvases[0]!,frame,revision,true);
+      this.paintAngular(ctxs[1]!,canvases[1]!,frame,revision,false);
+      this.paintAngular(ctxs[2]!,canvases[2]!,frame,revision,true);
     }
     const duration=this.duration();
     this.currentTime.set(Math.max(0,Math.min(duration||time,time)));

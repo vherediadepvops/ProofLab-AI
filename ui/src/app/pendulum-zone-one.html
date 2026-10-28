@@ -139,6 +139,8 @@
           @if(s.followup; as clip) {
             @if(clip.previewAvailable) {
               <app-pendulum-master-player [videoUrl]="reviewVideo('followup')"
+                [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'"
+                [initialAngleDegrees]="s.angleDegrees ?? 15"
                 [name]="clip.originalFilename"
                 [originalWidth]="clip.media.width" [originalHeight]="clip.media.height"
                 [originalFps]="clip.media.nominalFramesPerSecond"
@@ -150,6 +152,8 @@
         } @else {
           @if(s.baseline.previewAvailable) {
             <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
+              [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'"
+              [initialAngleDegrees]="s.angleDegrees ?? 15"
               [name]="s.baseline.originalFilename"
               [originalWidth]="s.baseline.media.width" [originalHeight]="s.baseline.media.height"
               [originalFps]="s.baseline.media.nominalFramesPerSecond"
