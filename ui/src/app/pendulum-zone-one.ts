@@ -3,6 +3,7 @@ import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PendulumDirector } from './pendulum-director';
 import { PendulumMasterPlayer } from './pendulum-master-player';
+import { SamVideoReplay } from './sam-video-replay';
 
 /**
  * Jury-facing Zone 1. Reuses the same validated Director session, upload,
@@ -12,7 +13,7 @@ import { PendulumMasterPlayer } from './pendulum-master-player';
 @Component({
   selector: 'app-pendulum-zone-one',
   standalone: true,
-  imports: [CommonModule, FormsModule, PendulumMasterPlayer],
+  imports: [CommonModule, FormsModule, PendulumMasterPlayer, SamVideoReplay],
   templateUrl: './pendulum-zone-one.html',
   styleUrl: './pendulum-zone-one.scss'
 })

@@ -266,6 +266,18 @@
     }
     @if(error()) {<p class="focus-error" role="alert">{{error()}}</p>}
   </section>
+  @if(session()?.baseline) {
+    @defer (on interaction) {
+      <app-sam-video-replay [language]="language()"
+        [videoSha256]="(activeTrial()==='followup' && session()?.followup?.sha256
+          ? session()?.followup?.sha256 : session()?.baseline?.sha256) ?? ''"/>
+    } @placeholder {
+      <button type="button" class="secondary-button">
+        {{es ? 'Etapa 3 · Inspeccionar máscaras SAM (sin costo)' :
+          'Stage 3 · Inspect SAM masks (no cost)'}}
+      </button>
+    }
+  }
   <p class="focus-disclaimer">{{es
     ? 'Seguimiento local experimental · NO SAM 3.1 · reproducción compatible de 12 FPS · videos originales intactos'
     : 'Experimental local tracking · NOT SAM 3.1 · browser proxy at 12 FPS · original video preserved'}}</p>
