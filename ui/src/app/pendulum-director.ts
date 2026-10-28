@@ -2,6 +2,8 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { PendulumMasterPlayer } from './pendulum-master-player';
+import type { CandidatePixelPoint } from './pendulum-master-sync';
 import { firstValueFrom } from 'rxjs';
 import { buildNormalizedVideoOverlay, type NormalizedOverlay } from './pendulum-overlay';
 
@@ -11,11 +13,12 @@ interface Point { timeSeconds: number; position: number }
 interface Motion {
   framesAnalyzed: number; detectedFrames: number;
   observations: Point[];
+  pixelSamples?: CandidatePixelPoint[] | null;
 }
 interface DirectorVideo {
   originalFilename: string; sha256: string; posterAvailable: boolean;
   previewAvailable?: boolean;
-  media: { codec: string; durationSeconds: number; width: number; height: number };
+  media: { codec: string; durationSeconds: number; width: number; height: number; nominalFramesPerSecond: number };
   tracking: Motion;
   spectral: { periodSeconds: number | null; fitRSquared: number; status: string };
 }
@@ -80,7 +83,7 @@ interface DirectorSession {
 @Component({
   selector: 'app-pendulum-director',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, PendulumMasterPlayer],
   templateUrl: './pendulum-director.html',
   styleUrl: './pendulum-director.scss'
 })

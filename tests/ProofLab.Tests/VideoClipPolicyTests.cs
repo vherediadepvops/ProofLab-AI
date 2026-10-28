@@ -66,6 +66,16 @@ public sealed class PendulumMotionTrackerTests
         Assert.Equal("LOCAL_TRACKING_CANDIDATE_REQUIRES_VIDEO_REVIEW", track.Outcome);
         Assert.True(track.DetectionRate > 0.85);
         Assert.DoesNotContain("SAM 3.1", track.Method);
+        Assert.NotNull(track.PixelSamples);
+        Assert.Equal(track.Observations.Count, track.PixelSamples.Count);
+        Assert.All(track.PixelSamples, point =>
+        {
+            Assert.InRange(point.X, 40, 120);
+            Assert.InRange(point.Y, 72, 102);
+            Assert.InRange(point.ApproximateRadiusPixels, 2, 20);
+        });
+        Assert.Equal(track.Observations[0].TimeSeconds,
+            track.PixelSamples[0].TimeSeconds);
         var measured = EvidenceAnalyzer.Analyze(new EvidenceRequest(
             new ExperimentSetup(ExperimentKind.Pendulum, LengthMeters: 0.5),
             track.Observations, EvidenceOrigin.TrackingCoordinates, "synthetic-test"));
@@ -81,5 +91,7 @@ public sealed class PendulumMotionTrackerTests
         var result = PendulumMotionTracker.Track(frames, width, height, 12);
         Assert.Equal("NEEDS_MANUAL_REVIEW", result.Outcome);
         Assert.Empty(result.Observations);
+        Assert.NotNull(result.PixelSamples);
+        Assert.Empty(result.PixelSamples);
     }
 }

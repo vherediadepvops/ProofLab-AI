@@ -236,11 +236,14 @@ describe('ProofLab physical workbench and guided flagship experiment', () => {
       step:'AWAITING_HUMAN_BOB_REVIEW'
     });
     fixture.detectChanges();
-    const player=rootEl.querySelector('video');
-    expect(player?.hasAttribute('controls')).toBeTrue();
-    expect(player?.querySelector('source')?.getAttribute('src')).toBe(
+    const master=rootEl.querySelector('app-pendulum-master-player');
+    expect(master).not.toBeNull();
+    const mediaElement=master?.querySelector('video.master-source');
+    expect(mediaElement).not.toBeNull();
+    expect(mediaElement?.getAttribute('src')).toBe(
       studyApi+'/'+root(false).id+'/preview/baseline');
-    expect(rootEl.textContent).toContain('Vista previa H.264');
+    expect(master?.querySelectorAll('canvas').length).toBe(2);
+    expect(rootEl.textContent).toContain('Tres vistas, un solo reloj');
     http.verify();
   });
 

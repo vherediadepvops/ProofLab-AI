@@ -1,0 +1,106 @@
+<section class="master-studio">
+  <div class="studio-heading">
+    <div>
+      <div class="eyebrow">{{es ? 'ZONA 1 · VIDEO CIENTÍFICO' : 'ZONE 1 · SCIENTIFIC VIDEO'}}</div>
+      <h4>{{es ? 'Tres vistas, un solo reloj' : 'Three views, one media clock'}}</h4>
+      <p>{{name()}} · {{originalWidth()}}×{{originalHeight()}} ·
+        {{originalFps() | number:'1.0-2'}} FPS
+        <span class="source-label">{{es ? 'ARCHIVO ORIGINAL CONSERVADO' : 'ORIGINAL PRESERVED'}}</span>
+      </p>
+    </div>
+    <span class="proxy-label">{{es ? 'REPRODUCCIÓN COMPATIBLE' : 'BROWSER PROXY'}} ·
+      H.264 · {{proxyFps()}} FPS</span>
+  </div>
+
+  <div class="views-grid">
+    <div class="view-panel">
+      <div class="view-title">
+        <span class="view-index">01</span>
+        {{es ? 'Video principal' : 'Main video'}}
+      </div>
+      <div class="view-surface">
+        <video #masterVideo
+          class="master-source"
+          [src]="videoUrl()" crossorigin="anonymous"
+          preload="auto" playsinline
+          (loadedmetadata)="onLoadedMetadata()"
+          (loadeddata)="onDecodedFrame()"
+          (seeked)="onDecodedFrame()"
+          (timeupdate)="onDecodedFrame()"
+          (play)="onPlay()"
+          (pause)="onPause()"
+          (ended)="onEnded()"
+          (error)="error.set(es ? 'El navegador no pudo decodificar la vista previa.' : 'Browser preview decode failed.')"
+          [attr.aria-label]="es ? 'Video fuente y reloj maestro' : 'Source video and master clock'"></video>
+      </div>
+      <div class="view-meta">{{es?'Original visual de referencia, sin anotaciones':'Unmodified reference view (browser-compatible copy)'}}</div>
+    </div>
+
+    <div class="view-panel">
+      <div class="view-title">
+        <span class="view-index">02</span>
+        {{es ? 'Vectores de movimiento' : 'Motion vectors'}}
+      </div>
+      <div class="view-surface">
+        <canvas #vectorCanvas class="synchronized-canvas"
+          [attr.aria-label]="es?'Mismo fotograma con velocidad aparente local':'Same frame with local image-space velocity'"></canvas>
+      </div>
+      <div class="view-meta">{{es?'Flecha de velocidad aparente · píxeles/segundo':'Image-space velocity arrow · pixels/second'}}</div>
+    </div>
+
+    <div class="view-panel">
+      <div class="view-title">
+        <span class="view-index">03</span>
+        {{es ? 'Rastro fantasma' : 'Ghost trail'}}
+      </div>
+      <div class="view-surface">
+        <canvas #ghostCanvas class="synchronized-canvas"
+          [attr.aria-label]="es?'Mismo fotograma con posiciones pasadas estimadas':'Same frame with estimated recent motion trail'"></canvas>
+      </div>
+      <div class="view-meta">{{es?'Últimos 1,5 segundos · centros candidatos':'Previous 1.5 seconds · candidate centroids'}}</div>
+    </div>
+  </div>
+
+  <div class="timeline" role="group"
+    [attr.aria-label]="es?'Controles de reproducción sincronizada':'Synchronized playback controls'">
+    <div class="playback-buttons">
+      <button class="play-main" type="button" (click)="togglePlayback()"
+        [attr.aria-label]="playing() ? (es?'Pausar todas las vistas':'Pause all views') : (es?'Reproducir todas las vistas':'Play all views')">
+        {{playing() ? 'Ⅱ' : '▶'}}
+        <span>{{playing()?(es?'Pausar':'Pause'):(es?'Reproducir':'Play')}}</span>
+      </button>
+      <button type="button" class="frame-button" (click)="stepFrame(-1)"
+        [attr.aria-label]="es?'Fotograma anterior':'Previous frame'">|◀</button>
+      <button type="button" class="frame-button" (click)="stepFrame(1)"
+        [attr.aria-label]="es?'Fotograma siguiente':'Next frame'">▶|</button>
+      <label class="rate-label">{{es?'Velocidad':'Speed'}}
+        <select [value]="playbackRate()" (change)="setSpeed(+$any($event.target).value)"
+          [attr.aria-label]="es?'Velocidad de reproducción':'Playback speed'">
+          <option value="0.25">0,25×</option>
+          <option value="0.5">0,5×</option>
+          <option value="1">1×</option>
+          <option value="1.5">1,5×</option>
+          <option value="2">2×</option>
+        </select>
+      </label>
+      <span class="timecode">{{timecode}} / {{lengthcode}}</span>
+    </div>
+    <input type="range" class="timeline-range"
+      min="0" [max]="duration() || 1" [step]="frameStepSeconds"
+      [value]="currentTime()" (input)="scrub($event)"
+      [attr.aria-label]="es?'Posición del fotograma compartido':'Shared video playhead'"/>
+    <div class="timeline-meta">
+      <span>{{es?'Fotograma de reproducción':'Playback frame'}}:
+        {{frameNumber()}} · {{es?'Vistas sincronizadas':'Views synchronized'}}:
+        {{paintedViews()}}/3</span>
+      <span>{{es?'Rastreo':'Tracking'}}: {{overlayStatus()}}</span>
+    </div>
+  </div>
+
+  @if(error()) {<p class="player-error" role="alert">{{error()}}</p>}
+  <p class="limitations">
+    {{es
+      ? 'Las tres vistas usan el mismo fotograma decodificado. La copia H.264 es de 12 FPS; el MOV/MP4 original conserva su resolución/FPS en el servidor. Flechas y rastros provienen de candidatos locales de movimiento, NO de SAM 3.1 ni de mediciones físicas calibradas. Si faltan coordenadas 2D, no se inventan vectores.'
+      : 'All views share the same decoded source frame. This browser H.264 proxy is 12 FPS; the original MOV/MP4 with source resolution/FPS remains private. Arrows and trails are experimental LOCAL motion candidates, NOT SAM 3.1 or calibrated physical measurements. Missing 2D data is never invented.'}}
+  </p>
+</section>

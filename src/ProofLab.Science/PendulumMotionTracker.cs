@@ -1,5 +1,9 @@
 namespace ProofLab.Science;
 
+/// <summary>Local pixel-space candidate, NOT a SAM-verified bob centroid.</summary>
+public sealed record VideoPixelMotionSample(
+    double TimeSeconds, double X, double Y, double ApproximateRadiusPixels);
+
 public sealed record LocalMotionTrack(
     IReadOnlyList<Observation> Observations,
     int FramesAnalyzed,
@@ -7,7 +11,8 @@ public sealed record LocalMotionTrack(
     double DetectionRate,
     string Outcome,
     string Method,
-    string Limitations);
+    string Limitations,
+    IReadOnlyList<VideoPixelMotionSample>? PixelSamples = null);
 
 /// <summary>
 /// Experimental, deterministic background-median tracker for a stable-camera,
@@ -27,6 +32,7 @@ public static class PendulumMotionTracker
 
         var background = EstimateBackground(frames, width * height);
         var points = new List<Observation>(frames.Count);
+        var pixelSamples = new List<VideoPixelMotionSample>(frames.Count);
         var visited = new int[width * height];
         var queue = new int[width * height];
         var mask = new bool[width * height];
@@ -51,7 +57,7 @@ public static class PendulumMotionTracker
 
             epoch++;
             double bestScore = double.NegativeInfinity;
-            (double X, double Y)? best = null;
+            (double X, double Y, double Radius)? best = null;
             for (var i = 0; i < mask.Length; i++)
             {
                 if (!mask[i] || visited[i] == epoch) continue;
@@ -101,14 +107,17 @@ public static class PendulumMotionTracker
                 if (score > bestScore)
                 {
                     bestScore = score;
-                    best = (cx, cy);
+                    best = (cx, cy, (w+h)/4d);
                 }
             }
 
             if (best is { } found)
             {
-                points.Add(new Observation(frameIndex / framesPerSecond, found.X));
-                prior = found;
+                var time = frameIndex / framesPerSecond;
+                points.Add(new Observation(time, found.X));
+                pixelSamples.Add(new VideoPixelMotionSample(time, found.X,
+                    found.Y, found.Radius));
+                prior = (found.X, found.Y);
             }
         }
 
@@ -123,7 +132,8 @@ public static class PendulumMotionTracker
             "LOCAL_MEDIAN_BACKGROUND_SUBTRACTION_12_FPS_NOT_SAM",
             "Experimental heuristic can confuse hands, shadows or background motion with " +
             "the pendulum. Source video and bob identity are not independently reviewed. " +
-            "Times are normalized by FFmpeg to a 12 fps sample grid, not original frame PTS.");
+            "Times are normalized by FFmpeg to a 12 fps sample grid, not original frame PTS.",
+            pixelSamples);
     }
 
     private static byte[] EstimateBackground(IReadOnlyList<byte[]> frames, int pixels)

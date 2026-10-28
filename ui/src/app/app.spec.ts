@@ -17,6 +17,9 @@ describe('ProofLab Competition Research Lab', () => {
 
   function initialize(leanAvailable = false, metaEnabled = false): { app: App; root: HTMLElement; controller: HttpTestingController; fixture: any } {
     const fixture = TestBed.createComponent(App);
+    // Legacy mission tests explicitly select the preserved hidden workspace.
+    // The juror-facing default is now Pendulum only.
+    fixture.componentInstance.workspace.set('math');
     fixture.detectChanges();
     const controller = TestBed.inject(HttpTestingController);
     controller.expectOne('http://127.0.0.1:5391/api/research/stages').flush([
@@ -51,6 +54,21 @@ describe('ProofLab Competition Research Lab', () => {
     fixture.detectChanges();
     return { app: fixture.componentInstance, root: fixture.nativeElement as HTMLElement, controller, fixture };
   }
+
+  it('opens Pendulum by default and hides unrelated navigation without deleting it', () => {
+    const standalone = TestBed.createComponent(App);
+    expect(standalone.componentInstance.workspace()).toBe('pendulum');
+    standalone.destroy();
+
+    const ctx = initialize(); // legacy math functionality remains testable
+    const links=Array.from(ctx.root.querySelectorAll(
+      'aside.sidebar button.nav')) as HTMLButtonElement[];
+    const visible=links.filter(link => !link.hasAttribute('hidden'));
+    expect(visible.length).toBe(1);
+    expect(visible[0].textContent).toContain('Péndulo');
+    expect(links.length).toBeGreaterThan(1); // code preserved
+    // Existing math probes intentionally remain active for hidden legacy tests.
+  });
 
   it('shows competition edition and honest known-theorem notice', () => {
     const ctx = initialize();

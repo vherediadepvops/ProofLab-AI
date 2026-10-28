@@ -4,14 +4,14 @@
       <div><strong>ProofLab AI</strong><small>EXPERIMENTAL INTELLIGENCE</small></div>
     </div>
     <div class="aside-label">{{words().workspace}}</div>
-    <button type="button" class="nav" [class.active]="workspace() === 'math'" (click)="workspace.set('math')">∑ <span>{{words().sidebarMath}}</span></button>
-    <button type="button" class="nav" [class.active]="workspace() === 'physics'" (click)="workspace.set('physics')">◎ <span>{{words().sidebarPhysics}}</span></button>
+    <button type="button" class="nav" hidden [class.active]="workspace() === 'math'" (click)="workspace.set('math')">∑ <span>{{words().sidebarMath}}</span></button>
+    <button type="button" class="nav" hidden [class.active]="workspace() === 'physics'" (click)="workspace.set('physics')">◎ <span>{{words().sidebarPhysics}}</span></button>
     <button type="button" class="nav" [class.active]="workspace() === 'pendulum'" (click)="workspace.set('pendulum')">◉ <span>{{words().sidebarPendulum}}</span></button>
-    <button type="button" class="nav" [class.active]="workspace() === 'meta'" (click)="openMetaTests()">✦ <span>{{words().sidebarMetaTests}}</span></button>
-    <div class="nav future">◫ <span>{{words().sidebarFuture}}</span></div>
-    <div class="aside-label second">{{words().tools}}</div>
-    <div class="meta-engine"><i class="spark"></i><span><strong>Muse Spark 1.3</strong><small>{{metaAvailable() ? words().liveMeta : words().noMeta}}</small></span></div>
-    <div class="meta-engine"><i class="sam"></i><span><strong>SAM 3.1</strong><small>{{metaAvailable() ? words().liveMeta : words().noMeta}}</small></span></div>
+    <button type="button" class="nav" hidden [class.active]="workspace() === 'meta'" (click)="openMetaTests()">✦ <span>{{words().sidebarMetaTests}}</span></button>
+    <div class="nav future" hidden>◫ <span>{{words().sidebarFuture}}</span></div>
+    <div class="aside-label second" hidden>{{words().tools}}</div>
+    <div class="meta-engine" hidden><i class="spark"></i><span><strong>Muse Spark 1.3</strong><small>{{metaAvailable() ? words().liveMeta : words().noMeta}}</small></span></div>
+    <div class="meta-engine" hidden><i class="sam"></i><span><strong>SAM 3.1</strong><small>{{metaAvailable() ? words().liveMeta : words().noMeta}}</small></span></div>
     <div class="side-foot">
       <span class="status-dot"></span> {{words().competition}}
       <p>Meta Global AI Developer Hackathon</p>

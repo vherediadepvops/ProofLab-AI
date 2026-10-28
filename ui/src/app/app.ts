@@ -214,7 +214,7 @@ export class App implements OnInit {
   private readonly api = 'http://127.0.0.1:5391';
   readonly language = signal<Language>('es');
   readonly words = computed(() => COPY[this.language()]);
-  readonly workspace = signal<'math' | 'physics' | 'meta' | 'pendulum'>('math');
+  readonly workspace = signal<'math' | 'physics' | 'meta' | 'pendulum'>('pendulum');
   readonly mathProblems = signal<MathProblem[]>([]);
   readonly mathChoice = signal('NAT-ADD-COMM');
   readonly mathStrategy = signal('omega');

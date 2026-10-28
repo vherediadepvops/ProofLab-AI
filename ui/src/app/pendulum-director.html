@@ -201,13 +201,14 @@
           {{s.baseline.media.codec.toUpperCase()}} ·
           {{s.baseline.media.durationSeconds | number:'1.1-1'}} s</p>
         @if(s.baseline.previewAvailable) {
-          <video class="frame" controls preload="metadata" playsinline
-            [attr.aria-label]="es?'Vista previa del primer experimento':'First experiment video review'">
-            <source [src]="reviewVideo('baseline')" type="video/mp4" />
-          </video>
-          <p class="caution">{{es
-            ? 'Vista previa H.264 creada localmente para revisar el movimiento. Se conserva el MOV/MP4 original sin cambios; el proxy no sustituye los fotogramas originales para ciencia.'
-            : 'Locally generated H.264 review video. The original MOV/MP4 is unchanged; the proxy is not a substitute for original scientific frames.'}}</p>
+          <app-pendulum-master-player
+            [videoUrl]="reviewVideo('baseline')"
+            [name]="s.baseline.originalFilename"
+            [originalWidth]="s.baseline.media.width"
+            [originalHeight]="s.baseline.media.height"
+            [originalFps]="s.baseline.media.nominalFramesPerSecond"
+            [points]="s.baseline.tracking.pixelSamples ?? null"
+            [language]="language()" />
         } @else if(s.baseline.posterAvailable) {
           <img class="frame" [src]="poster('baseline')"
             [alt]="es?'Fotograma inicial del video':'First video frame'" />
@@ -392,10 +393,14 @@
             {{s.followup.media.codec.toUpperCase()}} ·
             {{s.followup.media.durationSeconds | number:'1.1-1'}} s</p>
           @if(s.followup.previewAvailable) {
-            <video class="frame" controls preload="metadata" playsinline
-              [attr.aria-label]="es?'Vista previa del segundo experimento':'Follow-up experiment video review'">
-              <source [src]="reviewVideo('followup')" type="video/mp4" />
-            </video>
+            <app-pendulum-master-player
+              [videoUrl]="reviewVideo('followup')"
+              [name]="s.followup.originalFilename"
+              [originalWidth]="s.followup.media.width"
+              [originalHeight]="s.followup.media.height"
+              [originalFps]="s.followup.media.nominalFramesPerSecond"
+              [points]="s.followup.tracking.pixelSamples ?? null"
+              [language]="language()" />
           } @else if(s.followup.posterAvailable) {
             <img class="frame" [src]="poster('followup')"
               [alt]="es?'Fotograma de segunda prueba':'Follow-up video frame'" />
