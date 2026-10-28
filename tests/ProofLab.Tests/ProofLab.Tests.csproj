@@ -20,6 +20,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ProofLab.Science\ProofLab.Science.csproj" />
+    <!-- Pure, network-free SAM SSE reader compiled into the test assembly.
+         Avoids enabling any Meta API test credentials or paid calls. -->
+    <Compile Include="..\..\src\ProofLab.Api\SamVideoSseParser.cs"
+             Link="SamVideoSseParser.cs" />
   </ItemGroup>
 
 </Project>

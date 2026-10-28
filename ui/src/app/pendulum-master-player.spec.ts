@@ -314,6 +314,39 @@ describe('One-clock three-view pendulum laboratory',()=>{
     http.verify();fixture.destroy();
   });
 
+  it('treats a completed SAM zero-match archive as inconclusive, without invented motion',async()=>{
+    const {fixture,component}=init();
+    const http=TestBed.inject(HttpTestingController);
+    fixture.componentRef.setInput('studyId',study);
+    fixture.componentRef.setInput('videoSha256',sha);
+    fixture.detectChanges();
+    http.expectOne(r=>r.method==='GET'&&r.url.endsWith('/kinematics/baseline'))
+      .flush({error:'No pivot'},{status:404,statusText:'Not Found'});
+    http.expectOne(r=>r.method==='GET'&&r.url.endsWith('/sam/baseline/evidence'))
+      .flush({
+        state:{status:'CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW',
+          sourceSha256:sha,provenance:'META_SAM_3_1_CACHED_PROVIDER_OUTPUT'},
+        receipt:{model:'sam-3.1',concept:'metal pendulum bob',
+          originalVideoSha256:sha,providerEvidenceStatus:
+            'COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW',
+          framePtsSeconds:[0,.016,.032],sourceFrameCount:3},
+        rawResponseJson:JSON.stringify({model:'sam-3.1',status:'completed',
+          output:[{content:[{type:'output_text',text:''}]}]})
+      });
+    await fixture.whenStable();
+    // Lazy-loaded @meta-sam parser is a separate browser module and may
+    // complete after Angular's own stability signal.
+    for(let i=0;i<10 && component.samStatus()==='CHECKING_SAM_CACHE';i++)
+      await new Promise<void>(resolve=>setTimeout(resolve,10));
+    component.paintFrame(1);
+    fixture.detectChanges();
+    expect(component.samStatus()).toBe('SAM_3_1_COMPLETED_NO_MATCH');
+    expect(component.samTrack()).toBeNull();
+    expect(component.overlayStatus()).toBe('SAM_3_1_COMPLETED_NO_MATCH');
+    http.verify();
+    fixture.destroy();
+  });
+
   it('pauses master video, frame steps with 12fps decoder cadence, and stops overlays',()=>{
     const {fixture,component,source}=init();
     const videoPause=spyOn(source,'pause').and.stub();

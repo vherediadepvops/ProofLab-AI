@@ -226,6 +226,15 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       const {decodeSamVideoResponse}=await import('./sam-video-evidence');
       const result=await decodeSamVideoResponse(archive.rawResponseJson);
       if(serial!==this.samSerial || this.disposed)return;
+      // Meta explicitly permits completed streams with zero matches.
+      // A valid empty observation is NOT a corrupt cache, and never
+      // generates imaginary SAM masks, points, vectors or ghost trails.
+      if(result.result==='NO_MATCH'){
+        this.samTrack.set(null);
+        this.samStatus.set('SAM_3_1_COMPLETED_NO_MATCH');
+        this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
+        return;
+      }
       const track=verifiedSamPlaybackTrack(archive,result,this.videoSha256());
       this.samTrack.set(track);
       this.samStatus.set('SAM_3_1_CACHED_MASKS_PENDING_HUMAN_BOB_REVIEW');

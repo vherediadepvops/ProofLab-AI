@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -47,7 +48,7 @@ public sealed record SamApiCompletedResult(
 public sealed class PendulumSamCache(
     IWebHostEnvironment environment, PendulumDirectorWorkflow director,
     VideoMediaDecoder decoder, MetaLiveAccess meta,
-    SamVideoMetaTransport transport)
+    SamVideoMetaTransport transport, ILogger<PendulumSamCache> logger)
 {
     public const string SamModel = "sam-3.1";
     public const string Prompt = "metal pendulum bob";
@@ -261,8 +262,46 @@ public sealed class PendulumSamCache(
                     frameCount=timeline.Length,estimatedUsd=estimate,
                     requestedAtUtc=DateTimeOffset.UtcNow,
                     status="MAY_BE_BILLABLE_NO_AUTOMATIC_RETRY"},ct);
-            // The ONLY external media transfer/inference path. Never log keys.
-            var result=await transport.UploadAndSegmentAsync(submittedPath,Prompt,ct);
+            // Sanitized, durable per-attempt diagnostics. NO response text,
+            // prompt, file ID, API token, video, mask bytes or identifiers.
+            // The existing attempt lock is NEVER removed on failure.
+            var stopwatch=Stopwatch.StartNew();
+            var auditFile=Path.Combine(folder,"attempt-telemetry.jsonl");
+            async ValueTask RecordProgress(SamVideoSseProgress progress)
+            {
+                var line=JsonSerializer.Serialize(new {
+                    recordedAtUtc=DateTimeOffset.UtcNow,
+                    progress.Stage,elapsedMs=stopwatch.ElapsedMilliseconds,
+                    progress.Events,progress.DeltaEvents,progress.OutputChars
+                },Json)+"\n";
+                try { await File.AppendAllTextAsync(auditFile,line,CancellationToken.None); }
+                catch(IOException)
+                {
+                    logger.LogWarning("SAM diagnostic journal write failed; no retry permitted.");
+                }
+            }
+
+            await RecordProgress(new SamVideoSseProgress("REQUEST_BUDGET_RESERVED",0,0,0));
+            SamApiCompletedResult result;
+            try
+            {
+                // The ONLY external media transfer/inference path.
+                result=await transport.UploadAndSegmentAsync(
+                    submittedPath,Prompt,RecordProgress,ct);
+            }
+            catch(Exception ex)
+            {
+                var failure=ex switch {
+                    SamVideoSseException sam => sam.Code,
+                    OperationCanceledException => "SAM_REQUEST_CANCELLED_OR_TIMED_OUT",
+                    HttpRequestException => "SAM_PROVIDER_HTTP_OR_TRANSPORT_FAILURE",
+                    FormatException => "SAM_RESPONSE_FORMAT_INVALID",
+                    _ => "SAM_REQUEST_UNEXPECTED_FAILURE"
+                };
+                await RecordProgress(new SamVideoSseProgress(failure,0,0,0));
+                logger.LogWarning("SAM video attempt incomplete, reason={Reason}. Do not retry automatically.",failure);
+                throw;
+            }
             if (result.FullResponseJson.Length>85_000_000 ||
                 result.FullResponseJson.Length==0)
                 throw new InvalidDataException("Provider output exceeds cache safety limit.");
@@ -286,6 +325,8 @@ public sealed class PendulumSamCache(
             await File.WriteAllTextAsync(dataTemp,result.FullResponseJson,ct);
             File.Move(dataTemp,Path.Combine(folder,ResponseFile),overwrite:false);
             await WriteExclusiveAsync(Path.Combine(folder,"receipt.json"),receipt,ct);
+            await RecordProgress(new SamVideoSseProgress(
+                "PRIVATE_EVIDENCE_RECEIPT_COMMITTED",0,0,result.FullResponseJson.Length));
             return await ReadArchiveAsync(studyId,role,ct);
         }
         finally {gate.Release();}

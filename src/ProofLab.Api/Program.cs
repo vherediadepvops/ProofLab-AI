@@ -4,10 +4,13 @@ using ProofLab.Api;
 using ProofLab.Science;
 
 var builder = WebApplication.CreateBuilder(args);
+// Long SAM video streams may exceed two minutes before completion.
+// This is a timeout, NOT permission to make any additional paid requests.
+// Model calls still require explicit owner approval and budget gates.
 builder.Services.AddHttpClient("meta", client =>
-    client.Timeout = TimeSpan.FromSeconds(45));
+    client.Timeout = TimeSpan.FromMinutes(3));
 builder.Services.AddHttpClient("sam-video", client =>
-    client.Timeout = TimeSpan.FromMinutes(15));
+    client.Timeout = TimeSpan.FromMinutes(30));
 builder.Services.AddSingleton<MetaCallSafetyBudget>();
 builder.Services.AddSingleton<MetaLiveAccess>();
 builder.Services.AddScoped<MetaModelClient>();
