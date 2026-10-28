@@ -22,6 +22,7 @@ builder.Services.AddSingleton<PendulumResearchStore>();
 builder.Services.AddSingleton<VideoMediaDecoder>();
 builder.Services.AddSingleton<PendulumVideoWorkflow>();
 builder.Services.AddSingleton<PendulumDirectorWorkflow>();
+builder.Services.AddSingleton<PendulumDirectorKinematicsStore>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -398,6 +399,27 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/compare-single",
     catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
 });
+// Pivot selection and derived angular measurements are LOCAL and stored as
+// append-only private revisions tied to the original video SHA-256.
+app.MapPost("/api/science/director/pendulum/sessions/{id}/kinematics/{role}",
+    async (string id, string role, DirectorPivotRequest request,
+        PendulumDirectorKinematicsStore kinematics, CancellationToken ct) =>
+{
+    try { return Results.Ok(await kinematics.AnalyzeAsync(id, role, request, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Video or study missing." }); }
+    catch (InvalidDataException) { return Results.Conflict(new { error = "Evidence provenance mismatch." }); }
+});
+app.MapGet("/api/science/director/pendulum/sessions/{id}/kinematics/{role}",
+    async (string id, string role, PendulumDirectorKinematicsStore kinematics,
+        CancellationToken ct) =>
+{
+    try { return Results.Ok(await kinematics.ReadLatestAsync(id, role, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "No valid pivot revision found." }); }
+    catch (InvalidDataException) { return Results.Conflict(new { error = "Evidence provenance mismatch." }); }
+});
+
 app.MapGet("/api/science/director/pendulum/sessions/{id}/poster/{role}",
     async(string id,string role,PendulumDirectorWorkflow director,CancellationToken ct) =>
 {
