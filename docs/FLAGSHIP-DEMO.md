@@ -52,4 +52,10 @@ ProofLab now implements **direct video upload** for up to three baseline 50 cm a
 
 **Actual codec-validation evidence:** a real 1920×1080, ~60 FPS, 30.5-second iPhone HEVC MOV was uploaded and decoded successfully. Local candidates were detected in 316/366 normalized sampled frames, **but no trustworthy period was established**: `UPLOADED_NEEDS_MANUAL_TRACKING_REVIEW`. A synthetic H.264 MP4 fixture successfully exercised the poster HTTP 200 path. This does NOT demonstrate SAM video tracking or universally reliable device/codec processing. See [VIDEO-UPLOAD.md](VIDEO-UPLOAD.md). A future public judge-facing deployment will require upload authentication, quotas and privacy controls.
 
+## Scientific workflow increment — all six user videos analysed (October 27, 2026)
+
+All six authentic user-uploaded clips, `50CM_1/2/3.MOV` and `80CM_1/2/3.MOV`, now have reproducible candidate periods. The fixed-rule robust spectral estimator uses only the recorded positions, performs a temporal half-consistency check, and **does not ingest the theoretical prediction**. Three 50 cm clips yielded approximately 1.416–1.418 s, and the three 80 cm clips 1.798–1.800 s. Group means: **1.41693 s** and **1.79853 s**, preliminary signal-derived increase **26.9314%**, vs preregistered theoretical increase **26.4911%**, a **0.4403 percentage point difference**. Between-trial variance is small, but not a full instrumental uncertainty budget or object-identity validation.
+
+These are **unverified local motion-track candidates, NOT real SAM 3.1 results**. Reanalyses for the six prior records are stored in additional immutable private files without changing the originals, reuploading footage or incurring Meta costs. The UI enables a preliminary comparison with R² and explicit local/non-SAM limitations. **Required for the jury demonstration:** visually verify bob identity in each video, independently time cycles, quantify physical uncertainty, and integrate real SAM/Muse inference subject to owner-approved spending. Protocol: [VIDEO-UPLOAD.md](VIDEO-UPLOAD.md).
+
 **Español:** [FLAGSHIP-DEMO.es.md](FLAGSHIP-DEMO.es.md).

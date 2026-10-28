@@ -52,4 +52,10 @@ ProofLab ya dispone de un mecanismo de **carga directa de video** para hasta tre
 
 **Prueba auténtica del formato:** se subió a la API un MOV HEVC real de iPhone 14 Pro Max (1920×1080, ~60 FPS, 30,5 s); decodificación exitosa, detecciones locales en 316/366 muestras, pero **no se obtuvo período científicamente fiable**; quedó `UPLOADED_NEEDS_MANUAL_TRACKING_REVIEW`. Se comprobó también un MP4 H.264 sintético con poster JPEG y HTTP 200. Esto no demuestra SAM sobre video ni garantiza todas las combinaciones de móvil/códec. Guía técnica [VIDEO-UPLOAD.es.md](VIDEO-UPLOAD.es.md). En un despliegue público de jurado harán falta autenticación, cuotas y privacidad.
 
+## Nuevo incremento científico — análisis de las seis grabaciones (27/10/2026)
+
+Ahora las seis grabaciones `50CM_1/2/3.MOV` y `80CM_1/2/3.MOV`, cargadas por el usuario, tienen estimaciones numéricas reproducibles. El estimador espectral de períodos se basa únicamente en las coordenadas previas, usa un procedimiento robusto fijo y exige consistencia entre mitades; **no utiliza la predicción teórica como entrada**. Las tres tomas de 50 cm presentan ~1,416–1,418 s y las de 80 cm ~1,798–1,800 s. Promedios **1,41693 s** y **1,79853 s**; incremento observado a nivel de trayectoria **26,9314 %**, frente a predicción preinscrita **26,4911 %**, discrepancia **0,4403 puntos porcentuales**. Las variaciones entre tomas fueron muy pequeñas, pero **no incluyen incertidumbre instrumental ni prueban la identidad del objeto**.
+
+Las mediciones son **candidatas no verificadas**, sin SAM 3.1 sobre fotogramas reales. El reanálisis de los videos antiguos se almacenó en archivos inmutables adicionales; no se alteraron originales ni registros previos. Se realizó sin reenvío de video ni gasto Meta. La UI permite comparar y muestra explícitamente `LOCAL / NOT SAM`, bondad de ajuste R² y evaluación preliminar. **Para la demo final sigue pendiente** revisar manualmente la plomada en cada video, confrontar ciclos con cronometraje y conectar SAM 3.1 y Muse Spark dentro de las autorizaciones vigentes. Protocolo: [VIDEO-UPLOAD.es.md](VIDEO-UPLOAD.es.md).
+
 **English:** [FLAGSHIP-DEMO.md](FLAGSHIP-DEMO.md).

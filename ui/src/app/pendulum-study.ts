@@ -29,6 +29,22 @@ interface VideoFormats {
   maxTakesPerCondition: number;
   processingMethod: string;
 }
+interface SpectralReview {
+  videoId: string;
+  evaluatedAtUtc: string;
+  originalCrossingPeriodSeconds: number | null;
+  assessment: {
+    algorithm: string;
+    periodSeconds: number | null;
+    fitRSquared: number;
+    firstHalfPeriodSeconds: number | null;
+    secondHalfPeriodSeconds: number | null;
+    halfDifferencePercent: number | null;
+    observationsUsed: number;
+    status: string;
+    limitations: string;
+  };
+}
 interface VideoRecord {
   videoId: string;
   condition: 'baseline' | 'followup';
@@ -42,6 +58,7 @@ interface VideoRecord {
   preliminaryPeriodSeconds: number | null;
   outcome: string;
   provenanceNote: string;
+  spectralReview?: SpectralReview | null;
 }
 interface VideoComparison {
   predictedIncreasePercent: number;
@@ -50,8 +67,11 @@ interface VideoComparison {
   followUpMeanPeriodSeconds: number | null;
   baselineVideos: number;
   followUpVideos: number;
+  baselineSampleStandardDeviation: number | null;
+  followUpSampleStandardDeviation: number | null;
   differencePercentagePoints: number | null;
   scientificStatus: string;
+  method: string;
   limitations: string;
 }
 interface Comparison {
@@ -91,13 +111,14 @@ export class PendulumStudy implements OnInit {
   readonly formats = signal<VideoFormats | null>(null);
   readonly videos = signal<VideoRecord[]>([]);
   readonly uploadingVideo = signal('');
+  readonly reanalyzingVideos = signal(false);
   readonly videoComparison = signal<VideoComparison | null>(null);
   readonly videoError = signal('');
 
   get isSpanish(): boolean { return this.language() === 'es'; }
 
   newStudy(): void {
-    if (this.busy() || this.uploadingVideo()) return;
+    if (this.busy() || this.uploadingVideo() || this.reanalyzingVideos()) return;
     localStorage.removeItem('prooflab-pendulum-study-id');
     this.study.set(null);
     this.videos.set([]);
@@ -151,6 +172,12 @@ export class PendulumStudy implements OnInit {
   }
 
   videoStatus(record: VideoRecord): string {
+    if (record.spectralReview?.assessment.periodSeconds !== null &&
+        record.spectralReview?.assessment.periodSeconds !== undefined) {
+      return this.isSpanish
+        ? 'Estimación espectral local; requiere verificar visualmente la plomada'
+        : 'Local spectral estimate; visual bob verification required';
+    }
     if (record.preliminaryPeriodSeconds !== null) {
       return this.isSpanish
         ? 'Seguimiento local estimado; pendiente de revisión visual'
@@ -175,6 +202,36 @@ export class PendulumStudy implements OnInit {
 
   videoFor(condition: 'baseline' | 'followup', take: number): VideoRecord | undefined {
     return this.videos().find(x => x.condition === condition && x.take === take);
+  }
+
+  async reanalyzeSavedVideos(): Promise<void> {
+    const study = this.study();
+    if (!study || this.reanalyzingVideos() || this.uploadingVideo() || !this.videos().length) return;
+    this.reanalyzingVideos.set(true);
+    this.videoError.set('');
+    this.videoComparison.set(null);
+    let failed = 0;
+    try {
+      for (const record of [...this.videos()].sort((a,b) => a.take - b.take)) {
+        if (record.spectralReview) continue; // Do not repeat an immutable analysis.
+        try {
+          const updated = await firstValueFrom(this.http.post<VideoRecord>(
+            this.api + '/api/science/pendulum/preregistrations/' + study.id +
+              '/videos/' + record.videoId + '/reanalyze', {}));
+          this.videos.update(list =>
+            list.map(x => x.videoId === updated.videoId ? updated : x));
+        } catch { failed++; }
+      }
+      if (failed) {
+        this.videoError.set(this.isSpanish
+          ? failed + ' video(s) requieren revisión técnica. Los otros se conservaron.'
+          : failed + ' video(s) need technical review. Other results were kept.');
+      }
+    } finally { this.reanalyzingVideos.set(false); }
+  }
+
+  get hasPendingReanalysis(): boolean {
+    return this.videos().some(x => !x.spectralReview);
   }
 
   get canCompareVideos(): boolean {

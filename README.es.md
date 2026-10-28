@@ -36,8 +36,7 @@ se desarrollaron durante el evento. No presentaremos simulaciones como datos rea
 - **Demo estrella · Péndulo (sin Meta):** registra predicción 50→80 cm y ahora permite subir **hasta 6 videos originales** de teléfonos (MOV/HEVC de iPhone, MP4/H.264 de Android y formatos adicionales sujetos a decodificación real con FFmpeg), visualizar miniatura/seguimiento local preliminar y comparar series solo si hay datos candidatos. **Aún NO es SAM en video ni medición certificada.** [Guía de videos](docs/VIDEO-UPLOAD.es.md) · [plan estrella](docs/FLAGSHIP-DEMO.es.md).
 
 - API ASP.NET Core .NET 10 con predicción y evaluación científica independientes.
-- Péndulo: fórmula `T=2π√(L/g)` y medición del periodo mediante cruces
-  ascendentes del centro observados, **sin forzar el resultado teórico**.
+- Péndulo: predicción `T=2π√(L/g)` independiente de la medición; cálculo local mediante cruces ascendentes o estimador sinusoidal robusto. **No se utiliza el período previsto para ajustar las observaciones ni se certifica seguimiento físico sin revisión del video.**
 - Esfera maciza rodando por una rampa: aceleración teórica
   `a=(5/7)g·sin(θ)` y aceleración medida mediante ajuste cuadrático de
   posiciones calibradas y tiempos.

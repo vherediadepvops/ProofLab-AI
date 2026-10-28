@@ -33,4 +33,14 @@ FFmpeg es una dependencia de **servidor**, no del celular ni del navegador. Inst
 
 La meta posterior es usar **SAM 3.1** en fotogramas reales muestreados y rastreo local entre inferencias, validando plomada, intervalos de confianza, tiempos y registro causal. No activar llamadas Meta sin verificar créditos y autorización del propietario. Antes de presentar una cifra en el concurso, revisar manualmente video y resultado.
 
+## Hito: recuperación de períodos en las seis grabaciones reales (27/10/2026)
+
+El estimador inicial de cruces ascendentes fallaba para las tres tomas de 50 cm porque había saltos y errores transitorios en el seguimiento local. Se añadió el estimador determinista `PendulumSpectralEstimator` (`LOCAL_ROBUST_SINUSOID_V1_NOT_SAM`), **sin utilizar longitud ni período teórico como entrada**: excluye de forma predefinida los dos primeros segundos, aplica mediana móvil de cinco muestras, limita los valores extremos a los percentiles 8 y 92, explora períodos posibles mediante ajuste sinusoidal, y comprueba calidad R², amplitud, detecciones y coherencia entre las dos mitades del video. Una señal periódica de alta calidad **puede pertenecer a otro objeto, sombra o fondo**: siempre exige revisión de la plomada en el video.
+
+Para los originales ya almacenados, `POST /api/science/pendulum/preregistrations/{id}/videos/{videoId}/reanalyze` procesa **solo coordenadas previas** (sin volver a subir o decodificar el video, y sin Meta). Persiste una revisión inmutable `period-reviews/{videoId}-spectral-v1.json` por cada toma con huella de video y metodología, **sin sobrescribir el registro original**. `GET .../videos` combina ambos para visualizar las estimaciones, junto con R² y períodos estimados por mitades. Las nuevas cargas aplican el mismo método y guardan su análisis local con los datos recibidos.
+
+**Ensayo real reproducible en API local:** seis tomas subidas por el usuario como `50CM_1/2/3.MOV` y `80CM_1/2/3.MOV`, HEVC/1080p; análisis espectral: **50 cm** = 1,4156 / 1,4172 / 1,4180 segundos; **80 cm** = 1,7976 / 1,7984 / 1,7996 segundos. El promedio resultó 1,41693 s y 1,79853 s respectivamente, cambio estimado **26,9314 %**, frente al cambio teórico **26,4911 %** previamente registrado (diferencia +0,4403 puntos porcentuales). Las seis estimaciones cumplieron filtros espectrales, pero **NO hay verificación manual independiente del objeto rastreado, error temporal calibrado ni medida de incertidumbre física completa**. La variación entre tomas no captura errores sistemáticos.
+
+La UI ES/EN ofrece «Reanalizar videos guardados (sin Meta)» para estudios antiguos, conserva el análisis previo y desbloquea «Comparar videos procesados» cuando hay candidatos en ambas condiciones. Ningún expediente ni video se certifica automáticamente. Es solo una comparación descriptiva a partir de datos aportados y procesamiento local.
+
 **English:** [VIDEO-UPLOAD.md](VIDEO-UPLOAD.md).

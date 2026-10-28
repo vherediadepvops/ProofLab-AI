@@ -36,8 +36,7 @@ during the event. Do not misrepresent demonstration data as physical evidence.
 - **Flagship pendulum demo (Meta-free):** freezes a 50→80 cm prediction and now accepts up to **six original mobile video files** (iPhone HEVC/MOV, Android H.264/MP4 and additional FFmpeg-decodable formats), rendering a JPEG poster and *experimental local* motion trace. **This does NOT demonstrate SAM video tracking or scientifically validated physical measurements.** [Video upload guide](docs/VIDEO-UPLOAD.md) · [flagship plan](docs/FLAGSHIP-DEMO.md).
 
 - .NET 10 ASP.NET Core API, with independent scientific prediction and evaluation.
-- Pendulum period: small-angle theory `T=2π√(L/g)`; measured period detected from
-  observed upward center crossings, **not biased by the theoretical period**.
+- Pendulum: small-angle prediction `T=2π√(L/g)` is kept separate from independent local motion estimates, based on rising crossings or a robust sinusoidal fit. **No predicted period is fed into the estimator; measured bob identity still requires visual validation.**
 - Rolling solid sphere on an incline: predicted `a=(5/7)g·sin(θ)` and
   measured acceleration fitted from calibrated time-and-position observations.
 - Provenance labels distinguish synthetic, manually entered and tracking coordinates.

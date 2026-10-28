@@ -4,6 +4,15 @@ using ProofLab.Science;
 
 namespace ProofLab.Api;
 
+public sealed record PendulumSpectralReview(
+    string PreregistrationId,
+    string VideoId,
+    string SourceSha256,
+    DateTimeOffset EvaluatedAtUtc,
+    PendulumSpectralAssessment Assessment,
+    double? OriginalCrossingPeriodSeconds,
+    string Provenance);
+
 public sealed record PendulumVideoRecord(
     string VideoId,
     string PreregistrationId,
@@ -18,7 +27,8 @@ public sealed record PendulumVideoRecord(
     LocalMotionTrack Tracking,
     double? PreliminaryPeriodSeconds,
     string Outcome,
-    string ProvenanceNote);
+    string ProvenanceNote,
+    PendulumSpectralReview? SpectralReview = null);
 
 public sealed record PendulumVideoComparisonRequest(
     IReadOnlyList<string> BaselineVideoIds,
@@ -153,16 +163,27 @@ public sealed class PendulumVideoWorkflow(
                 catch (ArgumentException) { }
             }
 
-            var outcome = detectedPeriod.HasValue
+            // A second, independent method sees only the tracked (t, x) samples,
+            // never the study length or the theoretical period. Both methods
+            // remain unverified until an expert reviews the source footage.
+            var assessment = PendulumSpectralEstimator.Estimate(
+                tracking.Observations, tracking.DetectionRate);
+            var review = new PendulumSpectralReview(
+                study.Id, videoId, hash, DateTimeOffset.UtcNow, assessment,
+                detectedPeriod,
+                "LOCAL_SPECTRAL_ESTIMATE_FROM_ORIGINAL_TRACKING_NOT_SAM");
+            var periodCandidate = assessment.PeriodSeconds ?? detectedPeriod;
+            var outcome = periodCandidate.HasValue
                 ? "PRELIMINARY_LOCAL_PERIOD_NOT_SAM"
                 : "UPLOADED_NEEDS_MANUAL_TRACKING_REVIEW";
             var record = new PendulumVideoRecord(
                 videoId, study.Id, condition, take, filename,
                 DateTimeOffset.UtcNow, length, hash, posterAvailable, metadata,
-                tracking, detectedPeriod, outcome,
+                tracking, periodCandidate, outcome,
                 "Uploaded original from user; FFmpeg decoded locally. This is " +
                 "NOT SAM segmentation or an independently authenticated physical measurement. " +
-                "The preregistration timestamp does not prove video recording order.");
+                "The preregistration timestamp does not prove video recording order.",
+                review);
 
             var recordPath = Path.Combine(folder, videoId + ".json");
             await File.WriteAllTextAsync(recordPath,
@@ -196,11 +217,116 @@ public sealed class PendulumVideoWorkflow(
                     await File.ReadAllTextAsync(file, ct), Json);
                 if (record == null || record.PreregistrationId != study.Id)
                     throw new InvalidDataException("Video record integrity check failed.");
-                records.Add(record);
+                records.Add(await WithSpectralReviewAsync(record, folder, ct));
             }
             return records.OrderBy(x => x.Condition).ThenBy(x => x.Take).ToArray();
         }
         finally { gate.Release(); }
+    }
+
+    /// <summary>
+    /// Reanalyse previously stored video coordinates locally, without reupload,
+    /// without decoding media a second time and without any Meta model calls.
+    /// The original video/JSON evidence is never changed: legacy studies
+    /// receive a separately written immutable spectral-v1 revision file.
+    /// </summary>
+    public async Task<PendulumVideoRecord> ReanalyzeAsync(
+        string studyId, string videoId, CancellationToken ct)
+    {
+        var study = await studies.GetAsync(studyId, ct);
+        ValidateVideoId(videoId);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var folder = FolderFor(study.Id);
+            var rawPath = Path.Combine(folder, videoId.ToLowerInvariant() + ".json");
+            if (!File.Exists(rawPath))
+                throw new FileNotFoundException("Video does not belong to this study.");
+            var raw = JsonSerializer.Deserialize<PendulumVideoRecord>(
+                await File.ReadAllTextAsync(rawPath, ct), Json)
+                ?? throw new InvalidDataException("Invalid stored video record.");
+            if (raw.VideoId != videoId.ToLowerInvariant() ||
+                raw.PreregistrationId != study.Id)
+                throw new InvalidDataException("Video record ID mismatch.");
+            if (raw.SpectralReview is not null)
+                return VerifyAndApplySpectral(raw, raw.SpectralReview);
+
+            var existing = await ReadReviewAsync(raw, folder, ct);
+            if (existing is not null) return VerifyAndApplySpectral(raw, existing);
+
+            var result = PendulumSpectralEstimator.Estimate(
+                raw.Tracking.Observations, raw.Tracking.DetectionRate);
+            var review = new PendulumSpectralReview(
+                study.Id, videoId.ToLowerInvariant(), raw.SourceSha256,
+                DateTimeOffset.UtcNow, result, raw.PreliminaryPeriodSeconds,
+                "LOCAL_REANALYSIS_FROM_STORED_TRACK_WITHOUT_VIDEO_REUPLOAD_OR_SAM");
+            var directory = ReviewDirectory(folder);
+            Directory.CreateDirectory(directory);
+            var path = ReviewPath(folder, videoId);
+            await using var output = new FileStream(path, FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 4096, useAsync: true);
+            await JsonSerializer.SerializeAsync(output, review, Json, ct);
+            return VerifyAndApplySpectral(raw, review);
+        }
+        finally { gate.Release(); }
+    }
+
+    private static string ReviewDirectory(string folder) =>
+        Path.Combine(folder, "period-reviews");
+
+    private static string ReviewPath(string folder, string videoId)
+    {
+        ValidateVideoId(videoId);
+        return Path.Combine(ReviewDirectory(folder),
+            videoId.ToLowerInvariant() + "-spectral-v1.json");
+    }
+
+    private static void ValidateVideoId(string videoId)
+    {
+        if (videoId is null || videoId.Length != 32 ||
+            videoId.Any(c => !Uri.IsHexDigit(c)))
+            throw new ArgumentException("Invalid video identifier.");
+    }
+
+    private static PendulumVideoRecord VerifyAndApplySpectral(
+        PendulumVideoRecord raw, PendulumSpectralReview review)
+    {
+        if (raw.VideoId != review.VideoId ||
+            raw.PreregistrationId != review.PreregistrationId ||
+            raw.SourceSha256 != review.SourceSha256 ||
+            review.Assessment.Algorithm != PendulumSpectralEstimator.Version)
+            throw new InvalidDataException("Spectral review provenance mismatch.");
+
+        var period = review.Assessment.PeriodSeconds ??
+                     review.OriginalCrossingPeriodSeconds;
+        return raw with
+        {
+            PreliminaryPeriodSeconds = period,
+            Outcome = period.HasValue
+                ? "PRELIMINARY_LOCAL_PERIOD_NOT_SAM"
+                : "UPLOADED_NEEDS_MANUAL_TRACKING_REVIEW",
+            SpectralReview = review
+        };
+    }
+
+    private static async Task<PendulumSpectralReview?> ReadReviewAsync(
+        PendulumVideoRecord raw, string folder, CancellationToken ct)
+    {
+        var path = ReviewPath(folder, raw.VideoId);
+        if (!File.Exists(path)) return null;
+        var review = JsonSerializer.Deserialize<PendulumSpectralReview>(
+            await File.ReadAllTextAsync(path, ct), Json);
+        if (review is null)
+            throw new InvalidDataException("Missing spectral review record.");
+        return review;
+    }
+
+    private static async Task<PendulumVideoRecord> WithSpectralReviewAsync(
+        PendulumVideoRecord raw, string folder, CancellationToken ct)
+    {
+        var review = raw.SpectralReview ??
+                     await ReadReviewAsync(raw, folder, ct);
+        return review is null ? raw : VerifyAndApplySpectral(raw, review);
     }
 
     public async Task<byte[]> ReadPosterAsync(string studyId, string videoId, CancellationToken ct)
@@ -238,8 +364,9 @@ public sealed class PendulumVideoWorkflow(
             StandardDeviation(b.Select(x => x.PreliminaryPeriodSeconds!.Value)),
             a.Count, b.Count,
             "PRELIMINARY_UNVERIFIED_LOCAL_VIDEO_TRACKING_NOT_SAM",
-            "FFmpeg 12 fps decode + deterministic background segmentation; " +
-            "independent position-midline period estimator.",
+            "FFmpeg 12 fps sampling + local background candidate tracks; " +
+            "independent fixed-rule robust sinusoidal spectral estimator, " +
+            "or original rising-midline crossing baseline. Not SAM.",
             "Not independently validated against visible pendulum frames, a manual " +
             "baseline, true camera timecodes, or a scientific uncertainty model. " +
             "Repeats with only one video cannot estimate sample variance. " +

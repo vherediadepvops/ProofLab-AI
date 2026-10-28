@@ -33,4 +33,14 @@ FFmpeg is a **server dependency**; users do not need to convert files on the pho
 
 Future work: integrate real **SAM 3.1** image segmentation on selected video frames and reuse the masks for locally tracked trajectories with timestamps, manual baselines and uncertainty checks. No paid Meta calls without verified credits and owner authorization.
 
+## Milestone: period retrieval from all six genuine user videos (October 27, 2026)
+
+The prior ascending-midline crossing detector could not yield periods for three 50 cm videos because local tracking contained discontinuities and early release artifacts. The new deterministic `PendulumSpectralEstimator` (`LOCAL_ROBUST_SINUSOID_V1_NOT_SAM`) **does not receive or use the theoretical length/period**. It uniformly excludes the first two seconds, applies a five-point moving median, 8th/92nd percentile clipping and a sinusoidal frequency sweep; checks R², amplitude, detection coverage and first/second-half agreement. Even an excellent periodic fit **might track a shadow, person or background**: visual verification of the real bob is required.
+
+Legacy footage is reanalyzed using `POST /api/science/pendulum/preregistrations/{id}/videos/{videoId}/reanalyze` from **stored coordinates only**, without video re-upload/decoding or Meta calls. A new immutable `period-reviews/{videoId}-spectral-v1.json` audit record is linked to the original media hash; original records are **never overwritten**. `GET .../videos` joins this independent review, providing R² and half-study estimates. New uploads include the same preliminary local analysis.
+
+**Actual local API smoke test using six genuine uploaded clips:** `50CM_1/2/3.MOV` estimated **1.4156 / 1.4172 / 1.4180 seconds**; `80CM_1/2/3.MOV` estimated **1.7976 / 1.7984 / 1.7996 seconds**. Group means **1.41693 s** and **1.79853 s**; preliminary observed increase **26.9314%**, versus frozen theoretical **26.4911%**, a difference of +0.4403 percentage points. All six passed the internal spectral consistency checks. **These are unverified local track-derived candidates, NOT authenticated physical bob measurements, SAM 3.1 outputs, or a new physics discovery.** Between-take spread is not a complete uncertainty budget.
+
+Bilingual Angular includes **Reanalyze saved videos (no Meta)**, keeps old evidence intact and allows **Compare processed videos** once each condition contains candidates. No automated scientific approval is implied.
+
 **Español:** [VIDEO-UPLOAD.es.md](VIDEO-UPLOAD.es.md).

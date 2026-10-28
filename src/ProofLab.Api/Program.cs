@@ -392,6 +392,17 @@ app.MapGet("/api/science/pendulum/preregistrations/{id}/videos",
     catch (FileNotFoundException) { return Results.NotFound(new { error = "Study not found." }); }
     catch (InvalidDataException) { return Results.Conflict(new { error = "Video ledger check failed." }); }
 });
+// Recompute a robust period from saved coordinates, with append-only
+// spectral-v1 metadata. Never changes the uploaded original or calls Meta.
+app.MapPost("/api/science/pendulum/preregistrations/{id}/videos/{videoId}/reanalyze",
+    async (string id, string videoId, PendulumVideoWorkflow workflow,
+        CancellationToken ct) =>
+{
+    try { return Results.Ok(await workflow.ReanalyzeAsync(id, videoId, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    catch (FileNotFoundException) { return Results.NotFound(new { error = "Video not found." }); }
+    catch (InvalidDataException) { return Results.Conflict(new { error = "Review provenance check failed." }); }
+});
 app.MapGet("/api/science/pendulum/preregistrations/{id}/videos/{videoId}/poster",
     async (string id, string videoId, PendulumVideoWorkflow workflow, CancellationToken ct) =>
 {
