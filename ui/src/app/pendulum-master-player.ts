@@ -631,20 +631,29 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private drawArrow(ctx:CanvasRenderingContext2D,
-    x:number,y:number,dx:number,dy:number,color:string,scale:number):void{
+    x:number,y:number,dx:number,dy:number,color:string,scale:number,
+    unit=1):void{
     const size=Math.hypot(dx,dy);
     if(!Number.isFinite(size)||size<.01)return;
-    const length=Math.min(96,Math.max(0,size*scale));
-    if(length<2)return;
+    // Enlarge the drawing only; source components and measurements stay intact.
+    const length=Math.min(170*unit,Math.max(0,size*scale*3));
+    if(length<2*unit)return;
     const angle=Math.atan2(dy,dx);
     const endX=x+Math.cos(angle)*length,endY=y+Math.sin(angle)*length;
-    ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=3;
-    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(endX,endY);ctx.stroke();
-    const head=9;
+    const head=Math.min(16*unit,length*.4);
+    ctx.save();
+    ctx.lineCap='round';ctx.lineJoin='round';
+    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(endX,endY);
+    // Dark outline keeps the coloured shaft visible against light video frames.
+    ctx.strokeStyle='rgba(4,12,21,.85)';ctx.lineWidth=7*unit;ctx.stroke();
+    ctx.strokeStyle=color;ctx.lineWidth=4*unit;ctx.stroke();
     ctx.beginPath();ctx.moveTo(endX,endY);
-    ctx.lineTo(endX-head*Math.cos(angle-.46),endY-head*Math.sin(angle-.46));
-    ctx.lineTo(endX-head*Math.cos(angle+.46),endY-head*Math.sin(angle+.46));
-    ctx.closePath();ctx.fill();
+    ctx.lineTo(endX-head*Math.cos(angle-.5),endY-head*Math.sin(angle-.5));
+    ctx.lineTo(endX-head*Math.cos(angle+.5),endY-head*Math.sin(angle+.5));
+    ctx.closePath();
+    ctx.strokeStyle='rgba(4,12,21,.85)';ctx.lineWidth=2*unit;ctx.stroke();
+    ctx.fillStyle=color;ctx.fill();
+    ctx.restore();
   }
 
   private paintSamMask(
@@ -762,9 +771,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
           pivotYpx:revision.analysis.pivotYpx},geometry);
         if(v){
           const sx=canvas.width/geometry.width,sy=canvas.height/geometry.height;
-          this.drawArrow(ctx,bx,by,v.vx*sx,v.vy*sy,'#3cf2da',.22);
-          this.drawArrow(ctx,bx,by,v.atx*sx,v.aty*sy,'#ffb34d',.035);
-          this.drawArrow(ctx,bx,by,v.arx*sx,v.ary*sy,'#fb83ff',.035);
+          const arrowUnit=Math.min(canvas.width,canvas.height)/480;
+          this.drawArrow(ctx,bx,by,v.vx*sx,v.vy*sy,'#3cf2da',.22,arrowUnit);
+          this.drawArrow(ctx,bx,by,v.atx*sx,v.aty*sy,'#ffb34d',.035,arrowUnit);
+          this.drawArrow(ctx,bx,by,v.arx*sx,v.ary*sy,'#fb83ff',.035,arrowUnit);
         }
       }
     }
