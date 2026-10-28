@@ -121,6 +121,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   private fallbackRafId:number|null=null;
   private disposed=false;
   private didPaint=false;
+  private readoutResize?:ResizeObserver;
+  private readonly readoutBounds=new WeakMap<HTMLCanvasElement,{width:number;height:number}>();
 
   get es():boolean{return this.language()==='es';}
   get timecode():string{return formatMediaTime(this.currentTime());}
@@ -228,7 +230,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     }
     const key=this.studyId()+'|'+this.videoRole()+'|'+this.videoSha256()+'|'+
       this.samApiPort()+'|'+this.processingRequired()+'|'+this.processedAnalysisId();
-    if(this.revisionKey===key && !changes['samRefreshNonce'])return;
+    if(this.revisionKey===key && !changes['samRefreshNonce']){
+      if(changes['language'])this.paintFrame(this.frameTime());
+      return;
+    }
     this.revisionKey=key;
     const serial=++this.revisionSerial;
     const samSerial=++this.samSerial;
@@ -384,6 +389,13 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   ngAfterViewInit():void{
+    this.readoutResize=new ResizeObserver(entries=>{
+      for(const entry of entries)this.readoutBounds.set(entry.target as HTMLCanvasElement,
+        {width:entry.contentRect.width,height:entry.contentRect.height});
+      if(!this.disposed && !this.playing())this.paintFrame(this.frameTime());
+    });
+    for(const canvas of [this.vectorCanvas?.nativeElement,this.combinedCanvas?.nativeElement])
+      if(canvas)this.readoutResize.observe(canvas);
     this.setCanvasSizes();
     this.paintFrame(0);
     this.startFrameLoop();
@@ -396,6 +408,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   ngOnDestroy():void{
     this.disposed=true;
+    this.readoutResize?.disconnect();
     this.stopFrameLoop();
     ++this.revisionSerial;
     ++this.samSerial;
@@ -686,6 +699,45 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     ctx.restore();
   }
 
+  /** Values painted on the same frame as the vectors, never on a separate clock. */
+  private paintFrameReadout(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
+      time:number):void {
+    const bounds=this.readoutBounds.get(canvas);
+    const fit=bounds?Math.min(bounds.width/canvas.width,bounds.height/canvas.height):0;
+    // Readability follows the displayed view; cap width to stay within the image.
+    const unit=Math.min(canvas.width/240,Math.max(Math.min(canvas.width,canvas.height)/480,
+      fit>0?12/(22*fit):0));
+    const lines=[
+      {text:'θ '+this.cordAngleText(),color:'#ffe2a8'},
+      {text:'ω '+this.angularVelocityText()+' rad/s',color:'#a6efed'}
+    ];
+    const stamp='t '+formatMediaTime(time);
+    const note=this.currentCordAngle()===null
+      ? (this.pivotRevision()?(this.es?'Sin detección':'No detection'):
+          (this.es?'Marca suspensión':'Select suspension'))
+      : this.angularVelocityAtFrame()===null
+        ? (this.es?'ω sin medición':'ω unavailable') : '';
+    ctx.save();
+    ctx.font='600 '+(22*unit)+'px system-ui';
+    const width=Math.max(...lines.map(line=>ctx.measureText(line.text).width),
+      ctx.measureText(stamp).width,ctx.measureText(note).width)+28*unit;
+    const height=(note?126:104)*unit,x=12*unit,y=12*unit;
+    ctx.fillStyle='rgba(10,21,33,.88)';ctx.strokeStyle='#718ba8';
+    ctx.lineWidth=unit;ctx.beginPath();
+    ctx.roundRect(x,y,width,height,9*unit);ctx.fill();ctx.stroke();
+    ctx.textBaseline='middle';
+    lines.forEach((line,index)=>{
+      ctx.fillStyle=line.color;ctx.fillText(line.text,x+14*unit,y+(25+31*index)*unit);
+    });
+    ctx.font='500 '+(14*unit)+'px ui-monospace,monospace';
+    ctx.fillStyle='#c2d3e5';ctx.fillText(stamp,x+14*unit,y+86*unit);
+    if(note){
+      ctx.font='500 '+(12*unit)+'px system-ui';
+      ctx.fillStyle='#b8c6d6';ctx.fillText(note,x+14*unit,y+110*unit);
+    }
+    ctx.restore();
+  }
+
   /** Draw candidate geometric measurements; never paint metric XY. */
   private paintAngular(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
       frame:KinematicFrame|null,revision:KinematicRevision,showArrows:boolean,
@@ -865,6 +917,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     }
     const cordAngle=this.currentCordAngle();
     if(revision && cordAngle)this.paintCordAngle(ctxs[2]!,canvases[2]!,cordAngle,revision);
+    if(sam){
+      this.paintFrameReadout(ctxs[0]!,canvases[0]!,time);
+      this.paintFrameReadout(ctxs[2]!,canvases[2]!,time);
+    }
     const duration=this.duration();
     this.currentTime.set(Math.max(0,Math.min(duration||time,time)));
     this.lastPaintedTime.set(time);

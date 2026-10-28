@@ -335,6 +335,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(original.querySelector('video')).toBe(source);
     component.toggleZoom();component.paintFrame(2);
     expect(component.currentCordAngle()?.angleDegrees).toBeCloseTo(30,8);
+    source.currentTime=2;
     fixture.componentRef.setInput('language','en');fixture.detectChanges();
     expect(component.cordAngleText()).toBe('+30.0°');
     expect(component.cordAngleDirection()).toBe('Right');
@@ -353,7 +354,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
   });
 
 
-  it('shows signed angular velocity next to angle using original time, with no stale or ideal fallback',()=>{
+  it('paints angle and angular velocity on the same video frame, with no stale or ideal fallback',()=>{
     const {fixture,component,source,root}=init();
     fixture.componentRef.setInput('studyId',study);
     fixture.componentRef.setInput('videoSha256',sha);
@@ -365,7 +366,12 @@ describe('One-clock three-view pendulum laboratory',()=>{
     component.samVerified.set(true);component.pivotRevision.set(revision);
     for(const canvas of Array.from(root.querySelectorAll('canvas')))
       spyOn(canvas.getContext('2d')!,'drawImage').and.stub();
+    const readoutContexts=['combined','vectors'].map(view=>
+      root.querySelector<HTMLCanvasElement>('[data-view="'+view+'"] canvas')!.getContext('2d')!);
+    const readouts=readoutContexts.map(ctx=>spyOn(ctx,'fillText').and.callThrough());
+    const ghostText=spyOn(root.querySelector<HTMLCanvasElement>('[data-view="ghost"] canvas')!.getContext('2d')!,'fillText');
     for(const velocity of [-.4,0,.4]){
+      readouts.forEach(spy=>spy.calls.reset());
       const points=[.10,.13,.18].map(timeSeconds=>{
         const dt=timeSeconds-.13,theta=.2+velocity*dt+.4*dt*dt;
         return {timeSeconds,x:240+300*Math.sin(theta)/1080*480,
@@ -389,22 +395,45 @@ describe('One-clock three-view pendulum laboratory',()=>{
         velocity<0?'−22,9':velocity>0?'+22,9':'0,0');
       expect(component.angularVelocityDirection()).toContain(
         velocity<0?'Hacia la izquierda':velocity>0?'Hacia la derecha':'≈ 0');
+      for(const readout of readouts){
+        const labels=readout.calls.allArgs().map(args=>args[0]);
+        expect(labels).toContain('θ '+component.cordAngleText());
+        expect(labels).toContain('ω '+expected+' rad/s');
+        expect(labels).toContain('t 00:00.130');
+      }
+      expect(ghostText).not.toHaveBeenCalled();
       component.setSpeed(.25);component.paintFrame(.13);
       expect(component.angularVelocityAtFrame()).toBeCloseTo(velocity,9);
       component.setSpeed(2);component.paintFrame(.13);
       expect(component.angularVelocityAtFrame()).toBeCloseTo(velocity,9);
     }
+    source.currentTime=.13;
+    readouts.forEach(spy=>spy.calls.reset());
     fixture.componentRef.setInput('language','en');fixture.detectChanges();
+    for(const readout of readouts)
+      expect(readout.calls.allArgs().map(args=>args[0])).toContain('ω +0.400 rad/s');
     expect(component.angularVelocityText()).toBe('+0.400');
     expect(component.angularVelocityDirection()).toBe('Moving right');
     expect(root.querySelector('.angular-velocity-reading')?.textContent).toContain('ANGULAR VELOCITY');
+    readouts.forEach(spy=>spy.calls.reset());
     component.paintFrame(.10);fixture.detectChanges();
     expect(component.currentCordAngle()).not.toBeNull();
     expect(component.angularVelocityAtFrame()).toBeNull();
     expect(root.querySelector('.angular-velocity-value')?.textContent).toContain('—');
     expect(root.querySelector('.angular-degrees')).toBeNull();
     expect(component.angularVelocityHint()).toContain('Not enough valid nearby detections');
+    for(const readout of readouts){
+      expect(readout.calls.allArgs().map(args=>args[0])).toContain('ω — rad/s');
+      expect(readout.calls.allArgs().map(args=>args[0])).toContain('t 00:00.100');
+    }
+    readouts.forEach(spy=>spy.calls.reset());
     component.paintFrame(.16);fixture.detectChanges();
+    for(const readout of readouts){
+      const labels=readout.calls.allArgs().map(args=>args[0]);
+      expect(labels).toContain('θ —');expect(labels).toContain('ω — rad/s');
+      expect(labels).toContain('t 00:00.160');
+      expect(labels).not.toContain('ω +0.400 rad/s');
+    }
     expect(component.currentCordAngle()).toBeNull();
     expect(component.angularVelocityAtFrame()).toBeNull();
     component.paintFrame(.13);

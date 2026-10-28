@@ -73,6 +73,12 @@ It reuses the angular derivative of three SAM positions with original, potential
 
 Local verification: 70 focused Angular tests and a successful build, including motion sign independent of θ, unit conversion, zero, missing data, unequal intervals and ±π wrapping. Existing initial bundle warning: 599.14 kB / 500 kB. No assistant-initiated Meta calls or CI.
 
+### Values painted on the video
+
+Combined and vector views draw θ (°), ω (rad/s) and frame time inside the image. They use the same values and decoded frame as the cards: updates follow playback, seeking and frame stepping, and stay fixed while paused. Missing valid data shows “—” with a short reason. Readout size adapts to the view; switching language while paused repaints the text. Original and trail views retain their previous presentation.
+
+Player tests: 27/27 passed and build succeeded; existing initial bundle warning: 600.85 kB / 500 kB. No new Meta calls or CI.
+
 ## Manual key and Process admission (2026-10-28)
 
 The key registered in Settings satisfies the manual request credential requirement without duplicating it in the server MODEL_API_KEY. The server still checks its format, confirmed credits, owner approval, the billing switch and the shared request budget before reservation. Cache admission and final reservation recognize the same one-use key; it is neither persisted nor used to enable other calls globally.

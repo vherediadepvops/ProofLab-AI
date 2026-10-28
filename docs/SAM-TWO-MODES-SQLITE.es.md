@@ -73,6 +73,12 @@ Reutiliza la derivada angular de tres posiciones SAM con tiempos originales y di
 
 Verificación local: 70 pruebas Angular focalizadas y build correctos; incluye dirección independiente del signo de θ, conversión de unidades, cero, ausencia de datos, cadencia no uniforme y cruce de ±π. Advertencia existente del paquete inicial: 599,14 kB / 500 kB. Sin nuevas llamadas Meta del asistente ni CI.
 
+### Lecturas pintadas sobre el video
+
+Las vistas combinada y de vectores dibujan θ (°), ω (rad/s) y el tiempo del fotograma dentro de la imagen. Usan los mismos valores y el mismo fotograma decodificado que las tarjetas: se actualizan al reproducir, buscar o avanzar un cuadro, y permanecen estables al pausar. Sin dato válido muestran «—» y la causa breve. El tamaño de lectura se adapta a la vista; cambiar idioma con el video pausado también repinta el texto. Original y rastro conservan su presentación anterior.
+
+Pruebas del reproductor: 27/27 correctas y build correcto; advertencia de tamaño inicial existente: 600,85 kB / 500 kB. Sin llamadas nuevas a Meta ni CI.
+
 ## Token manual y habilitación de Procesar (28/10/2026)
 
 El token registrado en Configuración satisface el requisito de credencial de la solicitud manual; no exige duplicarlo en MODEL_API_KEY del servidor. El servidor sigue validando su formato, créditos confirmados, autorización, interruptor de pagos y presupuesto compartido antes de reservar la solicitud. La admisión de caché y la reserva final reconocen el mismo token de un solo uso; no se guarda ni habilita globalmente otras llamadas.
