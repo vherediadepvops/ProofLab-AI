@@ -351,7 +351,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     component.activeTrial.set('followup');
     fixture.detectChanges();
     const source=root.querySelector('video.master-source') as HTMLVideoElement;
-    expect(source.getAttribute('src')).toContain('/preview/followup');
+    expect(source.getAttribute('src')).toContain('/original/followup');
     expect(root.querySelectorAll('canvas').length).toBe(3);
     expect(root.querySelectorAll('.model-chart').length).toBe(0);
     await verifyHttp(http);
@@ -440,6 +440,16 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(component.previewState()).toBe('ready');
     expect(component.videoActionsBusy()).toBeFalse();
     http.verify();fixture.destroy();
+  });
+
+  it('loads the original even when no reduced browser proxy exists',async()=>{
+    const {component,fixture,root,http}=await init();
+    component.session.set({...session,baseline:{...video,previewAvailable:false}});
+    fixture.detectChanges();
+    expect(root.querySelector('video')?.getAttribute('src')).toBe(studyUrl+'/'+session.id+'/original/baseline');
+    expect(root.querySelectorAll('video').length).toBe(1);
+    expect(root.textContent).not.toContain('12 FPS');
+    await verifyHttp(http);fixture.destroy();
   });
 
 });

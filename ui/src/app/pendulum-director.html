@@ -200,22 +200,15 @@
         <p class="media-meta"><strong>{{s.baseline.originalFilename}}</strong> ·
           {{s.baseline.media.codec.toUpperCase()}} ·
           {{s.baseline.media.durationSeconds | number:'1.1-1'}} s</p>
-        @if(s.baseline.previewAvailable) {
           <app-pendulum-master-player
             [videoUrl]="reviewVideo('baseline')"
             [name]="s.baseline.originalFilename"
             [originalWidth]="s.baseline.media.width"
             [originalHeight]="s.baseline.media.height"
             [originalFps]="s.baseline.media.nominalFramesPerSecond"
+            [originalCodec]="s.baseline.media.codec"
             [points]="s.baseline.tracking.pixelSamples ?? null"
             [language]="language()" />
-        } @else if(s.baseline.posterAvailable) {
-          <img class="frame" [src]="poster('baseline')"
-            [alt]="es?'Fotograma inicial del video':'First video frame'" />
-          <p class="warning">{{es
-            ? 'No hay vista previa reproducible. Para confirmar identidad de la plomada, revisa el video original completo en otro reproductor.'
-            : 'Playable preview unavailable. Review the full original video in another player before confirming bob identity.'}}</p>
-        }
         @if(evidencePlots().baseline; as observed) {
           <div class="evidence-studio">
             <strong>{{es?'GRÁFICOS OBTENIDOS DE COORDENADAS DEL VIDEO':'CHARTS DERIVED FROM VIDEO COORDINATES'}}</strong>
@@ -392,19 +385,15 @@
           <p class="media-meta"><strong>{{s.followup.originalFilename}}</strong> ·
             {{s.followup.media.codec.toUpperCase()}} ·
             {{s.followup.media.durationSeconds | number:'1.1-1'}} s</p>
-          @if(s.followup.previewAvailable) {
             <app-pendulum-master-player
               [videoUrl]="reviewVideo('followup')"
               [name]="s.followup.originalFilename"
               [originalWidth]="s.followup.media.width"
               [originalHeight]="s.followup.media.height"
               [originalFps]="s.followup.media.nominalFramesPerSecond"
+              [originalCodec]="s.followup.media.codec"
               [points]="s.followup.tracking.pixelSamples ?? null"
               [language]="language()" />
-          } @else if(s.followup.posterAvailable) {
-            <img class="frame" [src]="poster('followup')"
-              [alt]="es?'Fotograma de segunda prueba':'Follow-up video frame'" />
-          }
           @if(s.followup.tracking.observations.length > 10) {
             <svg class="graph" viewBox="0 0 400 110" role="img"
               [attr.aria-label]="es?'Trayectoria local de segunda prueba':'Follow-up local motion trace'">

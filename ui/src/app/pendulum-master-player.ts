@@ -12,7 +12,7 @@ import {
 } from './pendulum-kinematics';
 import {
   type CandidatePixelPoint, formatMediaTime, motionAt,
-  seekByFrame, trailingMotion
+  seekSourceFrame, trailingMotion
 } from './pendulum-master-sync';
 import {
   verifiedSamPlaybackTrack, nearestSamMask, samAngularFrameAt,
@@ -50,7 +50,19 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly originalFps = input(60);
   readonly originalWidth = input(1920);
   readonly originalHeight = input(1080);
-  readonly proxyFps = input(12);
+  readonly originalCodec=input('');
+  readonly decodedSize=signal<{width:number;height:number}|null>(null);
+  readonly droppedFrames=signal(0);
+  private decodedMediaTime:number|null=null;
+  private pendingDecodedPaint=false;
+  private sourceFramePts:number[]=[];
+  sourceFps():number {
+    const fps=this.originalFps();
+    return Number.isFinite(fps) && fps>0?fps:60;
+  }
+  private frameTime():number {
+    return this.decodedMediaTime ?? this.masterVideo?.nativeElement.currentTime ?? 0;
+  }
   readonly points = input<CandidatePixelPoint[] | null>(null);
   readonly language = input<'es'|'en'>('es');
   readonly studyId = input('');
@@ -68,7 +80,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly previewLoading=signal(true);
   onPreviewError():void {
     this.previewLoading.set(false);
-    this.error.set(this.es?'El navegador no pudo decodificar la vista previa.':'Browser preview decode failed.');
+    const codec=this.originalCodec() || this.name().split('.').pop() || '';
+    this.error.set(this.es?
+      'No se pudo reproducir el original ('+codec+'). El navegador puede no admitir su formato o no haber podido cargarlo. No se ha sustituido por una copia reducida. Puedes descargar el original.':
+      'Could not play the original ('+codec+'). Its format may be unsupported or loading may have failed. No reduced copy was substituted. You can download the original.');
     this.previewStateChanged.emit('error');
   }
   readonly samVerified=signal(false);
@@ -108,7 +123,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   get es():boolean{return this.language()==='es';}
   get timecode():string{return formatMediaTime(this.currentTime());}
   get lengthcode():string{return formatMediaTime(this.duration());}
-  get frameStepSeconds():number{return 1/Math.max(1,this.proxyFps());}
+  get frameStepSeconds():number{return 1/Math.max(1,this.sourceFps());}
 
   gridArea(view:'combined'|'original'|'vectors'|'ghost'):string {
     const position=this.viewSlots().indexOf(view);
@@ -206,6 +221,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   ngOnChanges(changes:SimpleChanges):void{
     if(changes['videoUrl']) {
       this.previewLoading.set(true);this.error.set('');
+      this.decodedMediaTime=null;this.pendingDecodedPaint=false;this.decodedSize.set(null);this.droppedFrames.set(0);
       this.previewStateChanged.emit('loading');
     }
     const key=this.studyId()+'|'+this.videoRole()+'|'+this.videoSha256()+'|'+
@@ -218,10 +234,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     this.setVerified(false);
     this.pivotRevision.set(null);this.currentKinematics.set(null);
     this.pivotMode.set(false);this.pivotError.set('');this.pivotSaving.set(false);
-    this.samTrack.set(null);this.samPathCache.clear();
+    this.samTrack.set(null);this.samPathCache.clear();this.sourceFramePts=[];
     if(this.processingRequired() && !this.processedAnalysisId()) {
       this.samStatus.set('AWAITING_PROCESS');
-      this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
+      this.paintFrame(this.frameTime());
       return;
     }
     this.samStatus.set('CHECKING_SAM_CACHE');
@@ -263,17 +279,19 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
            archive.receipt.providerEvidenceStatus!=='COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW' ||
            archive.receipt.model!=='sam-3.1' || archive.receipt.concept!=='metal pendulum bob')
           throw new Error('SAM_NO_MATCH_PROVENANCE_INVALID');
+        this.rememberFramePts(archive.receipt.framePtsSeconds);
         this.samTrack.set(null);this.setVerified(true);
         this.samStatus.set('SAM_3_1_COMPLETED_NO_MATCH');
         this.processingFinished.emit(true);
-        this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
+        this.paintFrame(this.frameTime());
         return;
       }
       const track=verifiedSamPlaybackTrack(archive,result,this.videoSha256());
+      this.rememberFramePts(archive.receipt.framePtsSeconds);
       this.samTrack.set(track);this.setVerified(true);
       this.samStatus.set('SAM_3_1_CACHED_MASKS_PENDING_HUMAN_BOB_REVIEW');
       this.processingFinished.emit(true);
-      this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
+      this.paintFrame(this.frameTime());
     } catch(e:unknown) {
       if(serial!==this.samSerial || this.disposed)return;
       this.samTrack.set(null);this.setVerified(false);
@@ -283,7 +301,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
         this.samStatus.set('SAM_CACHE_INVALID_OR_AMBIGUOUS_NO_FALLBACK');
       }
       this.processingFinished.emit(false);
-      this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
+      this.paintFrame(this.frameTime());
     }
   }
 
@@ -298,7 +316,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
         return;
       }
       this.pivotRevision.set(result);
-      this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
+      this.paintFrame(this.frameTime());
     }catch(error:unknown){
       if(serial!==this.revisionSerial || this.disposed)return;
       if((error as {status?:number})?.status!==404)
@@ -352,7 +370,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       }
       this.pivotRevision.set(result);
       this.pivotMode.set(false);
-      this.paintFrame(video.currentTime);
+      this.paintFrame(this.frameTime());
     }catch{
       if(serial===this.revisionSerial && !this.disposed)
         this.pivotError.set(this.es
@@ -366,6 +384,12 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   ngAfterViewInit():void{
     this.setCanvasSizes();
     this.paintFrame(0);
+    this.startFrameLoop();
+  }
+
+  private rememberFramePts(pts:number[]|undefined):void {
+    this.sourceFramePts=Array.isArray(pts) && pts.every((t,i)=>
+      Number.isFinite(t) && t>=0 && (i===0 || t>pts[i-1])) ? pts : [];
   }
 
   ngOnDestroy():void{
@@ -381,8 +405,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const video=this.masterVideo?.nativeElement;
     if(!video)return;
     this.duration.set(Number.isFinite(video.duration)?video.duration:0);
+    this.decodedSize.set({width:video.videoWidth,height:video.videoHeight});
     this.setCanvasSizes();
-    this.paintFrame(video.currentTime);
+    this.startFrameLoop();
+    if(typeof video.requestVideoFrameCallback!=='function')this.paintFrame(video.currentTime);
   }
 
   onDecodedFrame():void{
@@ -391,7 +417,15 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     if(this.previewLoading() && video.readyState>=2) {
       this.previewLoading.set(false);this.previewStateChanged.emit('ready');
     }
-    this.paintFrame(video.currentTime);
+    // currentTime is a clock, not necessarily the decoded frame's timestamp.
+    // With rVFC only its mediaTime may choose masks, including paused seeks.
+    if(typeof video.requestVideoFrameCallback!=='function') {
+      this.decodedMediaTime=video.currentTime;
+      this.paintFrame(video.currentTime);
+    } else if(this.pendingDecodedPaint && !video.seeking && video.readyState>=2) {
+      this.pendingDecodedPaint=false;
+      this.paintFrame(this.frameTime());
+    }
   }
 
   onPlay():void{
@@ -402,9 +436,11 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   onPause():void{
     this.playing.set(false);
-    this.stopFrameLoop();
     const video=this.masterVideo?.nativeElement;
-    if(video)this.paintFrame(video.currentTime);
+    // Keep rVFC armed while paused: a seek presents a new decoded frame.
+    if(video && typeof video.requestVideoFrameCallback!=='function') {
+      this.stopFrameLoop();this.onDecodedFrame();
+    }
   }
 
   onEnded():void{
@@ -437,7 +473,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     if(!video)return;
     video.pause();
     const duration=Number.isFinite(video.duration)?video.duration:this.duration();
-    const next=seekByFrame(video.currentTime,step,this.proxyFps(),duration);
+    const next=seekSourceFrame(this.sourceFramePts,this.frameTime(),step,this.sourceFps(),duration);
     video.currentTime=next;
     this.currentTime.set(next);
     // Actual canvases refresh from the decoded frame on seeked.
@@ -464,15 +500,20 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     if(typeof video.requestVideoFrameCallback==='function'){
       const frame=(_:DOMHighResTimeStamp,metadata:VideoFrameCallbackMetadata)=>{
         this.frameCallbackId=null;
-        if(this.disposed || video.paused)return;
-        this.paintFrame(metadata.mediaTime);
+        if(this.disposed)return;
+        this.decodedMediaTime=metadata.mediaTime;
+        this.pendingDecodedPaint=video.readyState<HTMLMediaElement.HAVE_CURRENT_DATA;
+        if(!this.pendingDecodedPaint)this.paintFrame(metadata.mediaTime);
+        this.droppedFrames.set(video.getVideoPlaybackQuality?.().droppedVideoFrames ?? 0);
         this.frameCallbackId=video.requestVideoFrameCallback(frame);
       };
       this.frameCallbackId=video.requestVideoFrameCallback(frame);
     }else{
+      if(video.paused)return;
       const frame=()=>{
         this.fallbackRafId=null;
         if(this.disposed || video.paused)return;
+        this.decodedMediaTime=video.currentTime;
         this.paintFrame(video.currentTime);
         this.fallbackRafId=requestAnimationFrame(frame);
       };
@@ -493,7 +534,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   private setCanvasSizes():void{
     const source=this.masterVideo?.nativeElement;
     const videoWidth=source?.videoWidth||640,videoHeight=source?.videoHeight||360;
-    const width=Math.min(1280,videoWidth);
+    const width=videoWidth;
     const height=Math.max(1,Math.round(width*videoHeight/videoWidth));
     for(const canvas of [this.vectorCanvas?.nativeElement,
        this.ghostCanvas?.nativeElement,this.combinedCanvas?.nativeElement]){
@@ -600,16 +641,12 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const ctxs=canvases.map(canvas=>canvas!.getContext('2d'));
     if(ctxs.some(x=>x===null))return;
     const frameReady=video.readyState>=HTMLMediaElement.HAVE_CURRENT_DATA;
+    if(!frameReady)return; // Keep the last complete frame during a seek.
     try{
       for(let i=0;i<ctxs.length;i++){
         const ctx=ctxs[i]!,canvas=canvases[i]!;
         ctx.clearRect(0,0,canvas.width,canvas.height);
-        if(frameReady){
-          ctx.drawImage(video,0,0,canvas.width,canvas.height);
-        }else{
-          ctx.fillStyle='#0c1422';
-          ctx.fillRect(0,0,canvas.width,canvas.height);
-        }
+        ctx.drawImage(video,0,0,canvas.width,canvas.height);
       }
     }catch{
       this.error.set(this.es
@@ -710,7 +747,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       }
     }else{
       this.overlayStatus.set(sam
-        ? 'SAM_NO_RELIABLE_MASK_DERIVATIVE_AT_THIS_PROXY_FRAME'
+        ? 'SAM_NO_RELIABLE_MASK_DERIVATIVE_AT_THIS_SOURCE_FRAME'
         : (!legacy ? this.samStatus() :
           revision?'NO_RELIABLE_LOCAL_TRACK_FOR_THIS_FRAME'
           : samples.length>0?'NO_RELIABLE_LOCAL_SAMPLE_AT_THIS_FRAME'
@@ -724,7 +761,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const duration=this.duration();
     this.currentTime.set(Math.max(0,Math.min(duration||time,time)));
     this.lastPaintedTime.set(time);
-    this.frameNumber.set(Math.round(time*this.proxyFps()));
+    this.frameNumber.set(Math.round(time*this.sourceFps()));
     this.paintedViews.set(4); // one master video + three derived canvases
     this.didPaint=true;
   }

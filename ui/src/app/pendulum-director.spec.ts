@@ -229,7 +229,7 @@ describe('ProofLab physical workbench and guided flagship experiment', () => {
     http.verify();
   });
 
-  it('keeps browser-compatible review video for the human check', async () => {
+  it('keeps original video for the human check', async () => {
     const {component,fixture,http,rootEl}=await initialize();
     component.session.set({
       ...root(false),baseline:{...video('baseline',1.416),previewAvailable:true},
@@ -241,7 +241,7 @@ describe('ProofLab physical workbench and guided flagship experiment', () => {
     const mediaElement=master?.querySelector('video.master-source');
     expect(mediaElement).not.toBeNull();
     expect(mediaElement?.getAttribute('src')).toBe(
-      studyApi+'/'+root(false).id+'/preview/baseline');
+      studyApi+'/'+root(false).id+'/original/baseline');
     expect(master?.querySelectorAll('canvas').length).toBe(3);
     expect(rootEl.textContent).toContain('Cuatro perspectivas, un solo reloj');
     http.verify();

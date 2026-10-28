@@ -530,7 +530,38 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/sam/{role}/manual-one-
     catch(HttpRequestException ex){return MetaSafeDiagnostics.ProviderFailure(ex,"sam-3.1");}
     catch(FormatException){return Results.Problem("Incomplete or malformed provider output.",statusCode:502);}
 });
-// This is private browser review media. Real SAM uses the SHA-checked original.
+// Stream the exact uploaded bytes, including Range/HEAD for large native videos.
+// Resolution, cadence and codec are preserved; there is no automatic proxy fallback.
+app.MapMethods("/api/science/director/pendulum/sessions/{id}/original/{role}",
+    new[] { "GET", "HEAD" },
+    async(string id,string role,bool? download,HttpContext context,
+        PendulumDirectorWorkflow director,CancellationToken ct) =>
+{
+    try {
+        var video=await director.GetVerifiedOriginalAsync(id,role,ct);
+        var contentType=Path.GetExtension(video.Evidence.OriginalFilename).ToLowerInvariant() switch {
+            ".mov" => "video/quicktime",
+            ".mp4" or ".m4v" => "video/mp4",
+            ".webm" => "video/webm",
+            ".mkv" => "video/x-matroska",
+            ".avi" => "video/x-msvideo",
+            ".3gp" => "video/3gpp",
+            ".3g2" => "video/3gpp2",
+            _ => "application/octet-stream"
+        };
+        context.Response.Headers.CacheControl="private, no-cache";
+        return Results.File(video.OriginalPath,contentType,
+            fileDownloadName:download==true?video.Evidence.OriginalFilename:null,
+            enableRangeProcessing:true,
+            entityTag:new Microsoft.Net.Http.Headers.EntityTagHeaderValue(
+                '"' + video.Evidence.Sha256 + '"'));
+    }
+    catch(ArgumentException){return Results.BadRequest(new {error="Invalid video selection."});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Original video unavailable."});}
+    catch(InvalidDataException){return Results.Conflict(new {error="Original video integrity mismatch."});}
+});
+
+// Historical browser proxies remain available to legacy clients only.
 app.MapGet("/api/science/director/pendulum/sessions/{id}/poster/{role}",
     async(string id,string role,PendulumDirectorWorkflow director,CancellationToken ct) =>
 {

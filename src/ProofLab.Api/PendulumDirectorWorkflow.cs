@@ -159,7 +159,6 @@ public sealed class PendulumDirectorWorkflow(
         await gate.WaitAsync(ct);
         string? rawPath = null;
         string? posterPath = null;
-        string? previewPath = null;
         try
         {
             var session = await LoadUnlockedAsync(id, ct);
@@ -176,7 +175,6 @@ public sealed class PendulumDirectorWorkflow(
             var folder = Folder(id);
             rawPath = Path.Combine(folder, role + extension);
             posterPath = Path.Combine(folder, role + ".jpg");
-            previewPath = Path.Combine(folder, role + "-review.mp4");
             await using(var dest = new FileStream(rawPath, FileMode.CreateNew,
                 FileAccess.Write, FileShare.None, 128 * 1024, true))
             {
@@ -205,12 +203,9 @@ public sealed class PendulumDirectorWorkflow(
             bool poster = false;
             try { await decoder.CreatePosterAsync(rawPath, posterPath, ct); poster = true; }
             catch(ArgumentException) { /* A missing poster is not proof of bad original. */ }
-            bool preview = false;
-            try {
-                await decoder.CreatePlayablePreviewAsync(rawPath, previewPath, ct);
-                preview = true;
-            }
-            catch(ArgumentException) { /* Keep original if proxy encoding fails. */ }
+            // Browser playback streams the original. Do not spend time creating
+            // a reduced-resolution/cadence proxy for newly uploaded studies.
+            const bool preview = false;
             var record = new DirectorVideoEvidence(role,videoId,filename,bytes,hash,
                 DateTimeOffset.UtcNow,media,tracking,spectral,poster,preview);
             await WriteNewAsync(PathFor(id, role + ".json"),record,ct);
@@ -224,9 +219,7 @@ public sealed class PendulumDirectorWorkflow(
             if(posterPath is not null && File.Exists(posterPath) &&
                !File.Exists(PathFor(id,role + ".json")))
                 File.Delete(posterPath);
-            if(previewPath is not null && File.Exists(previewPath) &&
-               !File.Exists(PathFor(id,role + ".json")))
-                File.Delete(previewPath);
+
             throw;
         }
         finally{gate.Release();}

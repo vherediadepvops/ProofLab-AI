@@ -123,7 +123,7 @@
       <div class="focus-section-title">
         <span class="section-index">02</span>
         <div>
-          <h2>{{session()?.baseline?.previewAvailable
+          <h2>{{session()?.baseline
             ? (es ? 'Cuatro perspectivas sincronizadas' : 'Four synchronized perspectives')
             : (es ? 'Video y tres vistas sincronizadas' : 'Video and three synchronized views')}}</h2>
           <p>{{es
@@ -145,8 +145,8 @@
 
     @if(sourcePending()) {
       <app-lab-activity [label]="es?'Cargando video…':'Loading video…'"
-        [detail]="es?'Preparando la grabación y su vista previa. El costo se consultará en su propia tarjeta.':
-          'Preparing the recording and preview. The cost will be checked in its own card.'"/>
+        [detail]="es?'Preparando el video original. El costo se consultará en su propia tarjeta.':
+          'Preparing the original video. The cost will be checked in its own card.'"/>
     }
     @if(session(); as s) {
       @if(!s.baseline) {
@@ -165,7 +165,6 @@
       } @else {
         @if(activeTrial() === 'followup' && s.followup) {
           @if(s.followup; as clip) {
-            @if(clip.previewAvailable) {
               <app-pendulum-master-player [videoUrl]="reviewVideo('followup')"
                 [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'" [processedAnalysisId]="processedAnalysis('followup')"
                 [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
@@ -175,14 +174,11 @@
                 [initialAngleDegrees]="s.angleDegrees ?? 15"
                 [name]="clip.originalFilename"
                 [originalWidth]="clip.media.width" [originalHeight]="clip.media.height"
-                [originalFps]="clip.media.nominalFramesPerSecond"
+                [originalFps]="clip.media.nominalFramesPerSecond" [originalCodec]="clip.media.codec"
                 [points]="clip.tracking.pixelSamples ?? null" [language]="language()"/>
-            } @else {
-              <p class="focus-note">{{es ? 'Este video no tiene copia reproducible. Revísalo en el reproductor original.' : 'No playable proxy was generated. Review the original source file.'}}</p>
-            }
+
           }
         } @else {
-          @if(s.baseline.previewAvailable) {
             <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
               [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'" [processedAnalysisId]="processedAnalysis('baseline')"
               [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
@@ -192,11 +188,9 @@
               [initialAngleDegrees]="s.angleDegrees ?? 15"
               [name]="s.baseline.originalFilename"
               [originalWidth]="s.baseline.media.width" [originalHeight]="s.baseline.media.height"
-              [originalFps]="s.baseline.media.nominalFramesPerSecond"
+              [originalFps]="s.baseline.media.nominalFramesPerSecond" [originalCodec]="s.baseline.media.codec"
               [points]="s.baseline.tracking.pixelSamples ?? null" [language]="language()"/>
-          } @else {
-            <p class="focus-note">{{es ? 'La grabación se guardó, pero no tiene reproducción compatible. Comprueba el video original.' : 'The recording was saved, but browser playback is unavailable. Check its original file.'}}</p>
-          }
+
         }
 
         @if(!s.humanReview) {
@@ -297,6 +291,6 @@
   </section>
 
   <p class="focus-disclaimer">{{es
-    ? 'SAM detecta; ProofLab calcula vectores y rastro · reproducción a 12 FPS después de Procesar · originales intactos'
-    : 'SAM detects; ProofLab computes vectors and trails · 12 FPS playback after Process · originals preserved'}}</p>
+    ? 'SAM detecta; ProofLab calcula vectores y rastro · video original sin reducir resolución ni FPS · reproducción después de Procesar'
+    : 'SAM detects; ProofLab computes vectors and trails · original resolution and FPS preserved · playback after Process'}}</p>
 </section>

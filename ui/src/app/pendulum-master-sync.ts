@@ -82,7 +82,7 @@ export function seekByFrame(
 ):number{
   if(![current,deltaFrames,fps,duration].every(Number.isFinite) ||
       fps<=0 || duration<=0)return 0;
-  // Videos decoded to CFR proxies use exact frame centres for stepping.
+  // Nominal-rate fallback when no verified source timestamps are available.
   const frame=Math.round(current*fps)+Math.trunc(deltaFrames);
   return Math.max(0,Math.min(Math.max(0,duration-.001),frame/fps));
 }
@@ -94,4 +94,21 @@ export function formatMediaTime(seconds:number):string{
   const milliseconds=Math.floor((seconds-Math.floor(seconds))*1000)
     .toString().padStart(3,'0');
   return minutes+':'+s+'.'+milliseconds;
+}
+/** Step by actual source presentation timestamps (including variable frame rate). */
+export function seekSourceFrame(
+  pts:ReadonlyArray<number>,current:number,delta:-1|1,fps:number,duration:number
+):number {
+  if(!pts.length || !Number.isFinite(current))return seekByFrame(current,delta,fps,duration);
+  let lo=0,hi=pts.length;
+  while(lo<hi){const mid=(lo+hi)>>>1;if(pts[mid]<current)lo=mid+1;else hi=mid;}
+  const right=Math.min(pts.length-1,lo),left=Math.max(0,right-1);
+  const nearest=Math.abs(pts[right]-current)<Math.abs(pts[left]-current)?right:left;
+  const index=Math.max(0,Math.min(pts.length-1,nearest+delta));
+  const start=pts[index],end=pts[index+1] ?? Math.min(duration,start+1/fps);
+  // Serialized PTS are rounded to microseconds. Seeking exactly at that rounded
+  // boundary can decode the preceding frame. Seek just inside the target frame;
+  // rVFC still supplies its true PTS for masks and measurements.
+  const inset=Math.min(.001,Math.max(0,end-start)/4);
+  return Math.max(0,Math.min(duration-.000001,start+inset));
 }

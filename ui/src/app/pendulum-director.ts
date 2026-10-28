@@ -399,7 +399,7 @@ export class PendulumDirector implements OnInit {
   }
 
   reviewVideo(role:Stage):string {
-    const s=this.session();return s?this.api+'/'+s.id+'/preview/'+role:'';
+    const s=this.session();return s?this.api+'/'+s.id+'/original/'+role:'';
   }
 
   poster(role:Stage):string {

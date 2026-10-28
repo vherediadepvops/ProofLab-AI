@@ -67,3 +67,6 @@
 .viewer-loading{position:absolute;z-index:2;inset:0;display:flex;align-items:flex-start;justify-content:center;padding:clamp(20px,7vw,90px) 20px;background:linear-gradient(180deg,#101925d9,#10192588);border-radius:10px}
 .viewer-loading app-lab-activity{width:min(100%,470px)}
 .views-grid.loading-views{pointer-events:none;opacity:.3}
+
+.player-error a{color:#9bcbff;margin-left:8px}
+.playback-performance{font-size:11px;color:#cdbb94;line-height:1.5;margin:8px 0}

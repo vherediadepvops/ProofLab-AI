@@ -98,7 +98,7 @@ interface SamReadiness {
             } @else if(validationState()==='ready') {
               <span>{{es?'Procesado · reproducción disponible.':'Processed · playback available.'}}</span>
             } @else if(!mediaReady()) {
-              <span>{{es?'Esperando que termine de cargar la vista previa del video.':'Waiting for the video preview to finish loading.'}}</span>
+              <span>{{es?'Esperando que termine de cargar la video original.':'Waiting for the original video to finish loading.'}}</span>
             } @else if(cachedResultAvailable()) {
               <span>{{es?'Resultado disponible. Pulsa Procesar para cargarlo sin consumir créditos.':'Saved result available. Press Process to load it without spending credits.'}}</span>
             } @else if(!canProcess()) {

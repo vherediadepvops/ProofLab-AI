@@ -8,8 +8,8 @@
         <span class="source-label">{{es ? 'ARCHIVO ORIGINAL CONSERVADO' : 'ORIGINAL PRESERVED'}}</span>
       </p>
     </div>
-    <span class="proxy-label">{{es ? 'REPRODUCCIÓN COMPATIBLE' : 'BROWSER PROXY'}} ·
-      H.264 · {{proxyFps()}} FPS</span>
+    <span class="proxy-label">{{es ? 'VIDEO ORIGINAL' : 'ORIGINAL VIDEO'}} ·
+      {{originalCodec() || '—'}} · {{originalFps() | number:'1.0-2'}} FPS</span>
   </div>
 
   @if(processingRequired() && !previewLoading() && !processingPending()) {
@@ -33,7 +33,7 @@
   @if(previewLoading() || processingPending()) {
     <div class="viewer-loading">
       <app-lab-activity [label]="previewLoading()?(es?'Cargando video…':'Loading video…'):(es?'Procesando video…':'Processing video…')"
-        [detail]="previewLoading()?(es?'Preparando la vista previa. El costo se calcula por separado.':'Preparing the preview. Cost is calculated separately.'):(es?'Preparando el resultado y las vistas sincronizadas.':'Preparing the result and synchronized views.')"/>
+        [detail]="previewLoading()?(es?'Preparando el video original. El costo se calcula por separado.':'Preparing the original. Cost is calculated separately.'):(es?'Preparando el resultado y las vistas sincronizadas.':'Preparing the result and synchronized views.')"/>
     </div>
   }
   <div class="views-grid" [class.loading-views]="previewLoading() || processingPending()" [class.is-zoomed]="zoomed()" data-layout="focus-switcher">
@@ -83,14 +83,13 @@
           (loadedmetadata)="onLoadedMetadata()"
           (loadeddata)="onDecodedFrame()"
           (seeked)="onDecodedFrame()"
-          (timeupdate)="onDecodedFrame()"
           (play)="onPlay()"
           (pause)="onPause()"
           (ended)="onEnded()"
           (error)="onPreviewError()"
           [attr.aria-label]="es ? 'Video fuente y reloj maestro' : 'Source video and master clock'"></video>
       </div>
-      <div class="view-meta">{{es?'Original visual de referencia, sin anotaciones':'Unmodified reference view (browser-compatible copy)'}}</div>
+      <div class="view-meta">{{es?'Archivo original, sin anotaciones ni conversión':'Original file, without annotations or conversion'}}</div>
     </div>
 
     <div class="view-panel" data-view="vectors" [class.is-primary]="activeView()==='vectors'"
@@ -261,17 +260,25 @@
     </div>
   </div>
 
-  @if(error()) {<p class="player-error" role="alert">{{error()}}</p>}
+  @if(droppedFrames()>0) {
+    <p class="playback-performance" role="status">{{es?'Fotogramas omitidos por el navegador':'Frames dropped by the browser'}}: {{droppedFrames()}}.
+      {{es?'El archivo mantiene su resolución y FPS originales.':'The file retains its original resolution and FPS.'}}</p>
+  }
+  @if(error()) {
+    <p class="player-error" role="alert">{{error()}}
+      <a [href]="videoUrl()+'?download=true'" target="_blank" rel="noopener">{{es?'Descargar original':'Download original'}}</a>
+    </p>
+  }
   <p class="limitations">
     {{processingRequired() && !samTrack()
       ? (es?'Los vectores y el rastro requieren máscaras válidas de SAM. No se sustituirán por seguimiento local.':
         'Vectors and trails require valid SAM masks. Local tracking is not substituted.')
       : samTrack()
       ? (es
-        ? 'Se recuperó una respuesta auténtica del proveedor SAM 3.1 desde la caché privada. Centros y máscaras son observaciones de imagen; los vectores y el rastro se calculan localmente con tiempos originales. El video reproducido es un proxy a 12 FPS: la superposición puede diferir de los 60 FPS de origen. Sin revisión humana, incertidumbre ni unidades métricas certificadas.'
-        : 'A genuine SAM 3.1 provider response was recovered from the private cache. Image-mask centroids drive locally computed vectors and trails using source timestamps. The displayed browser proxy is 12 FPS, not the 60 FPS source, so overlay timing has display limits. No independent bob review, uncertainty or calibrated physical units yet.')
+        ? 'Se recuperó una respuesta auténtica del proveedor SAM 3.1 desde la caché privada. Centros y máscaras son observaciones de imagen; los vectores y el rastro se calculan localmente con tiempos originales. Se reproduce el archivo original; las máscaras se sincronizan con el tiempo del fotograma presentado por el navegador. Sin revisión humana, incertidumbre ni unidades métricas certificadas.'
+        : 'A genuine SAM 3.1 provider response was recovered from the private cache. Image-mask centroids drive locally computed vectors and trails using source timestamps. Playback uses the original file; masks follow the timestamp of the frame presented by the browser. No independent bob review, uncertainty or calibrated physical units yet.')
       : (es
-        ? 'No hay evidencia SAM 3.1 de este video. Las vistas locales anteriores se conservan solo como referencia provisional, nunca como resultados de Meta. El original permanece privado y el proxy H.264 reproduce a 12 FPS.'
-        : 'This video has no SAM 3.1 evidence. Earlier local views remain only as provisional controls, NEVER Meta model results. Original media remains private; the H.264 browser proxy is 12 FPS.')}}
+        ? 'No hay evidencia SAM 3.1 de este video. Las vistas locales anteriores se conservan solo como referencia provisional, nunca como resultados de Meta. Se reproduce el original privado sin reducir resolución ni FPS.'
+        : 'This video has no SAM 3.1 evidence. Earlier local views remain only as provisional controls, NEVER Meta model results. Playback uses the private original without reducing resolution or FPS.')}}
   </p>
 </section>

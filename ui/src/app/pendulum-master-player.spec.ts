@@ -5,7 +5,7 @@ import type { KinematicRevision } from './pendulum-kinematics';
 import { PendulumMasterPlayer } from './pendulum-master-player';
 import {
   formatMediaTime, motionAt, nearestMotionTime, seekByFrame,
-  trailingMotion, type CandidatePixelPoint
+  seekSourceFrame, trailingMotion, type CandidatePixelPoint
 } from './pendulum-master-sync';
 
 const track:CandidatePixelPoint[]=Array.from({length:60},(_,i)=>({
@@ -85,9 +85,9 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(root.querySelectorAll('canvas').length).toBe(3);
     expect(root.querySelectorAll('.view-panel').length).toBe(4);
     expect(root.textContent).toContain('Cuatro perspectivas, un solo reloj');
-    expect(root.textContent).toContain('H.264');
+    expect(root.textContent).toContain('VIDEO ORIGINAL');
     expect(root.textContent).toContain('No hay evidencia SAM 3.1');
-    expect(component.proxyFps()).toBe(12);
+    expect(component.sourceFps()).toBe(60);
     fixture.destroy();
   });
 
@@ -100,7 +100,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(spies[0]).toHaveBeenCalledOnceWith(source,0,0,640,360);
     expect(spies[1]).toHaveBeenCalledOnceWith(source,0,0,640,360);
     expect(spies[2]).toHaveBeenCalledOnceWith(source,0,0,640,360);
-    expect(component.frameNumber()).toBe(15);
+    expect(component.frameNumber()).toBe(75);
     expect(component.lastPaintedTime()).toBe(1.25);
     expect(component.paintedViews()).toBe(4);
     expect(component.overlayStatus()).toBe('LOCAL_PIXEL_CANDIDATE_NOT_SAM');
@@ -404,15 +404,15 @@ describe('One-clock three-view pendulum laboratory',()=>{
     TestBed.inject(HttpTestingController).verify();fixture.destroy();
   });
 
-  it('pauses master video, frame steps with 12fps decoder cadence, and stops overlays',()=>{
+  it('pauses master video, frame steps with the original 60fps cadence, and stops overlays',()=>{
     const {fixture,component,source}=init();
     const videoPause=spyOn(source,'pause').and.stub();
     source.currentTime=2;
     component.stepFrame(1);
     expect(videoPause).toHaveBeenCalled();
-    expect(source.currentTime).toBeCloseTo(2+1/12,5);
+    expect(source.currentTime).toBeCloseTo(2+1/60,5);
     component.onDecodedFrame();
-    expect(component.currentTime()).toBeCloseTo(2+1/12,5);
+    expect(component.currentTime()).toBeCloseTo(2+1/60,5);
     const time=component.lastPaintedTime();
     component.onPause();
     expect(component.lastPaintedTime()).toBe(time);
@@ -430,6 +430,62 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(component.paintedViews()).toBe(4);
     fixture.destroy();
   });
+  it('retains native 4K raster size and uses 60/120/240 fps without a 12fps clamp',()=>{
+    const {fixture,component,source,root}=init();
+    Object.defineProperty(source,'videoWidth',{configurable:true,value:3840});
+    Object.defineProperty(source,'videoHeight',{configurable:true,value:2160});
+    component.onLoadedMetadata();
+    for(const canvas of Array.from(root.querySelectorAll('canvas'))) {
+      expect(canvas.width).toBe(3840);expect(canvas.height).toBe(2160);
+    }
+    spyOn(source,'pause').and.stub();
+    for(const fps of [60,120,240]) {
+      fixture.componentRef.setInput('originalFps',fps);fixture.detectChanges();
+      source.currentTime=2;component.stepFrame(1);
+      expect(source.currentTime).toBeCloseTo(2+1/fps,6);
+      expect(component.frameStepSeconds).toBeCloseTo(1/fps,8);
+    }
+    fixture.destroy();
+  });
+
+  it('uses decoded mediaTime and ignores the playback clock when painting or pausing',()=>{
+    const {fixture,component,source}=init();
+    let callback:VideoFrameRequestCallback|undefined;
+    spyOn(source,'requestVideoFrameCallback').and.callFake(cb=>{callback=cb;return 42;});
+    spyOn(source,'cancelVideoFrameCallback').and.stub();
+    const paint=spyOn(component,'paintFrame').and.stub();
+    component.onLoadedMetadata();
+    source.currentTime=1.047;
+    callback!(0,{mediaTime:1} as VideoFrameCallbackMetadata);
+    expect(paint).toHaveBeenCalledOnceWith(1);
+    component.onDecodedFrame();component.onPause();
+    expect(paint).toHaveBeenCalledTimes(1);
+    // A paused seek also presents a decoded frame.
+    source.currentTime=2.019;
+    callback!(0,{mediaTime:2.002} as VideoFrameCallbackMetadata);
+    expect(paint.calls.mostRecent().args).toEqual([2.002]);
+    // HEVC may report presentation metadata before seeked restores HAVE_CURRENT_DATA.
+    Object.defineProperty(source,'readyState',{configurable:true,value:1});
+    callback!(0,{mediaTime:3.003} as VideoFrameCallbackMetadata);
+    expect(paint).toHaveBeenCalledTimes(2);
+    Object.defineProperty(source,'readyState',{configurable:true,value:2});
+    component.onDecodedFrame();
+    expect(paint.calls.mostRecent().args).toEqual([3.003]);
+    fixture.destroy();
+  });
+
+  it('reports unsupported originals without switching to a reduced proxy',()=>{
+    const {fixture,component,source,root}=init();
+    fixture.componentRef.setInput('originalCodec','hevc');fixture.detectChanges();
+    const selected=source.getAttribute('src');
+    component.onPreviewError();fixture.detectChanges();
+    expect(source.getAttribute('src')).toBe(selected);
+    expect(root.textContent).toContain('No se ha sustituido');
+    expect(root.querySelector('.player-error a')?.getAttribute('href')).toBe(selected+'?download=true');
+    expect(component.previewLoading()).toBeFalse();
+    fixture.destroy();
+  });
+
 });
 
 describe('Pixel-space synchronized annotation helpers',()=>{
@@ -457,11 +513,20 @@ describe('Pixel-space synchronized annotation helpers',()=>{
     expect(trailingMotion(track,2,-1)).toEqual([]);
   });
 
-  it('seeks exact proxy frames and formats timestamps',()=>{
+  it('seeks nominal frames without imposing a proxy cadence and formats timestamps',()=>{
     expect(seekByFrame(2,1,12,30)).toBeCloseTo(2+1/12,6);
     expect(seekByFrame(0,-1,12,30)).toBe(0);
     expect(seekByFrame(29.99,1,12,30)).toBeLessThan(30);
     expect(formatMediaTime(2.0833)).toBe('00:02.083');
     expect(formatMediaTime(62.5)).toBe('01:02.500');
   });
+  it('steps using verified VFR source timestamps instead of nominal FPS',()=>{
+    const pts=[0,.010,.025,.048,.070];
+    expect(seekSourceFrame(pts,.025,1,120,1)).toBeCloseTo(.049,8);
+    expect(seekSourceFrame(pts,.025,-1,120,1)).toBeCloseTo(.011,8);
+    expect(seekSourceFrame(pts,0,-1,120,1)).toBeCloseTo(.001,8);
+    expect(seekSourceFrame(pts,.070,1,120,1)).toBeCloseTo(.071,8);
+    expect(seekSourceFrame([],2,1,240,4)).toBeCloseTo(2+1/240,8);
+  });
+
 });

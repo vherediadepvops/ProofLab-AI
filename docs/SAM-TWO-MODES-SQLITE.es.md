@@ -31,11 +31,21 @@ En Laboratorio, antes de pulsar Procesar solo hay una vista estática: reproducc
 
 El Laboratorio inicia vacío aunque exista una sesión recordada. **Video de prueba** carga la grabación local configurada solo al pulsarlo. **Nueva prueba** muestra **Subir video** y conserva los estudios anteriores en el servidor. Cargar un video no ejecuta SAM.
 
-Para configurar la demostración en una instalación local, copiar `ui/public/demo-video.example.json` a `ui/public/demo-video.json` y escribir el ID de un estudio existente con video y vista previa. Reiniciar el servidor Angular después de crear este archivo. Este archivo está ignorado por Git; no incluir videos, tokens ni identificadores privados en el ejemplo público.
+Para configurar la demostración en una instalación local, copiar `ui/public/demo-video.example.json` a `ui/public/demo-video.json` y escribir el ID de un estudio existente con el video original. Reiniciar el servidor Angular después de crear este archivo. Este archivo está ignorado por Git; no incluir videos, tokens ni identificadores privados en el ejemplo público.
 
 La vista previa y la consulta del costo avanzan independientemente al estar disponibles los datos del video. Sus tarjetas muestran barras de actividad separadas, sin porcentajes ficticios. Procesar requiere vista previa lista y estimación válida terminada, incluso con HIT. Al procesar desde caché o Meta se indica actividad hasta validar el resultado; se bloquean dobles clics y cambios de fuente/modo/puerto. Un error detiene el indicador y deja la reproducción bloqueada.
 
 Validación local de este ajuste: 58 pruebas Angular focalizadas y build correcto. Las solicitudes de pago se prueban con HTTP simulado. No requiere CI.
+
+## Reproducción del original y sincronización (28/10/2026)
+
+El reproductor usa `GET/HEAD .../original/{role}`: bytes exactos del archivo conservado, SHA-256 verificado, Range y ETag. No cambia códec, resolución ni FPS. Las cargas nuevas ya no generan el proxy de revisión de 12 FPS; los archivos y endpoints históricos se conservan para compatibilidad. El muestreo FFmpeg del análisis local es independiente de la reproducción.
+
+Las tres vistas derivadas dibujan el mismo video a su resolución decodificada nativa. Las máscaras se seleccionan con `requestVideoFrameCallback.mediaTime`, también al pausar y buscar; el avance manual usa los PTS originales verificados cuando existen y la frecuencia nominal en caso contrario. Se busca dentro del fotograma para evitar que el redondeo de un PTS seleccione el anterior. Los vectores y el rastro siguen siendo cálculos locales desde las máscaras SAM, no resultados gráficos enviados por Meta.
+
+Si falla la reproducción o el navegador no admite el códec, se muestra un error y un enlace para descargar el original; no se sustituye silenciosamente por una copia reducida. Se informa cuando el navegador reporta fotogramas descartados. Conservar un archivo de 4K a 120/240 FPS no garantiza reproducir cada fotograma en cualquier hardware/pantalla; los límites existentes de carga y presupuesto siguen vigentes.
+
+Verificación local: original HEVC de 59,94 FPS, bytes/SHA idénticos, imagen decodificada 1080×1920 con rotación y las tres vistas a esa resolución. 13 comprobaciones HTTP, 12 de navegador y 77 pruebas Angular focalizadas correctas; tras ajustar el redondeo de PTS, 33 pruebas afectadas repetidas correctamente. API y UI compiladas. Tamaño inicial de UI: 587,11 kB (advertencia existente frente a 500 kB). Pruebas unitarias cubren dimensiones 4K y cadencias 120/240; no se hizo una prueba de rendimiento con grabación real 4K/240. Sin CI ni nuevas llamadas a Meta.
 
 ## Persistencia y procedencia
 

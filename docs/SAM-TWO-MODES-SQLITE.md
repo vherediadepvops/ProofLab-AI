@@ -37,6 +37,16 @@ Preview loading and cost checking proceed independently once video metadata is a
 
 Local validation of this change: 58 focused Angular tests and a successful build. Paid requests are covered with mocked HTTP only. CI is not required.
 
+## Original playback and synchronization (2026-10-28)
+
+The player uses `GET/HEAD .../original/{role}`: exact preserved-file bytes, verified SHA-256, Range and ETag. Codec, resolution and FPS are unchanged. New uploads no longer generate the 12 FPS review proxy; historical files and endpoints remain for compatibility. Local-analysis FFmpeg sampling is separate from playback.
+
+All three derived views draw the same video at its native decoded resolution. Masks use `requestVideoFrameCallback.mediaTime`, including pause and seek; manual frame stepping uses verified source PTS when available and nominal cadence otherwise. Seeking just inside the target frame avoids selecting the preceding frame due to rounded PTS. Vectors and trails remain local calculations from SAM masks, not graphics returned by Meta.
+
+Playback or codec failure shows an explicit error and original-download link; no silent reduced-copy fallback occurs. Browser-reported dropped frames are indicated. Preserving a 4K 120/240 FPS file does not guarantee every frame can be displayed on arbitrary hardware/screens; existing upload and budget limits remain in force.
+
+Local verification: original 59.94 FPS HEVC, identical bytes/SHA, rotated 1080×1920 decoded image and three native-resolution views. 13 HTTP checks, 12 browser checks and 77 focused Angular tests passed; after the PTS rounding adjustment, all 33 affected tests passed again. API and UI builds succeeded. UI initial size: 587.11 kB (existing warning against 500 kB). Unit tests cover 4K dimensions and 120/240 cadence; no real 4K/240 recording performance benchmark was run. No CI or new Meta calls.
+
 ## Persistence and provenance
 
 `SamVideoEvidenceIndex` uses Microsoft.Data.Sqlite at `.private/physics/sam-video-evidence.sqlite`, separate from Lean mathematical memory. SQLite stores **metadata only**: video SHA, model/protocol, prompt hash, response and receipt hashes, private relative path, analysis ID, timestamp, frame count and provenance. It does not store keys, videos, masks, coordinates, plaintext prompts or complete responses.

@@ -43,7 +43,7 @@ export class PendulumZoneOne extends PendulumDirector {
       const config=await firstValueFrom(this.demoHttp.get<{studyId:string}>('demo-video.json'));
       if(!/^[a-f0-9]{32}$/i.test(config.studyId))throw new Error('INVALID_DEMO');
       await this.restore(config.studyId);
-      if(!this.session()?.baseline?.previewAvailable)throw new Error('DEMO_UNAVAILABLE');
+      if(!this.session()?.baseline)throw new Error('DEMO_UNAVAILABLE');
       this.checkedVideo.set(false);
     } catch {
       this.session.set(null);this.previewState.set('error');
@@ -146,7 +146,7 @@ export class PendulumZoneOne extends PendulumDirector {
     } finally {
       if (autoRegister) this.registeringAndUploading.set(false);
       const clip=role==='baseline'?this.session()?.baseline:this.session()?.followup;
-      if(!clip?.previewAvailable)this.previewState.set(this.error()?'error':'empty');
+      if(!clip)this.previewState.set(this.error()?'error':'empty');
       // Also clear after failed registration, to allow selecting same file.
       control.value = '';
     }
