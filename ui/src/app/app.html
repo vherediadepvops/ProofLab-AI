@@ -32,7 +32,7 @@
     <section class="hero">
       <div class="micro">PUSH THE FRONTIER <span>—</span> 2026 GLOBAL HACKATHON</div>
       <h1>{{workspace() === 'math' ? words().mathTitle : workspace() === 'meta' ? words().metaTestTitle : workspace() === 'pendulum' ? (language() === 'es' ? 'Demo estrella · Péndulo' : 'Flagship Demo · Pendulum') : words().prepare}}</h1>
-      <p>{{workspace() === 'math' ? words().mathIntro : workspace() === 'meta' ? words().metaTestIntro : workspace() === 'pendulum' ? (language() === 'es' ? 'Predicción registrada antes de evaluar evidencias. Integración de video con SAM pendiente.' : 'Prediction locked before comparing observations. SAM video integration pending.') : words().intro}}</p>
+      <p>{{workspace() === 'math' ? words().mathIntro : workspace() === 'meta' ? words().metaTestIntro : workspace() === 'pendulum' ? (language() === 'es' ? 'Primero un video; después una propuesta y una nueva prueba. Director Muse y SAM todavía pendientes.' : 'One video first; then a new proposal and a follow-up. Muse Director and SAM are still pending.') : words().intro}}</p>
       <div class="hero-badges"><span>{{words().heroMethod}}</span><span>{{words().heroAdapters}}</span><span>{{words().heroOpen}}</span></div>
       <div class="glyph" aria-hidden="true">∿</div>
     </section>
@@ -201,7 +201,16 @@
         @if(metaTestError()) { <div class="alert" role="alert">{{metaTestError()}}</div> }
       }
       @if(workspace() === 'pendulum') {
-        <app-pendulum-study [language]="language()" />
+        <app-pendulum-director [language]="language()" />
+        <details class="technical-protocol">
+          <summary>{{language() === 'es'
+            ? 'Modo técnico avanzado · seis grabaciones, CSV y validación de repetibilidad'
+            : 'Advanced technical mode · six recordings, CSV and repeatability checks'}}</summary>
+          <p>{{language() === 'es'
+            ? 'Este laboratorio conserva los experimentos de calibración anteriores. No forma parte de la experiencia principal del jurado.'
+            : 'This laboratory keeps previous calibration studies. It is not part of the jury’s main experience.'}}</p>
+          <app-pendulum-study [language]="language()" />
+        </details>
       }
       @if(workspace() === 'math') {
         <app-research-workflow [language]="language()" />

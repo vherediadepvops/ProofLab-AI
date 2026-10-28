@@ -1,0 +1,201 @@
+<section class="director">
+  <div class="director-head">
+    <div>
+      <div class="eyebrow">PROOFLAB RESEARCH DIRECTOR · FLAGSHIP FLOW</div>
+      <h2>{{es ? 'Investiga un fenómeno con un video' : 'Investigate a phenomenon from one video'}}</h2>
+      <p>{{es
+        ? 'Un experimento inicial, una nueva predicción registrada y un segundo video para contrastarla. Las seis repeticiones son opcionales y permanecen en el laboratorio técnico.'
+        : 'One initial experiment, a frozen follow-up prediction and one second video to test it. Six repeat recordings remain optional in the technical lab.'}}</p>
+    </div>
+    <span class="offline">0 META TOKENS</span>
+  </div>
+
+  <div class="stages">
+    <span [class.active]="!session()?.baseline">1 · {{es?'Observar':'Observe'}}</span>
+    <span [class.active]="!!session()?.baseline && !session()?.proposal">2 · {{es?'Proponer':'Propose'}}</span>
+    <span [class.active]="!!session()?.proposal && !session()?.followup">3 · {{es?'Comprobar':'Test'}}</span>
+    <span [class.active]="!!session()?.followup">4 · {{es?'Concluir':'Conclude'}}</span>
+  </div>
+
+  <p class="warning">
+    {{es
+      ? 'ESTADO ACTUAL: se utiliza FFmpeg y un verificador físico local. Muse Spark todavía NO dirige este experimento y SAM 3.1 todavía NO sigue el video. No se harán llamadas a Meta ni se simulará una decisión de IA.'
+      : 'CURRENT STATUS: FFmpeg and local physics checks are used. Muse Spark does NOT yet direct this experiment and SAM 3.1 does NOT yet track this video. No Meta requests or pretend AI decisions will occur.'}}
+  </p>
+
+  @if(!session()) {
+    <div class="start">
+      <h3>01 · {{es?'Primera observación':'First observation'}}</h3>
+      <p>{{es?'Introduce únicamente la longitud medida del péndulo; no hace falta escribir fórmulas ni resultados.':'Enter only the measured pendulum length. No formula or results required.'}}</p>
+      <label>{{es?'Longitud desde pivote hasta centro de plomada (metros)':'Pivot-to-bob-centre length (metres)'}}
+        <input type="number" min="0.1" max="5" step="0.05"
+          [ngModel]="baselineLength()" (ngModelChange)="baselineLength.set(+$event)"
+          [disabled]="busy()" />
+      </label>
+      <button class="primary" [disabled]="busy()" (click)="start()">
+        {{es?'Iniciar una investigación':'Start a research study'}}
+      </button>
+    </div>
+  } @else if(session(); as s) {
+    <div class="research-id">
+      <span>{{es?'Investigación':'Research'}}: <code>{{s.id}}</code></span>
+      <button type="button" class="quiet" [disabled]="busy() || !!stageBusy()" (click)="reset()">
+        {{es?'Nueva investigación':'New study'}}
+      </button>
+    </div>
+    <div class="step">
+      <h3>01 · {{es?'Observar el péndulo':'Observe the pendulum'}}</h3>
+      <p>{{es?'Longitud declarada':'Declared length'}}: <strong>{{s.baselineLengthMeters*100 | number:'1.0-0'}} cm</strong></p>
+      @if(!s.baseline) {
+        <label>{{es?'Sube un solo video original (MOV, MP4 y otros)':'Upload one original video (MOV, MP4 and others)'}}
+          <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
+            [disabled]="!!stageBusy() || busy()" (change)="upload($event,'baseline')" />
+        </label>
+      } @else {
+        <p class="media-meta"><strong>{{s.baseline.originalFilename}}</strong> ·
+          {{s.baseline.media.codec.toUpperCase()}} ·
+          {{s.baseline.media.durationSeconds | number:'1.1-1'}} s</p>
+        @if(s.baseline.previewAvailable) {
+          <video class="frame" controls preload="metadata" playsinline
+            [attr.aria-label]="es?'Vista previa del primer experimento':'First experiment video review'">
+            <source [src]="reviewVideo('baseline')" type="video/mp4" />
+          </video>
+          <p class="caution">{{es
+            ? 'Vista previa H.264 creada localmente para revisar el movimiento. Se conserva el MOV/MP4 original sin cambios; el proxy no sustituye los fotogramas originales para ciencia.'
+            : 'Locally generated H.264 review video. The original MOV/MP4 is unchanged; the proxy is not a substitute for original scientific frames.'}}</p>
+        } @else if(s.baseline.posterAvailable) {
+          <img class="frame" [src]="poster('baseline')"
+            [alt]="es?'Fotograma inicial del video':'First video frame'" />
+          <p class="warning">{{es
+            ? 'No hay vista previa reproducible. Para confirmar identidad de la plomada, revisa el video original completo en otro reproductor.'
+            : 'Playable preview unavailable. Review the full original video in another player before confirming bob identity.'}}</p>
+        }
+        @if(s.baseline.tracking.observations.length>10) {
+          <svg viewBox="0 0 400 110" class="graph" role="img"
+            [attr.aria-label]="es?'Trayectoria local sin validación visual':'Unverified local motion trajectory'">
+            <polyline fill="none" stroke="#3182bd" stroke-width="2"
+              [attr.points]="trajectory(s.baseline.tracking.observations)" />
+          </svg>
+        }
+        <div class="metrics">
+          <div><small>{{es?'Período detectado (preliminar)':'Detected period (preliminary)'}}</small>
+            <strong>{{s.baseline.spectral.periodSeconds === null ? '—' : (s.baseline.spectral.periodSeconds | number:'1.3-3') + ' s'}}</strong></div>
+          <div><small>{{es?'Consistencia matemática R²':'Mathematical fit R²'}}</small>
+            <strong>{{s.baseline.spectral.fitRSquared | number:'1.3-3'}}</strong></div>
+          <div><small>{{es?'Fotogramas con detecciones':'Frames with detections'}}</small>
+            <strong>{{s.baseline.tracking.detectedFrames}} / {{s.baseline.tracking.framesAnalyzed}}</strong></div>
+        </div>
+        @if(!s.humanReview) {
+          <p class="caution">{{es
+            ? 'Antes de continuar, observa el video y comprueba que la curva corresponde a la plomada, no a manos o sombras. Esta confirmación humana no constituye validación independiente.'
+            : 'Before continuing, confirm the curve follows the pendulum bob and not hands/shadows. User acknowledgement is not independent scientific validation.'}}</p>
+          <label class="review">
+            <input type="checkbox" [ngModel]="checkedVideo()"
+              (ngModelChange)="checkedVideo.set($event)" [disabled]="busy()" />
+            {{es?'He comprobado visualmente que la trayectoria sigue la plomada':'I visually checked that the trajectory follows the pendulum bob'}}
+          </label>
+          <button class="primary" [disabled]="busy() || !checkedVideo() || s.baseline.spectral.periodSeconds === null"
+            (click)="confirm()">
+            {{es?'Confirmar observación y pasar a hipótesis':'Confirm observation and continue to hypothesis'}}
+          </button>
+          @if(s.baseline.spectral.periodSeconds === null) {
+            <p class="warning">{{es
+              ? 'El período inicial no es suficientemente fiable. Este expediente no avanzará sin mejor evidencia o revisión manual.'
+              : 'The initial period is not reliable enough. Research cannot proceed without stronger evidence or manual review.'}}</p>
+          }
+        } @else {
+          <p class="verified">{{es?'Confirmación humana registrada; no es verificación por SAM.':'Human acknowledgement recorded; not SAM verification.'}}</p>
+        }
+      }
+    </div>
+
+    @if(s.humanReview) {
+      <div class="step">
+        <h3>02 · {{es?'Decidir el siguiente experimento':'Decide the next experiment'}}</h3>
+        @if(!s.proposal) {
+          <p>{{es
+            ? 'Aquí Muse Spark debería razonar a partir del primer resultado y elegir una prueba. Ese agente todavía no está integrado.'
+            : 'Muse Spark should reason over the first result and choose the next test here. That agent is not integrated yet.'}}</p>
+          <button class="primary" [disabled]="busy()" (click)="propose()">
+            {{es?'Registrar propuesta local de control (NO IA)':'Register a local control proposal (NOT AI)'}}
+          </button>
+        } @else {
+          <p class="caution">{{es?s.proposal.reasonEs:s.proposal.reasonEn}}</p>
+          <div class="metrics">
+            <div><small>{{es?'Nueva longitud propuesta':'Proposed length'}}</small>
+              <strong>{{s.proposal.theory.followUpLengthMeters*100 | number:'1.0-0'}} cm</strong></div>
+            <div><small>{{es?'Período predicho':'Predicted period'}}</small>
+              <strong>{{s.proposal.theory.expectedFollowUpPeriodSeconds | number:'1.3-3'}} s</strong></div>
+            <div><small>{{es?'Cambio predicho':'Predicted change'}}</small>
+              <strong>{{s.proposal.theory.predictedIncreasePercent | number:'1.2-2'}} %</strong></div>
+          </div>
+          <p class="hash">{{es?'Predicción congelada':'Frozen prediction'}} · SHA-256: {{s.proposal.predictionSha256}}</p>
+          <p class="hash">UTC: {{s.proposal.registeredAtUtc}}</p>
+        }
+      </div>
+    }
+
+    @if(s.proposal) {
+      <div class="step">
+        <h3>03 · {{es?'Contrastar la predicción':'Test the prediction'}}</h3>
+        @if(!s.followup) {
+          <p>{{es
+            ? 'Ahora sí, carga una nueva grabación con la longitud propuesta. No se necesitan tres repeticiones para completar el recorrido básico.'
+            : 'Now upload one new recording at the proposed length. Three repetitions are not needed for the basic experience.'}}</p>
+          <label>{{es?'Segundo video original':'Second original video'}}
+            <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
+              [disabled]="!!stageBusy() || busy()" (change)="upload($event,'followup')" />
+          </label>
+        } @else {
+          <p class="media-meta"><strong>{{s.followup.originalFilename}}</strong> ·
+            {{s.followup.media.codec.toUpperCase()}} ·
+            {{s.followup.media.durationSeconds | number:'1.1-1'}} s</p>
+          @if(s.followup.previewAvailable) {
+            <video class="frame" controls preload="metadata" playsinline
+              [attr.aria-label]="es?'Vista previa del segundo experimento':'Follow-up experiment video review'">
+              <source [src]="reviewVideo('followup')" type="video/mp4" />
+            </video>
+          } @else if(s.followup.posterAvailable) {
+            <img class="frame" [src]="poster('followup')"
+              [alt]="es?'Fotograma de segunda prueba':'Follow-up video frame'" />
+          }
+          @if(s.followup.tracking.observations.length > 10) {
+            <svg class="graph" viewBox="0 0 400 110" role="img"
+              [attr.aria-label]="es?'Trayectoria local de segunda prueba':'Follow-up local motion trace'">
+              <polyline fill="none" stroke="#3182bd" stroke-width="2"
+                [attr.points]="trajectory(s.followup.tracking.observations)" />
+            </svg>
+          }
+          <p>{{es?'Segundo período preliminar':'Follow-up preliminary period'}}:
+            <strong>{{s.followup.spectral.periodSeconds === null ? '—' :
+              (s.followup.spectral.periodSeconds | number:'1.3-3') + ' s'}}</strong>
+            · R² {{s.followup.spectral.fitRSquared | number:'1.3-3'}}</p>
+          @if(s.followup.spectral.periodSeconds !== null && !s.comparison){
+            <button class="primary" [disabled]="busy()" (click)="compare()">
+              {{es?'Contrastar resultados (sin Meta)':'Compare results (no Meta)'}}
+            </button>
+          }
+        }
+      </div>
+    }
+
+    @if(s.comparison; as c) {
+      <div class="step">
+        <h3>04 · {{es?'Conclusión provisional':'Preliminary conclusion'}}</h3>
+        <div class="metrics">
+          <div><small>{{es?'Cambio previsto':'Predicted change'}}</small>
+            <strong>{{c.predictedIncreasePercent | number:'1.2-2'}} %</strong></div>
+          <div><small>{{es?'Cambio estimado':'Estimated change'}}</small>
+            <strong>{{c.observedIncreasePercent | number:'1.2-2'}} %</strong></div>
+          <div><small>{{es?'Diferencia entre cambios':'Difference in changes'}}</small>
+            <strong>{{c.changeGapPercentagePoints | number:'1.2-2'}} pp</strong></div>
+        </div>
+        <p class="caution">{{es?c.limitationsEs:c.limitationsEn}}</p>
+        <p class="hash">{{c.status}}</p>
+      </div>
+    }
+
+    @if(stageBusy()) { <p class="processing">{{es?'Procesando video localmente, sin llamadas a Meta…':'Processing locally without Meta calls…'}}</p> }
+  }
+  @if(error()) { <p class="error" role="alert">{{error()}}</p> }
+</section>

@@ -21,6 +21,7 @@ builder.Services.AddSingleton<OfflineMathResearchFlow>();
 builder.Services.AddSingleton<PendulumResearchStore>();
 builder.Services.AddSingleton<VideoMediaDecoder>();
 builder.Services.AddSingleton<PendulumVideoWorkflow>();
+builder.Services.AddSingleton<PendulumDirectorWorkflow>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -328,6 +329,78 @@ app.MapPost("/api/science/evaluate", (EvidenceRequest input) =>
 
 // No model calls: register the 50→80 cm theoretical prediction before submitting
 // either coordinate series. Not evidence that the videos were filmed afterwards.
+// Main flagship flow: one initial video is analysed BEFORE a locally proposed
+// follow-up is timestamped, then a second video is uploaded for comparison.
+// No Meta model calls here; never present local control logic as autonomous AI.
+app.MapPost("/api/science/director/pendulum/sessions", async (
+    DirectorStartRequest request, PendulumDirectorWorkflow director, CancellationToken ct) =>
+{
+    try { return Results.Ok(await director.StartAsync(request,ct)); }
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+});
+app.MapGet("/api/science/director/pendulum/sessions/{id}", async (
+    string id, PendulumDirectorWorkflow director, CancellationToken ct) =>
+{
+    try { return Results.Ok(await director.ReadAsync(id,ct)); }
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+    catch(InvalidDataException){return Results.Conflict(new {error="Research integrity mismatch."});}
+});
+app.MapPost("/api/science/director/pendulum/sessions/{id}/video/{role}",
+    async (string id,string role,string? filename,HttpRequest request,
+        PendulumDirectorWorkflow director,CancellationToken ct) =>
+{
+    if(request.ContentLength is null)
+        return Results.BadRequest(new {error="Content-Length required."});
+    try { return Results.Ok(await director.UploadAsync(id,role,filename ?? "",
+        request.Body,request.ContentLength.Value,ct)); }
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+    catch(InvalidOperationException ex){return Results.Problem(ex.Message,statusCode:503);}
+})
+.WithMetadata(new RequestSizeLimitAttribute(250_000_000));
+app.MapPost("/api/science/director/pendulum/sessions/{id}/review-baseline",
+    async (string id,DirectorHumanReviewRequest request,
+        PendulumDirectorWorkflow director,CancellationToken ct) =>
+{
+    try {return Results.Ok(await director.ConfirmBaselineAsync(id,
+        request.BobConfirmed,ct));}
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+});
+app.MapPost("/api/science/director/pendulum/sessions/{id}/propose-local-control",
+    async (string id,PendulumDirectorWorkflow director,CancellationToken ct) =>
+{
+    try {return Results.Ok(await director.ProposeLocalControlAsync(id,ct));}
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+});
+app.MapPost("/api/science/director/pendulum/sessions/{id}/compare",
+    async (string id,PendulumDirectorWorkflow director,CancellationToken ct) =>
+{
+    try {return Results.Ok(await director.CompareAsync(id,ct));}
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+});
+app.MapGet("/api/science/director/pendulum/sessions/{id}/poster/{role}",
+    async(string id,string role,PendulumDirectorWorkflow director,CancellationToken ct) =>
+{
+    try{return Results.File(await director.PosterAsync(id,role,ct),"image/jpeg");}
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Poster not found."});}
+});
+
+app.MapGet("/api/science/director/pendulum/sessions/{id}/preview/{role}",
+    async(string id,string role,PendulumDirectorWorkflow director,CancellationToken ct) =>
+{
+    try {
+        var proxy=await director.PreviewAsync(id,role,ct);
+        return Results.File(proxy,"video/mp4",enableRangeProcessing:true);
+    }
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Review proxy unavailable."});}
+});
+
 app.MapPost("/api/science/pendulum/preregister", async (
     PendulumPreregisterRequest request, PendulumResearchStore study,
     CancellationToken ct) =>

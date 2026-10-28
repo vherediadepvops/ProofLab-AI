@@ -168,6 +168,33 @@ public sealed class VideoMediaDecoder
             throw new ArgumentException("Could not produce safe video thumbnail.");
     }
 
+    /// <summary>
+    /// A bounded, server-side H.264 MP4 review proxy for browsers that cannot
+    /// natively play iPhone HEVC/MOV. The original file and SHA never change.
+    /// This is NOT the scientific input nor SAM inference output.
+    /// </summary>
+    public async Task CreatePlayablePreviewAsync(
+        string originalFile, string proxyFile, CancellationToken ct)
+    {
+        if (ffmpeg is null) throw new InvalidOperationException("FFmpeg is unavailable.");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(95));
+        var proc = NewProcess(ffmpeg,
+            "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-protocol_whitelist", "file,pipe", "-threads", "2",
+            "-i", originalFile, "-map", "0:v:0", "-an", "-sn", "-dn",
+            "-t", VideoClipPolicy.MaximumDurationSeconds.ToString(
+                "F0", System.Globalization.CultureInfo.InvariantCulture),
+            "-vf", "fps=12,scale=640:-2:flags=fast_bilinear",
+            "-c:v", "libopenh264", "-b:v", "440k",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart", "-y", "-f", "mp4", proxyFile);
+        await RunTextAsync(proc, timeout.Token);
+        if (!File.Exists(proxyFile) || new FileInfo(proxyFile).Length is
+            < 10_000 or > 30_000_000)
+            throw new ArgumentException("Could not produce playable browser proxy.");
+    }
+
     private static Process NewProcess(string binary, params string[] args)
     {
         var info = new ProcessStartInfo(binary)

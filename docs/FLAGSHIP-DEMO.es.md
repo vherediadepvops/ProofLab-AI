@@ -58,4 +58,8 @@ Ahora las seis grabaciones `50CM_1/2/3.MOV` y `80CM_1/2/3.MOV`, cargadas por el 
 
 Las mediciones son **candidatas no verificadas**, sin SAM 3.1 sobre fotogramas reales. El reanálisis de los videos antiguos se almacenó en archivos inmutables adicionales; no se alteraron originales ni registros previos. Se realizó sin reenvío de video ni gasto Meta. La UI permite comparar y muestra explícitamente `LOCAL / NOT SAM`, bondad de ajuste R² y evaluación preliminar. **Para la demo final sigue pendiente** revisar manualmente la plomada en cada video, confrontar ciclos con cronometraje y conectar SAM 3.1 y Muse Spark dentro de las autorizaciones vigentes. Protocolo: [VIDEO-UPLOAD.es.md](VIDEO-UPLOAD.es.md).
 
+## Corrección de la demo principal — el jurado NO carga seis videos
+
+Por decisión expresa del usuario, **el recorrido central ahora empieza con un solo video** de un péndulo. El sistema extrae una señal, solicita revisión del objeto, registra una propuesta de segundo experimento **antes** de recibir un segundo video, y compara resultados. Las seis grabaciones son solo pruebas avanzadas de repetibilidad. Para no atribuir falsamente autonomía, la propuesta actual es **control local fijo, NO Muse Spark**; la máscara SAM 3.1 real aún no participa. Las vistas previas H.264 desde MOV/HEVC permiten inspección visual local, sin alterar originales. El flujo nuevo, endpoints y riesgos se describen en [FLAGSHIP-DIRECTOR.es.md](FLAGSHIP-DIRECTOR.es.md). **No se debe filmar ni narrar la propuesta local como decisión de IA autónoma.**
+
 **English:** [FLAGSHIP-DEMO.md](FLAGSHIP-DEMO.md).

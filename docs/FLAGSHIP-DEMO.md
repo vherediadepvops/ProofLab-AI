@@ -58,4 +58,8 @@ All six authentic user-uploaded clips, `50CM_1/2/3.MOV` and `80CM_1/2/3.MOV`, no
 
 These are **unverified local motion-track candidates, NOT real SAM 3.1 results**. Reanalyses for the six prior records are stored in additional immutable private files without changing the originals, reuploading footage or incurring Meta costs. The UI enables a preliminary comparison with R² and explicit local/non-SAM limitations. **Required for the jury demonstration:** visually verify bob identity in each video, independently time cycles, quantify physical uncertainty, and integrate real SAM/Muse inference subject to owner-approved spending. Protocol: [VIDEO-UPLOAD.md](VIDEO-UPLOAD.md).
 
+## Corrected flagship jury journey — NOT six required videos
+
+The owner explicitly chose a **one-video first** experience. ProofLab extracts preliminary motion, requests a review of the tracked object, preregisters a second-experiment prediction **before** accepting a second video, and compares the two. Six recordings remain an optional advanced repeatability control, not the primary journey. The current proposed change is **a deterministic local preset, NOT Muse Spark autonomy**; SAM 3.1 has not segmented genuine video. A browser-compatible H.264 proxy of HEVC/MOV enables local review while originals stay intact. See [FLAGSHIP-DIRECTOR.md](FLAGSHIP-DIRECTOR.md) for API/state machine, scientific limits, and gaps. **The fixed local proposal must never be presented as an autonomous AI decision in the juror video.**
+
 **Español:** [FLAGSHIP-DEMO.es.md](FLAGSHIP-DEMO.es.md).

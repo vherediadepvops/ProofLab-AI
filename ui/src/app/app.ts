@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ResearchWorkflow } from './research-workflow';
 import { PendulumStudy } from './pendulum-study';
+import { PendulumDirector } from './pendulum-director';
 import { decodeSamResponse, type SamVisualization } from './sam-visualization';
 import { Language, leanExplanation, leanOutcome, mathematicalAssumptions, scientificStatus, strategyDescription, friendlyApiError } from './locale';
 
@@ -204,7 +205,7 @@ const COPY = {
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, ResearchWorkflow, PendulumStudy],
+  imports: [CommonModule, FormsModule, ResearchWorkflow, PendulumStudy, PendulumDirector],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
