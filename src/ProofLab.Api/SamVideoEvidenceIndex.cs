@@ -50,7 +50,10 @@ public sealed class SamVideoEvidenceIndex
               completed_at_utc TEXT NOT NULL,
               provenance_status TEXT NOT NULL
             );
-            CREATE UNIQUE INDEX IF NOT EXISTS sam_video_evidence_unique
+            -- Each separately authorized analysis is immutable, even when
+            -- the provider returns identical bytes. Preserve all existing rows.
+            DROP INDEX IF EXISTS sam_video_evidence_unique;
+            CREATE INDEX IF NOT EXISTS sam_video_evidence_response
                 ON sam_video_evidence(cache_key, response_sha256);
             CREATE INDEX IF NOT EXISTS sam_video_evidence_lookup
                 ON sam_video_evidence(video_sha256, model, protocol, prompt_sha256);
@@ -135,8 +138,7 @@ public sealed class SamVideoEvidenceIndex
                            archive_relative_path,source_frames,completed_at_utc,
                            provenance_status
                     FROM sam_video_evidence
-                    WHERE analysis_id=@id OR
-                          (cache_key=@key AND response_sha256=@response)
+                    WHERE analysis_id=@id
                     LIMIT 1
                     """;
                 duplicate.Parameters.AddWithValue("@id",item.AnalysisId);
@@ -148,6 +150,36 @@ public sealed class SamVideoEvidenceIndex
                     throw new InvalidDataException(
                         "Conflicting SAM scientific evidence metadata.");
             }
+        }
+        finally { gate.Release(); }
+    }
+
+    public async Task<SamIndexedEvidence?> FindArchiveAsync(string key, string path, CancellationToken ct)
+    {
+        if (!ValidRelativePath(key, path))
+            throw new ArgumentException("Invalid SAM archive lookup.");
+        await gate.WaitAsync(ct);
+        try
+        {
+            await using var db = new SqliteConnection(connectionString);
+            await db.OpenAsync(ct);
+            await using var sql = db.CreateCommand();
+            sql.CommandText = """
+                SELECT analysis_id,video_sha256,cache_key,model,protocol,
+                       prompt_sha256,response_sha256,receipt_sha256,
+                       archive_relative_path,source_frames,completed_at_utc,provenance_status
+                FROM sam_video_evidence WHERE cache_key=@key AND archive_relative_path=@path
+                LIMIT 2
+                """;
+            sql.Parameters.AddWithValue("@key", key);
+            sql.Parameters.AddWithValue("@path", path);
+            await using var row = await sql.ExecuteReaderAsync(ct);
+            if (!await row.ReadAsync(ct)) return null;
+            var entry = ReadRow(row);
+            Validate(entry);
+            if (await row.ReadAsync(ct))
+                throw new InvalidDataException("Multiple SAM analyses share an immutable archive path.");
+            return entry;
         }
         finally { gate.Release(); }
     }

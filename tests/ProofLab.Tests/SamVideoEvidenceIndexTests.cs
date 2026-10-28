@@ -95,6 +95,35 @@ public sealed class SamVideoEvidenceIndexTests
         finally {Directory.Delete(root,true);}
     }
 
+    [Fact]
+    public async Task LegacyUniqueIndexMigration_PreservesRows_AndAllowsIdenticalOutputInDistinctRuns()
+    {
+        var (index, root) = OpenTemporary();
+        try
+        {
+            var old = Sample();
+            await index.RegisterVerifiedAsync(old, CancellationToken.None);
+            using (var db = new Microsoft.Data.Sqlite.SqliteConnection(
+                "Data Source=" + Path.Combine(root, ".private", "physics", "sam-video-evidence.sqlite") + ";Pooling=False"))
+            {
+                db.Open();
+                using var sql = db.CreateCommand();
+                sql.CommandText = "CREATE UNIQUE INDEX sam_video_evidence_unique ON sam_video_evidence(cache_key,response_sha256)";
+                sql.ExecuteNonQuery();
+            }
+            var reopened = new SamVideoEvidenceIndex(root);
+            var next = old with {
+                AnalysisId = "ffffffffffffffffffffffffffffffff",
+                ArchiveRelativePath = old.CacheKey + "/runs/ffffffffffffffffffffffffffffffff",
+                CompletedAtUtc = "2026-10-28T16:00:00.0000000+00:00"
+            };
+            await reopened.RegisterVerifiedAsync(next, CancellationToken.None);
+            Assert.Equal(old, await reopened.FindArchiveAsync(old.CacheKey, old.ArchiveRelativePath, CancellationToken.None));
+            Assert.Equal(next, await reopened.FindLatestAsync(old.VideoSha256, old.CacheKey, old.PromptSha256, CancellationToken.None));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     [Theory]
     [InlineData("../private/different-cache")]
     [InlineData("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/../attack")]

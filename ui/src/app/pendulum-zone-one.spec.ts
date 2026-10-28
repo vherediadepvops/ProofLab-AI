@@ -234,6 +234,37 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     verifyHttp(http);
   });
 
+  it('reloads verified player evidence after a cache HIT with GET requests only',async()=>{
+    const {root,component,fixture,http}=await init();
+    component.session.set({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});
+    fixture.detectChanges();
+    verifyHttp(http); // finish the initial player read
+    await Promise.resolve();
+    const controls=root.querySelector('app-sam-video-replay')!;
+    (controls.querySelector('button') as HTMLButtonElement).click();
+    const samUrl=studyUrl+'/'+session.id+'/sam/baseline';
+    const status=http.expectOne(samUrl+'/status?mode=api-meta-cache');
+    expect(status.request.method).toBe('GET');
+    status.flush({
+      status:'CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW',
+      sourceSha256:video.sha256,cacheKey:'c'.repeat(64),
+      sourceFrames:1828,estimatedCostUsd:.3656,canRunLive:false,
+      provenance:'META_SAM_3_1',mode:'api-meta-cache',
+      cacheHit:true,storage:'SQLite',analysisId:'integration-cache-hit'
+    });
+    await Promise.resolve();
+    fixture.detectChanges();
+    const evidence=http.expectOne(samUrl+'/evidence');
+    expect(evidence.request.method).toBe('GET');
+    // This test covers the reload wiring; validated overlay parsing has its own suite.
+    evidence.flush({error:'Synthetic absent response'},{status:404,statusText:'Not Found'});
+    expect(controls.textContent).toContain('integration-cache-hit');
+    expect(controls.textContent).toContain('HIT');
+    http.expectNone(req=>req.method==='POST' || req.url.endsWith('/preflight') ||
+      req.url.endsWith('/readiness'));
+    verifyHttp(http);
+  });
+
   it('fills the four-perspective viewer with one video and a default combined primary',async()=>{
     const {root,component,fixture,http}=await init();
     component.session.set({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});

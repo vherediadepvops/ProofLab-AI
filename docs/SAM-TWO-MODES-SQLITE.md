@@ -1,35 +1,43 @@
-# ProofLab AI — Two SAM modes and physical-video SQLite (offline increment)
+# ProofLab AI — Stage 4: two SAM modes and SQLite
 
-**Date:** Oct 28, 2026 · **Mission:** Autonomous Physics Discovery / pendulum · **Status:** isolated SQLite index implemented and tested; live Meta and UI-mode integration REMAINS BLOCKED by a security tool.
+**Date:** Oct 28, 2026 · **Mission:** Autonomous Physics Discovery / pendulum · **Status:** technical integration implemented; local validation uses synthetic data. No new Meta inference or scientific bob validation was performed.
 
-## Requested functional contract
+## Modes and contract
 
-| Mode | Desired behavior | Actual limitation |
-|---|---|---|
-| **API Meta** | Request a fresh SAM 3.1 inference even when the same video was processed earlier | Never relabel a cached result as fresh. Every authorized new run requires its own analysis ID, receipt and paid attempt marker. **Not implemented:** edits to force new billable inference were rejected by security controls. |
-| **API Meta + cache** | Check SQLite for an exact source-video SHA-256, model/protocol version and prompt SHA; replay valid stored provider evidence on a hit, otherwise offer SAM inference after safety/budget checks | Physical SQLite index prepared but **NOT wired** into provider responses or the master player. Previous file-based response/receipt archive remains separate. No genuine SAM cache for the 50 cm pendulum exists. |
+| Selection | Behavior |
+|---|---|
+| **API Meta** (`api-meta`) | Requests a fresh SAM inference even when an earlier analysis exists. Never presents cache as a new execution. Requires explicit permission, credits and server admission; each execution keeps its own ID and history. |
+| **API Meta + cache** (`api-meta-cache`, default) | Looks up exact video/model/protocol/prompt identity in SQLite and verifies the archived files. A HIT retrieves evidence without a key, billing approval or Meta request. A MISS only offers a manual call when the server permits it. |
 
-The UI may gather payment/media consent, but must not replace backend validation of credits, source hashes/PTS, costs and permitted execution. Pasting a key in a browser must never disable server or organizational safety gates.
+The primary selector contains exactly these two options. Local ports are under **Advanced connection**, closed by default; 5391 remains the main port. Selecting a port or pasting a key does not enable billing.
 
-## Implemented safe component
+- `GET /api/science/director/pendulum/sessions/{id}/sam/{role}/status?mode=api-meta-cache` reads status. It also accepts `mode=api-meta`.
+- `POST .../sam/{role}/manual-one-shot` and `POST .../sam/{role}/analyze` accept `mode`; omission preserves cache mode. The UI uses the first endpoint with the existing manual action.
+- Status adds `analysisId`, `mode`, `cacheHit` and `storage`. A HIT retains `CACHED_META_...`. Fresh mode uses `READY_FOR_FRESH_META_ANALYSIS` where applicable; final admission remains subject to server controls.
+- `GET .../sam/{role}/evidence` returns the latest verified evidence. After a HIT or completed execution, the UI reloads the player through GET; replay never initiates a POST.
+- A completed fresh execution returns its ID and `cacheHit=false`. Earlier analysis metadata in status does not establish that a new execution occurred.
 
-`src/ProofLab.Api/SamVideoEvidenceIndex.cs` is an **offline** Microsoft.Data.Sqlite 10.0.14 index located at `.private/physics/sam-video-evidence.sqlite`, separate from the existing Lean mathematical memory `.private/research/scientific-experience.sqlite`. It stores **metadata only**: original video SHA, protocol/model identity, prompt hash, response and receipt hashes, confined private relative archive path, analysis ID, completion timestamp, frame count, and provenance status. No tokens, source videos, masks, coordinates, plaintext prompts, or provider outputs enter SQLite.
+## Persistence and provenance
 
-Strict validation requires lowercase SHA/IDs, `sam-3.1`, pinned protocol `PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2`, a non-traversable archive path and `PROVIDER_RECEIPT_PREVIOUSLY_VERIFIED`. Identical inserts are idempotent; scientific metadata conflicts are rejected. Lookup requires exact video/cache/prompt identity and protocol. **An SQLite row is NOT by itself proof that Meta produced the data.** Future backend integration must independently validate actual files' response/receipt hashes and Meta provenance before making them scientific observations. Manually pasted JSON must never be treated as a genuine provider result.
+`SamVideoEvidenceIndex` uses Microsoft.Data.Sqlite at `.private/physics/sam-video-evidence.sqlite`, separate from Lean mathematical memory. SQLite stores **metadata only**: video SHA, model/protocol, prompt hash, response and receipt hashes, private relative path, analysis ID, timestamp, frame count and provenance. It does not store keys, videos, masks, coordinates, plaintext prompts or complete responses.
 
-This component contains **zero Meta requests or paid-retry logic**. It does not alter the existing Lean database.
+`PendulumSamCache` connects this index to private response and receipt files. Each execution is saved under `.private/physics/sam-cache/<key>/runs/<analysisId>/`; new inference does not overwrite earlier archives. The backend rechecks identity, hashes, receipt and video timing before reuse. It can recover a complete archived result after an interruption without another provider request. An isolated SQLite row or manually imported JSON does not certify Meta provenance.
 
-## Verification
+Identity includes original video SHA-256, `sam-3.1`, protocol `PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2`, cache key and prompt hash. Paths are confined to the permitted private archive; identity or provenance conflicts are rejected.
 
-`tests/ProofLab.Tests/SamVideoEvidenceIndexTests.cs` covers cache miss, persistence across reopening, exact query match, idempotency/conflicting metadata, path traversal, malformed/false provenance and invalid SHA. These are **synthetic database tests**, NOT real pendulum segmentations. Entire .NET suite **165/165 passed**. Isolated API Debug build under `.private/sqlite-index-qa` succeeded with 0 errors/warnings. The default Release build encountered an assembly held by the owner's existing port 5393 service; that owner service was not interrupted.
+## Authorization and concurrency
 
-No edits to `Program.cs`, `PendulumSamCache.cs`, `sam-video-replay.ts` or billing flags. The prior tool security block against live inference/SQLite integration was not bypassed. Existing uncommitted Muse files and prior `attempt-started.json`/private media were preserved.
+Private-video transfer, credits, billing approval, estimated cost limit, source SHA/frame/PTS and earlier-attempt checks remain in place. Server guards between processes prevent incompatible simultaneous requests; there are no automatic retries. Manual reconciliation of a possibly billed attempt still requires explicit acknowledgement. A failed new analysis returns `NEW_ANALYSIS_REQUIRES_MANUAL_RECONCILIATION` and does not enable the exceptional retry of the historical attempt.
 
-## Remaining security-gated work
+The key is read only on manual execution and cleared from the field; it is never persisted. Switching mode or port clears consent and invalidates older checks. Such changes are blocked during submission. The JSON inspector has an independent request generation and cannot leave status checks or submissions stuck.
 
-1. Obtain an explicitly permitted way to connect the SQLite catalog to verified provider receipts and replace the UI port selector with only **API Meta / API Meta + cache**.
-2. Recheck actual on-disk response/receipt SHA and model/timing provenance before cache replay. Never manufacture a cache hit.
-3. Fresh API Meta calls require distinct analysis IDs and preserved attempt history; do not weaken paid-request gates or run Meta while provider/tool authorization remains blocked.
-4. Verify CI, then independently review SAM bob masks and uncertainty. Scientific Stages 2 and 3 remain incomplete.
+## Local verification
+
+- Angular: **27/27 initial integration tests and 14/14 final manual-gate tests passed** (28 unique cases), using mocked HTTP: two options, GET-only HIT, MISS with closed gates, explicit consent before one POST, no retries, mode/port switches, stale responses, independent JSON inspection and GET player reload.
+- `npm run build`: passed. Initial bundle warning: 528.07 kB against a 500 kB threshold; compilation succeeds.
+- Backend: **181/181 .NET tests passed**, including 15 Stage 4 integration cases and 11 index cases (26 total). API build: **0 errors and 0 warnings**. Tests use synthetic files and transport, covering persistence, exact identity, historical archives, interruption recovery, conflicts, paths and execution controls.
+- Validation runs on the authorized physical PC. **CI is manual and runs only when the user requests it**; publishing changes to GitHub does not require running CI.
+
+These tests are not real pendulum segmentations. Video SAM inference, human bob identification, calibration and uncertainty remain pending. No new Meta spending or scientific discovery is claimed. Technical Stage 4 validation does not complete those scientific stages.
 
 **Español:** [SAM-TWO-MODES-SQLITE.es.md](SAM-TWO-MODES-SQLITE.es.md).

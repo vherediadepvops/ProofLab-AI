@@ -8,6 +8,7 @@ public sealed class SamManualOneShotRequest
 {
     public string ModelApiToken { get; init; } = "";
     public string VideoSha256 { get; init; } = "";
+    public string? Mode { get; init; }
     public bool ConfirmPrivateVideoTransfer { get; init; }
     public bool ConfirmOneBillableSamCall { get; init; }
     public double MaximumEstimatedCostUsd { get; init; }
@@ -17,5 +18,5 @@ public sealed class SamManualOneShotRequest
     public SamVideoRunRequest ToSafeRunRequest() =>
         new(VideoSha256, ConfirmPrivateVideoTransfer,
             ConfirmOneBillableSamCall, MaximumEstimatedCostUsd,
-            OwnerApprovesOneReconciledRetry, PreviousAttemptBillingEvidence);
+            OwnerApprovesOneReconciledRetry, PreviousAttemptBillingEvidence, Mode);
 }

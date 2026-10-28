@@ -1,35 +1,43 @@
-# ProofLab AI — Dos modos SAM y base SQLite física (incremento sin inferencias)
+# ProofLab AI — Etapa 4: dos modos SAM y SQLite
 
-**Fecha:** 28/10/2026 · **Misión:** Autonomous Physics Discovery / péndulo · **Estado:** índice SQLite offline implementado y probado; integración con las llamadas a Meta y el selector UI AÚN BLOQUEADA por control de seguridad.
+**Fecha:** 28/10/2026 · **Misión:** Autonomous Physics Discovery / péndulo · **Estado:** integración técnica implementada; validación local con datos sintéticos. No se ejecutó una inferencia Meta nueva ni se validó científicamente la plomada.
 
-## Contrato funcional solicitado
+## Modos y contrato
 
-| Selección | Objetivo | Reglas y estado real |
-|---|---|---|
-| **API Meta** | Solicitar una inferencia SAM 3.1 **nueva** incluso si el video ya fue procesado | No volver a presentar un resultado de caché como una ejecución nueva. Si el usuario lo autoriza y el backend permite la solicitud, debe guardarse un nuevo `analysis_id`, un nuevo recibo y un nuevo marcador de intento. **No implementado:** la modificación del flujo pagado/forzado fue rechazada por controles de seguridad. |
-| **API Meta + caché** | Consultar SQLite por video original SHA-256 + versión de modelo/protocolo + hash del prompt; usar la evidencia auténtica guardada si existe; con ausencia, solicitar SAM solamente tras permisos y presupuesto | Índice SQLite físico preparado, **pero NO conectado** al servicio ni al reproductor. El cache previo de archivos con `receipt.json` sigue separado. Aún no existe un caché SAM real para el péndulo de 50cm. |
+| Selección | Comportamiento |
+|---|---|
+| **API Meta** (`api-meta`) | Solicita una inferencia SAM nueva, aunque exista un análisis previo. No presenta la caché como ejecución nueva. Requiere autorización explícita, créditos y admisión del servidor; cada ejecución conserva su propio ID e historial. |
+| **API Meta + caché** (`api-meta-cache`, predeterminado) | Consulta SQLite por identidad exacta de video/modelo/protocolo/prompt y verifica los archivos. Un HIT recupera evidencia sin token, permiso de cobro ni llamada a Meta. Un MISS solo ofrece una llamada manual cuando el servidor la permite. |
 
-No sustituir la autorización del backend por una casilla del frontend: la UI recaba consentimientos, pero el backend verifica identidad, video/PTS, presupuesto y seguridad. Una clave temporal pegada en el navegador nunca debe desactivar una protección técnica o de organización.
+El selector principal tiene exactamente estas dos opciones. La selección de puerto local queda en **Conexión avanzada**, cerrada por defecto; 5391 sigue siendo el puerto principal. Elegir un puerto o pegar una clave no habilita pagos.
 
-## Componente implementado en este incremento seguro
+- `GET /api/science/director/pendulum/sessions/{id}/sam/{role}/status?mode=api-meta-cache` consulta el estado. También acepta `mode=api-meta`.
+- `POST .../sam/{role}/manual-one-shot` y `POST .../sam/{role}/analyze` reciben `mode`; omitirlo conserva el modo caché. La UI utiliza el primero con la acción manual existente.
+- El estado añade `analysisId`, `mode`, `cacheHit` y `storage`. Un HIT conserva `CACHED_META_...`. El modo nuevo usa `READY_FOR_FRESH_META_ANALYSIS` cuando corresponde; el permiso final depende de los controles del servidor.
+- `GET .../sam/{role}/evidence` recupera la última evidencia verificada. La UI recarga el reproductor mediante GET tras un HIT o una ejecución completada; nunca inicia un POST como consecuencia de reproducir.
+- Una ejecución nueva completada devuelve su ID y `cacheHit=false`. La presencia de metadatos de un análisis anterior en el estado no demuestra que se haya ejecutado uno nuevo.
 
-`src/ProofLab.Api/SamVideoEvidenceIndex.cs` implementa un índice **offline** con Microsoft.Data.Sqlite `10.0.14` bajo `.private/physics/sam-video-evidence.sqlite`, separado de `.private/research/scientific-experience.sqlite` (Lean 4). Almacena SOLO metadatos: SHA de video original, identidad de procesamiento/modelo, hash de prompt, SHA del archivo de respuesta, SHA del recibo, ruta privada relativa sin traversal, fecha, `analysis_id`, recuento de fotogramas y estado de procedencia. **No almacena** token, video, máscaras, coordenadas, prompts en texto claro ni respuestas del proveedor.
+## Persistencia y procedencia
 
-La clase exige formato estricto de SHA/IDs, modelo `sam-3.1`, protocolo `PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2`, ruta permitida y estado `PROVIDER_RECEIPT_PREVIOUSLY_VERIFIED`. La inserción es idempotente solo si no hay conflicto en identidad/procedencia; las inconsistencias se rechazan. La recuperación exige coincidencia exacta de video, cacheKey, prompt y protocolo. Una coincidencia SQLite **no es prueba suficiente de autenticidad**: cuando se conecte al backend, este deberá comprobar sobre disco tanto recibo como respuesta, hashes y origen real de Meta **antes** de renderizar SAM. Un JSON importado manualmente no puede promoverse a proveedor válido.
+`SamVideoEvidenceIndex` usa Microsoft.Data.Sqlite bajo `.private/physics/sam-video-evidence.sqlite`, separado de la memoria matemática de Lean. SQLite guarda **solo metadatos**: SHA del video, modelo/protocolo, hash del prompt, hashes de respuesta y recibo, ruta privada relativa, ID de análisis, fecha, cantidad de fotogramas y procedencia. No guarda tokens, videos, máscaras, coordenadas, prompts en texto claro ni respuestas completas.
 
-**No hay llamada a Meta ni lógica de reintento pagado en este componente.** Tampoco se creó un índice de video en la base matemática existente.
+`PendulumSamCache` conecta ese índice con los archivos privados de respuesta y recibo. Cada ejecución se guarda en `.private/physics/sam-cache/<key>/runs/<analysisId>/`; una nueva inferencia no sobrescribe el archivo histórico anterior. El backend vuelve a comprobar identidad, hashes, recibo y tiempos del video antes de reutilizarlo. Puede recuperar un resultado completo conservado en disco tras una interrupción sin volver a llamar al proveedor. Una fila SQLite aislada o un JSON importado manualmente no certifican origen Meta.
+
+La identidad incluye video original SHA-256, `sam-3.1`, protocolo `PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2`, clave de caché y hash del prompt. Las rutas se restringen al archivo privado permitido; los conflictos de identidad o procedencia se rechazan.
+
+## Autorización y concurrencia
+
+Se conservan las comprobaciones de transferencia del video privado, créditos, autorización de cobro, límite estimado, SHA/fotogramas/PTS e intentos previos. El servidor mantiene guardias entre procesos para evitar solicitudes simultáneas incompatibles y no hace reintentos automáticos. La reconciliación manual de un intento posiblemente facturado sigue siendo explícita. Un fallo de análisis nuevo devuelve `NEW_ANALYSIS_REQUIRES_MANUAL_RECONCILIATION` y no habilita el reintento excepcional del intento histórico.
+
+La clave se lee solo al ejecutar manualmente y se borra del campo; no se persiste. Cambiar modo o puerto limpia consentimientos y descarta comprobaciones anteriores. Durante un envío se bloquea ese cambio. El inspector JSON tiene un contador independiente y no puede dejar la consulta o el envío bloqueados.
 
 ## Verificación local
 
-Pruebas en `tests/ProofLab.Tests/SamVideoEvidenceIndexTests.cs`: ausencia de entrada, índice persistente entre reaperturas, coincidencia exacta de hash/modelo/prompt, duplicado idéntico, rechazo de datos en conflicto, rutas `../`/traversal, metadatos falsos o incompletos, y SHA de consulta inválido. Son **fixtures sintéticos**; NO son segmentaciones de plomada. Suite .NET **165/165 PASS**, build API aislado Debug **0 errores/0 warnings**. La compilación Release normal intentó escribir en un DLL bloqueado por el servicio del titular `5393`; no se detuvo ese servicio. Una compilación a `.private/sqlite-index-qa` pasó.
+- Angular: **27/27 pruebas de integración inicial y 14/14 del control manual final correctas** (28 casos únicos), con HTTP simulado: dos opciones, HIT solo GET, MISS con controles cerrados, consentimiento antes de un único POST, ausencia de reintentos, cambios de modo/puerto, respuestas obsoletas, inspector independiente y recarga GET del reproductor.
+- `npm run build`: correcto. Advertencia de tamaño inicial: 528,07 kB frente al umbral de 500 kB; no impide compilar.
+- Backend: **181/181 pruebas .NET correctas**; incluye 15 casos de integración Stage 4 y 11 del índice (26 en total). Compilación API: **0 errores y 0 advertencias**. Las pruebas usan archivos y transporte sintéticos; cubren persistencia, identidad exacta, conservación de históricos, recuperación tras interrupción, conflictos, rutas y controles de ejecución.
+- La validación se ejecuta en la PC física autorizada. **CI es manual y solo se ejecuta cuando el usuario lo solicita**; subir cambios a GitHub no exige ejecutarlo.
 
-El repositorio de trabajo del dueño conserva modificaciones Muse no relacionadas y el intento SAM anterior (`attempt-started.json` y `sam-upload.mp4`) sin máscaras. **No se cambiaron** `Program.cs`, `PendulumSamCache.cs`, `sam-video-replay.ts` ni configuración de cobros: los cambios de integración de la conversación anterior fueron expresamente rechazados por la herramienta de seguridad; no se intentó reproducirlos con otra vía.
-
-## Trabajo pendiente, sujeto a procedimiento permitido
-
-1. Obtener un procedimiento autorizado para la integración bloqueada: enlace del índice a respuestas provider verificadas y selector de exactamente **API Meta / API Meta + caché**.
-2. En cada reproducción, exigir recibo, hashes y coincidencia exacta con versión y tiempos reales; declarar cache MISS sin inventar resultados. No usar SQLite de Lean.
-3. Para API Meta, diseñar nuevos `analysis_id` y recibos sin pisar históricos; no iniciar llamadas mientras los gates del proveedor estén bloqueados y no haya autorización nueva conforme a las protecciones.
-4. Verificar CI del commit, y después el flujo real de SAM y revisión manual de plomada/errores. **Etapas científicas 2 y 3 pendientes.**
+Estas pruebas no son segmentaciones reales del péndulo. La inferencia SAM del video, identificación humana de la plomada, calibración e incertidumbre siguen pendientes. No se declara gasto Meta nuevo ni descubrimiento científico. La validación técnica de la etapa 4 no completa esas etapas científicas.
 
 **English:** [SAM-TWO-MODES-SQLITE.md](SAM-TWO-MODES-SQLITE.md).

@@ -35,9 +35,11 @@ during the event. Do not misrepresent demonstration data as physical evidence.
 
 - **Main jury UI · Pendulum (Meta-free):** focused **full-width** screen showing string length (cm), angle (degrees), bob mass (g), optional second trial and **four synchronized perspectives of one video** (combined vectors + ghost trail by default, original source, vectors-only and trail-only). The primary occupies 70% of the desktop width, and swapping any thumbnail with it preserves playback time and speed; optional 1.6× zoom with **mouse/touch drag and Fit**. After upload, **Select pivot** pauses/fits source video for a user click and retrieves SHA-linked angular measurements, ω/α/tangential/radial vectors, with observed-vs-ideal separation (NOT SAM, NOT calibrated m/s). [Zoom and pivot guide EN](docs/PENDULUM-ZOOM-PAN-KINEMATICS.md). Tall header, sidebar and old mathematical chart gallery are **hidden only in this primary route; all original code and private evidence are preserved**. Browser playback currently uses a 12FPS H.264 proxy; original MOV/MP4 bytes and SHA-256 remain intact. Tracking is NOT SAM 3.1 and the follow-up recommendation remains NON-AI local logic. **Select video is available immediately and after New study**: choosing a file automatically freezes the theoretical parameters before upload. [Focused UI EN](docs/PENDULUM-FOCUSED-UI.md) · [Four perspectives EN](docs/PENDULUM-STAGE2-FOCUSED-VIEWS.md) · [Master player EN](docs/PENDULUM-ZONE1-MASTER-PLAYER.md) · [Preserved mathematical model](docs/PENDULUM-MATHEMATICAL-WORKBENCH.md).
 
-- **Stage 3 SAM VIDEO parser (local / NON-BILLABLE):** decodes user-supplied completed SAM 3.1 video JSON with the official parser, stable frame/object IDs, mask-pixel centroids and an on-demand Zone 1 mask inspector. Uses synthetic tests; **no real pendulum SAM call, video-SHA/PTS linking, verified bob identity or cost** yet. [Stage 3 guide](docs/SAM-VIDEO-STAGE3.md).
+- **Stage 3 SAM VIDEO parser (local / NON-BILLABLE):** decodes user-supplied completed SAM 3.1 video JSON with the official parser, stable frame/object IDs, mask-pixel centroids and an on-demand Zone 1 mask inspector. The manual inspector uses synthetic tests and does not authenticate SHA/PTS; the server workflow verifies those links. **No real pendulum SAM result or verified bob identity** yet. [Stage 3 guide](docs/SAM-VIDEO-STAGE3.md).
 
 - **Stage 3 authentic-SAM archive (before SQLite):** server-side original MOV SHA validation, stream-copy MP4 remux, frame/PTS comparisons, one-call owner-approval and estimated-cost gates, durable provider receipt and no automatic retry. When a genuine cached response exists, the synchronized video renderer uses SAM mask centroids for deterministic vectors and ghost trails without another provider call. Historical FFmpeg signals remain clearly labeled NOT SAM. Real local 1920×1080 HEVC QA: 1,828 source/remux frames, 0 s maximum PTS difference, theoretical US$0.3656. **Paid calls OFF; no authentic SAM pendulum video result or scientific bob approval yet.** [Stage 3 cache guide EN](docs/SAM-VIDEO-CACHE-STAGE3.md).
+
+- **Stage 4, two SAM modes and SQLite:** **API Meta** requests a fresh analysis subject to authorization; **API Meta + cache** checks SQLite and reuses verified files without a key or Meta request on a HIT. Each execution keeps its ID, response and receipt; the player retrieves evidence through GET. Two-mode selector and local synthetic validation; no new SAM inference or bob validation was performed. [Contract and verification EN](docs/SAM-TWO-MODES-SQLITE.md).
 
 - .NET 10 ASP.NET Core API, with independent scientific prediction and evaluation.
 - Pendulum: small-angle prediction `T=2π√(L/g)` is kept separate from independent local motion estimates, based on rising crossings or a robust sinusoidal fit. **No predicted period is fed into the estimator; measured bob identity still requires visual validation.**
@@ -47,8 +49,9 @@ during the event. Do not misrepresent demonstration data as physical evidence.
 - Angular 20 web UI, with Spanish/English switch, prediction, synthetic demonstrations
   and JSON report export.
 - Meta Muse Spark 1.3 hypothesis-planning adapter over Chat Completions.
-- Meta SAM 3.1 single-image segmentation adapter with an official-parser-based
-  local mask decoder tested on synthetic fixtures; **no video tracking yet**.
+- Meta SAM 3.1 image adapter and video workflow with official mask decoding and
+  verified evidence, tested on synthetic fixtures. SAM tracking of the real pendulum
+  has **not** yet been validated.
 - The Meta adapters are **disabled by default** until credits, billing, and
   safe testing are confirmed.
 

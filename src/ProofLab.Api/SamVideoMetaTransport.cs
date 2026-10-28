@@ -11,7 +11,7 @@ namespace ProofLab.Api;
 /// an attempt marker. Logs never contain masks, source pixels, keys or IDs.
 /// </summary>
 public sealed class SamVideoMetaTransport(
-    IHttpClientFactory clients, ILogger<SamVideoMetaTransport> logger)
+    IHttpClientFactory clients, ILogger<SamVideoMetaTransport> logger) : ISamVideoTransport
 {
     private static readonly Uri Base = new("https://api.meta.ai/v1/");
 
@@ -34,7 +34,8 @@ public sealed class SamVideoMetaTransport(
         // HttpClient.Timeout with ResponseHeadersRead protects HTTP headers,
         // NOT the subsequent SSE content. A linked 30-minute deadline also
         // protects ReadLineAsync during the video segmentation stream.
-        // The caller's cancellation (browser disconnect) still takes priority.
+        // The caller supplies an independent operation deadline after billing
+        // reservation, so browser disconnect cannot discard a completed result.
         using var operationDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         operationDeadline.CancelAfter(TimeSpan.FromMinutes(30));
         ct = operationDeadline.Token;

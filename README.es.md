@@ -35,9 +35,11 @@ se desarrollaron durante el evento. No presentaremos simulaciones como datos rea
 
 - **Interfaz principal · Péndulo (enfoque para el jurado, sin Meta):** pantalla de **ancho completo** con configuración de longitud en cm, ángulo en grados y masa en g, casilla de segunda prueba opcional y **cuatro perspectivas sincronizadas de un solo video** (principal combinada de vectores + rastro, video original, vectores y rastro). La principal ocupa el 70 % del ancho; cualquiera de las tres miniaturas laterales puede intercambiarse con ella sin reiniciar el video; zoom de imagen 1,6× opcional **con arrastre de mouse/táctil y botón Ajustar**. Tras cargar un video, **Marcar pivote** permite registrar el punto de suspensión mediante clic y recuperar ángulo, ω, α y vectores locales con unidad, calidad y separación de teoría ideal (NO SAM, NO m/s calibrados). [Guía de zoom/pivote ES](docs/PENDULUM-ZOOM-PAN-KINEMATICS.es.md). Encabezado gigante, barra lateral y gráficas matemáticas antiguas **ocultos solo en este recorrido, código y evidencias conservados**. Reproducción mediante proxy H.264 de 12 FPS; los MOV/MP4 originales se guardan intactos con SHA-256. El seguimiento NO es SAM 3.1, y la propuesta de segundo experimento sigue siendo local NO IA. **«Seleccionar video» aparece inmediatamente y después de «Nueva investigación»**; elegir archivo registra automáticamente la teoría antes del envío. [Interfaz enfocada ES](docs/PENDULUM-FOCUSED-UI.es.md) · [Cuatro perspectivas ES](docs/PENDULUM-STAGE2-FOCUSED-VIEWS.es.md) · [Reproductor ES](docs/PENDULUM-ZONE1-MASTER-PLAYER.es.md) · [Modelo matemático conservado](docs/PENDULUM-MATHEMATICAL-WORKBENCH.es.md).
 
-- **Etapa 3, parser SAM para VIDEO (local / SIN COBROS):** decodifica JSON completo aportado por el usuario mediante el parser oficial, preserva frame/ID de objeto y calcula centroides desde máscaras, con visor opcional en Zona 1. Solo probado con muestras sintéticas; **aún NO hay llamada SAM al péndulo, vínculo SHA/PTS ni validación de identidad de plomada**. [Guía Etapa 3](docs/SAM-VIDEO-STAGE3.es.md).
+- **Etapa 3, parser SAM para VIDEO (local / SIN COBROS):** decodifica JSON completo aportado por el usuario mediante el parser oficial, preserva frame/ID de objeto y calcula centroides desde máscaras, con visor opcional en Zona 1. El inspector manual usa muestras sintéticas y no autentica SHA/PTS; el flujo del servidor sí verifica esos vínculos. **Aún no hay un resultado SAM del péndulo ni validación de identidad de plomada**. [Guía Etapa 3](docs/SAM-VIDEO-STAGE3.es.md).
 
 - **Etapa 3, fuente SAM auténtica y caché antes de SQLite:** nuevo backend controla SHA del MOV, remux MP4 sin recodificar, comparación exacta de fotogramas/PTS, permiso y presupuesto de una llamada SAM, recibo de respuesta e imposibilidad de reintento automático. Si existe resultado auténtico guardado, las cuatro vistas del reproductor recuperan máscaras/centroides SAM, vectores y rastro calculados en píxeles por ProofLab sin tokens adicionales. Las posiciones históricas FFmpeg se etiquetan NO SAM. Se probó localmente un MOV 1920×1080 HEVC de 1.828 frames: MP4 de 1.828 frames con diferencia PTS 0 s y costo teórico US$0,3656; **cobros Meta OFF, ninguna inferencia SAM nueva ni revisión humana completada**. [Etapa 3 caché ES](docs/SAM-VIDEO-CACHE-STAGE3.es.md).
+
+- **Etapa 4, dos modos SAM y SQLite:** **API Meta** solicita un análisis nuevo sujeto a autorización; **API Meta + caché** consulta SQLite y reutiliza archivos verificados sin token ni llamada a Meta cuando hay HIT. Cada ejecución conserva su ID, respuesta y recibo; el reproductor recupera la evidencia mediante GET. Selector de dos modos y validación local con datos sintéticos; no se ejecutó SAM nuevo ni se validó la plomada. [Contrato y verificación ES](docs/SAM-TWO-MODES-SQLITE.es.md).
 
 - API ASP.NET Core .NET 10 con predicción y evaluación científica independientes.
 - Péndulo: predicción `T=2π√(L/g)` independiente de la medición; cálculo local mediante cruces ascendentes o estimador sinusoidal robusto. **No se utiliza el período previsto para ajustar las observaciones ni se certifica seguimiento físico sin revisión del video.**
@@ -49,8 +51,9 @@ se desarrollaron durante el evento. No presentaremos simulaciones como datos rea
 - Interfaz Angular 20 en español e inglés, cálculos, demostraciones sintéticas
   y exportación de reportes JSON.
 - Adaptador de Muse Spark 1.3 para planificación de hipótesis.
-- Adaptador SAM 3.1 para segmentación de imagen y decodificador local de máscaras
-  mediante el parser oficial; probado con datos sintéticos. Aún **no** hay seguimiento de video.
+- Adaptador SAM 3.1 para segmentación de imagen y flujo de video con decodificador
+  oficial y evidencias verificadas; probado con datos sintéticos. El seguimiento SAM
+  del péndulo real aún **no** se ha validado.
 - Las llamadas a Meta están **desactivadas por defecto** hasta comprobar créditos,
   facturación y condiciones de prueba.
 

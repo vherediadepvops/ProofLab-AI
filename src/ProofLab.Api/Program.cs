@@ -28,7 +28,10 @@ builder.Services.AddSingleton<VideoMediaDecoder>();
 builder.Services.AddSingleton<PendulumVideoWorkflow>();
 builder.Services.AddSingleton<PendulumDirectorWorkflow>();
 builder.Services.AddSingleton<PendulumDirectorKinematicsStore>();
-builder.Services.AddSingleton<SamVideoMetaTransport>();
+builder.Services.AddSingleton<ISamVideoTransport, SamVideoMetaTransport>();
+builder.Services.AddSingleton<ISamVideoRuntime, SamVideoRuntime>();
+builder.Services.AddSingleton(sp => new SamVideoEvidenceIndex(
+    sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
 builder.Services.AddSingleton<PendulumSamCache>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -438,7 +441,8 @@ app.MapGet("/api/science/director/pendulum/sessions/{id}/sam/{role}/status",
     if(context.Connection.RemoteIpAddress is not System.Net.IPAddress address ||
        !System.Net.IPAddress.IsLoopback(address))
         return Results.StatusCode(403);
-    try {return Results.Ok(await sam.StatusAsync(id,role,ct));}
+    try {return Results.Ok(await sam.StatusAsync(id,role,ct,
+        context.Request.Query["mode"].FirstOrDefault()));}
     catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new{error="Original video unavailable."});}
     catch(InvalidDataException){return Results.Conflict(new{error="Source or cache integrity mismatch."});}

@@ -8,10 +8,12 @@ import {
   decodeSamVideoResponse, type SamVideoEvidence, type SamVideoFrame
 } from './sam-video-evidence';
 
+type SamMode='api-meta'|'api-meta-cache';
 interface SamCacheStatus {
   status:string; sourceSha256:string; cacheKey:string;
   sourceFrames:number; estimatedCostUsd:number; canRunLive:boolean;
-  provenance:string;
+  provenance:string; mode?:SamMode; cacheHit?:boolean;
+  analysisId?:string|null; storage?:string;
 }
 interface SamPreflight {
   sourceSha256:string;sourceFrames:number;durationSeconds:number;
@@ -43,15 +45,30 @@ interface SamReadiness {
       @if(studyId() && videoSha256()) {
         <div class="sam-actions">
           <label class="sam-api-selector">
-            {{es?'API local autorizada (solo esta PC)':
-              'Authorized local API (this computer only)'}}
-            <select [value]="localApiPort()" (change)="selectLocalPort($event)"
+            {{es?'Modo de análisis':'Analysis mode'}}
+            <select class="sam-mode" [value]="mode()" (change)="selectMode($event)"
               [disabled]="sending()">
-              <option value="5391">5391 · {{es?'Principal (pagos desactivados)':'Main (paid requests off)'}}</option>
-              <option value="5393">5393 · {{es?'Pruebas manuales':'Manual tests'}}</option>
-              <option value="5398">5398 · {{es?'Sesión temporal autorizada':'Authorized temporary session'}}</option>
+              <option value="api-meta">API Meta</option>
+              <option value="api-meta-cache">{{es?'API Meta + caché':'API Meta + cache'}}</option>
             </select>
           </label>
+          <p class="sam-footnote">{{mode()==='api-meta-cache'
+            ? (es?'Busca primero en SQLite. Un HIT reutiliza evidencia verificada sin token ni cobro; un MISS requiere autorización manual para llamar a Meta.':
+              'Searches SQLite first. A HIT reuses verified evidence without a key or charge; a MISS requires manual permission to call Meta.')
+            : (es?'Solicita un análisis nuevo. Una caché existente no se presenta como una nueva ejecución; requiere autorización manual y créditos.':
+              'Requests a new analysis. Existing cache is never presented as a new run; manual permission and credits are required.')}}</p>
+          <details class="sam-connection">
+            <summary>{{es?'Conexión avanzada · API local':'Advanced connection · local API'}}</summary>
+            <label class="sam-api-selector">
+              {{es?'Puerto en esta PC':'Port on this computer'}}
+              <select [value]="localApiPort()" (change)="selectLocalPort($event)"
+                [disabled]="sending()">
+                <option value="5391">5391 · {{es?'Principal (pagos desactivados)':'Main (paid requests off)'}}</option>
+                <option value="5393">5393 · {{es?'Pruebas manuales':'Manual tests'}}</option>
+                <option value="5398">5398 · {{es?'Sesión temporal autorizada':'Authorized temporary session'}}</option>
+              </select>
+            </label>
+          </details>
           <button type="button" (click)="voidCheck()" [disabled]="checking() || sending()">
             {{es?'Comprobar caché, fotogramas y autorización (sin costo)':
               'Check cache, frames and permission (no cost)'}}
@@ -71,18 +88,24 @@ interface SamReadiness {
           </div>
           @if(cacheStatus(); as s) {
             <p>{{es?'Estado':'Status'}}: <strong>{{s.status}}</strong></p>
+            <p class="sam-cache-origin">{{s.storage || '—'}} ·
+              {{s.cacheHit===true ? 'HIT' : s.cacheHit===false ? 'MISS' : (es?'Sin confirmar':'Unconfirmed')}}
+              @if(s.analysisId) { · {{es?'Análisis':'Analysis'}}: {{s.analysisId}} }
+            </p>
             @if(s.status.startsWith('CACHED_META_')) {
-              <p class="sam-caution">{{es
-                ? 'Resultado SAM guardado. Abrirlo o reproducirlo NO genera nuevas llamadas.'
-                : 'Cached SAM result. Opening or replaying does NOT call Meta again.'}}</p>
+              <p class="sam-caution">{{s.cacheHit===false && s.mode==='api-meta'
+                ? (es?'Nuevo análisis SAM guardado. Reproducirlo no genera nuevas llamadas.':
+                  'New SAM analysis saved. Replaying does not call Meta again.')
+                : (es?'Resultado SAM guardado. Abrirlo o reproducirlo NO genera nuevas llamadas.':
+                  'Cached SAM result. Opening or replaying does NOT call Meta again.')}}</p>
               <button type="button" (click)="cacheUpdated.emit()">
                 {{es?'Volver a cargar las vistas SAM':'Reload SAM views'}}
               </button>
             }
             @if(s.status.includes('RECONCILIATION')) {
               <p class="sam-caution">{{es
-                ? 'Existe un intento previo posiblemente facturado. Una segunda llamada necesita reconocimiento explícito; nunca habrá reintento automático.'
-                : 'A prior attempt may have been billed. A second call requires separate explicit reconciliation; no automatic retry.'}}</p>
+                ? 'Existe un intento previo posiblemente facturado. Se requiere revisión manual antes de otra ejecución; nunca habrá reintento automático.'
+                : 'A prior attempt may have been billed. Manual review is required before another execution; no automatic retry.'}}</p>
             }
           }
           @if(preflight(); as pf) {
@@ -230,7 +253,8 @@ interface SamReadiness {
     .sam-consent label{font-size:.86rem}
     .sam-caution{color:#f4c875;font-weight:700}
     .sam-footnote{color:#c9d4df}
-    .sam-offline{margin-top:12px}
+    .sam-offline,.sam-connection{margin-top:12px}
+    .sam-cache-origin{overflow-wrap:anywhere}
     .sam-stage3 select{margin-left:8px}
     .sam-masks{display:block;background:#101b2a;width:100%;max-width:560px;max-height:320px;margin-top:12px;border:1px solid #426277}
     .sam-objects p{margin:4px 0}
@@ -240,15 +264,27 @@ interface SamReadiness {
 export class SamVideoReplay implements OnChanges {
   private readonly http=inject(HttpClient,{optional:true});
   readonly localApiPort=signal<5391|5393|5398>(5391);
+  readonly mode=signal<SamMode>('api-meta-cache');
   private get base():string {
     return 'http://127.0.0.1:'+this.localApiPort()+
       '/api/science/director/pendulum/sessions';
   }
+  selectMode(event:Event):void {
+    const mode=(event.target as HTMLSelectElement).value;
+    if(this.sending() || (mode!=='api-meta' && mode!=='api-meta-cache'))return;
+    this.mode.set(mode);
+    this.resetServerCheck();
+  }
   selectLocalPort(event:Event):void {
     const p=Number((event.target as HTMLSelectElement).value);
-    if(p!==5391 && p!==5393 && p!==5398)return;
+    if(this.sending() || (p!==5391 && p!==5393 && p!==5398))return;
     this.localApiPort.set(p);
+    this.resetServerCheck();
+  }
+  private resetServerCheck():void {
     this.serial++;
+    this.checking.set(false);
+    this.error.set('');
     this.cacheStatus.set(null);
     this.preflight.set(null);
     this.readiness.set(null);
@@ -288,6 +324,7 @@ export class SamVideoReplay implements OnChanges {
   readonly error=signal('');
   readonly selectedIndex=signal(0);
   private serial=0;
+  private offlineSerial=0;
 
   get es():boolean {return this.language()==='es';}
   selectedFrame():SamVideoFrame|null {
@@ -311,7 +348,8 @@ export class SamVideoReplay implements OnChanges {
     // A genuine prior attempt can be reconciled ONCE by the owner.
     // Do NOT use canRunLive for this case: the status endpoint correctly
     // keeps this false to prohibit unapproved automatic retries.
-    const first=s.status==='NOT_ANALYZED_WITH_SAM' && s.canRunLive;
+    const first=(s.status==='NOT_ANALYZED_WITH_SAM' ||
+      (this.mode()==='api-meta' && s.status==='READY_FOR_FRESH_META_ANALYSIS')) && s.canRunLive;
     const singleRetry=s.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION';
     return (first || singleRetry) &&
       s.sourceSha256===this.videoSha256() &&
@@ -328,6 +366,9 @@ export class SamVideoReplay implements OnChanges {
     const serial=++this.serial;
     this.checking.set(true);
     this.error.set('');
+    this.cacheStatus.set(null);
+    this.preflight.set(null);
+    this.readiness.set(null);
     this.transferConsent.set(false);
     this.paidConsent.set(false);
     this.retryConsent.set(false);
@@ -335,10 +376,12 @@ export class SamVideoReplay implements OnChanges {
     // a secret. Clear any stale input when the verification changes.
     this.clearToken();
     try {
-      const status=await firstValueFrom(this.http.get<SamCacheStatus>(this.url()+'/status'));
+      const status=await firstValueFrom(this.http.get<SamCacheStatus>(
+        this.url()+'/status?mode='+this.mode()));
       if(serial!==this.serial)return;
+      if(status.sourceSha256!==this.videoSha256())throw new Error('VIDEO_SHA_MISMATCH');
       this.cacheStatus.set(status);
-      if(status.status.startsWith('CACHED_META_')){
+      if(this.mode()==='api-meta-cache' && status.status.startsWith('CACHED_META_')){
         this.preflight.set(null);this.readiness.set(null);
         this.cacheUpdated.emit();
         return;
@@ -364,7 +407,7 @@ export class SamVideoReplay implements OnChanges {
     const isRetry=this.cacheStatus()?.status===
       'PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION';
     const tokenElement=this.metaTokenInput?.nativeElement;
-    if(!this.http || this.sending() || !this.canOfferPaidRun() ||
+    if(!this.http || this.checking() || this.sending() || !this.canOfferPaidRun() ||
        !this.tokenEntered() || !tokenElement ||
        !this.transferConsent() || !this.paidConsent() ||
        (isRetry && !this.retryConsent()))return;
@@ -378,6 +421,7 @@ export class SamVideoReplay implements OnChanges {
     try {
       const state=await firstValueFrom(this.http.post<SamCacheStatus>(
         this.url()+'/manual-one-shot',{
+          mode:this.mode(),
           modelApiToken:oneTimeToken,
           videoSha256:this.videoSha256(),
           confirmPrivateVideoTransfer:true,
@@ -410,7 +454,8 @@ export class SamVideoReplay implements OnChanges {
   ngOnChanges(changes:SimpleChanges):void {
     if(!changes['videoSha256'] && !changes['studyId'] &&
        !changes['videoRole'])return;
-    this.serial++;
+    this.resetServerCheck();
+    this.offlineSerial++;
     this.result.set(null);
     this.cacheStatus.set(null);
     this.preflight.set(null);
@@ -430,7 +475,8 @@ export class SamVideoReplay implements OnChanges {
     const file=control.files?.[0];
     if(!file)return;
     control.value='';
-    const serial=++this.serial;
+    const serial=++this.offlineSerial;
+    this.loading.set(false);
     this.result.set(null);
     this.error.set('');
     if(file.size<=0 || file.size>24_000_000 ||
@@ -441,15 +487,15 @@ export class SamVideoReplay implements OnChanges {
     this.loading.set(true);
     try {
       const evidence=await decodeSamVideoResponse(await file.text());
-      if(serial!==this.serial)return;
+      if(serial!==this.offlineSerial)return;
       this.result.set(evidence);
       this.selectedIndex.set(0);
     } catch(e) {
-      if(serial===this.serial)
+      if(serial===this.offlineSerial)
         this.error.set((this.es?'No se pudo validar el JSON de SAM: ':'SAM JSON could not be validated: ')+
           (e instanceof Error?e.message:'INVALID_RESPONSE'));
     } finally {
-      if(serial===this.serial)this.loading.set(false);
+      if(serial===this.offlineSerial)this.loading.set(false);
     }
   }
 }
