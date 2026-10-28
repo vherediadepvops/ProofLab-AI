@@ -51,4 +51,12 @@ La interfaz permite exportar `prooflab-modelo-teorico.csv` con ambas condiciones
 - Servidor solo en localhost; **no publicar carga de video anónima** sin autenticación, cuotas/retención y privacidad. Meta pagado permanece bloqueado.
 - **Pendiente:** SAM real sobre fotogramas para XY calibrado y máscara por tiempo; Muse Spark justificando autónomamente la nueva prueba; intervalos de confianza/cronometraje; enlace al Scientific Method Engine de cinco informes ES/EN.
 
+## Comparación teoría–video adicional (sin IA)
+
+El nuevo panel añade una **superposición visual** de la señal del primer video (y segundo, si se eligió) con el modelo no lineal, ambos **normalizados por separado a amplitud relativa**. Para hacer las curvas legibles se recortan temporalmente los primeros 2 segundos y los extremos 8–92 %, y se ajustan **solo fase de presentación y sentido de eje de cámara**. La frecuencia/período de la teoría no se modifica, y el estimador espectral de período medido no utiliza datos de la teoría. Por lo tanto una buena coincidencia visual no implica ajuste estadístico validado; **no debe considerarse una medida independiente de precisión**. No existe conversión certificada píxeles→centímetros.
+
+El análisis de **dos videos** devuelve también una tabla de errores relativos de período **individuales**: `abs(Tvideo-Tteoría)/Tteoría * 100` para primera y segunda longitud, además de la diferencia en puntos porcentuales entre el incremento previsto y observado. Estos números describen discrepancia matemática, **NO intervalos de confianza ni incertidumbre instrumental/sistemática**. Campos nuevos en `DirectorComparison` son opcionales para mantener compatibilidad con sesiones históricas.
+
+**Control de seguridad:** el panel se etiqueta «SOLO VISUAL / NO SAM». Las trayectorias originales no se editan ni se sustituyen por curvas teóricas. Ninguna llamada Meta; pruebas automatizadas de normalización y distinción de datos incluidos en Angular.
+
 **English:** [PENDULUM-MATHEMATICAL-WORKBENCH.md](PENDULUM-MATHEMATICAL-WORKBENCH.md).

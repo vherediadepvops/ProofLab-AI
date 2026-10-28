@@ -37,7 +37,11 @@ public sealed record DirectorComparison(
     double BaselinePeriodSeconds, double FollowUpPeriodSeconds,
     double PredictedIncreasePercent, double ObservedIncreasePercent,
     double ChangeGapPercentagePoints, string LimitationsEs,
-    string LimitationsEn);
+    string LimitationsEn,
+    double? PredictedBaselinePeriodSeconds = null,
+    double? PredictedFollowUpPeriodSeconds = null,
+    double? BaselinePeriodDiscrepancyPercent = null,
+    double? FollowUpPeriodDiscrepancyPercent = null);
 public sealed record DirectorSingleComparison(
     DateTimeOffset ComparedAtUtc,
     double PredictedNonlinearPeriodSeconds,
@@ -283,11 +287,16 @@ public sealed class PendulumDirectorWorkflow(
             var (observed, gap) = PendulumDirectorProtocol.Compare(
                 session.Proposal.Theory,first,second);
             var theoretical = session.Proposal.Theory.PredictedIncreasePercent;
+            var predictedFirst = session.Proposal.Theory.ExpectedBaselinePeriodSeconds;
+            var predictedSecond = session.Proposal.Theory.ExpectedFollowUpPeriodSeconds;
+            var firstGap = Math.Abs(first-predictedFirst)/predictedFirst*100;
+            var secondGap = Math.Abs(second-predictedSecond)/predictedSecond*100;
             var conclusion = new DirectorComparison(DateTimeOffset.UtcNow,
                 "PRELIMINARY_LOCAL_COMPARISON_NOT_AI_SAM_OR_CERTIFIED",
                 NotAi,first,second,theoretical,observed,gap,
                 "Las coordenadas proceden de sustracción local de fondo, no de SAM. La confirmación humana es declarativa, no revisión independiente. El error de muestreo, desenfoque y sesgo de seguimiento sigue pendiente.",
-                "Coordinates come from local background subtraction, not SAM. User acknowledgement is not independent validation. Frame timing, blur and tracker bias remain unquantified.");
+                "Coordinates come from local background subtraction, not SAM. User acknowledgement is not independent validation. Frame timing, blur and tracker bias remain unquantified.",
+                predictedFirst, predictedSecond, firstGap, secondGap);
             await WriteNewAsync(PathFor(id,"comparison.json"),conclusion,ct);
             return await LoadUnlockedAsync(id,ct);
         }

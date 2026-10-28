@@ -67,6 +67,16 @@ button:disabled { opacity:.45; cursor:not-allowed; }
 .model-chart svg .energy-potential { stroke:#915cbc; }
 .model-chart svg .energy-total { stroke:#545c6b; stroke-dasharray:4 3; }
 .theory-workbench .tiny { color:#78889b; font-size:11px; overflow-wrap:anywhere; }
+.overlay-comparison { margin:17px 0; border:1px solid #bfd4e5; border-radius:10px; background:#f6fafc; padding:14px; }
+.overlay-comparison h4 { margin:0 0 8px; font-size:13px; color:#274d72; }
+.overlay-comparison svg { width:100%; max-width:750px; aspect-ratio:680/198; background:#fff; border-radius:7px; display:block; }
+.overlay-comparison svg .axis { stroke:#c3d2de; stroke-width:1.3; fill:none; }
+.overlay-comparison svg .zero-axis { stroke:#e0e9f0; stroke-dasharray:4 4; fill:none; }
+.overlay-comparison svg .theory-primary { stroke:#367cc0; stroke-width:2; fill:none; stroke-linejoin:round; }
+.overlay-comparison svg .video-observed { stroke:#c57b33; stroke-width:1.7; fill:none; stroke-linejoin:round; }
+.overlay-comparison svg text { font-size:11px; fill:#677f91; }
+.overlay-comparison .legend-observed { background:#c57b33; }
+.overlay-comparison .caution { margin:10px 0; }
 .evidence-studio { margin:16px 0; padding:14px; border:1px solid #e3d5b7; background:#fffaf1; border-radius:10px; }
 .evidence-studio > strong { font-size:11px; color:#94622f; letter-spacing:.06em; }
 .evidence-studio .model-chart svg .video-observed { stroke:#b97532; stroke-width:1.9; stroke-linejoin:round; stroke-linecap:round; fill:none; }

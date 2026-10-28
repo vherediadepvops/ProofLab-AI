@@ -252,6 +252,32 @@
             </div>
           </div>
         }
+        @if(normalizedOverlays().baseline; as overlay) {
+          <section class="overlay-comparison">
+            <h4>{{es?'Teoría vs video 1 · movimiento normalizado':'Theory vs video 1 · normalized motion'}}</h4>
+            <div class="plot-legend">
+              <span><i class="legend-primary"></i>{{es?'Teoría no lineal':'Nonlinear theory'}}</span>
+              <span><i class="legend-observed"></i>{{es?'Coordenadas del video':'Video coordinates'}}</span>
+            </div>
+            <svg viewBox="0 0 680 198" role="img"
+              [attr.aria-label]="es?'Superposición normalizada sin calibración espacial':'Normalized overlay, no spatial calibration'">
+              <path d="M36 15 V175 H644" class="axis"/>
+              <path d="M36 95 H644" class="zero-axis"/>
+              <polyline class="theory-primary" [attr.points]="overlay.theoryPoints"/>
+              <polyline class="video-observed" [attr.points]="overlay.observedPoints"/>
+              <text x="39" y="11">x/A</text><text x="36" y="190">0 s</text>
+              <text x="585" y="190">{{overlay.windowSeconds | number:'1.1-1'}} s</text>
+            </svg>
+            <p class="caution">
+              {{es
+                ? 'SOLO VISUAL: se normaliza la amplitud y se ajustan fase y orientación de cámara. NO se modifica la frecuencia teórica. Píxeles del video no equivalen a centímetros; esta superposición no mide la incertidumbre ni demuestra concordancia científica.'
+                : 'VISUAL ONLY: amplitude is normalized and presentation phase/camera-axis orientation are aligned. Theory frequency is NOT changed. Video pixels are not centimetres; the overlay is not an uncertainty or scientific-agreement measurement.'}}
+            </p>
+            <p class="tiny">{{overlay.observationCount}} {{es?'observaciones graficadas':'observations plotted'}}
+              · {{es?'desfase de presentación':'presentation phase shift'}}:
+              {{overlay.phaseOffsetSeconds | number:'1.2-2'}} s</p>
+          </section>
+        }
         <div class="metrics">
           <div><small>{{es?'Período detectado (preliminar)':'Detected period (preliminary)'}}</small>
             <strong>{{s.baseline.spectral.periodSeconds === null ? '—' : (s.baseline.spectral.periodSeconds | number:'1.3-3') + ' s'}}</strong></div>
@@ -415,6 +441,28 @@
               </div>
             </div>
           }
+          @if(normalizedOverlays().followup; as overlay) {
+            <section class="overlay-comparison">
+              <h4>{{es?'Teoría vs video 2 · movimiento normalizado':'Theory vs video 2 · normalized motion'}}</h4>
+              <div class="plot-legend">
+                <span><i class="legend-primary"></i>{{es?'Predicción no lineal registrada':'Frozen nonlinear prediction'}}</span>
+                <span><i class="legend-observed"></i>{{es?'Coordenadas del segundo video':'Second-video tracked coordinates'}}</span>
+              </div>
+              <svg viewBox="0 0 680 198" role="img"
+                [attr.aria-label]="es?'Superposición no calibrada del segundo experimento':'Uncalibrated second-trial overlay'">
+                <path d="M36 15 V175 H644" class="axis"/>
+                <path d="M36 95 H644" class="zero-axis"/>
+                <polyline [attr.points]="overlay.theoryPoints" class="theory-primary"/>
+                <polyline [attr.points]="overlay.observedPoints" class="video-observed"/>
+                <text x="40" y="11">x/A</text>
+                <text x="36" y="191">0 s</text>
+                <text x="583" y="191">{{overlay.windowSeconds | number:'1.1-1'}} s</text>
+              </svg>
+              <p class="caution">{{es
+                ? 'Vista comparativa normalizada con fase/orientación ajustadas, SIN modificar períodos. No representa posición XY calibrada ni evidencia SAM.'
+                : 'Normalized visual display with phase/orientation adjusted, WITHOUT changing the period. Not calibrated XY or SAM evidence.'}}</p>
+            </section>
+          }
           <p>{{es?'Segundo período preliminar':'Follow-up preliminary period'}}:
             <strong>{{s.followup.spectral.periodSeconds === null ? '—' :
               (s.followup.spectral.periodSeconds | number:'1.3-3') + ' s'}}</strong>
@@ -439,6 +487,37 @@
           <div><small>{{es?'Diferencia entre cambios':'Difference in changes'}}</small>
             <strong>{{c.changeGapPercentagePoints | number:'1.2-2'}} pp</strong></div>
         </div>
+        @if(c.predictedBaselinePeriodSeconds != null &&
+             c.predictedFollowUpPeriodSeconds != null) {
+          <div class="trial-period-table">
+            <strong>{{es?'Comparación independiente de períodos por prueba':'Independent period comparison by trial'}}</strong>
+            <table>
+              <thead><tr>
+                <th>{{es?'Prueba':'Trial'}}</th>
+                <th>{{es?'Teoría (s)':'Theory (s)'}}</th>
+                <th>{{es?'Video local (s)':'Local video (s)'}}</th>
+                <th>{{es?'Discrepancia relativa':'Relative difference'}}</th>
+              </tr></thead>
+              <tbody>
+                <tr>
+                  <td>{{es?'Primera':'First'}}</td>
+                  <td>{{c.predictedBaselinePeriodSeconds | number:'1.3-3'}}</td>
+                  <td>{{c.baselinePeriodSeconds | number:'1.3-3'}}</td>
+                  <td>{{c.baselinePeriodDiscrepancyPercent | number:'1.2-2'}}%</td>
+                </tr>
+                <tr>
+                  <td>{{es?'Segunda':'Second'}}</td>
+                  <td>{{c.predictedFollowUpPeriodSeconds | number:'1.3-3'}}</td>
+                  <td>{{c.followUpPeriodSeconds | number:'1.3-3'}}</td>
+                  <td>{{c.followUpPeriodDiscrepancyPercent | number:'1.2-2'}}%</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="caution">{{es
+              ? 'Las discrepancias respecto a la teoría son descriptivas. NO equivalen a márgenes de incertidumbre, intervalos de confianza, validación SAM ni revisión científica independiente.'
+              : 'Differences from theory are descriptive, NOT measurement uncertainty bounds, confidence intervals, SAM validation or independent scientific review.'}}</p>
+          </div>
+        }
         <p class="caution">{{es?c.limitationsEs:c.limitationsEn}}</p>
         <p class="hash">{{c.status}}</p>
       </div>

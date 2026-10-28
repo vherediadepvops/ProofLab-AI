@@ -50,4 +50,12 @@ Export button **prooflab-modelo-teorico.csv** writes data from both lengths, ful
 - Localhost-only prototype: **do not expose anonymous Internet uploads** without authentication, quotas, secure retention and privacy policies. Paid Meta remains gated.
 - **Next:** real cost-controlled SAM 3.1 segmentation and temporal tracking (with calibrated XY); an actual approved Muse Spark next-experiment decision; independent manually timed cycles, uncertainty and the five-stage bilingual Scientific Method Engine reports.
 
+## Additional theory–video comparison (Meta-free)
+
+The new workbench can show a **VISUAL-ONLY normalized overlay** of the first video (and optional second video) against independent nonlinear theoretical motion. The video and theoretical amplitudes are normalized independently. To improve readability, initial two-second release transients are discarded; percentile 8–92 clipping and **display-only phase plus camera-axis sign alignment** are applied. The theoretical **frequency/period is never fitted to match the video**, and the measured-period estimator remains fully independent of theory. Therefore, visually matching waveforms **cannot be interpreted as independent experimental validation**. Video pixels are still **not calibrated physical centimetres**.
+
+Two-video comparison also returns **per-video relative period discrepancies**: `abs(Tvideo-Ttheory)/Ttheory * 100` for each measured length, alongside the difference in predicted versus observed percentage change. These are **descriptive discrepancies, NOT confidence intervals or an instrumental/systematic uncertainty budget**. New `DirectorComparison` fields are optional so existing ledgers remain readable.
+
+**Source integrity:** clearly labeled VISUAL ONLY / NOT SAM. Stored video trajectories are not modified or replaced with simulated values. No Meta requests; automatic tests cover the normalization and separation between theoretical and observed signals.
+
 **Español:** [PENDULUM-MATHEMATICAL-WORKBENCH.es.md](PENDULUM-MATHEMATICAL-WORKBENCH.es.md).

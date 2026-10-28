@@ -270,6 +270,40 @@ describe('ProofLab physical workbench and guided flagship experiment', () => {
     http.verify();
   });
 
+  it('renders a visibly labeled normalized overlay without changing measured periods', async () => {
+    const {component,fixture,http,rootEl}=await initialize();
+    const originalTheory=theory(false);
+    component.model.set({
+      ...originalTheory,
+      baseline:{
+        ...originalTheory.baseline,
+        samples:Array.from({length:501},(_,i)=>({
+          ...sample(i*.04,13*Math.cos(2*Math.PI*(i*.04)/1.425),0),
+          horizontalCentimeters:13*Math.cos(2*Math.PI*(i*.04)/1.425)
+        }))
+      }
+    });
+    const tracked=Array.from({length:360},(_,i)=>({
+      timeSeconds:i/12,
+      position:190+42*Math.cos(2*Math.PI*((i/12)-2)/1.416+.4)
+    }));
+    component.session.set({
+      ...root(false),
+      baseline:{
+        ...video('baseline',1.416),
+        tracking:{...video('baseline',1.416).tracking,observations:tracked}
+      },
+      step:'AWAITING_HUMAN_BOB_REVIEW'
+    });
+    fixture.detectChanges();
+    expect(component.normalizedOverlays().baseline).not.toBeNull();
+    expect(rootEl.querySelectorAll('.overlay-comparison').length).toBe(1);
+    expect(rootEl.textContent).toContain('SOLO VISUAL');
+    expect(rootEl.textContent).toContain('NO se modifica la frecuencia teórica');
+    expect(component.session()?.baseline?.spectral.periodSeconds).toBe(1.416);
+    http.verify();
+  });
+
   it('reports the observed two-trial change without claiming SAM', async () => {
     const {component,fixture,http,rootEl}=await initialize(true);
     const session={...root(true),baseline:video('baseline',1.416),
@@ -286,12 +320,19 @@ describe('ProofLab physical workbench and guided flagship experiment', () => {
         baselinePeriodSeconds:1.416,followUpPeriodSeconds:1.798,
         predictedIncreasePercent:26.49,observedIncreasePercent:26.98,
         changeGapPercentagePoints:.49,comparedAtUtc:'2026-10-27T20:04:00Z',
+        predictedBaselinePeriodSeconds:1.425,
+        predictedFollowUpPeriodSeconds:1.803,
+        baselinePeriodDiscrepancyPercent:.63,
+        followUpPeriodDiscrepancyPercent:.28,
         limitationsEs:'Sin SAM ni revisión independiente.',
         limitationsEn:'No SAM or independent review.'
       }});
     await pending;
     fixture.detectChanges();
     expect(rootEl.textContent).toContain('26.98');
+    expect(rootEl.textContent).toContain('Comparación independiente de períodos por prueba');
+    expect(rootEl.textContent).toContain('0.63%');
+    expect(rootEl.textContent).toContain('0.28%');
     expect(rootEl.textContent).toContain('Sin SAM ni revisión independiente.');
     http.verify();
   });

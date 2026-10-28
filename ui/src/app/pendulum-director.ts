@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
+import { buildNormalizedVideoOverlay, type NormalizedOverlay } from './pendulum-overlay';
 
 type Language = 'es' | 'en';
 type Stage = 'baseline' | 'followup';
@@ -35,6 +36,10 @@ interface Comparison {
   predictedIncreasePercent: number; observedIncreasePercent: number;
   changeGapPercentagePoints: number;
   limitationsEs: string; limitationsEn: string;
+  predictedBaselinePeriodSeconds?: number | null;
+  predictedFollowUpPeriodSeconds?: number | null;
+  baselinePeriodDiscrepancyPercent?: number | null;
+  followUpPeriodDiscrepancyPercent?: number | null;
 }
 interface ModelSample {
   timeSeconds: number; angleDegrees: number; horizontalCentimeters: number;
@@ -185,6 +190,29 @@ export class PendulumDirector implements OnInit {
       baseline:this.videoPlot(session?.baseline ?? null),
       followup:this.videoPlot(session?.followup ?? null)
     };
+  });
+
+  readonly normalizedOverlays=computed(():{
+    baseline:NormalizedOverlay|null;
+    followup:NormalizedOverlay|null;
+  }=>{
+    const s=this.session(),m=this.model();
+    const empty={baseline:null,followup:null};
+    if(!s || !m || Math.abs(m.baseline.lengthMeters-s.baselineLengthMeters)>.000001 ||
+       Math.abs(m.baseline.initialAngleDegrees-(s.angleDegrees ?? 15))>.000001 ||
+       Math.abs(m.baseline.massGrams-(s.massGrams ?? 300))>.000001)
+      return empty;
+    const baseline=s.baseline
+      ? buildNormalizedVideoOverlay(m.baseline.samples,
+          m.baseline.nonlinearPeriodSeconds,s.baseline.tracking.observations)
+      : null;
+    const secondLength=s.proposal?.theory.followUpLengthMeters;
+    const followup=s.followup && m.followUp && secondLength!==undefined &&
+      Math.abs(m.followUp.lengthMeters-secondLength)<.000001
+      ? buildNormalizedVideoOverlay(m.followUp.samples,
+          m.followUp.nonlinearPeriodSeconds,s.followup.tracking.observations)
+      : null;
+    return {baseline,followup};
   });
 
   private videoPlot(video:DirectorVideo|null):{
