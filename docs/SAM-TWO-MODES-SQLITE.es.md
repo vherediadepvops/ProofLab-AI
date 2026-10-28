@@ -29,7 +29,7 @@ En Laboratorio, antes de pulsar Procesar solo hay una vista estática: reproducc
 
 ## Selección explícita y estados de carga
 
-El Laboratorio inicia vacío aunque exista una sesión recordada. **Video de prueba** carga la grabación local configurada solo al pulsarlo. **Nueva prueba** muestra **Subir video** y conserva los estudios anteriores en el servidor. Cargar un video no ejecuta SAM.
+El Laboratorio inicia vacío aunque exista una sesión recordada. **Video de prueba** carga la grabación local configurada solo al pulsarlo. **Nueva prueba** sustituye los dos botones de la tarjeta superior por **Subir video** y **Cancelar**. Cancelar conserva el video y el resultado actualmente seleccionados; elegir un archivo válido crea otro estudio y conserva los anteriores en el servidor. No hay un segundo control de carga principal debajo. Cargar un video no ejecuta SAM.
 
 Para configurar la demostración en una instalación local, copiar `ui/public/demo-video.example.json` a `ui/public/demo-video.json` y escribir el ID de un estudio existente con el video original. Reiniciar el servidor Angular después de crear este archivo. Este archivo está ignorado por Git; no incluir videos, tokens ni identificadores privados en el ejemplo público.
 
@@ -54,6 +54,14 @@ Las posiciones y el pivote guardado mantienen su cuadrícula compatible de 480×
 Este ajuste corresponde al flujo SAM del Laboratorio. Los registros históricos del seguimiento local conservan su sistema y procedencia. El ángulo todavía se refiere a la vertical de la imagen: quedan pendientes la confirmación de vertical física, perspectiva y calibración métrica. No se habilitan m/s ni se ajustan observaciones al modelo ideal.
 
 Validación local: 55 pruebas focalizadas correctas, incluidas 15 combinaciones de ángulos −30°/0°/30° y formatos vertical/horizontal/cuadrado/4K; estas 15 regresiones fallaban antes de la corrección. Integración comprueba orientación decodificada, vectores tangentes perpendiculares al radio y pivote/zoom estables. Build correcto con advertencia existente de tamaño inicial (587,59 kB / 500 kB).
+
+## Token manual y habilitación de Procesar (28/10/2026)
+
+El token registrado en Configuración satisface el requisito de credencial de la solicitud manual; no exige duplicarlo en MODEL_API_KEY del servidor. El servidor sigue validando su formato, créditos confirmados, autorización, interruptor de pagos y presupuesto compartido antes de reservar la solicitud. La admisión de caché y la reserva final reconocen el mismo token de un solo uso; no se guarda ni habilita globalmente otras llamadas.
+
+Readiness expone manualTokenCallsPermitted como capacidad de admisión con token manual, no como validación de una clave ni prueba de saldo. Registrar el token no activa pagos: Procesar además requiere video/costo válidos, transferencia y créditos confirmados, y controles del servidor abiertos. El bloqueo indica el requisito pendiente. La configuración del repositorio sigue cerrada por defecto; una sesión habilitada requiere autorización del propietario. Se mantienen el límite de dos solicitudes por proceso, US$0,50 estimados por video y la reconciliación de intentos previos.
+
+Verificación local: 40 pruebas .NET y 49 Angular focalizadas correctas, API y UI compiladas. La UI conserva la advertencia de tamaño inicial (589,65 kB / 500 kB). Transporte pagado simulado en pruebas; sin llamadas reales del asistente ni CI.
 
 ## Persistencia y procedencia
 

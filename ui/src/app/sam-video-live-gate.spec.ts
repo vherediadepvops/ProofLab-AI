@@ -505,4 +505,44 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     http.verify();fixture.destroy();
   });
 
+  it('uses the Settings token without also requiring a server environment key',async()=>{
+    const {fixture,component,http}=setup();
+    component.mode.set(freshMode);
+    component.cacheStatus.set({...state('NOT_ANALYZED_WITH_SAM',false),mode:freshMode});
+    component.preflight.set(preflight);
+    component.readiness.set({apiKeyConfigured:false,liveCallsPermitted:false,
+      manualTokenCallsPermitted:true,paidRequestsSwitchEnabled:true,
+      creditsConfirmedByOwner:true,ownerApprovedPaidRequests:true,remainingRequests:2,usedRequests:0});
+    expect(component.canOfferPaidRun()).toBeTrue();
+    expect(component.canProcess()).toBeFalse();
+    const input=(fixture as any).settingsTokenField as HTMLInputElement;
+    input.value='LLM_FAKE_LOCAL_TEST_ONLY_1234567890123456';input.dispatchEvent(new Event('input'));
+    expect(component.processBlockedReason()).toContain('envío');
+    component.transferConsent.set(true);
+    expect(component.processBlockedReason()).toContain('créditos');
+    component.paidConsent.set(true);fixture.detectChanges();
+    expect(component.canProcess()).toBeTrue();
+    expect(fixture.nativeElement.querySelector('.sam-submit').disabled).toBeFalse();
+    const pending=component.process();
+    const request=http.expectOne(url+'/manual-one-shot');
+    expect(request.request.body.modelApiToken).toContain('FAKE_LOCAL_TEST_ONLY');
+    expect(input.value).toBe('');
+    request.flush({error:'fake stop'},{status:409,statusText:'Conflict'});
+    await pending;http.verify();fixture.destroy();
+  });
+
+  it('explains a closed server even with a registered token and never enables payment',async()=>{
+    const {fixture,component,http}=setup();
+    component.cacheStatus.set({...state(),mode:'api-meta-cache'});
+    component.preflight.set(preflight);
+    component.readiness.set({...readiness(false),paidRequestsSwitchEnabled:false,manualTokenCallsPermitted:false});
+    const input=(fixture as any).settingsTokenField as HTMLInputElement;
+    input.value='LLM_FAKE_LOCAL_TEST_ONLY_1234567890123456';input.dispatchEvent(new Event('input'));
+    component.transferConsent.set(true);component.paidConsent.set(true);fixture.detectChanges();
+    expect(component.canProcess()).toBeFalse();
+    expect(fixture.nativeElement.textContent).toContain('Token registrado.');
+    expect(fixture.nativeElement.textContent).toContain('servidor');
+    await component.process();http.expectNone(r=>r.method==='POST');
+    http.verify();fixture.destroy();
+  });
 });

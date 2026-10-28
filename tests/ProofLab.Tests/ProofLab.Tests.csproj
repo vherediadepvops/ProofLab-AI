@@ -30,6 +30,7 @@
     <Compile Include="..\..\src\ProofLab.Api\SamVideoEvidenceIndex.cs"
              Link="SamVideoEvidenceIndex.cs" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="..\..\src\ProofLab.Api\MetaLiveAccess.cs" Link="MetaLiveAccess.cs" />
     <!-- Real orchestration and archive code; all external dependencies are
          fake in integration tests. No production transport or credentials. -->
     <Compile Include="..\..\src\ProofLab.Api\SamVideoContracts.cs" Link="SamVideoContracts.cs" />

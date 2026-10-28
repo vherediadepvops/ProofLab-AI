@@ -91,7 +91,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.querySelector('#focus-angle')).not.toBeNull();
     expect(root.querySelector('#focus-mass')).not.toBeNull();
     expect(root.querySelectorAll('.placeholder-panel').length).toBe(3);
-    expect(root.querySelectorAll('.upload-strip-ready input[type=file]').length).toBe(0);
+    expect(root.querySelectorAll('.video-toolbar .upload-new-video input[type=file]').length).toBe(0);
     expect(root.querySelector('.demo-video')?.textContent).toContain('Video de prueba');
     expect(root.textContent).toContain('Elige Video de prueba o Nueva prueba para empezar.');
     expect(root.querySelector('button.primary-button')).toBeNull();
@@ -117,7 +117,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(root.querySelectorAll('.upload-strip input[type=file]').length).toBe(1);
+    expect(root.querySelectorAll('.video-toolbar .upload-new-video input[type=file]').length).toBe(1);
     expect(root.textContent).toContain('Sube tu primera grabación');
     expect((root.querySelector('#focus-length') as HTMLInputElement).disabled).toBeTrue();
     expect(root.querySelectorAll('.placeholder-panel').length).toBe(3);
@@ -126,12 +126,12 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
 
   it('wires the immediately visible file input to the upload action',async()=>{
     const {root,component,http}=await init();
-    const uploader=root.querySelector('.upload-strip-ready input[type=file]') as HTMLInputElement;
+    const uploader=root.querySelector('.video-toolbar .upload-new-video input[type=file]') as HTMLInputElement;
     expect(uploader).not.toBeNull();
-    const trigger=spyOn(component,'uploadFocused').and.resolveTo();
+    const trigger=spyOn(component,'uploadNewTrial').and.resolveTo();
     uploader.dispatchEvent(new Event('change',{bubbles:true}));
     expect(trigger).toHaveBeenCalled();
-    expect(trigger.calls.mostRecent().args[1]).toBe('baseline');
+    expect(trigger.calls.mostRecent().args[0]).toBeTruthy();
     await verifyHttp(http);
   });
 
@@ -139,7 +139,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     const {root,component,fixture,http}=await init();
     const actual=new File([new Uint8Array(15000)],'50CM_1.MOV',
       {type:'video/quicktime'});
-    const input=root.querySelector('.upload-strip-ready input[type=file]') as HTMLInputElement;
+    const input=root.querySelector('.video-toolbar .upload-new-video input[type=file]') as HTMLInputElement;
     expect(input).not.toBeNull();
     Object.defineProperty(input,'files',{configurable:true,value:[actual]});
     const uploading=component.uploadFocused({target:input} as unknown as Event,'baseline');
@@ -175,7 +175,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(component.session()?.baseline?.originalFilename).toBe('50CM_1.MOV');
     expect(root.querySelectorAll('video').length).toBe(1);
     expect(root.querySelectorAll('canvas').length).toBe(3);
-    expect(root.querySelectorAll('.upload-strip input[type=file]').length).toBe(0);
+    expect(root.querySelectorAll('.video-toolbar .upload-new-video input[type=file]').length).toBe(0);
 // The offline SAM JSON inspector has its own separate optional file input.
     expect(root.textContent).toContain('He revisado el video');
     http.expectNone(req=>req.url.includes('/api/meta/'));
@@ -192,7 +192,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(control.value).toBe('');
     expect(component.session()).toBeNull();
     expect(component.error()).toContain('Video inválido');
-    expect(root.querySelector('.upload-strip-ready input[type=file]')).not.toBeNull();
+    expect(root.querySelector('.video-toolbar .upload-new-video input[type=file]')).not.toBeNull();
     http.expectNone(studyUrl);
     http.expectNone(req=>req.url.includes('/video/baseline'));
     await verifyHttp(http);
@@ -215,7 +215,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(component.session()).toBeNull();
     expect(component.error()).toContain('No se pudo crear la investigación');
     expect(control.value).toBe('');
-    expect(root.querySelector('.upload-strip-ready input[type=file]')).not.toBeNull();
+    expect(root.querySelector('.video-toolbar .upload-new-video input[type=file]')).not.toBeNull();
     http.expectNone(r=>r.url.includes('/video/baseline'));
     await verifyHttp(http);
   });
@@ -224,11 +224,12 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     const {root,component,fixture,http}=await init();
     component.session.set({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});
     fixture.detectChanges();
-    expect(root.querySelector('.upload-strip-ready')).toBeNull();
+    component.choosingUpload.set(false);fixture.detectChanges();
+    expect(root.querySelector('.upload-new-video')).toBeNull();
     component.onPreviewState('ready');component.newFocusedStudy();
     fixture.detectChanges();
     expect(component.session()).toBeNull();
-    expect(root.querySelector('.upload-strip-ready input[type=file]')).not.toBeNull();
+    expect(root.querySelector('.video-toolbar .upload-new-video input[type=file]')).not.toBeNull();
     expect(root.textContent).toContain('Subir video');
     expect(root.querySelectorAll('.placeholder-panel').length).toBe(3);
     expect((root.querySelector('#focus-length') as HTMLInputElement).disabled).toBeFalse();
@@ -373,6 +374,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     const {component,fixture,root,http}=await init();
     const original={...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'};
     component.session.set(original);fixture.detectChanges();component.onPreviewState('ready');await verifyHttp(http);
+    component.choosingUpload.set(false);fixture.detectChanges();
     expect(root.querySelectorAll('.video-toolbar .new-trial').length).toBe(1);
     expect(root.querySelectorAll('.video-toolbar input[type=file]').length).toBe(0);
     const file=new File([new Uint8Array(15000)],'new-trial.mp4',{type:'video/mp4'});
@@ -428,7 +430,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(component.videoActionsBusy()).toBeFalse();
     expect(component.error()).toContain('No se pudo cargar');
     component.newFocusedStudy();fixture.detectChanges();
-    expect(root.querySelector('.upload-strip-ready input[type=file]')).not.toBeNull();
+    expect(root.querySelector('.video-toolbar .upload-new-video input[type=file]')).not.toBeNull();
     expect(component.session()).toBeNull();
     http.verify();fixture.destroy();
   });
@@ -452,4 +454,34 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     await verifyHttp(http);fixture.destroy();
   });
 
+  it('replaces source actions with Upload and Cancel in the same card and restores on cancel',async()=>{
+    const {component,fixture,root,http}=await init(false);
+    (root.querySelector('.new-trial') as HTMLButtonElement).click();fixture.detectChanges();
+    expect(root.querySelector('.video-toolbar .upload-new-video input[type=file]')).not.toBeNull();
+    expect(root.querySelector('.cancel-trial')).not.toBeNull();
+    expect(root.querySelector('.demo-video')).toBeNull();
+    expect(root.querySelector('.new-trial')).toBeNull();
+    expect(root.querySelector('.focus-video input[type=file]')).toBeNull();
+    (root.querySelector('.cancel-trial') as HTMLButtonElement).click();fixture.detectChanges();
+    expect(root.querySelector('.upload-new-video')).toBeNull();
+    expect(root.querySelector('.demo-video')).not.toBeNull();
+    expect(root.querySelector('.new-trial')).not.toBeNull();
+    expect(component.session()).toBeNull();
+    http.expectNone(r=>r.method==='POST');await verifyHttp(http);fixture.destroy();
+  });
+
+  it('cancels choosing another video without losing the existing session or result',async()=>{
+    const {component,fixture,root,http}=await init(false);
+    const original={...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'};
+    component.session.set(original);fixture.detectChanges();component.onPreviewState('ready');await verifyHttp(http);
+    component.playbackReady.set(true);component.resultState.set('ready');
+    component.beginNewTrial();fixture.detectChanges();
+    expect(root.querySelector('.new-trial')).toBeNull();
+    component.cancelNewTrial();fixture.detectChanges();
+    expect(component.session()).toBe(original);
+    expect(component.playbackReady()).toBeTrue();
+    expect(component.resultState()).toBe('ready');
+    expect(root.querySelector('.demo-video')).not.toBeNull();
+    http.expectNone(()=>true);http.verify();fixture.destroy();
+  });
 });

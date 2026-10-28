@@ -25,6 +25,16 @@ export class PendulumZoneOne extends PendulumDirector {
   private readonly demoHttp=inject(HttpClient);
   readonly sourceChoice=signal<'empty'|'demo'|'upload'>('empty');
   readonly demoLoading=signal(false);
+  readonly choosingUpload=signal(false);
+  beginNewTrial():void {
+    if(this.videoActionsBusy())return;
+    this.choosingUpload.set(true);this.error.set('');
+  }
+  cancelNewTrial():void {
+    if(this.videoActionsBusy())return;
+    this.choosingUpload.set(false);this.error.set('');
+    if(!this.session()?.baseline)this.sourceChoice.set('empty');
+  }
   readonly previewState=signal<'empty'|'loading'|'ready'|'error'>('empty');
   readonly resultState=signal<'idle'|'loading'|'ready'|'error'>('idle');
 
@@ -36,7 +46,7 @@ export class PendulumZoneOne extends PendulumDirector {
   async loadDemo():Promise<void> {
     if(this.videoActionsBusy())return;
     this.newFocusedStudy();
-    this.sourceChoice.set('demo');this.demoLoading.set(true);
+    this.sourceChoice.set('demo');this.choosingUpload.set(false);this.demoLoading.set(true);
     this.previewState.set('loading');
     try {
       // Local deployment configuration contains only a study ID, never video bytes or keys.
@@ -140,6 +150,7 @@ export class PendulumZoneOne extends PendulumDirector {
       }
 
       await this.upload(event, role);
+      if((role==='baseline'?this.session()?.baseline:this.session()?.followup))this.choosingUpload.set(false);
       if (role === 'followup' && this.session()?.followup) {
         this.activeTrial.set('followup');
       }
@@ -175,6 +186,6 @@ export class PendulumZoneOne extends PendulumDirector {
     this.clearProcessed();
     this.reset();
     this.activeTrial.set('baseline');
-    this.sourceChoice.set('upload');this.previewState.set('empty');
+    this.sourceChoice.set('upload');this.choosingUpload.set(true);this.previewState.set('empty');
   }
 }

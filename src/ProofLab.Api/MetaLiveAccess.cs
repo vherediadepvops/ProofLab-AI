@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using ProofLab.Science;
 
 namespace ProofLab.Api;
@@ -16,16 +17,21 @@ public sealed class MetaLiveAccess(
     public bool KeyConfigured =>
         !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MODEL_API_KEY"));
 
-    public MetaCallSafetySnapshot Status() => budget.Snapshot(
-        KeyConfigured,
+    // Capability only: a real, valid per-request token is still required at admission.
+    public bool ManualTokenCallsPermitted => budget.Snapshot(true,
+        Flag("CreditsConfirmedByOwner"), Flag("OwnerApprovedPaidRequests"),
+        Flag("AllowPaidRequests")).LiveCallsPermitted;
+
+    public MetaCallSafetySnapshot Status(string? oneShotMetaToken = null) => budget.Snapshot(
+        KeyConfigured || (oneShotMetaToken is not null && SamManualApiTokenPolicy.Accepts(oneShotMetaToken)),
         Flag("CreditsConfirmedByOwner"),
         Flag("OwnerApprovedPaidRequests"),
         Flag("AllowPaidRequests"));
 
-    public void ReserveOrThrow()
+    public void ReserveOrThrow(string? oneShotMetaToken = null)
     {
         if (!budget.TryReserve(
-                KeyConfigured,
+                KeyConfigured || (oneShotMetaToken is not null && SamManualApiTokenPolicy.Accepts(oneShotMetaToken)),
                 Flag("CreditsConfirmedByOwner"),
                 Flag("OwnerApprovedPaidRequests"),
                 Flag("AllowPaidRequests")))

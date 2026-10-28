@@ -154,7 +154,7 @@ public sealed class PendulumSamCache(
             }
             else if (request.OwnerApprovesOneReconciledRetry)
                 throw new ArgumentException("Do not use manual reconciliation on a new SAM analysis.");
-            if (!runtime.LiveCallsPermitted)
+            if (!runtime.CanRunWithToken(oneShotMetaToken))
                 throw new InvalidOperationException("Meta billing/key/owner consent gates have not been verified for this process.");
 
             var timeline = await runtime.ReadFramePtsAsync(video.Path, ct);
@@ -189,7 +189,7 @@ public sealed class PendulumSamCache(
                     throw new InvalidDataException("Previous submitted MP4 SHA mismatch.");
             }
             ct.ThrowIfCancellationRequested();
-            runtime.ReserveOrThrow();
+            runtime.ReserveOrThrow(oneShotMetaToken);
             var attempt = new SamOriginalAttempt(Protocol, video.Sha256, submittedSha,
                 timeline.Length, estimate, DateTimeOffset.UtcNow,
                 "MAY_BE_BILLABLE_NO_AUTOMATIC_RETRY", id);

@@ -29,7 +29,7 @@ Before Process is pressed in Laboratory, the preview is static: playback, frame 
 
 ## Explicit video selection and loading states
 
-The Laboratory opens empty even with a remembered study. **Test video** loads the configured local recording only after a click. **New trial** reveals **Upload video** and preserves previous studies on the server. Loading a video never runs SAM.
+The Laboratory opens empty even with a remembered study. **Test video** loads the configured local recording only after a click. **New trial** replaces the two top-card actions with **Upload video** and **Cancel**. Cancel preserves the currently selected video and result; choosing a valid file creates another study and preserves earlier studies on the server. There is no duplicate primary upload control below. Loading a video never runs SAM.
 
 For a local installation, copy `ui/public/demo-video.example.json` to `ui/public/demo-video.json` and enter an existing study ID with a video and browser preview. Restart the Angular server after creating this file. Git ignores this local configuration; never include private study IDs, recordings or tokens in the public example.
 
@@ -54,6 +54,14 @@ Saved positions and pivots retain their compatible 480×270 grid for storage/dra
 This correction applies to the Laboratory SAM flow. Historical local-tracking records retain their own coordinate system and provenance. Angles still reference image vertical: physical vertical, perspective and metric calibration remain pending. No m/s values are enabled and observations are not fitted to ideal predictions.
 
 Local validation: all 55 focused tests passed, including 15 combinations of −30°/0°/30° angles and portrait/landscape/square/4K dimensions; these 15 regressions failed before the fix. Integration covers decoded orientation, tangent/radius orthogonality and stable pivots/zoom. Build passed with the existing initial-size warning (587.59 kB / 500 kB).
+
+## Manual key and Process admission (2026-10-28)
+
+The key registered in Settings satisfies the manual request credential requirement without duplicating it in the server MODEL_API_KEY. The server still checks its format, confirmed credits, owner approval, the billing switch and the shared request budget before reservation. Cache admission and final reservation recognize the same one-use key; it is neither persisted nor used to enable other calls globally.
+
+Readiness exposes manualTokenCallsPermitted as the ability to admit a manual-token request, not proof of a valid key or account balance. Registering a key does not enable billing: Process also requires a valid video/quote, transfer and credit confirmations, and open server controls. The blocking message identifies the pending requirement. Repository defaults remain closed; an enabled session requires owner authorization. The two-request process budget, US$0.50 estimated per-video cap and previous-attempt reconciliation remain.
+
+Local verification: 40 focused .NET and 49 Angular tests passed, API and UI built successfully. The existing initial bundle warning remains (589.65 kB / 500 kB). Paid transport is mocked in tests; no assistant-initiated live calls or CI.
 
 ## Persistence and provenance
 

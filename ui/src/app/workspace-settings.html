@@ -7,7 +7,7 @@
     <div class="card-heading">
       <span class="service-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="4"/><path d="m11 11 9 9m-4-4 3-3m-6 0 3-3"/></svg></span>
       <div><h2 id="meta-key-heading">Meta Model API</h2><p>{{es?'Token para una ejecución manual':'Key for one manual run'}}</p></div>
-      <span class="token-badge" [class.ready]="connection.hasToken()">{{connection.hasToken()?(es?'Listo para un uso':'Ready for one use'):(es?'Sin token':'No key entered')}}</span>
+      <span class="token-badge" [class.ready]="connection.hasToken()">{{connection.hasToken()?(es?'Token registrado':'Key registered'):(es?'Sin token':'No key entered')}}</span>
     </div>
     <form (submit)="$event.preventDefault(); applyToken()">
       <label for="settings-meta-token">{{es?'Token de API':'API key'}}</label>
@@ -37,7 +37,7 @@
     @if(status(); as info){
       <div class="connection-result" role="status">
         <span>{{es?'Servidor disponible':'Server available'}}</span>
-        <span>{{info.liveCallsPermitted?(es?'Ejecución habilitada por el servidor':'Runs enabled by server'):(es?'Pagos deshabilitados o sin autorización':'Paid requests disabled or not authorized')}}</span>
+        <span>{{(info.manualTokenCallsPermitted || info.liveCallsPermitted)?(es?'Servidor habilitado · confirma el envío y el costo en Laboratorio':'Server enabled · confirm transfer and cost in Laboratory'):(es?'Pagos deshabilitados o sin autorización':'Paid requests disabled or not authorized')}}</span>
       </div>
     }
     @if(unavailable()){<p class="form-error" role="alert">{{es?'No se pudo conectar con la API local seleccionada.':'Could not reach the selected local API.'}}</p>}

@@ -20,6 +20,14 @@ public sealed class PendulumSamCacheIntegrationTests
         public required SamVideoSource Source { get; init; }
         public bool LiveCallsPermitted { get; set; } = true;
         public int Reservations { get; private set; }
+        public bool ManualTokenAllowed { get; set; }
+        public string? ReservedToken { get; private set; }
+        public bool CanRunWithToken(string? token) => LiveCallsPermitted ||
+            (ManualTokenAllowed && token is not null && SamManualApiTokenPolicy.Accepts(token));
+        public void ReserveOrThrow(string? token) {
+            if (!CanRunWithToken(token)) throw new InvalidOperationException("Test gates closed.");
+            ReservedToken = token; Reservations++;
+        }
         public Task<SamVideoSource> GetVerifiedSourceAsync(string studyId, string role, CancellationToken ct) =>
             Task.FromResult(Source);
         public Task<double[]> ReadFramePtsAsync(string path, CancellationToken ct) =>
@@ -84,6 +92,26 @@ public sealed class PendulumSamCacheIntegrationTests
                 retry ? "manual-retry-started.json" : "attempt-started.json"), a, Ct);
         }
         public void Dispose() { if (Directory.Exists(Root)) Directory.Delete(Root, true); }
+    }
+
+    [Fact]
+    public async Task ManualTokenFlowsThroughAdmissionAndReservationWithoutBackendKey()
+    {
+        using var f = new Fixture();
+        f.Runtime.LiveCallsPermitted = false;
+        f.Runtime.ManualTokenAllowed = true;
+        const string token = "LLM_FAKE_OFFLINE_TEST_ONLY_1234567890123456";
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            f.Open().RunOnceAsync("study", "primary", f.Request(), Ct));
+        var result = await f.Open().RunOnceAsync("study", "primary", f.Request(), Ct, token);
+        Assert.False(result.State.CacheHit);
+        Assert.Equal(token, f.Runtime.ReservedToken);
+        Assert.Equal(1, f.Runtime.Reservations);
+        Assert.Equal(1, f.Transport.Calls);
+        f.Runtime.ManualTokenAllowed = false;
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            f.Open().RunOnceAsync("study", "primary", f.Request(), Ct, token));
+        Assert.Equal(1, f.Transport.Calls);
     }
 
     [Fact]

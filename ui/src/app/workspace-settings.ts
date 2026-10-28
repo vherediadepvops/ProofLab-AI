@@ -5,7 +5,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LabConnection } from './lab-connection';
 
 interface ConnectionStatus {
-  apiKeyConfigured:boolean; liveCallsPermitted:boolean;
+  apiKeyConfigured:boolean; liveCallsPermitted:boolean; manualTokenCallsPermitted?:boolean;
   creditsConfirmedByOwner:boolean; ownerApprovedPaidRequests:boolean;
 }
 

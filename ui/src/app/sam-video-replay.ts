@@ -32,6 +32,7 @@ interface SamReadiness {
   apiKeyConfigured:boolean; creditsConfirmedByOwner:boolean;
   ownerApprovedPaidRequests:boolean; liveCallsPermitted:boolean;
   usedRequests:number; remainingRequests:number;
+  manualTokenCallsPermitted?:boolean; paidRequestsSwitchEnabled?:boolean;
 }
 
 /**
@@ -98,14 +99,12 @@ interface SamReadiness {
             } @else if(validationState()==='ready') {
               <span>{{es?'Procesado · reproducción disponible.':'Processed · playback available.'}}</span>
             } @else if(!mediaReady()) {
-              <span>{{es?'Esperando que termine de cargar la video original.':'Waiting for the original video to finish loading.'}}</span>
+              <span>{{es?'Esperando que termine de cargar el video original.':'Waiting for the original video to finish loading.'}}</span>
             } @else if(cachedResultAvailable()) {
               <span>{{es?'Resultado disponible. Pulsa Procesar para cargarlo sin consumir créditos.':'Saved result available. Press Process to load it without spending credits.'}}</span>
             } @else if(!canProcess()) {
               <span aria-hidden="true">⚠</span>
-              <span>{{canOfferPaidRun()
-                ? (es?'Configura el token y confirma los permisos para procesar.':'Configure the key and confirm permissions to process.')
-                : (es?'Procesar está bloqueado: verifica créditos y permisos del servidor.':'Process is blocked: verify credits and server permissions.')}}</span>
+              <span>{{processBlockedReason()}}</span>
               <button type="button" class="sam-settings-link" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
             } @else {
               <span>{{es?'Listo para enviar una solicitud a Meta con el costo estimado indicado.':'Ready to send one Meta request at the displayed estimated cost.'}}</span>
@@ -436,16 +435,36 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     // Do NOT use canRunLive for this case: the status endpoint correctly
     // keeps this false to prohibit unapproved automatic retries.
     const first=(s.status==='NOT_ANALYZED_WITH_SAM' ||
-      (this.mode()==='api-meta' && s.status==='READY_FOR_FRESH_META_ANALYSIS')) && s.canRunLive;
+      (this.mode()==='api-meta' && s.status==='READY_FOR_FRESH_META_ANALYSIS')) &&
+      (s.canRunLive || ready.manualTokenCallsPermitted===true);
     const singleRetry=s.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION';
     return (first || singleRetry) &&
       s.sourceSha256===this.videoSha256() &&
       pf.sourceSha256===this.videoSha256() &&
       pf.supportsSingleCall &&
       pf.estimatedCostUsd>0 && pf.estimatedCostUsd<=0.50 &&
-      ready.apiKeyConfigured && ready.liveCallsPermitted &&
+      (ready.manualTokenCallsPermitted===true || (ready.apiKeyConfigured && ready.liveCallsPermitted)) &&
       ready.creditsConfirmedByOwner && ready.ownerApprovedPaidRequests &&
       ready.remainingRequests>0;
+  }
+  processBlockedReason():string {
+    const pf=this.preflight(),ready=this.readiness(),s=this.cacheStatus();
+    if(!pf)return this.es?'No se pudo calcular el costo. Pulsa Actualizar costo.':'Cost unavailable. Press Refresh cost.';
+    if(!pf.supportsSingleCall || pf.estimatedCostUsd>.50)return this.es?
+      'Este video supera el límite de una solicitud (US$0,50 estimados).':'This video exceeds the single-request limit (US$0.50 estimated).';
+    if(s?.status.includes('RECONCILIATION') && s.status!=='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION')
+      return this.es?'Un intento anterior requiere revisión manual antes de otro envío.':'A previous attempt requires manual review before another upload.';
+    if(!ready)return this.es?'No se pudo verificar el permiso del servidor. Actualiza el costo.':'Could not verify server permission. Refresh the cost.';
+    if(ready.paidRequestsSwitchEnabled===false || !ready.creditsConfirmedByOwner || !ready.ownerApprovedPaidRequests)
+      return this.es?(this.tokenEntered()?'Token registrado. ':'')+
+        'Procesar está bloqueado: falta habilitar créditos y autorización de esta sesión en el servidor.':
+        (this.tokenEntered()?'Key registered. ':'')+'Process is blocked: server credit and spending authorization for this session is missing.';
+    if(ready.remainingRequests<=0)return this.es?'Se agotó el cupo de solicitudes autorizadas de esta sesión.':'This session has no authorized requests remaining.';
+    if(!this.canOfferPaidRun())return this.es?'El servidor no permite una solicitud manual para este video. Actualiza el costo o revisa el estado.':'The server does not allow a manual request for this video. Refresh the cost or inspect status.';
+    if(!this.tokenEntered())return this.es?'Configura y confirma tu token en Configuración.':'Configure and confirm your key in Settings.';
+    if(!this.transferConsent())return this.es?'Confirma abajo el envío de este video a Meta.':'Confirm below that this video may be sent to Meta.';
+    if(!this.paidConsent())return this.es?'Confirma abajo el uso de créditos para esta ejecución.':'Confirm credit usage for this run below.';
+    return this.es?'Confirma la revisión del intento anterior antes de procesar.':'Confirm review of the previous attempt before processing.';
   }
   voidCheck():void {void this.check();}
   async check():Promise<void> {

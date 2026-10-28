@@ -63,13 +63,14 @@ app.MapGet("/api/meta/readiness", (MetaLiveAccess meta) =>
         ownerApprovedPaidRequests = x.OwnerApprovedPaidRequests,
         paidRequestsSwitchEnabled = x.PaidRequestsSwitchEnabled,
         liveCallsPermitted = x.LiveCallsPermitted,
+        manualTokenCallsPermitted = meta.ManualTokenCallsPermitted,
         usedRequests = x.RequestsUsed,
         remainingRequests = x.RequestsRemaining,
         maxRequestsPerProcess = x.MaxRequestsPerProcess,
         promotionalBalanceVerifiedAutomatically = false,
         museInferenceValidatedLive = false,
         samSegmentationValidatedLive = false,
-        keyLocation = "Backend-only MODEL_API_KEY environment variable"
+        keyLocation = "Backend environment or one-use manual token; manual token is not stored"
     });
 });
 app.MapGet("/api/research/stages", () =>
@@ -516,7 +517,7 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/sam/{role}/manual-one-
         return Results.BadRequest(new{error="Invalid Meta key format. Key not stored."});
     // All original credit/consent, process budget and previous-attempt
     // locks remain mandatory; never set config switches here.
-    if(!meta.Status().LiveCallsPermitted)
+    if(!meta.Status(input.ModelApiToken).LiveCallsPermitted)
         return Results.Conflict(new{error="Backend paid-access gates remain disabled."});
     try {
         var result=await sam.RunOnceAsync(id,role,

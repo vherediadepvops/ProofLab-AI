@@ -97,16 +97,27 @@
       <span class="video-file-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg></span>
       <div><span class="video-caption">{{es?'Tu experimento':'Your experiment'}}</span>
         <strong>{{session()?.baseline ? (activeTrial()==='followup' ? session()?.followup?.originalFilename : session()?.baseline?.originalFilename) : (es?'Elige cómo empezar':'Choose how to start')}}</strong>
-        <small>{{es?'Usa la grabación de prueba o carga tu propio video.':'Use the test recording or upload your own video.'}}</small>
+        <small>{{choosingUpload()?(es?'Selecciona un archivo o cancela para volver.':'Choose a file or cancel to return.'):(es?'Usa la grabación de prueba o carga tu propio video.':'Use the test recording or upload your own video.')}}</small>
       </div>
     </div>
     <div class="video-toolbar-actions">
-      <button class="secondary-button demo-video" type="button" (click)="loadDemo()" [disabled]="videoActionsBusy()">
-        <span aria-hidden="true">▷</span> {{es?'Video de prueba':'Test video'}}
-      </button>
-      <button class="secondary-button new-trial" type="button" (click)="newFocusedStudy()" [disabled]="videoActionsBusy()">
-        <span aria-hidden="true">＋</span> {{es?'Nueva prueba':'New trial'}}
-      </button>
+      @if(choosingUpload()) {
+        <label class="file-action upload-new-video">
+          <span aria-hidden="true">↑</span> {{es?'Subir video':'Upload video'}}
+          <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
+            [disabled]="videoActionsBusy()" (change)="uploadNewTrial($event)"/>
+        </label>
+        <button class="secondary-button cancel-trial" type="button" (click)="cancelNewTrial()" [disabled]="videoActionsBusy()">
+          {{es?'Cancelar':'Cancel'}}
+        </button>
+      } @else {
+        <button class="secondary-button demo-video" type="button" (click)="loadDemo()" [disabled]="videoActionsBusy()">
+          <span aria-hidden="true">▷</span> {{es?'Video de prueba':'Test video'}}
+        </button>
+        <button class="secondary-button new-trial" type="button" (click)="beginNewTrial()" [disabled]="videoActionsBusy()">
+          <span aria-hidden="true">＋</span> {{es?'Nueva prueba':'New trial'}}
+        </button>
+      }
     </div>
   </div>
   <app-sam-video-replay [language]="language()" [sourcePending]="sourcePending()"
@@ -150,18 +161,7 @@
     }
     @if(session(); as s) {
       @if(!s.baseline) {
-        <div class="upload-strip">
-          <div>
-            <strong>{{es ? 'Sube tu primera grabación' : 'Upload your first recording'}}</strong>
-            <p>{{es ? 'MOV, MP4 y otros formatos de teléfonos · máximo 240 MB' :
-              'MOV, MP4 and other phone formats · 240 MB maximum'}}</p>
-          </div>
-          <label class="file-action">
-            {{es ? 'Subir video' : 'Upload video'}}
-            <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
-              [disabled]="registeringAndUploading() || !!stageBusy() || busy()" (change)="uploadFocused($event,'baseline')"/>
-          </label>
-        </div>
+        <p class="focus-note">{{es?'Sube tu primera grabación desde la tarjeta Tu experimento.':'Upload your first recording from the Your experiment card.'}}</p>
       } @else {
         @if(activeTrial() === 'followup' && s.followup) {
           @if(s.followup; as clip) {
@@ -258,22 +258,6 @@
         </div>
       }
     } @else {
-      @if(sourceChoice()==='upload') {
-      <div class="upload-strip upload-strip-ready">
-        <div>
-          <strong>{{es ? 'Sube tu primera grabación' : 'Upload your first recording'}}</strong>
-          <p>{{es
-            ? 'Selecciona MOV, MP4 u otro video de teléfono. Los parámetros se registrarán antes de cargarlo.'
-            : 'Select MOV, MP4 or another phone video. Experiment settings will be recorded before upload.'}}</p>
-        </div>
-        <label class="file-action">
-          {{es ? 'Subir video' : 'Upload video'}}
-          <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
-            [disabled]="registeringAndUploading() || !!stageBusy() || busy()"
-            (change)="uploadFocused($event,'baseline')"/>
-        </label>
-      </div>
-      }
       <div class="placeholder-grid" aria-label="Tres vistas del video pendientes">
         <div class="placeholder-panel"><span>01 · {{es ? 'VIDEO ORIGINAL' : 'SOURCE VIDEO'}}</span>
           <div class="placeholder-screen">▶</div></div>

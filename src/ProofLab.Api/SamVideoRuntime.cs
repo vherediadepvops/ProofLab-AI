@@ -22,4 +22,7 @@ public sealed class SamVideoRuntime(
 
     public bool LiveCallsPermitted => meta.Status().LiveCallsPermitted;
     public void ReserveOrThrow() => meta.ReserveOrThrow();
+    public bool CanRunWithToken(string? oneShotMetaToken) =>
+        meta.Status(oneShotMetaToken).LiveCallsPermitted;
+    public void ReserveOrThrow(string? oneShotMetaToken) => meta.ReserveOrThrow(oneShotMetaToken);
 }
