@@ -71,7 +71,7 @@
 .player-error a{color:#9bcbff;margin-left:8px}
 .playback-performance{font-size:11px;color:#cdbb94;line-height:1.5;margin:8px 0}
 
-.cord-angle-card{display:grid;grid-template-columns:minmax(190px,.65fr) minmax(0,1.7fr);gap:24px;align-items:center;margin-top:14px;padding:22px;border:1px solid #4c637b;border-radius:12px;background:linear-gradient(110deg,#1b3043,#1b232e);color:#dce9f6}
+.cord-angle-card{display:grid;grid-template-columns:minmax(150px,.7fr) minmax(220px,1fr) minmax(0,1.5fr);gap:24px;align-items:center;margin-top:14px;padding:22px;border:1px solid #4c637b;border-radius:12px;background:linear-gradient(110deg,#1b3043,#1b232e);color:#dce9f6}
 .cord-angle-reading{min-width:0}.angle-caption{font-size:10px;letter-spacing:.1em;color:#b2c9df;font-weight:700}
 .angle-value{display:flex;align-items:baseline;gap:12px;margin:6px 0}.angle-symbol{color:#ffcf70;font-size:25px}
 .angle-value strong{font-size:clamp(30px,3vw,44px);line-height:1.15;letter-spacing:-.03em;color:#ffe2a8;font-variant-numeric:tabular-nums}
@@ -82,3 +82,10 @@
 .angle-legend i{display:inline-block;width:22px;border-top:2px solid #ffcf70}.angle-legend .vertical-key{border-top:2px dashed #b5c7db}
 .additional-kinematics{margin-top:14px}.additional-kinematics>summary{cursor:pointer;color:#9fb6d0;font-size:12px;padding:5px 0}
 @media(max-width:630px){.cord-angle-card{grid-template-columns:1fr;gap:16px;padding:18px}.cord-angle-reading{padding-bottom:14px;border-bottom:1px solid #3b5065}.angle-value strong{font-size:38px}}
+.angular-velocity-reading{border-left:1px solid #3b5065;padding-left:24px;min-width:0}
+.angular-velocity-value{display:flex;align-items:baseline;gap:8px;margin:6px 0;flex-wrap:wrap}
+.velocity-symbol{color:#8de3e0;font-size:25px}.angular-velocity-value strong{font-size:clamp(28px,2.7vw,40px);line-height:1.15;letter-spacing:-.03em;color:#a6efed;font-variant-numeric:tabular-nums}
+.velocity-unit{font-size:12px;color:#bdd5e1}.angular-velocity-direction{display:block;font-size:12px;color:#b5cce1}.angular-degrees{display:block;margin-top:8px;font-size:11px;color:#9db7ca;font-variant-numeric:tabular-nums}
+.velocity-missing .angular-velocity-value strong{color:#96a9bd}.cord-angle-explanation .angular-velocity-hint{font-size:11px;color:#b7d7e1}
+@media(max-width:1100px){.cord-angle-card{grid-template-columns:repeat(2,minmax(0,1fr))}.cord-angle-explanation{grid-column:1/-1}}
+@media(max-width:630px){.cord-angle-card{grid-template-columns:1fr}.angular-velocity-reading{border-left:0;border-bottom:1px solid #3b5065;padding:0 0 14px}.angular-velocity-value strong{font-size:34px}}

@@ -65,6 +65,14 @@ La lectura usa el fotograma decodificado y una máscara próxima dentro de medio
 
 Validación local: 66 pruebas Angular focalizadas correctas y build de producción correcto. Se cubren −30°/0°/+30° en vertical, horizontal 4K y cuadrado, extremos sin derivadas, huecos, bloqueo antes de Procesar, signos ES/EN y conservación del original. Advertencia existente: tamaño inicial 595,62 kB / 500 kB. Sin llamadas nuevas a Meta ni CI.
 
+### Velocidad angular junto al ángulo
+
+La tarjeta muestra ω en rad/s y su equivalente en °/s junto a θ, actualizados por el mismo fotograma decodificado. ω positiva significa cambio de θ hacia la derecha; negativa, hacia la izquierda. La posición de la plomada y la dirección del movimiento son conceptos distintos. Cambiar la velocidad del reproductor no multiplica la magnitud medida.
+
+Reutiliza la derivada angular de tres posiciones SAM con tiempos originales y diferencias temporales no uniformes, conservando el desenvolvimiento de ángulos y los controles de calidad existentes. Solo se muestra si hay un ángulo actual y una derivada válida para ese mismo centro. En extremos sin vecinos, huecos, datos inválidos o falta de detección, muestra «—»; no usa el modelo ideal ni seguimiento local como reemplazo. Cero medido sigue siendo cero y no se trata como dato ausente. Es una estimación de imagen, con la misma referencia de cámara que θ.
+
+Verificación local: 70 pruebas Angular focalizadas y build correctos; incluye dirección independiente del signo de θ, conversión de unidades, cero, ausencia de datos, cadencia no uniforme y cruce de ±π. Advertencia existente del paquete inicial: 599,14 kB / 500 kB. Sin nuevas llamadas Meta del asistente ni CI.
+
 ## Token manual y habilitación de Procesar (28/10/2026)
 
 El token registrado en Configuración satisface el requisito de credencial de la solicitud manual; no exige duplicarlo en MODEL_API_KEY del servidor. El servidor sigue validando su formato, créditos confirmados, autorización, interruptor de pagos y presupuesto compartido antes de reservar la solicitud. La admisión de caché y la reserva final reconocen el mismo token de un solo uso; no se guarda ni habilita globalmente otras llamadas.

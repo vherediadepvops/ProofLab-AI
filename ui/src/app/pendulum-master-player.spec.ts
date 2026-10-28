@@ -244,7 +244,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(component.currentKinematics()?.angleDegrees).toBe(26.57);
     expect(component.overlayStatus()).toBe('LOCAL_ANGULAR_CANDIDATE_NOT_SAM');
     expect(stroke).toHaveBeenCalled();
-    expect(root.textContent).toContain('Laboratorio · Ángulo de la cuerda');
+    expect(root.textContent).toContain('Laboratorio · Ángulo y velocidad angular');
     expect(root.textContent).toContain('2.000');
     expect(root.textContent).toContain('NO calibrado en metros');
     expect(root.querySelectorAll('video').length).toBe(1);
@@ -349,6 +349,71 @@ describe('One-clock three-view pendulum laboratory',()=>{
     component.pivotRevision.set(revision);component.paintFrame(1);
     component.samVerified.set(false);component.paintFrame(1);
     expect(component.currentCordAngle()).toBeNull();
+    TestBed.inject(HttpTestingController).verify();fixture.destroy();
+  });
+
+
+  it('shows signed angular velocity next to angle using original time, with no stale or ideal fallback',()=>{
+    const {fixture,component,source,root}=init();
+    fixture.componentRef.setInput('studyId',study);
+    fixture.componentRef.setInput('videoSha256',sha);
+    fixture.componentRef.setInput('processingRequired',true);
+    fixture.detectChanges();
+    Object.defineProperty(source,'videoWidth',{configurable:true,value:1080});
+    Object.defineProperty(source,'videoHeight',{configurable:true,value:1920});
+    component.onLoadedMetadata();
+    component.samVerified.set(true);component.pivotRevision.set(revision);
+    for(const canvas of Array.from(root.querySelectorAll('canvas')))
+      spyOn(canvas.getContext('2d')!,'drawImage').and.stub();
+    for(const velocity of [-.4,0,.4]){
+      const points=[.10,.13,.18].map(timeSeconds=>{
+        const dt=timeSeconds-.13,theta=.2+velocity*dt+.4*dt*dt;
+        return {timeSeconds,x:240+300*Math.sin(theta)/1080*480,
+          y:60+300*Math.cos(theta)/1920*270,approximateRadiusPixels:8};
+      });
+      const masks=points.map((p,frameIndex)=>({
+        frameIndex,timeSeconds:p.timeSeconds,left:0,top:0,right:1,bottom:1,
+        centroidXpx:p.x/480*1920,centroidYpx:p.y/270*1080,
+        foregroundPixels:100,maskPath:'M0 0h1v1Z'
+      }));
+      component.samTrack.set({frameWidth:1920,frameHeight:1080,
+        source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',points,masks});
+      component.paintFrame(.13);fixture.detectChanges();
+      // Same positive position, but either motion direction (or zero) is possible.
+      expect(component.currentCordAngle()!.angleDegrees).toBeGreaterThan(0);
+      expect(component.angularVelocityAtFrame()).toBeCloseTo(velocity,9);
+      const expected=velocity<0?'−0,400':velocity>0?'+0,400':'0,000';
+      expect(root.querySelector('.angular-velocity-value')?.textContent).toContain(expected);
+      expect(root.querySelector('.angular-velocity-value')?.textContent).toContain('rad/s');
+      expect(root.querySelector('.angular-degrees')?.textContent).toContain(
+        velocity<0?'−22,9':velocity>0?'+22,9':'0,0');
+      expect(component.angularVelocityDirection()).toContain(
+        velocity<0?'Hacia la izquierda':velocity>0?'Hacia la derecha':'≈ 0');
+      component.setSpeed(.25);component.paintFrame(.13);
+      expect(component.angularVelocityAtFrame()).toBeCloseTo(velocity,9);
+      component.setSpeed(2);component.paintFrame(.13);
+      expect(component.angularVelocityAtFrame()).toBeCloseTo(velocity,9);
+    }
+    fixture.componentRef.setInput('language','en');fixture.detectChanges();
+    expect(component.angularVelocityText()).toBe('+0.400');
+    expect(component.angularVelocityDirection()).toBe('Moving right');
+    expect(root.querySelector('.angular-velocity-reading')?.textContent).toContain('ANGULAR VELOCITY');
+    component.paintFrame(.10);fixture.detectChanges();
+    expect(component.currentCordAngle()).not.toBeNull();
+    expect(component.angularVelocityAtFrame()).toBeNull();
+    expect(root.querySelector('.angular-velocity-value')?.textContent).toContain('—');
+    expect(root.querySelector('.angular-degrees')).toBeNull();
+    expect(component.angularVelocityHint()).toContain('Not enough valid nearby detections');
+    component.paintFrame(.16);fixture.detectChanges();
+    expect(component.currentCordAngle()).toBeNull();
+    expect(component.angularVelocityAtFrame()).toBeNull();
+    component.paintFrame(.13);
+    component.currentCordAngle.update(a=>({...a!,bobXpx:a!.bobXpx+10}));
+    expect(component.angularVelocityAtFrame()).toBeNull();
+    component.paintFrame(.13);component.samTrack.set(null);
+    expect(component.angularVelocityAtFrame()).toBeNull();
+    fixture.componentRef.setInput('samRefreshNonce',1);fixture.detectChanges();
+    expect(component.angularVelocityAtFrame()).toBeNull();
     TestBed.inject(HttpTestingController).verify();fixture.destroy();
   });
 

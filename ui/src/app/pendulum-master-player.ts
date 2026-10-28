@@ -572,6 +572,43 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     return this.es?'Estimado entre la suspensión y el centro de la plomada.':'Estimated between the suspension point and the bob centre.';
   }
 
+  angularVelocityAtFrame():number|null {
+    const frame=this.currentKinematics(),angle=this.currentCordAngle();
+    // The visible angle and derivative must refer to the same SAM observation.
+    // Never substitute local tracking, ideal speed or a stale neighbouring frame.
+    if(this.playbackLocked() || !this.samTrack() || !angle || !frame?.isValid ||
+        Math.abs(frame.bobXpx-angle.bobXpx)>1e-6 ||
+        Math.abs(frame.bobYpx-angle.bobYpx)>1e-6)return null;
+    const velocity=frame.angularVelocityRadiansPerSecond;
+    return velocity!=null && Number.isFinite(velocity)?velocity:null;
+  }
+
+  angularVelocityText(degrees=false):string {
+    const value=this.angularVelocityAtFrame();
+    if(value==null)return '—';
+    const digits=degrees?1:3,factor=10**digits;
+    const rounded=Math.round(value*(degrees?180/Math.PI:1)*factor)/factor;
+    return (rounded>0?'+':rounded<0?'−':'')+
+      Math.abs(rounded).toFixed(digits).replace('.',this.es?',':'.');
+  }
+
+  angularVelocityDirection():string {
+    const value=this.angularVelocityAtFrame();
+    if(value==null)return this.es?'Sin medición':'No measurement';
+    if(Math.abs(value)<.0005)return this.es?'Cambio angular ≈ 0':'Angular change ≈ 0';
+    return value>0?(this.es?'Hacia la derecha':'Moving right'):
+      (this.es?'Hacia la izquierda':'Moving left');
+  }
+
+  angularVelocityHint():string {
+    if(!this.currentCordAngle())return this.cordAngleHint();
+    if(this.angularVelocityAtFrame()==null)return this.es?
+      'Faltan detecciones cercanas válidas para calcular la velocidad angular.':
+      'Not enough valid nearby detections to calculate angular velocity.';
+    return this.es?'ω = dθ/dt · Calculada con los tiempos originales del video.':
+      'ω = dθ/dt · Calculated using the original video timestamps.';
+  }
+
   idealAtFrame():number|null {
     const revision=this.pivotRevision(),frame=this.currentKinematics();
     if(!revision || !frame || !frame.isValid)return null;

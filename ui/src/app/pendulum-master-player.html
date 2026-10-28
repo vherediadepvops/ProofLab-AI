@@ -145,7 +145,7 @@
     <div class="kinematics-strip">
       <div class="kinematics-toolbar">
         <div>
-          <strong>{{es ? 'Laboratorio · Ángulo de la cuerda' : 'Laboratory · String angle'}}</strong>
+          <strong>{{es ? 'Laboratorio · Ángulo y velocidad angular' : 'Laboratory · Angle and angular velocity'}}</strong>
           <span>{{samTrack()
             ? (es?'Pivote humano + posiciones de SAM 3.1; sin calibración física':
               'Human pivot + SAM 3.1 positions; no metric calibration')
@@ -164,7 +164,7 @@
         }
       </div>
       <section class="cord-angle-card" [class.angle-missing]="!currentCordAngle()"
-        [attr.aria-label]="es?'Ángulo de la cuerda con la vertical':'String angle from vertical'">
+        [attr.aria-label]="es?'Ángulo y velocidad angular de la cuerda':'String angle and angular velocity'">
         <div class="cord-angle-reading">
           <span class="angle-caption">{{es?'ÁNGULO CON LA VERTICAL':'ANGLE FROM VERTICAL'}}</span>
           <div class="angle-value"><span class="angle-symbol">θ</span>
@@ -172,8 +172,19 @@
           </div>
           <span class="angle-direction">{{cordAngleDirection()}}</span>
         </div>
+        <div class="angular-velocity-reading" [class.velocity-missing]="angularVelocityAtFrame()===null">
+          <span class="angle-caption">{{es?'VELOCIDAD ANGULAR':'ANGULAR VELOCITY'}}</span>
+          <div class="angular-velocity-value"><span class="velocity-symbol">ω</span>
+            <strong>{{angularVelocityText()}}</strong><span class="velocity-unit">rad/s</span>
+          </div>
+          <span class="angular-velocity-direction">{{angularVelocityDirection()}}</span>
+          @if(angularVelocityAtFrame()!==null) {
+            <span class="angular-degrees">{{angularVelocityText(true)}} °/s</span>
+          }
+        </div>
         <div class="cord-angle-explanation">
           <p>{{cordAngleHint()}}</p>
+          <p class="angular-velocity-hint">{{angularVelocityHint()}}</p>
           <div class="angle-legend">
             <span><i class="vertical-key"></i>{{es?'Vertical':'Vertical'}}</span>
             <span><i class="cord-key"></i>{{es?'Eje de la cuerda':'String axis'}}</span>

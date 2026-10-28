@@ -127,3 +127,22 @@ describe('scientific SAM playback archive adapter',()=>{
       {width:0,height:1920})).toBeNull();
   });
 });
+describe('Angular velocity uses source timestamps',()=>{
+  for(const velocity of [-.6,0,.6])
+    it('preserves '+velocity+' rad/s across unequal frame intervals and angle wrap',()=>{
+      const image={width:1080,height:1920},pivot={pivotXpx:240,pivotYpx:135};
+      const points=[.10,.13,.18].map(timeSeconds=>{
+        const dt=timeSeconds-.13,theta=Math.PI-.01+velocity*dt+.4*dt*dt;
+        return {timeSeconds,x:240+300*Math.sin(theta)/1080*480,
+          y:135+300*Math.cos(theta)/1920*270,approximateRadiusPixels:8};
+      });
+      const track:SamPlaybackTrack={frameWidth:1920,frameHeight:1080,
+        source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',points,masks:[]};
+      const value=samAngularFrameAt(track,pivot,.13,image);
+      expect(value?.isValid).toBeTrue();
+      expect(value?.angularVelocityRadiansPerSecond).toBeCloseTo(velocity,9);
+      expect(value?.angularAccelerationRadiansPerSecondSquared).toBeCloseTo(.8,9);
+      expect(samAngularFrameAt(track,pivot,.10,image)?.angularVelocityRadiansPerSecond).toBeNull();
+      expect(samAngularFrameAt(track,pivot,.18,image)?.angularVelocityRadiansPerSecond).toBeNull();
+    });
+});

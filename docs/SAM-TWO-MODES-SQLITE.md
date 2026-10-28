@@ -65,6 +65,14 @@ The reading follows the decoded frame and a nearby mask within half a nominal fr
 
 Local validation: 66 focused Angular tests and a successful production build. Coverage includes −30°/0°/+30° in portrait, landscape 4K and square images, endpoints without derivatives, gaps, the Process gate, ES/EN signs and the unannotated original. Existing initial bundle warning: 595.62 kB / 500 kB. No new Meta calls or CI.
 
+### Angular velocity beside angle
+
+The card shows ω in rad/s and its °/s equivalent next to θ, updated from the same decoded frame. Positive ω means θ is changing to the right; negative means left. Bob position and motion direction are distinct. Changing playback speed does not scale the measured value.
+
+It reuses the angular derivative of three SAM positions with original, potentially unequal timestamp intervals, retaining angle unwrapping and existing quality controls. A value requires a current angle and a valid derivative at that same centre. Endpoints without neighbours, gaps, invalid observations or missing detection show “—”; neither the ideal model nor local tracking supplies replacements. Measured zero remains zero rather than missing data. This is an image estimate with the same camera reference as θ.
+
+Local verification: 70 focused Angular tests and a successful build, including motion sign independent of θ, unit conversion, zero, missing data, unequal intervals and ±π wrapping. Existing initial bundle warning: 599.14 kB / 500 kB. No assistant-initiated Meta calls or CI.
+
 ## Manual key and Process admission (2026-10-28)
 
 The key registered in Settings satisfies the manual request credential requirement without duplicating it in the server MODEL_API_KEY. The server still checks its format, confirmed credits, owner approval, the billing switch and the shared request budget before reservation. Cache admission and final reservation recognize the same one-use key; it is neither persisted nor used to enable other calls globally.
