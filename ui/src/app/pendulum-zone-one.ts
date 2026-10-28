@@ -105,9 +105,26 @@ export class PendulumZoneOne extends PendulumDirector {
     }
   }
 
+  videoActionsBusy():boolean {
+    return this.registeringAndUploading() || this.busy() || !!this.stageBusy() || this.connection.busy();
+  }
+
+  async uploadNewTrial(event:Event):Promise<void> {
+    const control=event.target as HTMLInputElement,file=control.files?.[0];
+    if(!file || this.videoActionsBusy())return;
+    // Cancellation and invalid files leave the current investigation selected.
+    if(file.size<10000 || file.size>240000000 ||
+       !/\.(mov|mp4|m4v|webm|mkv|avi|3gp|3g2)$/i.test(file.name)) {
+      this.error.set(this.es?'Video inválido. Usa un formato compatible de 10 KB a 240 MB.':
+        'Invalid video. Use a supported format from 10 KB to 240 MB.');
+      control.value='';return;
+    }
+    this.newFocusedStudy(); // only clears the UI selection; stored studies are preserved
+    await this.uploadFocused(event,'baseline');
+  }
+
   newFocusedStudy():void {
-    if (this.registeringAndUploading() ||
-        this.busy() || !!this.stageBusy()) return;
+    if(this.videoActionsBusy())return;
     this.clearProcessed();
     this.reset();
     this.activeTrial.set('baseline');

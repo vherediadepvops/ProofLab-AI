@@ -42,80 +42,64 @@ interface SamReadiness {
   selector:'app-sam-video-replay',
   standalone:true,
   template:`
-    <details class="sam-stage3" open>
-      <summary>{{es ? 'Etapa 3 · SAM 3.1 y evidencia persistente' :
-        'Stage 3 · SAM 3.1 and persistent evidence'}}</summary>
-      <p>{{es
-        ? 'SAM detecta la plomada. ProofLab calcula los vectores y el rastro desde sus máscaras verificadas. Muse Spark interpretará los resultados en la etapa siguiente.'
-        : 'SAM detects the pendulum bob. ProofLab computes vectors and trails from verified masks. Muse Spark will interpret the findings in the next stage.'}}</p>
-
-      @if(studyId() && videoSha256()) {
-        <div class="sam-actions">
+    <section class="sam-stage3">
+      <header class="sam-heading">
+        <h2>{{es?'Etapa 3 · SAM 3.1':'Stage 3 · SAM 3.1'}}</h2>
+        @if(studyId() && videoSha256()) {
           <label class="sam-api-selector">
-            {{es?'Modo de análisis':'Analysis mode'}}
-            <select class="sam-mode" [value]="mode()" (change)="selectMode($event)"
-              [disabled]="sending()">
+            <span>{{es?'Modo de análisis':'Analysis mode'}}</span>
+            <select class="sam-mode" [value]="mode()" (change)="selectMode($event)" [disabled]="sending()">
               <option value="api-meta">API Meta</option>
               <option value="api-meta-cache">{{es?'API Meta + caché':'API Meta + cache'}}</option>
             </select>
           </label>
-          <p class="sam-footnote">{{mode()==='api-meta-cache'
-            ? (es?'Busca primero en SQLite. Un HIT reutiliza evidencia verificada sin token ni cobro; un MISS requiere autorización manual para llamar a Meta.':
-              'Searches SQLite first. A HIT reuses verified evidence without a key or charge; a MISS requires manual permission to call Meta.')
-            : (es?'Solicita un análisis nuevo. Una caché existente no se presenta como una nueva ejecución; requiere autorización manual y créditos.':
-              'Requests a new analysis. Existing cache is never presented as a new run; manual permission and credits are required.')}}</p>
+        }
+      </header>
+      @if(studyId() && videoSha256()) {
+        <div class="sam-actions">
           <div class="sam-quote" aria-live="polite">
+            <span class="sam-status" [class.available]="cachedResultAvailable()"><i aria-hidden="true"></i>{{statusLabel()}}</span>
+            <div class="sam-price">
+              @if(preflight(); as pf) {
+                <div class="sam-price-line">
+                  <strong>{{cachedResultAvailable()?'US$ 0.00':'US$ '+pf.estimatedCostUsd.toFixed(2)}}</strong>
+                  <small>{{cachedResultAvailable()?(es?'desde caché · sin cobro':'from cache · no charge'):(es?'estimado · no es una factura':'estimated · not an invoice')}}</small>
+                </div>
+                @if(cachedResultAvailable()) {
+                  <small class="sam-meta-estimate">{{es?'Enviar a Meta':'Send to Meta'}}: US$ {{pf.estimatedCostUsd.toFixed(2)}} {{es?'estimados':'estimated'}}</small>
+                }
+              } @else {
+                <strong class="sam-price-pending">—</strong>
+                <small>{{checking()?(es?'Calculando costo…':'Estimating cost…'):(es?'Costo no disponible':'Cost unavailable')}}</small>
+              }
+            </div>
             @if(preflight(); as pf) {
-              <div><span>{{es?'Enviar este video a Meta':'Send this video to Meta'}}</span>
-                <strong>US$ {{pf.estimatedCostUsd.toFixed(4)}}</strong>
-                <small>{{es?'Costo estimado':'Estimated cost'}} · {{pf.sourceFrames}} {{es?'fotogramas':'frames'}} · {{pf.durationSeconds.toFixed(2)}} s</small>
-              </div>
-              <div><span>{{es?'Costo de esta operación':'Cost of this operation'}}</span>
-                <strong>{{cachedResultAvailable()?'US$ 0.00':'US$ '+pf.estimatedCostUsd.toFixed(4)}}</strong>
-                <small>{{cachedResultAvailable()
-                  ? (es?'Caché válida del mismo video':'Valid cache for this exact video')
-                  : (es?'Nueva solicitud a Meta · estimado':'New Meta request · estimated')}}</small>
-              </div>
+              <span class="sam-video-meta">{{pf.sourceFrames}} {{es?'fotogramas':'frames'}} · {{pf.durationSeconds.toFixed(2)}} s</span>
+            }
+            <div class="sam-buttons">
+              <button type="button" class="sam-refresh" (click)="voidCheck()" [disabled]="checking() || sending() || connection.busy()">{{es?'Actualizar costo':'Refresh cost'}}</button>
+              <button type="button" class="sam-submit" (click)="process()" [disabled]="!canProcess()">{{sending()?(es?'Procesando…':'Processing…'):(es?'Procesar':'Process')}}</button>
+            </div>
+          </div>
+          <div class="sam-message" [class.warning]="!cachedResultAvailable() && !canProcess() && !checking() && !sending()" role="status">
+            @if(error()) {
+              <span>{{error()}}</span>
+            } @else if(sending()) {
+              <span>{{es?'Solicitud en curso. Mantén esta página abierta; no habrá reintentos automáticos.':'Request in progress. Keep this page open; there are no automatic retries.'}}</span>
+            } @else if(checking()) {
+              <span>{{es?'Comprobando el video y su costo, sin consumir créditos.':'Checking video and cost without spending credits.'}}</span>
+            } @else if(cachedResultAvailable()) {
+              <span>{{es?'Resultado disponible. Pulsa Procesar para cargarlo sin consumir créditos.':'Saved result available. Press Process to load it without spending credits.'}}</span>
+            } @else if(!canProcess()) {
+              <span aria-hidden="true">⚠</span>
+              <span>{{canOfferPaidRun()
+                ? (es?'Configura el token y confirma los permisos para procesar.':'Configure the key and confirm permissions to process.')
+                : (es?'Procesar está bloqueado: verifica créditos y permisos del servidor.':'Process is blocked: verify credits and server permissions.')}}</span>
+              <button type="button" class="sam-settings-link" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
             } @else {
-              <p>{{checking()?(es?'Calculando costo del video…':'Estimating video cost…'):
-                (es?'Costo aún no disponible. Actualiza la comprobación.':'Cost is unavailable. Refresh the check.')}}</p>
+              <span>{{es?'Listo para enviar una solicitud a Meta con el costo estimado indicado.':'Ready to send one Meta request at the displayed estimated cost.'}}</span>
             }
           </div>
-          <p class="sam-footnote">{{es
-            ? 'La estimación usa los fotogramas originales; no es una factura. Comprobar el costo no envía el video a Meta.'
-            : 'The estimate uses source frames; it is not an invoice. Checking cost does not send video to Meta.'}}</p>
-          <button type="button" class="sam-refresh" (click)="voidCheck()" [disabled]="checking() || sending() || connection.busy()">
-            {{es?'Actualizar costo y disponibilidad':'Refresh cost and availability'}}
-          </button>
-          <div class="sam-settings-link">
-            <span>{{tokenEntered()?(es?'Token listo para un uso':'Key ready for one use'):(es?'Token en Configuración':'API key in Settings')}} · 127.0.0.1:{{localApiPort()}}</span>
-            <button type="button" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
-          </div>
-          @if(cacheStatus(); as s) {
-            <p>{{es?'Estado':'Status'}}: <strong>{{s.status}}</strong></p>
-            <p class="sam-cache-origin">{{s.storage || '—'}} ·
-              {{s.cacheHit===true ? 'HIT' : s.cacheHit===false ? 'MISS' : (es?'Sin confirmar':'Unconfirmed')}}
-              @if(s.analysisId) { · {{es?'Análisis':'Analysis'}}: {{s.analysisId}} }
-            </p>
-            @if(cachedResultAvailable()) {
-              <p class="sam-caution">{{es
-                ? 'Este video tiene un resultado guardado válido. Pulsa Procesar para cargarlo sin enviar el video ni consumir créditos.'
-                : 'A valid saved result exists for this video. Press Process to load it without uploading or spending credits.'}}</p>
-            } @else if(s.status.startsWith('CACHED_META_')) {
-              <p>{{es?'Nuevo análisis SAM guardado.':'New SAM analysis saved.'}}</p>
-            }
-            @if(s.status.includes('RECONCILIATION')) {
-              <p class="sam-caution">{{es
-                ? 'Existe un intento previo posiblemente facturado. Se requiere revisión manual antes de otra ejecución; nunca habrá reintento automático.'
-                : 'A prior attempt may have been billed. Manual review is required before another execution; no automatic retry.'}}</p>
-            }
-          }
-          @if(readiness(); as ready) {
-            <p class="sam-footnote">{{es?'Acceso Meta':'Meta access'}}:
-              {{ready.liveCallsPermitted && ready.remainingRequests>0
-                ? (es?'autorizado en API':'allowed on backend')
-                : (es?'bloqueado hasta verificar permisos/créditos':'blocked pending consent/credits')}}</p>
-          }
           @if(canOfferPaidRun()) {
             <div class="sam-consent">
               <label><input type="checkbox" [checked]="transferConsent()"
@@ -138,32 +122,44 @@ interface SamReadiness {
 
             </div>
           }
-          <div class="sam-process-row">
-            <button type="button" class="sam-submit" (click)="process()" [disabled]="!canProcess()">
-              {{sending()?(es?'Procesando…':'Processing…'):(es?'Procesar':'Process')}}
-            </button>
-            <span>{{cachedResultAvailable()
-              ? (es?'Recuperar resultado guardado · sin costo':'Load saved result · no cost')
-              : (es?'Enviar una solicitud a Meta':'Send one request to Meta')}}</span>
-          </div>
-          @if(!cachedResultAvailable() && !checking() && !sending()) {
-            <p class="sam-footnote">{{canOfferPaidRun()
-              ? (es?'Configura el token y confirma transferencia y créditos para habilitar Procesar.':
-                'Configure the key and confirm transfer and credits to enable Process.')
-              : (es?'Procesar está bloqueado: revisa autorización del servidor, créditos y estado del video.':
-                'Process is blocked: check server permission, credits and video status.')}}</p>
-          }
-          @if(sending()) {
-            <p role="status">{{es
-              ? 'Solicitud única en curso. No recargues; si falla, revisa el estado antes de reintentar.'
-              : 'Single request in progress. Do not reload; reconcile failures before retrying.'}}</p>
-          }
+
         </div>
+        <details class="sam-technical">
+          <summary>{{es?'Detalles técnicos':'Technical details'}}</summary>
+          <div class="sam-detail-body">
+            <p>{{mode()==='api-meta-cache'
+              ? (es?'Se verifica el mismo video en SQLite. Si hay caché válida se reutiliza; si no, se requiere una solicitud autorizada a Meta.':'SQLite is checked for this exact video. Valid cache is reused; otherwise an authorized Meta request is required.')
+              : (es?'Solicita un análisis nuevo a Meta, sujeto a créditos y permisos del servidor.':'Requests a new Meta analysis, subject to credits and server permission.')}}</p>
+            @if(preflight(); as pf) {
+              <p>{{es?'Estimación completa para enviar a Meta':'Full estimate for sending to Meta'}}: US$ {{pf.estimatedCostUsd.toFixed(4)}} · {{pf.codec}}</p>
+            }
+            @if(cacheStatus(); as s) {
+              <p>{{es?'Estado':'Status'}}: <strong>{{s.status}}</strong></p>
+              <p class="sam-cache-origin">{{s.storage || '—'}} · {{s.cacheHit===true?'HIT':s.cacheHit===false?'MISS':'—'}}
+                @if(s.analysisId) { · {{es?'Análisis':'Analysis'}}: {{s.analysisId}} }
+              </p>
+              @if(s.status.startsWith('CACHED_META_') && !cachedResultAvailable()) {
+                <p>{{es?'Nuevo análisis SAM guardado.':'New SAM analysis saved.'}}</p>
+              }
+              @if(s.status.includes('RECONCILIATION')) {
+                <p class="sam-caution">{{es
+                  ? 'Existe un intento previo posiblemente facturado. Se requiere revisión manual antes de otra ejecución; nunca habrá reintento automático.'
+                  : 'A prior attempt may have been billed. Manual review is required before another execution; no automatic retry.'}}</p>
+              }
+            }
+            <p>{{tokenEntered()?(es?'Token listo para un uso':'Key ready for one use'):(es?'Token en Configuración':'API key in Settings')}} · 127.0.0.1:{{localApiPort()}}
+              <button type="button" class="sam-settings-link" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
+            </p>
+            <p class="sam-disclaimer">{{es
+              ? 'SAM detecta; ProofLab calcula los vectores y el rastro. Pendientes revisión de plomada, calibración e incertidumbre. Esta pantalla no certifica una conclusión científica.'
+              : 'SAM detects; ProofLab computes vectors and trails. Bob review, calibration and uncertainty remain pending. This screen does not certify a scientific conclusion.'}}</p>
+          </div>
+        </details>
       }
 
       <details class="sam-offline">
-        <summary>{{es?'Inspector JSON sin conexión (NO evidencia autenticada)':
-          'Offline JSON inspector (NOT authenticated evidence)'}}</summary>
+        <summary>{{es?'Inspector JSON · sin evidencia autenticada':
+          'JSON inspector · unauthenticated evidence'}}</summary>
         <p>{{es
           ? 'Un JSON aportado manualmente sirve para ensayar el parser, pero JAMÁS activa el seguimiento científico del péndulo.'
           : 'Manually supplied JSON can test the parser but NEVER drives the pendulum scientific tracking.'}}</p>
@@ -225,46 +221,44 @@ interface SamReadiness {
         }
       </details>
 
-      @if(error()) {<p role="alert">{{error()}}</p>}
-      <p class="sam-disclaimer">{{es
-        ? 'Pendiente validación de plomada, incertidumbre y calibración. SAM detecta; ProofLab calcula; Muse interpreta. Esta pantalla no certifica una conclusión científica.'
-        : 'Bob identity, uncertainty and calibration remain pending. SAM detects; ProofLab computes; Muse interprets. This viewer does not certify scientific conclusions.'}}</p>
-    </details>
+      @if(!studyId() && error()) {<p role="alert">{{error()}}</p>}
+    </section>
   `,
   styles:[`
-    .sam-stage3{margin:16px 0;padding:16px;border:1px solid #3a5265;border-radius:12px;background:#13202b;color:#f2f6fc}
-    .sam-stage3 summary{cursor:pointer;font-weight:700}
-    .sam-stage3 p{line-height:1.45;font-size:.86rem}
-    .sam-file{display:block;margin:12px 0}
-    .sam-file input{display:block;margin-top:8px;max-width:100%}
-    .sam-actions{overflow-wrap:anywhere;border:1px solid #375766;border-radius:8px;padding:12px;margin:12px 0}
-    .sam-actions button{border:1px solid #74adba;border-radius:6px;background:#204251;color:white;padding:8px;cursor:pointer}
-    .sam-actions button:disabled{opacity:.53;cursor:not-allowed}
-    .sam-api-selector{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
-      font-weight:600;font-size:.86rem;margin:8px 0}
-    .sam-api-selector select{padding:6px;border:1px solid #72899b;
-      background:#183040;color:white;border-radius:6px}
-    .sam-settings-link{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:14px 0;font-size:12px;color:#acbecd}
-    .sam-approve{margin:6px 0}
-    .sam-submit{font-weight:700}
-    .sam-actions .sam-submit{min-width:170px;padding:12px 24px;background:#459ff0;border-color:#459ff0;color:#07131f;font-size:1rem}
-    .sam-process-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:18px}
-    .sam-process-row span{font-size:.82rem;color:#bacbdb}
-    .sam-quote{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:18px 0}
-    .sam-quote>div{display:grid;gap:7px;padding:18px;background:#181d25;border:1px solid #405368;border-radius:10px}
-    .sam-quote strong{font-size:1.7rem;color:#f4f8ff}.sam-quote small{color:#b9cadb}
-    @media(max-width:620px){.sam-quote{grid-template-columns:1fr}}
-    .sam-consent{padding:12px;margin-top:8px;border:1px dashed #779;display:grid;gap:8px}
-    .sam-consent label{font-size:.86rem}
-    .sam-caution{color:#f4c875;font-weight:700}
-    .sam-footnote{color:#c9d4df}
-    .sam-offline,.sam-connection{margin-top:12px}
-    .sam-cache-origin{overflow-wrap:anywhere}
-    .sam-stage3 select{margin-left:8px}
+    :host{display:block;min-width:0}
+    .sam-stage3{margin:16px 0;padding:16px;border:1px solid #343b45;border-radius:12px;background:#23262b;color:#e8edf5;font-size:13px}
+    .sam-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:14px}
+    .sam-heading h2{margin:0;font-size:14px;font-weight:700}
+    .sam-api-selector{display:flex;gap:8px;align-items:center;color:#a8b7c9;font-size:12px}
+    .sam-mode{padding:7px 9px;border:1px solid #343e4a;background:#171b22;color:#f1f5fa;border-radius:6px;max-width:185px}
+    .sam-actions{border:1px solid #343e4a;border-radius:10px;padding:16px 18px;background:#171b22;overflow-wrap:anywhere}
+    .sam-quote{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+    .sam-status{display:inline-flex;align-items:center;gap:7px;border:1px solid #343e4a;border-radius:30px;padding:6px 11px;font-size:11px;color:#acbdce;white-space:nowrap}
+    .sam-status i{width:7px;height:7px;border-radius:50%;background:#818a97}.sam-status.available i{background:#5bc6a4}
+    .sam-price{display:grid;gap:3px;min-width:0}.sam-price-line{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+    .sam-price strong{font-size:25px;font-weight:750;letter-spacing:-.5px;white-space:nowrap}
+    .sam-price small,.sam-video-meta{font-size:11px;color:#9cb2ca}.sam-price-pending{color:#9cb2ca}
+    .sam-buttons{display:flex;gap:12px;margin-left:auto}
+    .sam-actions button{border:1px solid #343e4a;border-radius:6px;background:#14181f;color:#e9f1fa;padding:9px 12px;font:inherit;cursor:pointer}
+    .sam-actions button:disabled{cursor:not-allowed;opacity:.6}
+    .sam-actions .sam-submit{min-width:112px;padding:11px 20px;border-color:#2c6399;background:#2c6399;font-weight:700}
+    .sam-actions .sam-submit:disabled{opacity:.85}
+    .sam-message{display:flex;align-items:baseline;flex-wrap:wrap;gap:5px;margin-top:16px;padding-top:13px;border-top:1px solid #343e4a;color:#a9c8da;font-size:12px;line-height:1.55}
+    .sam-message.warning,.sam-caution{color:#ffbd52}
+    .sam-actions .sam-settings-link,.sam-settings-link{border:0;background:none;padding:0;color:#69b7ff;cursor:pointer;font:inherit;text-align:left}
+    .sam-technical,.sam-offline{margin-top:10px;border:1px solid #343e4a;border-radius:8px;background:#171b22;padding:11px 13px}
+    summary{cursor:pointer;font-size:12px;font-weight:650}p{font-size:12px;line-height:1.5}
+    .sam-detail-body{padding-top:5px;overflow-wrap:anywhere;color:#b6c8db}
+    .sam-disclaimer{font-size:11px;color:#96abc2}
+    .sam-consent{display:grid;gap:9px;margin-top:14px;padding-top:14px;border-top:1px solid #343e4a;font-size:12px}
+    .sam-consent label{display:flex;align-items:flex-start;gap:7px;line-height:1.5}
+    .sam-consent input{margin:3px 0 0}.sam-consent .sam-approve{justify-self:start}
+    .sam-file{display:block;margin:12px 0}.sam-file input{display:block;margin-top:8px;max-width:100%}
     .sam-masks{display:block;background:#101b2a;width:100%;max-width:560px;max-height:320px;margin-top:12px;border:1px solid #426277}
-    .sam-objects p{margin:4px 0}
-    .sam-frame-caption,.sam-disclaimer{font-size:.8rem;color:#c2cdd9}
+    .sam-objects p{margin:4px 0}.sam-frame-caption{font-size:11px;color:#9cb2ca}
+    @media(max-width:700px){.sam-heading{align-items:flex-start;flex-wrap:wrap}.sam-stage3{padding:12px}.sam-actions{padding:14px}.sam-quote{gap:12px}.sam-buttons{width:100%;margin-left:0}.sam-buttons button{flex:1}.sam-video-meta{width:100%}.sam-price{flex:1}.sam-price strong{font-size:23px}}
   `]
+
 })
 export class SamVideoReplay implements OnChanges, OnDestroy {
   private readonly http=inject(HttpClient,{optional:true});
@@ -368,6 +362,14 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private offlineSerial=0;
 
   get es():boolean {return this.language()==='es';}
+  statusLabel():string {
+    if(this.sending())return this.es?'Procesando':'Processing';
+    if(this.checking())return this.es?'Comprobando':'Checking';
+    if(this.cachedResultAvailable())return this.es?'Caché disponible':'Cache available';
+    if(this.cacheStatus()?.status.includes('RECONCILIATION'))return this.es?'Revisar intento':'Review attempt';
+    if(this.cacheStatus()?.status.startsWith('CACHED_META_'))return this.es?'Resultado guardado':'Result saved';
+    return this.es?'Sin analizar':'Not analyzed';
+  }
   selectedFrame():SamVideoFrame|null {
     return this.result()?.frames[this.selectedIndex()] ?? null;
   }

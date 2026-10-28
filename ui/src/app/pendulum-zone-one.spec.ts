@@ -349,4 +349,42 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.querySelectorAll('.model-chart').length).toBe(0);
     await verifyHttp(http);
   });
+  it('keeps the current trial selected when a new video is cancelled or invalid',async()=>{
+    const {component,fixture,http}=await init();
+    const original={...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'};
+    component.session.set(original);fixture.detectChanges();await verifyHttp(http);
+    await component.uploadNewTrial({target:{files:[],value:''}} as unknown as Event);
+    expect(component.session()).toBe(original);
+    const input={files:[new File([new Uint8Array(15000)],'invalid.exe')],value:'chosen'};
+    await component.uploadNewTrial({target:input} as unknown as Event);
+    expect(component.session()).toBe(original);expect(input.value).toBe('');
+    expect(component.error()).toContain('Video inválido');
+    http.expectNone(()=>true);http.verify();fixture.destroy();
+  });
+
+  it('uploads another video into a NEW trial without replacing the previous recording',async()=>{
+    const {component,fixture,root,http}=await init();
+    const original={...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'};
+    component.session.set(original);fixture.detectChanges();await verifyHttp(http);
+    expect(root.querySelectorAll('.video-toolbar .new-trial').length).toBe(1);
+    expect(root.querySelectorAll('.video-toolbar input[type=file]').length).toBe(1);
+    const file=new File([new Uint8Array(15000)],'new-trial.mp4',{type:'video/mp4'});
+    const input={files:[file],value:'chosen'};
+    const nextId='f'.repeat(32);
+    const transfer=component.uploadNewTrial({target:input} as unknown as Event);
+    http.expectOne(theoryUrl).flush(theory());
+    await Promise.resolve();await Promise.resolve();
+    http.expectOne(studyUrl).flush({...session,id:nextId});
+    await Promise.resolve();await Promise.resolve();
+    const upload=http.expectOne(r=>r.url.includes('/'+nextId+'/video/baseline'));
+    expect(upload.request.body).toBe(file);
+    upload.flush({...session,id:nextId,baseline:{...video,originalFilename:'new-trial.mp4'}});
+    await transfer;fixture.detectChanges();
+    expect(component.session()?.id).toBe(nextId);
+    expect(original.id).toBe(session.id);expect(original.baseline).toBe(video);
+    expect(input.value).toBe('');
+    http.expectNone(r=>r.method==='DELETE' || (r.method==='POST' && r.url.includes('/'+session.id+'/')));
+    await verifyHttp(http);fixture.destroy();
+  });
+
 });

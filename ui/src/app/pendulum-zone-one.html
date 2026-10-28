@@ -81,10 +81,7 @@
           <span class="study-state">{{es ? 'Investigación activa' : 'Active study'}}
             <span class="state-dot"></span>
           </span>
-          <button class="secondary-button" type="button"
-            (click)="newFocusedStudy()" [disabled]="registeringAndUploading() || busy() || !!stageBusy() || connection.busy()">
-            {{es ? 'Nueva investigación' : 'New study'}}
-          </button>
+
         } @else {
           <span class="study-hint">{{es
             ? 'Elige el video abajo para empezar automáticamente.'
@@ -96,6 +93,25 @@
   </section>
 
   @if(session()?.baseline) {
+    <div class="video-toolbar">
+      <div class="current-video">
+        <span class="video-file-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg></span>
+        <div><span class="video-caption">{{es?'Video de la prueba':'Trial video'}}</span>
+          <strong>{{activeTrial()==='followup' && session()?.followup ? session()?.followup?.originalFilename : session()?.baseline?.originalFilename}}</strong>
+          <small>{{es?'Subir otro video crea una nueva prueba.':'Uploading another video creates a new trial.'}}</small>
+        </div>
+      </div>
+      <div class="video-toolbar-actions">
+        <button class="secondary-button new-trial" type="button" (click)="newFocusedStudy()" [disabled]="videoActionsBusy()">
+          <span aria-hidden="true">＋</span> {{es?'Nueva prueba':'New trial'}}
+        </button>
+        <label class="file-action upload-new-video">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/></svg>
+          {{es?'Subir video':'Upload video'}}
+          <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2" [disabled]="videoActionsBusy()" (change)="uploadNewTrial($event)"/>
+        </label>
+      </div>
+    </div>
     <app-sam-video-replay [language]="language()"
       [studyId]="session()?.id ?? ''"
       [videoRole]="(activeTrial()==='followup' && session()?.followup?.sha256)
