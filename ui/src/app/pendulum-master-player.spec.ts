@@ -288,6 +288,62 @@ describe('One-clock three-view pendulum laboratory',()=>{
   });
 
 
+  it('scales the painted cyan shaft linearly with measured angular speed, independent of radius',()=>{
+    const {fixture,component,source,root}=init();
+    Object.defineProperty(source,'videoWidth',{configurable:true,value:1080});
+    Object.defineProperty(source,'videoHeight',{configurable:true,value:1920});
+    component.onLoadedMetadata();component.pivotRevision.set(revision);
+    // θ(t)=t² has an exact central derivative 2t on unequal source intervals.
+    // Its varying radius must not alter the displayed length for a given ω.
+    const points=[0,.04,.10,.16,.20].map(timeSeconds=>{
+      const radius=300+100*timeSeconds,theta=timeSeconds*timeSeconds;
+      return {timeSeconds,x:240+radius*Math.sin(theta)/1080*480,
+        y:60+radius*Math.cos(theta)/1920*270,approximateRadiusPixels:8};
+    });
+    const sam={frameWidth:1080,frameHeight:1920,
+      source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE' as const,objectId:'bob',points,masks:[]};
+    component.samTrack.set(sam);
+    const canvas=root.querySelector<HTMLCanvasElement>('[data-view="vectors"] canvas')!;
+    const ctx=canvas.getContext('2d')!;
+    let start:{x:number;y:number}|null=null;
+    const shafts:{length:number;dx:number;dy:number}[]=[];
+    spyOn(ctx,'moveTo').and.callFake((x,y)=>{start={x,y};});
+    let tip:{x:number;y:number}|null=null;
+    spyOn(ctx,'lineTo').and.callFake((x,y)=>{tip={x,y};});
+    spyOn(ctx,'stroke').and.callFake(()=>{
+      if(ctx.strokeStyle==='#3cf2da' && start && tip)
+        shafts.push({length:Math.hypot(tip.x-start.x,tip.y-start.y),
+          dx:tip.x-start.x,dy:tip.y-start.y});
+    });
+    const paint=(omega:number,radius:number)=>{
+      shafts.length=0;
+      const theta=.2;
+      const frame={...revision.analysis.samples[0],
+        bobXpx:240+radius*Math.sin(theta)/1080*480,
+        bobYpx:60+radius*Math.cos(theta)/1920*270,
+        angularVelocityRadiansPerSecond:omega,angularAccelerationRadiansPerSecondSquared:0};
+      (component as any).paintAngular(ctx,canvas,frame,revision,true,{width:1080,height:1920});
+      return shafts[0];
+    };
+    // Peak from the full valid track is 0.32 rad/s. No instantaneous saturation.
+    const full=paint(.32,300),half=paint(.16,700),quarter=paint(.08,200);
+    expect(full.length).toBeCloseTo(90*1080/480,7);
+    expect(half.length/full.length).toBeCloseTo(.5,8);
+    expect(quarter.length/full.length).toBeCloseTo(.25,8);
+    const reverse=paint(-.16,500);
+    expect(reverse.length).toBeCloseTo(half.length,8);
+    expect(reverse.dx).toBeLessThan(0);expect(half.dx).toBeGreaterThan(0);
+    expect(reverse.dx*Math.sin(.2)+reverse.dy*Math.cos(.2)).toBeCloseTo(0,8);
+    expect(paint(0,300)).toBeUndefined();
+    const tiny=paint(.000001,300);
+    expect(tiny.length/full.length).toBeCloseTo(.000001/.32,8);
+    expect(paint(.32,300).length).toBeCloseTo(full.length,8); // seeking does not rescale
+    component.samTrack.set({...sam,points:points.map(p=>({...p,
+      x:240+(p.x-240)*2,y:60+(p.y-60)*2}))});
+    expect(paint(.16,600).length).toBeCloseTo(half.length,8);
+    fixture.destroy();
+  });
+
   it('shows SAM string angles at endpoints without derivatives, clears missing frames and keeps the original clean',()=>{
     const {fixture,component,source,root}=init();
     fixture.componentRef.setInput('studyId',study);

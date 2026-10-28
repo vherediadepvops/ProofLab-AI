@@ -1,6 +1,6 @@
 import {
   AfterViewInit, Component, ElementRef, OnChanges, OnDestroy, SimpleChanges, ViewChild,
-  inject, input, output, signal
+  inject, input, output, signal, computed
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { LabActivity } from './lab-activity';
@@ -98,6 +98,20 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly pivotRevision = signal<KinematicRevision|null>(null);
   readonly currentKinematics = signal<KinematicFrame|null>(null);
   readonly currentCordAngle = signal<CordAngleMeasurement|null>(null);
+
+  // One scale per track/pivot/native geometry, never a per-frame clamp or radius.
+  private readonly maximumObservedAngularSpeed=computed(()=>{
+    const track=this.samTrack(),revision=this.pivotRevision(),image=this.decodedSize();
+    if(!track || !revision || !image)return 0;
+    let peak=0;
+    for(const point of track.points){
+      const frame=samAngularFrameAt(track,revision.analysis,point.timeSeconds,image);
+      const omega=frame?.angularVelocityRadiansPerSecond;
+      if(frame?.isValid && omega!=null && Number.isFinite(omega))
+        peak=Math.max(peak,Math.abs(omega));
+    }
+    return peak;
+  });
 
   readonly playing = signal(false);
   readonly currentTime = signal(0);
@@ -632,26 +646,29 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   private drawArrow(ctx:CanvasRenderingContext2D,
     x:number,y:number,dx:number,dy:number,color:string,scale:number,
-    unit=1):void{
+    unit=1,exactLength?:number):void{
     const size=Math.hypot(dx,dy);
-    if(!Number.isFinite(size)||size<.01)return;
-    // Enlarge the drawing only; source components and measurements stay intact.
-    const length=Math.min(170*unit,Math.max(0,size*scale*3));
-    if(length<2*unit)return;
+    if(!Number.isFinite(size)||size===0)return;
+    // The cyan arrow has a linear angular-speed length; other vectors retain their scale.
+    const length=exactLength ?? Math.min(170*unit,Math.max(0,size*scale*3));
+    if(!Number.isFinite(length)||length<=0)return;
+    if(exactLength===undefined && (size<.01 || length<2*unit))return;
+    // Shrink the shaft and head to zero too; no residual dot near a reversal.
+    const strokeUnit=exactLength===undefined?unit:Math.min(unit,length/8);
     const angle=Math.atan2(dy,dx);
     const endX=x+Math.cos(angle)*length,endY=y+Math.sin(angle)*length;
     const head=Math.min(16*unit,length*.4);
     ctx.save();
-    ctx.lineCap='round';ctx.lineJoin='round';ctx.globalAlpha=.72;
+    ctx.lineCap=exactLength===undefined?'round':'butt';ctx.lineJoin='round';ctx.globalAlpha=.72;
     ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(endX,endY);
     // Fine translucent strokes preserve the video beneath the vector.
-    ctx.strokeStyle='rgba(4,12,21,.45)';ctx.lineWidth=3*unit;ctx.stroke();
-    ctx.strokeStyle=color;ctx.lineWidth=1.6*unit;ctx.stroke();
+    ctx.strokeStyle='rgba(4,12,21,.45)';ctx.lineWidth=3*strokeUnit;ctx.stroke();
+    ctx.strokeStyle=color;ctx.lineWidth=1.6*strokeUnit;ctx.stroke();
     ctx.beginPath();ctx.moveTo(endX,endY);
     ctx.lineTo(endX-head*Math.cos(angle-.5),endY-head*Math.sin(angle-.5));
     ctx.lineTo(endX-head*Math.cos(angle+.5),endY-head*Math.sin(angle+.5));
     ctx.closePath();
-    ctx.strokeStyle='rgba(4,12,21,.45)';ctx.lineWidth=unit;ctx.stroke();
+    ctx.strokeStyle='rgba(4,12,21,.45)';ctx.lineWidth=strokeUnit;ctx.stroke();
     ctx.fillStyle=color;ctx.fill();
     ctx.restore();
   }
@@ -755,7 +772,12 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
         if(v){
           const sx=canvas.width/geometry.width,sy=canvas.height/geometry.height;
           const arrowUnit=Math.min(canvas.width,canvas.height)/480;
-          this.drawArrow(ctx,bx,by,v.vx*sx,v.vy*sy,'#3cf2da',.22,arrowUnit);
+          const peak=this.maximumObservedAngularSpeed();
+          const omega=Math.abs(frame.angularVelocityRadiansPerSecond!);
+          // The largest valid measured |ω| spans 90 drawing units (18.75% of the short side).
+          // A fixed scale keeps half-speed at half-length, regardless of radius or frame order.
+          const velocityLength=this.samTrack()?(peak>0?90*arrowUnit*omega/peak:0):undefined;
+          this.drawArrow(ctx,bx,by,v.vx*sx,v.vy*sy,'#3cf2da',.22,arrowUnit,velocityLength);
           this.drawArrow(ctx,bx,by,v.atx*sx,v.aty*sy,'#ffb34d',.035,arrowUnit);
           this.drawArrow(ctx,bx,by,v.arx*sx,v.ary*sy,'#fb83ff',.035,arrowUnit);
         }
