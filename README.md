@@ -52,6 +52,10 @@ during the event. Do not misrepresent demonstration data as physical evidence.
 - The Meta adapters are **disabled by default** until credits, billing, and
   safe testing are confirmed.
 
+## Development workflow during the hackathon
+
+Implement and validate changes on the authorized PC. Publishing commits to GitHub is allowed; Actions workflows are manual-only and should run only when the owner explicitly requests CI. Do not run, rerun or wait for CI as a requirement for each change. Select local checks according to scope and report what was actually verified.
+
 ## Prerequisites
 
 .NET SDK 10, Node.js 20+, npm. Use a Windows PC or equivalent environment.

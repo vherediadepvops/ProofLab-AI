@@ -1,9 +1,8 @@
 name: Verify Mathematical Discovery with Lean 4
 
+# Local validation is the default. Run CI only when explicitly requested.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   lean-proof-kernel:

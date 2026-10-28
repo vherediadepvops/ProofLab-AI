@@ -54,6 +54,10 @@ se desarrollaron durante el evento. No presentaremos simulaciones como datos rea
 - Las llamadas a Meta están **desactivadas por defecto** hasta comprobar créditos,
   facturación y condiciones de prueba.
 
+## Flujo de desarrollo durante el hackathon
+
+Los cambios se implementan y verifican en la PC autorizada. Se permite publicar commits en GitHub; los workflows de Actions se activan solo manualmente y únicamente cuando el propietario solicite CI. No ejecutar, reintentar ni esperar CI como requisito de cada cambio. Elegir comprobaciones locales según el alcance y registrar qué se verificó realmente.
+
 ## Requisitos
 
 .NET SDK 10, Node.js 20 o superior y npm.
