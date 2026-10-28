@@ -120,7 +120,11 @@
       }
     </div>
   </div>
-  <app-sam-video-replay [language]="language()" [sourcePending]="sourcePending()"
+  <app-assembly-review [studyId]="session()?.id ?? ''"
+    [role]="activeTrial()==='followup' && session()?.followup?.sha256 ? 'followup' : 'baseline'"
+    [sha]="(activeTrial()==='followup' && session()?.followup?.sha256 ? session()?.followup?.sha256 : session()?.baseline?.sha256) ?? ''"
+    [port]="connection.port()" [language]="language()" (confirmed)="onAssemblyConfirmed()"/>
+  <app-sam-video-replay [assemblyNonce]="assemblyNonce()" [language]="language()" [sourcePending]="sourcePending()"
     [mediaReady]="previewState()==='ready'" [validationState]="resultState()"
     [studyId]="session()?.id ?? ''"
     [videoRole]="(activeTrial()==='followup' && session()?.followup?.sha256) ? 'followup' : 'baseline'"

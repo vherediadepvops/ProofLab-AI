@@ -1,5 +1,5 @@
 import {
-  verifiedSamPlaybackTrack, nearestSamMask, samAngularFrameAt,
+  verifiedSamPlaybackTrack, verifiedSamSceneTracks, nearestSamMask, samAngularFrameAt,
   type AuthenticatedSamVideoArchive, type SamPlaybackTrack
 } from './sam-playback';
 import type { SamVideoEvidence } from './sam-video-evidence';
@@ -145,4 +145,53 @@ describe('Angular velocity uses source timestamps',()=>{
       expect(samAngularFrameAt(track,pivot,.10,image)?.angularVelocityRadiansPerSecond).toBeNull();
       expect(samAngularFrameAt(track,pivot,.18,image)?.angularVelocityRadiansPerSecond).toBeNull();
     });
+});
+describe('multi-object assembly identity',()=>{
+  function assembly(){
+    const a=archive(),p=result();
+    a.receipt.requestProtocol='PROOFLAB_SAM_MULTIOBJECT_SOURCE_PTS_V1';
+    a.receipt.concept='<0f>1<|box;x1=1;y1=1;x2=5;y2=5;w=1920;h=1080|>';
+    a.receipt.scene={key:'c'.repeat(64),videoSha256:sha,width:1920,height:1080,
+      arrangement:'simple_pendulum',pivotX:500,pivotY:100,
+      roles:[{id:'1',role:'object'},{id:'2',role:'cord'},{id:'3',role:'knot'}]};
+    p.objectIds=['1','2','3'];
+    for(const f of p.frames){
+      const d=f.detections[0];d.objectId='1';
+      f.detections.push({...d,objectId:'2',centroidXpx:500,centroidYpx:300});
+      f.detections.push({...d,objectId:'3',centroidXpx:480,centroidYpx:100});
+    }
+    return {a,p};
+  }
+  it('keeps the moving object centroid separate from cord and knot',()=>{
+    const {a,p}=assembly(),tracks=verifiedSamSceneTracks(a,p,sha);
+    expect(Object.keys(tracks)).toEqual(['object','cord','knot']);
+    expect(tracks['object'].masks[0].centroidXpx).toBe(960);
+    expect(tracks['cord'].masks[0].centroidXpx).toBe(500);
+    expect(tracks['knot'].masks[0].centroidYpx).toBe(100);
+    expect(tracks['object'].points[1].timeSeconds).toBeCloseTo(4/60);
+  });
+  it('does not substitute a cord when the object disappears',()=>{
+    const {a,p}=assembly();
+    p.frames[1].detections=p.frames[1].detections.filter(d=>d.objectId!=='1');
+    const tracks=verifiedSamSceneTracks(a,p,sha);
+    expect(nearestSamMask(tracks['object'],4/60,.5/60)).toBeNull();
+    expect(nearestSamMask(tracks['cord'],4/60,.5/60)?.centroidXpx).toBe(500);
+  });
+  it('shows optional missing roles without inventing masks or centers',()=>{
+    const {a,p}=assembly();p.objectIds=['2'];
+    for(const f of p.frames)f.detections=f.detections.filter(d=>d.objectId==='2');
+    const tracks=verifiedSamSceneTracks(a,p,sha);
+    expect(tracks['object']).toBeUndefined();expect(tracks['knot']).toBeUndefined();
+    expect(tracks['cord'].masks.length).toBe(8);
+  });
+  it('rejects unknown, duplicate or rebound IDs and different native geometry',()=>{
+    const {a,p}=assembly();
+    p.objectIds.push('9');expect(()=>verifiedSamSceneTracks(a,p,sha)).toThrow();
+    p.objectIds.pop();p.frames[0].detections.push({...p.frames[0].detections[0]});
+    expect(()=>verifiedSamSceneTracks(a,p,sha)).toThrowError('SAM_DUPLICATE_ROLE_FRAME');
+    p.frames[0].detections.pop();a.receipt.scene!.roles[0].id='3';
+    expect(()=>verifiedSamSceneTracks(a,p,sha)).toThrow();
+    a.receipt.scene!.roles[0].id='1';a.receipt.scene!.width=1080;
+    expect(()=>verifiedSamSceneTracks(a,p,sha)).toThrow();
+  });
 });

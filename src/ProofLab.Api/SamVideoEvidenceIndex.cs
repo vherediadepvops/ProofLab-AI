@@ -74,7 +74,7 @@ public sealed class SamVideoEvidenceIndex
             !IsSha(e.CacheKey) || !IsSha(e.PromptSha256) ||
             !IsSha(e.ResponseSha256) || !IsSha(e.ReceiptSha256) ||
             e.Model != "sam-3.1" ||
-            e.Protocol != "PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2" ||
+            (e.Protocol != "PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2" && e.Protocol != AssemblyPolicy.SamProtocol) ||
             e.ProvenanceStatus != Provenance ||
             e.SourceFrames is < 50 or > 2500 ||
             !DateTimeOffset.TryParse(e.CompletedAtUtc, out _) ||

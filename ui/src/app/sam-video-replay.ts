@@ -21,7 +21,7 @@ interface SamCacheStatus {
   status:string; sourceSha256:string; cacheKey:string;
   sourceFrames:number; estimatedCostUsd:number; canRunLive:boolean;
   provenance:string; mode?:SamMode; cacheHit?:boolean;
-  analysisId?:string|null; storage?:string;
+  analysisId?:string|null; storage?:string; sceneKey?:string|null; recognitionRequired?:boolean;
 }
 interface SamPreflight {
   sourceSha256:string;sourceFrames:number;durationSeconds:number;
@@ -290,6 +290,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly localApiPort=this.connection.port;
   constructor(){this.connection.changed.pipe(takeUntilDestroyed()).subscribe(()=>{this.resetServerCheck();this.scheduleCheck();});}
   readonly sourcePending=input(false);
+  readonly assemblyNonce=input(0);
   readonly mediaReady=input(true);
   readonly validationState=input<'idle'|'loading'|'ready'|'error'>('idle');
   readonly processingStarted=output<void>();
@@ -430,7 +431,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   canOfferPaidRun():boolean {
     const pf=this.preflight(),ready=this.readiness(),s=this.cacheStatus();
-    if(!pf || !ready || !s)return false;
+    if(!pf || !ready || !s || s.recognitionRequired)return false;
     // A genuine prior attempt can be reconciled ONCE by the owner.
     // Do NOT use canRunLive for this case: the status endpoint correctly
     // keeps this false to prohibit unapproved automatic retries.
@@ -449,6 +450,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   processBlockedReason():string {
     const pf=this.preflight(),ready=this.readiness(),s=this.cacheStatus();
+    if(s?.recognitionRequired)return this.es?'Primero reconoce y confirma el montaje en la tarjeta superior.':'First recognize and confirm the assembly in the card above.';
     if(!pf)return this.es?'No se pudo calcular el costo. Pulsa Actualizar costo.':'Cost unavailable. Press Refresh cost.';
     if(!pf.supportsSingleCall || pf.estimatedCostUsd>.50)return this.es?
       'Este video supera el límite de una solicitud (US$0,50 estimados).':'This video exceeds the single-request limit (US$0.50 estimated).';
@@ -526,6 +528,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       const state=await firstValueFrom(this.http.post<SamCacheStatus>(
         this.url()+'/manual-one-shot',{
           mode:this.mode(),
+          sceneKey:this.cacheStatus()?.sceneKey ?? null,
           modelApiToken:oneTimeToken,
           videoSha256:this.videoSha256(),
           confirmPrivateVideoTransfer:true,
@@ -565,7 +568,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         'Could not validate the result. Refresh the cost and inspect status before processing again.');
     }
     if(!changes['videoSha256'] && !changes['studyId'] &&
-       !changes['videoRole'])return;
+       !changes['videoRole'] && !changes['assemblyNonce'])return;
     this.resetServerCheck();
     this.offlineSerial++;
     this.result.set(null);

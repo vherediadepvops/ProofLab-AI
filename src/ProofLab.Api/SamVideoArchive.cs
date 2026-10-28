@@ -8,8 +8,10 @@ namespace ProofLab.Api;
 /// SQLite locates private backend archives; every read verifies both files.
 /// No HTTP endpoint accepts records for this store or imports inspector JSON.
 /// </summary>
-public sealed class SamVideoArchive(string contentRoot, SamVideoEvidenceIndex index)
+public sealed class SamVideoArchive(string contentRoot, SamVideoEvidenceIndex index, SamSceneDefinition? scene = null)
 {
+    private string ExpectedPrompt => scene?.Prompt ?? PendulumSamCache.Prompt;
+    private string ExpectedProtocol => scene is null ? PendulumSamCache.Protocol : AssemblyPolicy.SamProtocol;
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     { WriteIndented = true };
     public sealed record Stored(SamIndexedEvidence Entry, SamVideoReceipt Receipt, string Raw);
@@ -49,14 +51,18 @@ public sealed class SamVideoArchive(string contentRoot, SamVideoEvidenceIndex in
     }
 
     public static void Validate(SamVideoReceipt receipt, SamVideoSource source,
-        string key, string raw, string? analysisId)
+        string key, string raw, string? analysisId, SamSceneDefinition? scene = null)
     {
+        if(scene is not null)AssemblyPolicy.Validate(scene,source.Sha256,receipt.SourceFrameCount);
+        if(receipt.Scene?.Key!=scene?.Key || (receipt.Scene is not null &&
+            JsonSerializer.Serialize(receipt.Scene,Json)!=JsonSerializer.Serialize(scene,Json)))
+            throw new InvalidDataException("SAM scene differs from the reviewed montage.");
         var pts = receipt.FramePtsSeconds;
         if (string.IsNullOrEmpty(raw) || raw.Length > 85_000_000 ||
             receipt.CacheKey != key || receipt.OriginalVideoSha256 != source.Sha256.ToLowerInvariant() ||
             string.IsNullOrWhiteSpace(receipt.VideoId) ||
-            receipt.Model != PendulumSamCache.SamModel || receipt.Concept != PendulumSamCache.Prompt ||
-            receipt.RequestProtocol != PendulumSamCache.Protocol ||
+            receipt.Model != PendulumSamCache.SamModel || receipt.Concept != (scene?.Prompt ?? PendulumSamCache.Prompt) ||
+            receipt.RequestProtocol != (scene is null ? PendulumSamCache.Protocol : AssemblyPolicy.SamProtocol) ||
             receipt.SourceFrameCount is < 50 or > 2500 || pts is null ||
             pts.Length != receipt.SourceFrameCount ||
             pts.Any(t => !double.IsFinite(t) || t < 0) || Math.Abs(pts[0]) > 0.005 ||
@@ -96,10 +102,10 @@ public sealed class SamVideoArchive(string contentRoot, SamVideoEvidenceIndex in
         var receipt = await ReadJsonAsync<SamVideoReceipt>(receiptPath, ct);
         var raw = await File.ReadAllTextAsync(responsePath, ct);
         var id = relative == key ? null : relative[(key.Length + 6)..];
-        Validate(receipt, source, key, raw, id);
+        Validate(receipt, source, key, raw, id, scene);
         var existing = relative == key ? await index.FindArchiveAsync(key, relative, ct) : null;
         var entry = new SamIndexedEvidence(id ?? existing?.AnalysisId ?? key[..32], source.Sha256.ToLowerInvariant(),
-            key, PendulumSamCache.SamModel, PendulumSamCache.Protocol, Hash(PendulumSamCache.Prompt),
+            key, PendulumSamCache.SamModel, ExpectedProtocol, Hash(ExpectedPrompt),
             Hash(raw), Hash(receiptText), relative, receipt.SourceFrameCount,
             receipt.CapturedAtUtc.ToUniversalTime().ToString("O"), SamVideoEvidenceIndex.Provenance);
         return new(entry, receipt, raw);
@@ -118,7 +124,7 @@ public sealed class SamVideoArchive(string contentRoot, SamVideoEvidenceIndex in
     public async Task<List<Stored>> LoadAsync(SamVideoSource source, string key, CancellationToken ct)
     {
         var latest = await index.FindLatestAsync(source.Sha256.ToLowerInvariant(),
-            key, Hash(PendulumSamCache.Prompt), ct);
+            key, Hash(ExpectedPrompt), ct);
         if (latest is not null) await VerifyIndexedAsync(source, key, latest, ct);
         var result = new List<Stored>();
         var folder = Folder(key);
@@ -130,7 +136,7 @@ public sealed class SamVideoArchive(string contentRoot, SamVideoEvidenceIndex in
             {
                 var bundle = await ReadJsonAsync<CompletedBundle>(journal, ct);
                 var id = relative == key ? null : relative[(key.Length + 6)..];
-                Validate(bundle.Receipt, source, key, bundle.RawResponseJson, id);
+                Validate(bundle.Receipt, source, key, bundle.RawResponseJson, id, scene);
                 await FinishBundleAsync(directory, bundle, ct);
             }
             if (File.Exists(Path.Combine(directory, "receipt.json")) ||
@@ -189,7 +195,7 @@ public sealed class SamVideoArchive(string contentRoot, SamVideoEvidenceIndex in
         SamVideoReceipt receipt, string raw)
     {
         var id = receipt.AnalysisId ?? throw new InvalidDataException("New analysis ID required.");
-        Validate(receipt, source, key, raw, id);
+        Validate(receipt, source, key, raw, id, scene);
         var folder = RunFolder(key, id);
         var bundle = new CompletedBundle(receipt, raw);
         // Once the paid provider has completed, a disconnected browser must
@@ -212,7 +218,7 @@ public sealed class SamVideoArchive(string contentRoot, SamVideoEvidenceIndex in
         {
             if (!File.Exists(path)) return null;
             var a = await ReadJsonAsync<SamOriginalAttempt>(path, ct);
-            if (a.Protocol != PendulumSamCache.Protocol ||
+            if (a.Protocol != ExpectedProtocol ||
                 !string.Equals(a.SourceSha256, source.Sha256, StringComparison.OrdinalIgnoreCase) ||
                 !Sha(a.SubmittedMp4Sha256) || a.FrameCount is < 50 or > 2500 ||
                 a.RequestedAtUtc == default || a.Status != expectedStatus)

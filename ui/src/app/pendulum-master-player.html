@@ -10,11 +10,21 @@
           : (es?'No se pudo validar el resultado. Actualiza la comprobación y revisa el estado antes de procesar otra vez.':
             'The result could not be validated. Refresh the check and inspect status before processing again.')}}
       } @else {
-        {{samTrack()?(es?'Procesado · gráficos calculados desde las máscaras de SAM':'Processed · overlays calculated from SAM masks'):
+        {{scene()?(es?'Procesado · elementos seguidos por separado · centro visible calculado desde la máscara del objeto':'Processed · elements tracked separately · visible center calculated from the object mask'):samTrack()?(es?'Procesado · gráficos calculados desde las máscaras de SAM':'Processed · overlays calculated from SAM masks'):
           (es?'Procesado · SAM no detectó objetos; reproducción disponible sin gráficos inventados.':
             'Processed · SAM found no objects; playback is available without fabricated overlays.')}}
       }
     </p>
+  }
+  @if(scene()) {
+    <div class="scene-legend" role="status" style="display:flex;flex-wrap:wrap;gap:14px;font-size:12px;padding:10px 0">
+      @for(role of sceneRoles();track role) {
+        <span [style.color]="sceneColor(role)">{{sceneLabel(role)}} · {{sceneRolePresent(role)?(es?'visible':'visible'):(es?'sin máscara en este fotograma':'no mask in this frame')}}</span>
+      }
+      @if(scene()!.arrangement!=='simple_pendulum') {
+        <span>{{es?'Montaje sin modelo de péndulo simple':'Assembly without a simple-pendulum model'}}</span>
+      }
+    </div>
   }
   <div class="viewer-frame" [attr.aria-busy]="previewLoading() || processingPending()">
   @if(previewLoading() || processingPending()) {

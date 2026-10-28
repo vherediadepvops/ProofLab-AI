@@ -1,3 +1,4 @@
+import { AssemblyReview } from './assembly-review';
 import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -17,7 +18,7 @@ import { SamVideoReplay, type SamProcessingSelection } from './sam-video-replay'
 @Component({
   selector: 'app-pendulum-zone-one',
   standalone: true,
-  imports: [CommonModule, FormsModule, PendulumMasterPlayer, SamVideoReplay, LabActivity],
+  imports: [AssemblyReview, CommonModule, FormsModule, PendulumMasterPlayer, SamVideoReplay, LabActivity],
   templateUrl: './pendulum-zone-one.html',
   styleUrl: './pendulum-zone-one.scss'
 })
@@ -72,6 +73,8 @@ export class PendulumZoneOne extends PendulumDirector {
     this.resultState.set(ready?'ready':'error');this.onPlaybackReady(ready);
   }
 
+  readonly assemblyNonce=signal(0);
+  onAssemblyConfirmed():void {this.clearProcessed();this.assemblyNonce.update(n=>n+1);}
   readonly activeTrial = signal<'baseline'|'followup'>('baseline');
   readonly registeringAndUploading = signal(false);
   readonly samRefreshNonce = signal(0);

@@ -324,7 +324,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
         bobXpx:240+radius*Math.sin(theta)/1080*480,
         bobYpx:60+radius*Math.cos(theta)/1920*270,
         angularVelocityRadiansPerSecond:omega,angularAccelerationRadiansPerSecondSquared:0};
-      (component as any).paintAngular(ctx,canvas,frame,revision,true,{width:1080,height:1920});
+      (component as any).paintAngular(ctx,canvas,frame,revision.analysis,true,{width:1080,height:1920});
       return shafts[0];
     };
     // Peak from the full valid track is 0.32 rad/s. No instantaneous saturation.

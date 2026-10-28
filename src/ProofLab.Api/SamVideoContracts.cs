@@ -8,14 +8,14 @@ public sealed record SamVideoReceipt(
     int SourceFrameCount, double[] FramePtsSeconds,
     string SubmittedMp4Sha256,
     string ProviderEvidenceStatus, double EstimatedCostUsd,
-    string? AnalysisId = null);
+    string? AnalysisId = null, SamSceneDefinition? Scene = null);
 
 public sealed record SamVideoState(
     string Status, string Model, string Concept, string SourceSha256,
     string CacheKey, int SourceFrames, double EstimatedCostUsd,
     string? ResponseSha256, int? BilledFrames, bool CanRunLive,
     string Provenance, string? AnalysisId = null,
-    string Mode = "api-meta-cache", bool CacheHit = false, string Storage = "sqlite");
+    string Mode = "api-meta-cache", bool CacheHit = false, string Storage = "sqlite", string? SceneKey = null, bool RecognitionRequired = false);
 
 public sealed record SamVideoPreflight(
     string SourceSha256, string VideoId, string Codec,
@@ -32,7 +32,7 @@ public sealed record SamVideoRunRequest(
     bool ConfirmOneBillableSamCall, double MaximumEstimatedCostUsd,
     bool OwnerApprovesOneReconciledRetry = false,
     string? PreviousAttemptBillingEvidence = null,
-    string? Mode = null);
+    string? Mode = null, string? SceneKey = null);
 
 public sealed record SamApiCompletedResult(
     string FullResponseJson, string ProviderResponseId, int? BilledFrames);

@@ -28,7 +28,7 @@ public sealed class SamVideoMetaTransport(
         Func<SamVideoSseProgress, ValueTask>? progress, CancellationToken ct,
         string? oneShotMetaToken = null)
     {
-        if (concept != PendulumSamCache.Prompt)
+        if (!AssemblyPolicy.IsSamPrompt(concept))
             throw new ArgumentException("Only curated SAM prompt is allowed.");
 
         // HttpClient.Timeout with ResponseHeadersRead protects HTTP headers,

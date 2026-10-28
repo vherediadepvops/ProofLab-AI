@@ -15,14 +15,13 @@ namespace ProofLab.Api;
 public sealed class PendulumSamCache(
     IWebHostEnvironment environment, ISamVideoRuntime runtime,
     ISamVideoTransport transport, SamVideoEvidenceIndex index,
-    ILogger<PendulumSamCache> logger)
+    ILogger<PendulumSamCache> logger, IAssemblyScenes? scenes = null)
 {
     public const string SamModel = "sam-3.1";
     public const string Prompt = "metal pendulum bob";
     public const string Protocol = "PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2";
     public const string CacheMode = "api-meta-cache";
     public const string FreshMode = "api-meta";
-    private readonly SamVideoArchive archive = new(environment.ContentRootPath, index);
     private readonly SemaphoreSlim gate = new(1, 1);
 
     public static string NormalizeMode(string? mode) => mode switch {
@@ -39,14 +38,26 @@ public sealed class PendulumSamCache(
             "\n" + originalSha.ToLowerInvariant());
     }
 
-    private async Task<(SamVideoSource Video, string Key)> Source(
+    private async Task<(SamVideoSource Video, string Key, SamVideoArchive Archive, SamSceneDefinition? Scene)> Source(
         string studyId, string role, CancellationToken ct)
     {
         var video = await runtime.GetVerifiedSourceAsync(studyId, role, ct);
         if (video.Codec is not ("h264" or "hevc" or "mpeg4") ||
             Path.GetExtension(video.Path).ToLowerInvariant() is not (".mov" or ".mp4"))
             throw new ArgumentException("SAM requires a source MOV/MP4 H.264/H.265/MPEG4.");
-        return (video, CacheKey(video.Sha256));
+        var scene=scenes is null?null:await scenes.ApprovedAsync(studyId,role,ct);
+        if(scene is not null)AssemblyPolicy.Validate(scene,video.Sha256);
+        var key=scene is null?CacheKey(video.Sha256):
+            SamVideoArchive.Hash(AssemblyPolicy.SamProtocol+"\n"+SamModel+"\n"+scene.Key+"\n"+video.Sha256);
+        if(scene is not null) {
+            var legacyArchive=new SamVideoArchive(environment.ContentRootPath,index);
+            var legacyKey=CacheKey(video.Sha256);
+            var old=await legacyArchive.LoadAsync(video,legacyKey,ct);
+            var pending=await legacyArchive.OutstandingAsync(video,legacyKey,old,ct);
+            if(pending.LegacyOriginal || pending.NewRun || (pending.LegacyRetry && old.Count==0))
+                throw new InvalidOperationException("Reconcile earlier video attempt before a new target.");
+        }
+        return (video,key,new SamVideoArchive(environment.ContentRootPath,index,scene),scene);
     }
 
     private static SamVideoArchive.Stored? Latest(IEnumerable<SamVideoArchive.Stored> all) =>
@@ -59,31 +70,32 @@ public sealed class PendulumSamCache(
         var r = stored.Receipt;
         return new(new SamVideoState(
             "CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW",
-            SamModel, Prompt, r.OriginalVideoSha256, r.CacheKey,
+            SamModel, r.Concept, r.OriginalVideoSha256, r.CacheKey,
             r.SourceFrameCount, r.EstimatedCostUsd, r.ResponseJsonSha256,
             r.BilledFrames, false,
             "META_SAM_3_1_CACHED_PROVIDER_OUTPUT; HUMAN_REVIEW_PENDING",
-            stored.Entry.AnalysisId, mode, hit), r, stored.Raw);
+            stored.Entry.AnalysisId, mode, hit, SceneKey:r.Scene?.Key), r, stored.Raw);
     }
 
     public async Task<SamVideoState> StatusAsync(
         string studyId, string role, CancellationToken ct, string? mode = null)
     {
         mode = NormalizeMode(mode);
-        var (video, key) = await Source(studyId, role, ct);
+        var (video, key, archive, scene) = await Source(studyId, role, ct);
         var all = await archive.LoadAsync(video, key, ct);
         var latest = Latest(all);
         if (mode == CacheMode && latest is not null) return Artifact(latest).State;
         var pending = await archive.OutstandingAsync(video, key, all, ct);
         var state = latest is null
-            ? new SamVideoState("NOT_ANALYZED_WITH_SAM", SamModel, Prompt,
+            ? new SamVideoState("NOT_ANALYZED_WITH_SAM", SamModel, scene?.Prompt ?? Prompt,
                 video.Sha256, key, 0, 0, null, null, false,
                 "NO_SAM_PROVIDER_EVIDENCE; LOCAL_FFMPEG_RESULTS_ARE_SEPARATE")
             : Artifact(latest).State;
         return state with {
             Status = pending.Any ? pending.Status :
                 latest is not null ? "READY_FOR_FRESH_META_ANALYSIS" : "NOT_ANALYZED_WITH_SAM",
-            CanRunLive = !pending.Any && runtime.LiveCallsPermitted,
+            CanRunLive = !pending.Any && (scenes is null || scene is not null) && runtime.LiveCallsPermitted,
+            RecognitionRequired = scenes is not null && scene is null, SceneKey=scene?.Key,
             Mode = mode, CacheHit = false
         };
     }
@@ -91,7 +103,7 @@ public sealed class PendulumSamCache(
     public async Task<SamVideoPreflight> PreflightAsync(
         string studyId, string role, CancellationToken ct)
     {
-        var (video, _) = await Source(studyId, role, ct);
+        var (video, _, _, _) = await Source(studyId, role, ct);
         var pts = await runtime.ReadFramePtsAsync(video.Path, ct);
         var cost = Math.Max(50, pts.Length) * 0.0002;
         var serial = string.Join("\n", pts.Select(t =>
@@ -106,7 +118,7 @@ public sealed class PendulumSamCache(
     public async Task<SamVideoArtifact> ReadArchiveAsync(
         string studyId, string role, CancellationToken ct)
     {
-        var (video, key) = await Source(studyId, role, ct);
+        var (video, key, archive, scene) = await Source(studyId, role, ct);
         var all = await archive.LoadAsync(video, key, ct);
         return Artifact(Latest(all) ??
             throw new FileNotFoundException("SAM provider evidence not cached."));
@@ -123,7 +135,7 @@ public sealed class PendulumSamCache(
         await gate.WaitAsync(ct);
         try
         {
-            var (video, key) = await Source(studyId, role, ct);
+            var (video, key, archive, scene) = await Source(studyId, role, ct);
             var root = archive.Folder(key);
             Directory.CreateDirectory(root);
             // A persistent path with an OS-exclusive handle serializes all
@@ -139,6 +151,10 @@ public sealed class PendulumSamCache(
             if (!string.Equals(request.VideoSha256, video.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Video SHA-256 confirmation mismatch.");
             if (mode == CacheMode && latest is not null) return Artifact(latest);
+            if(scenes is not null && scene is null)
+                throw new InvalidOperationException("Review assembly before a new SAM call.");
+            if(request.SceneKey!=scene?.Key)
+                throw new ArgumentException("Assembly changed; refresh the quote.");
             if (!request.ConfirmPrivateVideoTransfer || !request.ConfirmOneBillableSamCall)
                 throw new ArgumentException("Explicit third-party video transfer and billable-call confirmation required.");
 
@@ -158,6 +174,7 @@ public sealed class PendulumSamCache(
                 throw new InvalidOperationException("Meta billing/key/owner consent gates have not been verified for this process.");
 
             var timeline = await runtime.ReadFramePtsAsync(video.Path, ct);
+            if(scene is not null)AssemblyPolicy.Validate(scene,video.Sha256,timeline.Length);
             var estimate = Math.Max(50, timeline.Length) * 0.0002;
             if (timeline.Length is < 50 or > 2500 || estimate > 0.500000001 ||
                 !double.IsFinite(request.MaximumEstimatedCostUsd) ||
@@ -190,7 +207,7 @@ public sealed class PendulumSamCache(
             }
             ct.ThrowIfCancellationRequested();
             runtime.ReserveOrThrow(oneShotMetaToken);
-            var attempt = new SamOriginalAttempt(Protocol, video.Sha256, submittedSha,
+            var attempt = new SamOriginalAttempt(scene is null?Protocol:AssemblyPolicy.SamProtocol, video.Sha256, submittedSha,
                 timeline.Length, estimate, DateTimeOffset.UtcNow,
                 "MAY_BE_BILLABLE_NO_AUTOMATIC_RETRY", id);
             await SamVideoArchive.WriteExclusiveAsync(Path.Combine(folder, "attempt-started.json"),
@@ -225,7 +242,7 @@ public sealed class PendulumSamCache(
                 // the authorized operation has its own bounded lifetime so a
                 // disconnected tab cannot discard a potentially billed result.
                 using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(30));
-                result = await transport.UploadAndSegmentAsync(submittedPath, Prompt,
+                result = await transport.UploadAndSegmentAsync(submittedPath, scene?.Prompt ?? Prompt,
                     RecordProgress, deadline.Token, oneShotMetaToken);
             }
             catch (Exception ex)
@@ -243,9 +260,9 @@ public sealed class PendulumSamCache(
             if (result.FullResponseJson.Length is 0 or > 85_000_000)
                 throw new InvalidDataException("Provider output exceeds cache safety limit.");
             var receipt = new SamVideoReceipt(key, video.Sha256.ToLowerInvariant(), video.VideoId,
-                SamModel, Prompt, Protocol, DateTimeOffset.UtcNow, SamVideoArchive.Hash(result.FullResponseJson),
+                SamModel, scene?.Prompt ?? Prompt, scene is null?Protocol:AssemblyPolicy.SamProtocol, DateTimeOffset.UtcNow, SamVideoArchive.Hash(result.FullResponseJson),
                 result.ProviderResponseId, result.BilledFrames, timeline.Length, submittedPts, submittedSha,
-                "COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW", estimate, id);
+                "COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW", estimate, id, scene);
             var committed = await archive.CommitAsync(video, key, receipt, result.FullResponseJson);
             await RecordProgress(new("PRIVATE_EVIDENCE_RECEIPT_COMMITTED", 0, 0, result.FullResponseJson.Length));
             return Artifact(committed, mode, hit: false);

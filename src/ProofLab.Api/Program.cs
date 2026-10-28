@@ -37,6 +37,9 @@ builder.Services.AddSingleton<PendulumSamCache>();
 builder.Services.AddSingleton<IKnotFrames>(sp => sp.GetRequiredService<VideoMediaDecoder>());
 builder.Services.AddSingleton<IKnotTransport, KnotMetaTransport>();
 builder.Services.AddSingleton<PendulumKnotLocator>();
+builder.Services.AddSingleton<IAssemblyTransport, AssemblyMetaTransport>();
+builder.Services.AddSingleton<AssemblyLocator>();
+builder.Services.AddSingleton<IAssemblyScenes>(sp => sp.GetRequiredService<AssemblyLocator>());
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -46,6 +49,7 @@ var app = builder.Build();
 
 app.UseCors("HackathonLocal");
 app.MapKnotEndpoints();
+app.MapAssemblyEndpoints();
 app.MapGet("/api/health", (MetaModelClient meta) =>
     Results.Ok(new {
         project = "ProofLab AI — competition edition",

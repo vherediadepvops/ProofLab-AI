@@ -1,3 +1,4 @@
+import type {SceneDefinition} from './assembly-review';
 import {
   AfterViewInit, Component, ElementRef, OnChanges, OnDestroy, SimpleChanges, ViewChild,
   inject, input, output, signal, computed
@@ -8,7 +9,7 @@ import { KnotReview } from './knot-review';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import {
-  type KinematicRevision, type KinematicFrame, type ImageSize, pivotFromClick,
+  type KinematicRevision, type KinematicFrame, type ImageSize, type ImagePivot, pivotFromClick,
   sampleAtTime, vectorAt, idealAngularSpeedAtAngle, measureCordAngle, type CordAngleMeasurement
 } from './pendulum-kinematics';
 import {
@@ -16,7 +17,7 @@ import {
   seekSourceFrame, trailingMotion
 } from './pendulum-master-sync';
 import {
-  verifiedSamPlaybackTrack, nearestSamMask, samAngularFrameAt,
+  verifiedSamSceneTracks, validSamTarget, nearestSamMask, samAngularFrameAt,
   type AuthenticatedSamVideoArchive, type SamPlaybackTrack, type SamPlaybackMask
 } from './sam-playback';
 
@@ -38,8 +39,33 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   private revisionSerial=0;
   private revisionKey='';
   private samSerial=0;
-  private readonly samPathCache=new Map<number,Path2D>();
+  private readonly samPathCache=new Map<string,Path2D>();
   readonly samTrack=signal<SamPlaybackTrack|null>(null);
+  readonly scene=signal<SceneDefinition|null>(null);
+  readonly sceneTracks=signal<Record<string,SamPlaybackTrack>>({});
+  private readonly manualPivotOverride=signal(false);
+  private measurementPivot():ImagePivot|null {
+    const scene=this.scene();
+    if(scene && scene.arrangement!=='simple_pendulum')return null;
+    const manual=this.pivotRevision()?.analysis;
+    if(this.manualPivotOverride() && manual)return manual;
+    if(scene)return scene.pivotX!==null && scene.pivotY!==null
+      ? {pivotXpx:scene.pivotX*480/1000,pivotYpx:scene.pivotY*270/1000}:null;
+    return manual??null;
+  }
+  sceneLabel(role:string):string {
+    return ({object:this.es?'Objeto · centro visible':'Object · visible center',
+      cord:this.es?'Cuerda':'Cord',knot:this.es?'Nudo':'Knot',
+      pulley:this.es?'Polea':'Pulley',support:this.es?'Soporte':'Support'} as Record<string,string>)[role]??role;
+  }
+  sceneColor(role:string):string {
+    return ({object:'#5cf4cb',cord:'#ffdd86',knot:'#d4a2ff',pulley:'#7ebcff',support:'#b5bfcd'} as Record<string,string>)[role]??'#fff';
+  }
+  sceneRoles():string[]{return this.scene()?.roles.map(r=>r.role)??[];}
+  sceneRolePresent(role:string):boolean {
+    const track=this.sceneTracks()[role];
+    return !!track && !!nearestSamMask(track,this.currentTime(),Math.min(.055,.5/this.sourceFps()));
+  }
   readonly samStatus=signal('CHECKING_SAM_CACHE');
   @ViewChild('masterVideo') masterVideo?: ElementRef<HTMLVideoElement>;
   @ViewChild('vectorCanvas') vectorCanvas?: ElementRef<HTMLCanvasElement>;
@@ -101,11 +127,11 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   // One scale per track/pivot/native geometry, never a per-frame clamp or radius.
   private readonly maximumObservedAngularSpeed=computed(()=>{
-    const track=this.samTrack(),revision=this.pivotRevision(),image=this.decodedSize();
-    if(!track || !revision || !image)return 0;
+    const track=this.samTrack(),pivot=this.measurementPivot(),image=this.decodedSize();
+    if(!track || !pivot || !image)return 0;
     let peak=0;
     for(const point of track.points){
-      const frame=samAngularFrameAt(track,revision.analysis,point.timeSeconds,image);
+      const frame=samAngularFrameAt(track,pivot,point.timeSeconds,image);
       const omega=frame?.angularVelocityRadiansPerSecond;
       if(frame?.isValid && omega!=null && Number.isFinite(omega))
         peak=Math.max(peak,Math.abs(omega));
@@ -255,7 +281,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     this.setVerified(false);
     this.pivotRevision.set(null);this.currentKinematics.set(null);this.currentCordAngle.set(null);
     this.pivotMode.set(false);this.pivotError.set('');this.pivotSaving.set(false);
-    this.samTrack.set(null);this.samPathCache.clear();this.sourceFramePts=[];
+    this.samTrack.set(null);this.scene.set(null);this.sceneTracks.set({});this.manualPivotOverride.set(false);this.samPathCache.clear();this.sourceFramePts=[];
     if(this.processingRequired() && !this.processedAnalysisId()) {
       this.samStatus.set('AWAITING_PROCESS');
       this.paintFrame(this.frameTime());
@@ -298,16 +324,18 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
            archive.receipt.originalVideoSha256!==this.videoSha256() ||
            archive.state.status!=='CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW' ||
            archive.receipt.providerEvidenceStatus!=='COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW' ||
-           archive.receipt.model!=='sam-3.1' || archive.receipt.concept!=='metal pendulum bob')
+           archive.receipt.model!=='sam-3.1' || !validSamTarget(archive,this.videoSha256()))
           throw new Error('SAM_NO_MATCH_PROVENANCE_INVALID');
         this.rememberFramePts(archive.receipt.framePtsSeconds);
-        this.samTrack.set(null);this.setVerified(true);
+        this.samTrack.set(null);this.scene.set(archive.receipt.scene??null);this.sceneTracks.set({});this.setVerified(true);
         this.samStatus.set('SAM_3_1_COMPLETED_NO_MATCH');
         this.processingFinished.emit(true);
         this.paintFrame(this.frameTime());
         return;
       }
-      const track=verifiedSamPlaybackTrack(archive,result,this.videoSha256());
+      const tracks=verifiedSamSceneTracks(archive,result,this.videoSha256());
+      const track=tracks['object']??null;
+      this.scene.set(archive.receipt.scene??null);this.sceneTracks.set(tracks);
       this.rememberFramePts(archive.receipt.framePtsSeconds);
       this.samTrack.set(track);this.setVerified(true);
       this.samStatus.set('SAM_3_1_CACHED_MASKS_PENDING_HUMAN_BOB_REVIEW');
@@ -315,7 +343,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       this.paintFrame(this.frameTime());
     } catch(e:unknown) {
       if(serial!==this.samSerial || this.disposed)return;
-      this.samTrack.set(null);this.setVerified(false);
+      this.samTrack.set(null);this.scene.set(null);this.sceneTracks.set({});this.setVerified(false);
       if((e as {status?:number})?.status===404){
         this.samStatus.set('NO_SAM_ARCHIVE_LOCAL_LEGACY_ONLY');
       }else{
@@ -351,7 +379,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     if(!this.matchingRevision(revision))return;
     ++this.revisionSerial; // a prior GET cannot overwrite the confirmed point
     this.masterVideo?.nativeElement.pause();
-    this.pivotRevision.set(revision);this.pivotMode.set(false);this.pivotError.set('');
+    this.manualPivotOverride.set(true);this.pivotRevision.set(revision);this.pivotMode.set(false);this.pivotError.set('');
     this.paintFrame(this.frameTime());
   }
 
@@ -397,7 +425,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
           : 'Analysis response does not match this video.');
         return;
       }
-      this.pivotRevision.set(result);
+      this.manualPivotOverride.set(true);this.pivotRevision.set(result);
       this.pivotMode.set(false);
       this.paintFrame(this.frameTime());
     }catch{
@@ -602,7 +630,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   cordAngleHint():string {
     if(!this.samTrack())return this.es?'Se necesitan detecciones de la plomada para medir el ángulo.':'Bob detections are required to measure the angle.';
-    if(!this.pivotRevision())return this.es?'Marca el punto de suspensión para medir el ángulo.':'Select the suspension point to measure the angle.';
+    if(!this.measurementPivot())return this.es?'Marca el punto de suspensión para medir el ángulo.':'Select the suspension point to measure the angle.';
     if(!this.currentCordAngle())return this.es?'Sin detección válida en este fotograma.':'No valid detection in this frame.';
     return this.es?'Estimado entre la suspensión y el centro de la plomada.':'Estimated between the suspension point and the bob centre.';
   }
@@ -683,31 +711,49 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   private paintSamMask(
     ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
-    track:SamPlaybackTrack,mark:SamPlaybackMask):void {
-    let path=this.samPathCache.get(mark.frameIndex);
+    track:SamPlaybackTrack,mark:SamPlaybackMask,role='object'):void {
+    const key=track.objectId+':'+mark.frameIndex;
+    let path=this.samPathCache.get(key);
     if(!path) {
       path=new Path2D(mark.maskPath);
-      this.samPathCache.set(mark.frameIndex,path);
+      this.samPathCache.set(key,path);
       if(this.samPathCache.size>96)
         this.samPathCache.delete(this.samPathCache.keys().next().value!);
     }
     ctx.save();
     ctx.scale(canvas.width/track.frameWidth,canvas.height/track.frameHeight);
     ctx.translate(mark.left,mark.top);
-    ctx.fillStyle='rgba(10,244,183,.12)';
-    ctx.strokeStyle='rgba(67,241,206,.65)';
+    ctx.fillStyle=this.sceneColor(role)+'20';
+    ctx.strokeStyle=this.sceneColor(role)+'aa';
     ctx.lineWidth=2;
     ctx.fill(path);
     ctx.stroke(path);
     ctx.restore();
+    if(this.scene()) {
+      const x=mark.centroidXpx/track.frameWidth*canvas.width;
+      const y=mark.centroidYpx/track.frameHeight*canvas.height;
+      const unit=Math.min(canvas.width,canvas.height)/480;
+      ctx.save();ctx.strokeStyle=this.sceneColor(role);ctx.fillStyle=this.sceneColor(role);
+      if(role==='object') {
+        ctx.lineWidth=unit;ctx.beginPath();ctx.arc(x,y,3*unit,0,2*Math.PI);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(x-6*unit,y);ctx.lineTo(x+6*unit,y);
+        ctx.moveTo(x,y-6*unit);ctx.lineTo(x,y+6*unit);ctx.stroke();
+      }
+      ctx.font='600 '+(10*unit)+'px system-ui';ctx.lineWidth=2*unit;
+      const text=this.sceneLabel(role);
+      const tx=Math.max(4*unit,Math.min(canvas.width-ctx.measureText(text).width-4*unit,
+        mark.left/track.frameWidth*canvas.width));
+      const ty=Math.max(12*unit,mark.top/track.frameHeight*canvas.height-6*unit);
+      ctx.strokeStyle='#07121b';ctx.strokeText(text,tx,ty);ctx.fillText(text,tx,ty);ctx.restore();
+    }
   }
 
   /** Reference and arc share the native image geometry and decoded media clock. */
   private paintCordAngle(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
-      measurement:CordAngleMeasurement,revision:KinematicRevision):void {
+      measurement:CordAngleMeasurement,pivot:ImagePivot):void {
     const unit=Math.min(canvas.width,canvas.height)/480;
-    const px=revision.analysis.pivotXpx*canvas.width/480;
-    const py=revision.analysis.pivotYpx*canvas.height/270;
+    const px=pivot.pivotXpx*canvas.width/480;
+    const py=pivot.pivotYpx*canvas.height/270;
     const bx=measurement.bobXpx*canvas.width/480;
     const by=measurement.bobYpx*canvas.height/270;
     const length=Math.hypot(bx-px,by-py);
@@ -757,11 +803,11 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   /** Draw candidate geometric measurements; never paint metric XY. */
   private paintAngular(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
-      frame:KinematicFrame|null,revision:KinematicRevision,showArrows:boolean,
+      frame:KinematicFrame|null,pivot:ImagePivot,showArrows:boolean,
       geometry:ImageSize):void {
     const fx=canvas.width/480,fy=canvas.height/270;
-    const pivotX=revision.analysis.pivotXpx*fx;
-    const pivotY=revision.analysis.pivotYpx*fy;
+    const pivotX=pivot.pivotXpx*fx;
+    const pivotY=pivot.pivotYpx*fy;
     ctx.save();
     ctx.lineWidth=2.5;ctx.strokeStyle='#ffcc55';
     ctx.beginPath();ctx.arc(pivotX,pivotY,6,0,2*Math.PI);ctx.stroke();
@@ -775,8 +821,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       ctx.beginPath();ctx.arc(bx,by,7,0,2*Math.PI);
       ctx.strokeStyle='#ffe6a3';ctx.lineWidth=2;ctx.stroke();
       if(showArrows){
-        const v=vectorAt(frame,{pivotXpx:revision.analysis.pivotXpx,
-          pivotYpx:revision.analysis.pivotYpx},geometry);
+        const v=vectorAt(frame,{pivotXpx:pivot.pivotXpx,
+          pivotYpx:pivot.pivotYpx},geometry);
         if(v){
           const sx=canvas.width/geometry.width,sy=canvas.height/geometry.height;
           const arrowUnit=Math.min(canvas.width,canvas.height)/480;
@@ -836,22 +882,21 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const legacy=!this.processingRequired() && this.samStatus()==='NO_SAM_ARCHIVE_LOCAL_LEGACY_ONLY';
     const samples=sam?.points ?? (legacy?(this.points()??[]):[]);
     const revision=(sam || !this.processingRequired())?this.pivotRevision():null;
+    const pivot=(sam || !this.processingRequired())?this.measurementPivot():null;
     const geometry:ImageSize=sam
       ? {width:video.videoWidth,height:video.videoHeight}
       : {width:480,height:270}; // Legacy saved derivatives retain their own coordinate system.
-    const frame=revision ?
-      (sam?samAngularFrameAt(sam,{
-        pivotXpx:revision.analysis.pivotXpx,
-        pivotYpx:revision.analysis.pivotYpx
-      },time,geometry):sampleAtTime(revision.analysis.samples,time)) : null;
+    const frame=pivot ?
+      (sam?samAngularFrameAt(sam,pivot,time,geometry):
+        (revision?sampleAtTime(revision.analysis.samples,time):null)) : null;
     this.currentKinematics.set(frame);
-    const mask=sam?nearestSamMask(sam,time):null;
+    const mask=sam?nearestSamMask(sam,time,Math.min(.055,.5/this.sourceFps())):null;
     // The angle needs one actual observation, not valid velocity/acceleration.
     // A missing source-frame detection must never retain the last angle.
     const angleMask=sam?nearestSamMask(sam,time,Math.min(.055,.5/this.sourceFps())):null;
-    this.currentCordAngle.set(sam && angleMask && revision
+    this.currentCordAngle.set(sam && angleMask && pivot
       ? measureCordAngle(angleMask.centroidXpx/sam.frameWidth*480,
-          angleMask.centroidYpx/sam.frameHeight*270,revision.analysis,geometry)
+          angleMask.centroidYpx/sam.frameHeight*270,pivot,geometry)
       : null);
     if(sam && mask) {
       try{
@@ -861,6 +906,14 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
         this.currentCordAngle.set(null);
         this.overlayStatus.set('SAM_MASK_PATH_INVALID_NO_FABRICATED_OVERLAY');
         return;
+      }
+    }
+    for(const [role,track] of Object.entries(this.sceneTracks())) {
+      if(role==='object')continue;
+      const mark=nearestSamMask(track,time,Math.min(.055,.5/this.sourceFps()));
+      if(mark) {
+        this.paintSamMask(ctxs[0]!,canvases[0]!,track,mark,role);
+        this.paintSamMask(ctxs[2]!,canvases[2]!,track,mark,role);
       }
     }
     // A SAM frame with no nearby authentic mask is NOT an observation:
@@ -884,7 +937,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       const magnitude=Math.hypot(vx,vy);
       const length=magnitude<3?0:Math.min(94,magnitude*.12);
       const angle=Math.atan2(vy,vx);
-      if(!revision){
+      if(!pivot){
       for(const ctx of [ctxs[0]!,ctxs[2]!]){
       ctx.lineWidth=Math.max(2,canvas.width/275);
       ctx.strokeStyle='#46e0e2';
@@ -934,13 +987,13 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
           : samples.length>0?'NO_RELIABLE_LOCAL_SAMPLE_AT_THIS_FRAME'
           :'NO_2D_TRACK_FOR_THIS_VIDEO'));
     }
-    if(revision){
-      this.paintAngular(ctxs[0]!,canvases[0]!,frame,revision,true,geometry);
-      this.paintAngular(ctxs[1]!,canvases[1]!,frame,revision,false,geometry);
-      this.paintAngular(ctxs[2]!,canvases[2]!,frame,revision,true,geometry);
+    if(pivot){
+      this.paintAngular(ctxs[0]!,canvases[0]!,frame,pivot,true,geometry);
+      this.paintAngular(ctxs[1]!,canvases[1]!,frame,pivot,false,geometry);
+      this.paintAngular(ctxs[2]!,canvases[2]!,frame,pivot,true,geometry);
     }
     const cordAngle=this.currentCordAngle();
-    if(revision && cordAngle)this.paintCordAngle(ctxs[2]!,canvases[2]!,cordAngle,revision);
+    if(pivot && cordAngle)this.paintCordAngle(ctxs[2]!,canvases[2]!,cordAngle,pivot);
     if(sam){
       this.paintFrameReadout(ctxs[0]!,canvases[0]!);
       this.paintFrameReadout(ctxs[2]!,canvases[2]!);

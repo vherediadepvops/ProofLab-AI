@@ -1,3 +1,4 @@
+import type {SceneDefinition} from './assembly-review';
 import type { SamVideoEvidence } from './sam-video-evidence';
 import type { CandidatePixelPoint } from './pendulum-master-sync';
 import { originalImageOffset, type ImagePivot, type ImageSize, type KinematicFrame } from './pendulum-kinematics';
@@ -9,7 +10,7 @@ export interface AuthenticatedSamVideoArchive {
   receipt: {
     model: string; concept: string; originalVideoSha256: string;
     providerEvidenceStatus: string; framePtsSeconds: number[];
-    sourceFrameCount: number; analysisId?:string;
+    sourceFrameCount: number; analysisId?:string; requestProtocol?:string; scene?:SceneDefinition|null;
   };
   rawResponseJson: string;
 }
@@ -44,21 +45,25 @@ const validSha=(value:string) => /^[a-f0-9]{64}$/i.test(value);
  */
 export function verifiedSamPlaybackTrack(
   archive:AuthenticatedSamVideoArchive, parsed:SamVideoEvidence,
-  currentOriginalSha:string
+  currentOriginalSha:string, role='object', minimumMasks=5
 ):SamPlaybackTrack {
   const r=archive.receipt, s=archive.state;
+  const scene=r.scene;
+  const objectId=scene?scene.roles.find(r=>r.role===role)?.id:parsed.objectIds[0];
   if(!validSha(currentOriginalSha) ||
       r.originalVideoSha256.toLowerCase()!==currentOriginalSha.toLowerCase() ||
       s.sourceSha256.toLowerCase()!==currentOriginalSha.toLowerCase() ||
       s.status!=='CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW' ||
       r.providerEvidenceStatus!=='COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW' ||
-      r.model!=='sam-3.1' || r.concept!=='metal pendulum bob' ||
+      r.model!=='sam-3.1' || !validSamTarget(archive,currentOriginalSha) ||
       !Array.isArray(r.framePtsSeconds) ||
       r.sourceFrameCount!==r.framePtsSeconds.length ||
       r.sourceFrameCount<50 || r.sourceFrameCount>2500 ||
       parsed.model!=='sam-3.1' ||
       parsed.result!=='DECODED_MASKS' ||
-      parsed.objectIds.length!==1 ||
+      (!scene && parsed.objectIds.length!==1) || !objectId ||
+      (scene && (scene.width!==parsed.frameWidth || scene.height!==parsed.frameHeight ||
+        parsed.objectIds.some(id=>!scene.roles.some(r=>r.id===id)))) ||
       parsed.frameWidth<1 || parsed.frameHeight<1)
     throw new Error('SAM_EVIDENCE_REQUIRES_MANUAL_OBJECT_REVIEW_OR_INVALID_PROVENANCE');
 
@@ -69,15 +74,16 @@ export function verifiedSamPlaybackTrack(
     previous=time;
   }
   const masks:SamPlaybackMask[]=[];
-  const objectId=parsed.objectIds[0];
   for(const frame of parsed.frames){
     if(!Number.isSafeInteger(frame.frameIndex) ||
         frame.frameIndex<0 || frame.frameIndex>=r.sourceFrameCount)
       throw new Error('SAM_FRAME_NOT_IN_UPLOADED_SOURCE');
-    if(frame.detections.length!==1 ||
-       frame.detections[0].objectId!==objectId)
+    if(!scene && (frame.detections.length!==1 || frame.detections[0].objectId!==objectId))
       throw new Error('SAM_AMBIGUOUS_BOB_FRAME');
-    const d=frame.detections[0];
+    const selected=frame.detections.filter(d=>d.objectId===objectId);
+    if(selected.length>1)throw new Error('SAM_DUPLICATE_ROLE_FRAME');
+    if(selected.length===0)continue;
+    const d=selected[0];
     if(!d.foregroundPixels || d.centroidXpx===null || d.centroidYpx===null)
       continue;
     masks.push({
@@ -88,7 +94,7 @@ export function verifiedSamPlaybackTrack(
     });
   }
   masks.sort((a,b)=>a.timeSeconds-b.timeSeconds);
-  if(masks.length<5)
+  if(masks.length<minimumMasks)
     throw new Error('SAM_TOO_FEW_VALID_MASKS_TO_COMPUTE_MOTION');
 
   // Existing drawing algorithms operate in 480×270 IMAGE coordinates.
@@ -106,6 +112,36 @@ export function verifiedSamPlaybackTrack(
     frameWidth:parsed.frameWidth,frameHeight:parsed.frameHeight,
     source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId,points,masks
   };
+}
+
+/** Role bindings originate only in the backend's reviewed scene receipt. */
+export function validSamTarget(archive:AuthenticatedSamVideoArchive,sha:string):boolean {
+  const r=archive.receipt,scene=r.scene;
+  if(!scene)return r.concept==='metal pendulum bob';
+  const roles=['object','cord','knot','pulley','support'];
+  return r.requestProtocol==='PROOFLAB_SAM_MULTIOBJECT_SOURCE_PTS_V1' &&
+    scene.videoSha256===sha && validSha(scene.key) &&
+    scene.width>0 && scene.height>0 && scene.roles.length>0 && scene.roles.length<=5 &&
+    new Set(scene.roles.map(r=>r.role)).size===scene.roles.length &&
+    scene.roles.some(r=>r.role==='object'&&r.id==='1') &&
+    scene.roles.every(r=>roles.includes(r.role)&&r.id===String(roles.indexOf(r.role)+1)) &&
+    ['simple_pendulum','pulley_system','unclear'].includes(scene.arrangement) &&
+    ((scene.pivotX===null&&scene.pivotY===null) ||
+      (scene.arrangement==='simple_pendulum' && Number.isFinite(scene.pivotX) &&
+       Number.isFinite(scene.pivotY) && scene.pivotX!>=0 && scene.pivotX!<1000 && scene.pivotY!>=0 && scene.pivotY!<1000));
+}
+export function verifiedSamSceneTracks(archive:AuthenticatedSamVideoArchive,parsed:SamVideoEvidence,
+  sha:string):Record<string,SamPlaybackTrack> {
+  if(!archive.receipt.scene)return {object:verifiedSamPlaybackTrack(archive,parsed,sha)};
+  if(!validSamTarget(archive,sha) ||
+     parsed.objectIds.some(id=>!archive.receipt.scene!.roles.some(r=>r.id===id)))
+    throw new Error('SAM_SCENE_IDENTITY_MISMATCH');
+  const result:Record<string,SamPlaybackTrack>={};
+  for(const role of archive.receipt.scene.roles) {
+    if(parsed.objectIds.includes(role.id))
+      result[role.role]=verifiedSamPlaybackTrack(archive,parsed,sha,role.role,1);
+  }
+  return result;
 }
 
 export function nearestSamMask(track:SamPlaybackTrack,time:number,
