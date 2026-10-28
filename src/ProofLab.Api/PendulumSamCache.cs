@@ -208,9 +208,15 @@ public sealed class PendulumSamCache(
     /// </summary>
     public async Task<SamVideoArtifact> RunOnceAsync(
         string studyId, string role, SamVideoRunRequest request,
-        CancellationToken ct)
+        CancellationToken ct, string? oneShotMetaToken = null)
     {
         ArgumentNullException.ThrowIfNull(request);
+        // Validate before touching attempt markers or reserving any budget.
+        // A one-shot token never changes server permission flags and is
+        // never included in any persistent receipt or progress event.
+        if (oneShotMetaToken is not null &&
+            !SamManualApiTokenPolicy.Accepts(oneShotMetaToken))
+            throw new ArgumentException("Invalid one-shot Meta API token.");
         await gate.WaitAsync(ct);
         try
         {
@@ -347,7 +353,7 @@ public sealed class PendulumSamCache(
             {
                 // The ONLY external media transfer/inference path.
                 result=await transport.UploadAndSegmentAsync(
-                    submittedPath,Prompt,RecordProgress,ct);
+                    submittedPath,Prompt,RecordProgress,ct,oneShotMetaToken);
             }
             catch(Exception ex)
             {

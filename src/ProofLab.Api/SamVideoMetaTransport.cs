@@ -25,7 +25,8 @@ public sealed class SamVideoMetaTransport(
 
     public async Task<SamApiCompletedResult> UploadAndSegmentAsync(
         string originalPath, string concept,
-        Func<SamVideoSseProgress, ValueTask>? progress, CancellationToken ct)
+        Func<SamVideoSseProgress, ValueTask>? progress, CancellationToken ct,
+        string? oneShotMetaToken = null)
     {
         if (concept != PendulumSamCache.Prompt)
             throw new ArgumentException("Only curated SAM prompt is allowed.");
@@ -38,9 +39,15 @@ public sealed class SamVideoMetaTransport(
         operationDeadline.CancelAfter(TimeSpan.FromMinutes(30));
         ct = operationDeadline.Token;
 
-        var token = Environment.GetEnvironmentVariable("MODEL_API_KEY");
-        if (string.IsNullOrWhiteSpace(token))
-            throw new InvalidOperationException("Backend Meta API key missing.");
+        // The key in the single browser POST is used only for this authorized
+        // backend HTTPS request. The environment key is the normal fallback;
+        // neither value is put into logs, receipts, SQLite or source files.
+        var token = oneShotMetaToken ??
+            Environment.GetEnvironmentVariable("MODEL_API_KEY");
+        if (string.IsNullOrWhiteSpace(token) ||
+            (oneShotMetaToken is not null &&
+             !SamManualApiTokenPolicy.Accepts(oneShotMetaToken)))
+            throw new InvalidOperationException("Valid Meta key required.");
 
         var elapsed = Stopwatch.StartNew();
         async ValueTask Audit(string stage, int events = 0,

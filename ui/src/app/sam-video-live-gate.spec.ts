@@ -90,11 +90,19 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     await component.analyze();
     http.expectNone(url+'/analyze'); // spending consent missing
     component.paidConsent.set(true);
+    const input=fixture.nativeElement.querySelector('#sam-meta-token') as HTMLInputElement;
+    const fakeKey='LLM_1234567890123456_TEST_ABCDEF1234567890';
+    input.value=fakeKey;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
     const notification=jasmine.createSpy('cacheUpdated');
     component.cacheUpdated.subscribe(notification);
     const submit=component.analyze();
-    const request=http.expectOne(url+'/analyze');
+    const request=http.expectOne(url+'/manual-one-shot');
     expect(request.request.method).toBe('POST');
+    expect(request.request.headers.get('X-ProofLab-Manual-Action')).toBe('sam-one-shot');
+    expect(request.request.body.modelApiToken).toBe(fakeKey);
+    expect(input.value).toBe('');
     expect(request.request.body.videoSha256).toBe(sha);
     expect(request.request.body.maximumEstimatedCostUsd).toBe(0.5);
     expect(request.request.body.confirmPrivateVideoTransfer).toBeTrue();
@@ -105,7 +113,41 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     expect(component.transferConsent()).toBeFalse();
     expect(component.paidConsent()).toBeFalse();
     expect(component.canOfferPaidRun()).toBeFalse();
-    http.expectNone(url+'/analyze');
+    http.expectNone(url+'/manual-one-shot');
+    expect(component.tokenEntered()).toBeFalse();
+    expect(localStorage.getItem('sam-meta-token')).toBeNull();
+    http.verify();fixture.destroy();
+  });
+
+  it('requires an extra explicit owner confirmation for the ONE reconciled retry',async()=>{
+    const {fixture,component,http}=setup();
+    const check=component.check();
+    http.expectOne(url+'/status')
+      .flush(state('PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION',false));
+    await Promise.resolve();
+    http.expectOne(url+'/preflight').flush(preflight);
+    await Promise.resolve();
+    http.expectOne('http://127.0.0.1:5391/api/meta/readiness')
+      .flush(readiness(true));
+    await check;fixture.detectChanges();
+    expect(component.canOfferPaidRun()).toBeTrue();
+    const input=fixture.nativeElement.querySelector('#sam-meta-token') as HTMLInputElement;
+    input.value='LLM_1234567890123456_BBBBBBBBBBBBBBBBB';
+    input.dispatchEvent(new Event('input'));
+    component.transferConsent.set(true);
+    component.paidConsent.set(true);
+    await component.analyze();
+    http.expectNone(url+'/manual-one-shot');
+    component.retryConsent.set(true);
+    const pending=component.analyze();
+    const req=http.expectOne(url+'/manual-one-shot');
+    expect(req.request.body.ownerApprovesOneReconciledRetry).toBeTrue();
+    expect(req.request.body.previousAttemptBillingEvidence)
+      .toContain('OWNER_APPROVED_ONE_MORE_SAM_ATTEMPT');
+    expect(req.request.body.modelApiToken).toBe('LLM_1234567890123456_BBBBBBBBBBBBBBBBB');
+    req.flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
+    await pending;
+    expect(input.value).toBe('');
     http.verify();fixture.destroy();
   });
 });

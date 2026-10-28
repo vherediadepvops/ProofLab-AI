@@ -173,7 +173,8 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(component.session()?.baseline?.originalFilename).toBe('50CM_1.MOV');
     expect(root.querySelectorAll('video').length).toBe(1);
     expect(root.querySelectorAll('canvas').length).toBe(3);
-    expect(root.querySelectorAll('input[type=file]').length).toBe(0);
+    expect(root.querySelectorAll('.upload-strip input[type=file]').length).toBe(0);
+// The offline SAM JSON inspector has its own separate optional file input.
     expect(root.textContent).toContain('He revisado el video');
     http.expectNone(req=>req.url.includes('/api/meta/'));
     verifyHttp(http);
@@ -239,6 +240,12 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     fixture.detectChanges();
     const player=root.querySelector('app-pendulum-master-player');
     expect(player).not.toBeNull();
+    const manual=root.querySelector('app-sam-video-replay');
+    expect(manual).not.toBeNull();
+    expect(manual?.querySelector('input[type=password]')).not.toBeNull();
+    expect((manual!.compareDocumentPosition(player!) &
+      Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy(); // manual controls above video
+    expect(root.textContent).toContain('Token de Meta Model API');
     expect(root.textContent).toContain('Cuatro perspectivas sincronizadas');
     expect(root.querySelectorAll('.view-panel').length).toBe(4);
     expect(root.querySelector('[data-view="combined"]')?.classList.contains('is-primary')).toBeTrue();

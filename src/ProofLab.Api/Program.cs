@@ -486,6 +486,46 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/sam/{role}/analyze",
     catch(HttpRequestException ex){return MetaSafeDiagnostics.ProviderFailure(ex,"sam-3.1");}
     catch(FormatException){return Results.Problem("Unexpected or incomplete SAM provider output.",statusCode:502);}
 });
+// Owner-facing one-shot token entry. It is NOT a payment-gate override.
+// The browser password field is sent once to this loopback-only backend
+// for an already-authorized process; the token is never persisted or logged.
+// A browser-supplied key alone cannot enable Meta:AllowPaidRequests.
+app.MapPost("/api/science/director/pendulum/sessions/{id}/sam/{role}/manual-one-shot",
+    async (string id,string role,SamManualOneShotRequest input,
+        PendulumSamCache sam,MetaLiveAccess meta,HttpContext context,
+        CancellationToken ct) =>
+{
+    var remote=context.Connection.RemoteIpAddress;
+    var host=context.Request.Host.Host;
+    var origin=context.Request.Headers.Origin.ToString();
+    if(remote is null || !System.Net.IPAddress.IsLoopback(remote) ||
+       (host!="127.0.0.1" && host!="localhost") ||
+       (origin!="http://127.0.0.1:4300" &&
+        origin!="http://localhost:4300") ||
+       context.Request.Headers["X-ProofLab-Manual-Action"]!="sam-one-shot")
+        return Results.StatusCode(403);
+    context.Response.Headers.CacheControl="no-store";
+    context.Response.Headers.Pragma="no-cache";
+    if(context.Request.ContentLength is > 4096)
+        return Results.BadRequest(new{error="One-shot request exceeded limit."});
+    if(!SamManualApiTokenPolicy.Accepts(input.ModelApiToken))
+        return Results.BadRequest(new{error="Invalid Meta key format. Key not stored."});
+    // All original credit/consent, process budget and previous-attempt
+    // locks remain mandatory; never set config switches here.
+    if(!meta.Status().LiveCallsPermitted)
+        return Results.Conflict(new{error="Backend paid-access gates remain disabled."});
+    try {
+        var result=await sam.RunOnceAsync(id,role,
+            input.ToSafeRunRequest(),ct,input.ModelApiToken);
+        return Results.Ok(result.State);
+    }
+    catch(ArgumentException){return Results.BadRequest(new{error="Invalid local SAM request."});}
+    catch(FileNotFoundException){return Results.NotFound(new{error="Original video unavailable."});}
+    catch(InvalidDataException){return Results.Conflict(new{error="Video or evidence integrity mismatch."});}
+    catch(InvalidOperationException){return Results.Conflict(new{error="Manual attempt blocked by safety gates or prior attempt."});}
+    catch(HttpRequestException ex){return MetaSafeDiagnostics.ProviderFailure(ex,"sam-3.1");}
+    catch(FormatException){return Results.Problem("Incomplete or malformed provider output.",statusCode:502);}
+});
 // This is private browser review media. Real SAM uses the SHA-checked original.
 app.MapGet("/api/science/director/pendulum/sessions/{id}/poster/{role}",
     async(string id,string role,PendulumDirectorWorkflow director,CancellationToken ct) =>

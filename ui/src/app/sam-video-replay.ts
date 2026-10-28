@@ -1,5 +1,6 @@
 import {
-  Component, OnChanges, SimpleChanges, inject, input, output, signal
+  Component, ElementRef, OnChanges, SimpleChanges, ViewChild,
+  inject, input, output, signal
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -41,11 +42,33 @@ interface SamReadiness {
 
       @if(studyId() && videoSha256()) {
         <div class="sam-actions">
+          <label class="sam-api-selector">
+            {{es?'API local autorizada (solo esta PC)':
+              'Authorized local API (this computer only)'}}
+            <select [value]="localApiPort()" (change)="selectLocalPort($event)"
+              [disabled]="sending()">
+              <option value="5391">5391 · {{es?'Principal (pagos desactivados)':'Main (paid requests off)'}}</option>
+              <option value="5393">5393 · {{es?'Pruebas manuales':'Manual tests'}}</option>
+              <option value="5398">5398 · {{es?'Sesión temporal autorizada':'Authorized temporary session'}}</option>
+            </select>
+          </label>
           <button type="button" (click)="voidCheck()" [disabled]="checking() || sending()">
-            {{es?'Comprobar caché, fotogramas y saldo (sin costo)':
-              'Check cache, frames and authorization (free)'}}
+            {{es?'Comprobar caché, fotogramas y autorización (sin costo)':
+              'Check cache, frames and permission (no cost)'}}
           </button>
           @if(checking()) {<span role="status">{{es?'Comprobando sin cobro…':'Checking without charge…'}}</span>}
+          <div class="sam-key-field">
+            <label for="sam-meta-token">{{es?'Token de Meta Model API (uso único)':
+              'Meta Model API key (single use)'}}</label>
+            <input #metaTokenInput id="sam-meta-token"
+              type="password" autocomplete="off" autocapitalize="off"
+              autocorrect="off" spellcheck="false" maxlength="1024"
+              placeholder="LLM_…" (input)="onTokenInput($event)"
+              [disabled]="sending()" aria-describedby="sam-token-privacy"/>
+            <p id="sam-token-privacy" class="sam-footnote">{{es
+              ? 'La clave solo se enviará a la API .NET local en la ejecución manual, y se borrará del campo al pulsar. No se guardará en SQLite, GitHub ni logs. Requiere servidor previamente autorizado; pegarla NO habilita cobros.'
+              : 'Only sent once to the local .NET API on manual execution and cleared from the field. Never saved to SQLite, GitHub or logs. Requires an already-authorized backend; pasting alone does NOT enable billing.'}}</p>
+          </div>
           @if(cacheStatus(); as s) {
             <p>{{es?'Estado':'Status'}}: <strong>{{s.status}}</strong></p>
             @if(s.status.startsWith('CACHED_META_')) {
@@ -58,8 +81,8 @@ interface SamReadiness {
             }
             @if(s.status.includes('RECONCILIATION')) {
               <p class="sam-caution">{{es
-                ? 'Hubo un intento previo posiblemente facturado. Debe revisarse antes de repetir; el sistema NO reintentará automáticamente.'
-                : 'A previous attempt may have been billed. Reconcile first; NO automatic retry.'}}</p>
+                ? 'Existe un intento previo posiblemente facturado. Una segunda llamada necesita reconocimiento explícito; nunca habrá reintento automático.'
+                : 'A prior attempt may have been billed. A second call requires separate explicit reconciliation; no automatic retry.'}}</p>
             }
           }
           @if(preflight(); as pf) {
@@ -83,13 +106,25 @@ interface SamReadiness {
                 (change)="transferConsent.set($any($event.target).checked)"/>
                 {{es?'Autorizo enviar este video privado a Meta para SAM':
                   'I authorize transferring this private video to Meta for SAM'}}</label>
-              <label><input type="checkbox" [checked]="paidConsent()"
-                (change)="paidConsent.set($any($event.target).checked)"/>
-                {{es?'Confirmo UNA solicitud facturable, máximo estimado US$0,50':
-                  'I confirm ONE billable request, maximum estimated US$0.50'}}</label>
+              @if(cacheStatus()?.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION') {
+                <label><input type="checkbox" [checked]="retryConsent()"
+                  (change)="retryConsent.set($any($event.target).checked)"/>
+                  {{es?'Revisé la caída anterior (~US$0,37). Autorizo exactamente UN segundo intento, conservando el historial.':
+                    'I reviewed the previous failed attempt (~US$0.37). I authorize exactly ONE additional run, preserving the history.'}}</label>
+              }
+              <button type="button" class="sam-approve" (click)="paidConsent.set(true)"
+                [disabled]="sending() || paidConsent()">
+                {{paidConsent()
+                  ? (es?'Créditos de Meta confirmados para esta ejecución':'Meta credits approved for this attempt')
+                  : (es?'Confirmar uso de créditos Meta (hasta US$0,50 estimados)':
+                    'Confirm Meta credit usage (up to US$0.50 estimated)')}}
+              </button>
               <button type="button" class="sam-submit" (click)="voidAnalyze()"
-                [disabled]="sending() || !transferConsent() || !paidConsent()">
-                {{es?'Analizar UNA VEZ con SAM 3.1':'Analyze ONCE with SAM 3.1'}}
+                [disabled]="sending() || !tokenEntered() || !transferConsent() ||
+                  !paidConsent() ||
+                  (cacheStatus()?.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION' &&
+                    !retryConsent())">
+                {{es?'Ejecutar UNA prueba manual con SAM 3.1':'Run ONE manual SAM 3.1 test'}}
               </button>
             </div>
           }
@@ -179,6 +214,17 @@ interface SamReadiness {
     .sam-file input{display:block;margin-top:8px;max-width:100%}
     .sam-actions{border:1px solid #375766;border-radius:8px;padding:12px;margin:12px 0}
     .sam-actions button{border:1px solid #74adba;border-radius:6px;background:#204251;color:white;padding:8px;cursor:pointer}
+    .sam-actions button:disabled{opacity:.53;cursor:not-allowed}
+    .sam-api-selector{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+      font-weight:600;font-size:.86rem;margin:8px 0}
+    .sam-api-selector select{padding:6px;border:1px solid #72899b;
+      background:#183040;color:white;border-radius:6px}
+    .sam-key-field{display:grid;gap:6px;margin:12px 0}
+    .sam-key-field label{font-weight:650;font-size:.86rem}
+    .sam-key-field input{display:block;max-width:600px;width:100%;padding:10px;
+      border:1px solid #72899b;border-radius:7px;background:#0e1820;color:#fff}
+    .sam-approve{margin:6px 0}
+    .sam-submit{font-weight:700}
     .sam-submit{margin-top:12px}
     .sam-consent{padding:12px;margin-top:8px;border:1px dashed #779;display:grid;gap:8px}
     .sam-consent label{font-size:.86rem}
@@ -193,7 +239,24 @@ interface SamReadiness {
 })
 export class SamVideoReplay implements OnChanges {
   private readonly http=inject(HttpClient,{optional:true});
-  private readonly base='http://127.0.0.1:5391/api/science/director/pendulum/sessions';
+  readonly localApiPort=signal<5391|5393|5398>(5391);
+  private get base():string {
+    return 'http://127.0.0.1:'+this.localApiPort()+
+      '/api/science/director/pendulum/sessions';
+  }
+  selectLocalPort(event:Event):void {
+    const p=Number((event.target as HTMLSelectElement).value);
+    if(p!==5391 && p!==5393 && p!==5398)return;
+    this.localApiPort.set(p);
+    this.serial++;
+    this.cacheStatus.set(null);
+    this.preflight.set(null);
+    this.readiness.set(null);
+    this.transferConsent.set(false);
+    this.paidConsent.set(false);
+    this.retryConsent.set(false);
+    this.clearToken();
+  }
   readonly studyId=input('');
   readonly videoRole=input<'baseline'|'followup'>('baseline');
   readonly language=input<'es'|'en'>('es');
@@ -204,6 +267,20 @@ export class SamVideoReplay implements OnChanges {
   readonly readiness=signal<SamReadiness|null>(null);
   readonly transferConsent=signal(false);
   readonly paidConsent=signal(false);
+  readonly retryConsent=signal(false);
+  readonly tokenEntered=signal(false);
+  @ViewChild('metaTokenInput') private metaTokenInput?:ElementRef<HTMLInputElement>;
+  private static readonly reconciledOnce =
+    'OWNER_APPROVED_ONE_MORE_SAM_ATTEMPT_2026_10_28_AFTER_CREDIT_DELTA_USD_0_37_USAGE_UNVERIFIED';
+
+  onTokenInput(event:Event):void {
+    // Store only presence, NEVER the bearer token in component state.
+    this.tokenEntered.set(!!(event.target as HTMLInputElement).value);
+  }
+  private clearToken():void {
+    if(this.metaTokenInput)this.metaTokenInput.nativeElement.value='';
+    this.tokenEntered.set(false);
+  }
   readonly checking=signal(false);
   readonly sending=signal(false);
   readonly result=signal<SamVideoEvidence|null>(null);
@@ -230,15 +307,20 @@ export class SamVideoReplay implements OnChanges {
   }
   canOfferPaidRun():boolean {
     const pf=this.preflight(),ready=this.readiness(),s=this.cacheStatus();
-    return !!pf && !!ready && !!s &&
-      s.status==='NOT_ANALYZED_WITH_SAM' &&
+    if(!pf || !ready || !s)return false;
+    // A genuine prior attempt can be reconciled ONCE by the owner.
+    // Do NOT use canRunLive for this case: the status endpoint correctly
+    // keeps this false to prohibit unapproved automatic retries.
+    const first=s.status==='NOT_ANALYZED_WITH_SAM' && s.canRunLive;
+    const singleRetry=s.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION';
+    return (first || singleRetry) &&
       s.sourceSha256===this.videoSha256() &&
       pf.sourceSha256===this.videoSha256() &&
       pf.supportsSingleCall &&
       pf.estimatedCostUsd>0 && pf.estimatedCostUsd<=0.50 &&
       ready.apiKeyConfigured && ready.liveCallsPermitted &&
       ready.creditsConfirmedByOwner && ready.ownerApprovedPaidRequests &&
-      ready.remainingRequests>0 && s.canRunLive;
+      ready.remainingRequests>0;
   }
   voidCheck():void {void this.check();}
   async check():Promise<void> {
@@ -248,6 +330,10 @@ export class SamVideoReplay implements OnChanges {
     this.error.set('');
     this.transferConsent.set(false);
     this.paidConsent.set(false);
+    this.retryConsent.set(false);
+    // The operator should check the authorized process BEFORE entering
+    // a secret. Clear any stale input when the verification changes.
+    this.clearToken();
     try {
       const status=await firstValueFrom(this.http.get<SamCacheStatus>(this.url()+'/status'));
       if(serial!==this.serial)return;
@@ -261,7 +347,8 @@ export class SamVideoReplay implements OnChanges {
       if(serial!==this.serial)return;
       this.preflight.set(pf);
       const access=await firstValueFrom(
-        this.http.get<SamReadiness>('http://127.0.0.1:5391/api/meta/readiness'));
+        this.http.get<SamReadiness>('http://127.0.0.1:'+
+          this.localApiPort()+'/api/meta/readiness'));
       if(serial!==this.serial)return;
       this.readiness.set(access);
     } catch(e) {
@@ -274,19 +361,32 @@ export class SamVideoReplay implements OnChanges {
   }
   voidAnalyze():void {void this.analyze();}
   async analyze():Promise<void> {
+    const isRetry=this.cacheStatus()?.status===
+      'PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION';
+    const tokenElement=this.metaTokenInput?.nativeElement;
     if(!this.http || this.sending() || !this.canOfferPaidRun() ||
-        !this.transferConsent() || !this.paidConsent())return;
+       !this.tokenEntered() || !tokenElement ||
+       !this.transferConsent() || !this.paidConsent() ||
+       (isRetry && !this.retryConsent()))return;
+    // Read the bearer key only inside the click callback. It is NEVER held
+    // in a signal, localStorage/sessionStorage or any app-side log.
+    const oneTimeToken=tokenElement.value.trim();
+    this.clearToken();
     const serial=++this.serial;
     this.sending.set(true);
     this.error.set('');
     try {
       const state=await firstValueFrom(this.http.post<SamCacheStatus>(
-        this.url()+'/analyze',{
+        this.url()+'/manual-one-shot',{
+          modelApiToken:oneTimeToken,
           videoSha256:this.videoSha256(),
           confirmPrivateVideoTransfer:true,
           confirmOneBillableSamCall:true,
-          maximumEstimatedCostUsd:0.50
-        }));
+          maximumEstimatedCostUsd:0.50,
+          ownerApprovesOneReconciledRetry:isRetry,
+          previousAttemptBillingEvidence:isRetry
+            ? SamVideoReplay.reconciledOnce : null
+        },{headers:{'X-ProofLab-Manual-Action':'sam-one-shot'}}));
       if(serial!==this.serial)return;
       this.cacheStatus.set(state);
       this.cacheUpdated.emit(); // master player re-reads provider cache
@@ -302,6 +402,8 @@ export class SamVideoReplay implements OnChanges {
         this.sending.set(false);
         this.transferConsent.set(false);
         this.paidConsent.set(false);
+        this.retryConsent.set(false);
+        this.clearToken();
       }
     }
   }
@@ -315,6 +417,8 @@ export class SamVideoReplay implements OnChanges {
     this.readiness.set(null);
     this.transferConsent.set(false);
     this.paidConsent.set(false);
+    this.retryConsent.set(false);
+    this.clearToken();
     this.error.set('');
     this.selectedIndex.set(0);
     this.loading.set(false);
