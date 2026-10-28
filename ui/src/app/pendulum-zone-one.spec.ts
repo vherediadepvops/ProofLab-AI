@@ -273,10 +273,10 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(player).not.toBeNull();
     const manual=root.querySelector('app-sam-video-replay');
     expect(manual).not.toBeNull();
-    expect(manual?.querySelector('input[type=password]')).not.toBeNull();
+    expect(manual?.querySelector('input[type=password]')).toBeNull();
     expect((manual!.compareDocumentPosition(player!) &
       Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy(); // manual controls above video
-    expect(root.textContent).toContain('Token de Meta Model API');
+    expect(root.textContent).toContain('Abrir configuración');
     expect(root.textContent).toContain('Cuatro perspectivas sincronizadas');
     expect(root.querySelectorAll('.view-panel').length).toBe(4);
     expect(root.querySelector('[data-view="combined"]')?.classList.contains('is-primary')).toBeTrue();

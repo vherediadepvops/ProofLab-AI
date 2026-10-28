@@ -56,58 +56,52 @@ describe('ProofLab Competition Research Lab', () => {
     return { app: fixture.componentInstance, root: fixture.nativeElement as HTMLElement, controller, fixture };
   }
 
-  it('opens Pendulum by default and hides unrelated navigation without deleting it', () => {
-    const standalone = TestBed.createComponent(App);
-    expect(standalone.componentInstance.workspace()).toBe('pendulum');
-    standalone.destroy();
-
-    const ctx = initialize(); // legacy math functionality remains testable
-    const links=Array.from(ctx.root.querySelectorAll(
-      'aside.sidebar button.nav')) as HTMLButtonElement[];
-    const visible=links.filter(link => !link.hasAttribute('hidden'));
-    expect(visible.length).toBe(1);
-    expect(visible[0].textContent).toContain('Péndulo');
-    expect(links.length).toBeGreaterThan(1); // code preserved
-    // Existing math probes intentionally remain active for hidden legacy tests.
-  });
-
-  it('uses the full browser width in Pendulum focus and hides the large hero', async () => {
+  it('opens Home with exactly three navigation entries and future video slots',()=>{
     const fixture=TestBed.createComponent(App);
     fixture.detectChanges();
-    const controller=TestBed.inject(HttpTestingController);
-    const requests=controller.match(() => true);
-    requests.forEach(req => {
-      if(req.request.url.includes('/api/math/problems') ||
-         req.request.url.includes('/api/math/conjectures')) {
-        req.flush([]);
-      } else if(req.request.url.includes('/api/math/status')) {
-        req.flush({leanAvailable:false,phase:'KNOWN_BENCHMARK_VERIFICATION'});
-      } else if(req.request.url.includes('/api/health')) {
-        req.flush({metaModelApiEnabled:false,appVersion:'2026.10.26-alpha'});
-      } else if(req.request.url.includes('/api/meta/readiness')) {
-        req.flush({liveCallsPermitted:false});
-      } else if(req.request.url.includes('/api/science/pendulum/mathematical-model')) {
-        req.flush({source:'DETERMINISTIC_NONLINEAR_THEORY',
-          baseline:{nonlinearPeriodSeconds:1.425},followUp:null});
-      } else {
-        req.flush({});
-      }
-    });
-    await fixture.whenStable();
-    fixture.detectChanges();
+    const http=TestBed.inject(HttpTestingController);
+    http.expectOne('http://127.0.0.1:5391/api/health').flush({metaModelApiEnabled:false});
     const root=fixture.nativeElement as HTMLElement;
-    const shell=root.querySelector('.shell.focus-shell');
-    const pane=root.querySelector('.workspace.focus-workspace') as HTMLElement;
-    expect(shell).not.toBeNull();
-    expect(root.querySelector('aside.sidebar')?.hasAttribute('hidden')).toBeTrue();
-    expect(root.querySelector('section.hero')?.hasAttribute('hidden')).toBeTrue();
-    expect(pane).not.toBeNull();
-    expect(root.querySelector('app-pendulum-zone-one')).not.toBeNull();
-    expect(root.querySelector('app-pendulum-director')).toBeNull();
-    expect(root.querySelector('details.technical-protocol')).toBeNull();
-    expect(getComputedStyle(pane).maxWidth).toBe('none');
-    controller.verify();
-    fixture.destroy();
+    expect(fixture.componentInstance.workspace()).toBe('home');
+    expect(Array.from(root.querySelectorAll('aside.sidebar .nav')).map(x=>x.textContent?.trim()))
+      .toEqual(['Inicio','Laboratorio','Configuración']);
+    expect(root.querySelectorAll('.guide-card').length).toBe(3);
+    expect(root.textContent).toContain('Próximamente');
+    expect(root.querySelector('app-pendulum-zone-one')).toBeNull();
+    expect(root.querySelector('input[type="password"]')?.closest('[hidden]')).not.toBeNull();
+    http.expectNone(r=>r.url.includes('/api/math'));
+    http.expectNone(r=>r.method==='POST');
+    http.verify();fixture.destroy();
+  });
+
+  it('keeps the laboratory instance and experiment when opening settings',async()=>{
+    const fixture=TestBed.createComponent(App);
+    fixture.detectChanges();
+    const http=TestBed.inject(HttpTestingController);
+    http.expectOne('http://127.0.0.1:5391/api/health').flush({metaModelApiEnabled:false});
+    fixture.componentInstance.openWorkspace('settings');fixture.detectChanges();
+    const token=fixture.nativeElement.querySelector('#settings-meta-token') as HTMLInputElement;
+    token.value='LLM_LOCAL_NAVIGATION_TEST_123456789012345';
+    token.dispatchEvent(new Event('input'));
+    (fixture.nativeElement.querySelector('app-workspace-settings form') as HTMLFormElement)
+      .dispatchEvent(new Event('submit',{cancelable:true}));
+    expect(fixture.componentInstance.connection.hasToken()).toBeTrue();
+    fixture.componentInstance.openWorkspace('pendulum');
+    fixture.detectChanges();
+    expect(fixture.componentInstance.connection.hasToken()).toBeTrue();
+    http.match(()=>true).forEach(req=>req.flush({source:'DETERMINISTIC_NONLINEAR_THEORY',
+      baseline:{nonlinearPeriodSeconds:1.425},followUp:null}));
+    await fixture.whenStable();fixture.detectChanges();
+    const first=fixture.nativeElement.querySelector('app-pendulum-zone-one');
+    expect(first).not.toBeNull();
+    fixture.componentInstance.openWorkspace('settings');fixture.detectChanges();
+    expect(first.closest('[hidden]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('app-workspace-settings').closest('[hidden]')).toBeNull();
+    fixture.componentInstance.openWorkspace('pendulum');fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-pendulum-zone-one')).toBe(first);
+    expect(first.closest('[hidden]')).toBeNull();
+    http.expectNone(r=>r.method==='POST');
+    http.verify();fixture.destroy();
   });
 
   it('shows competition edition and honest known-theorem notice', () => {

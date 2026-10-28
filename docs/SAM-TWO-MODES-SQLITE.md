@@ -9,7 +9,7 @@
 | **API Meta** (`api-meta`) | Requests a fresh SAM inference even when an earlier analysis exists. Never presents cache as a new execution. Requires explicit permission, credits and server admission; each execution keeps its own ID and history. |
 | **API Meta + cache** (`api-meta-cache`, default) | Looks up exact video/model/protocol/prompt identity in SQLite and verifies the archived files. A HIT retrieves evidence without a key, billing approval or Meta request. A MISS only offers a manual call when the server permits it. |
 
-The primary selector contains exactly these two options. Local ports are under **Advanced connection**, closed by default; 5391 remains the main port. Selecting a port or pasting a key does not enable billing.
+The primary selector contains exactly these two options. The key is entered in **Settings**; local ports are under its **Advanced connection** section, closed by default; 5391 remains the main port. Selecting a port or pasting a key does not enable billing.
 
 - `GET /api/science/director/pendulum/sessions/{id}/sam/{role}/status?mode=api-meta-cache` reads status. It also accepts `mode=api-meta`.
 - `POST .../sam/{role}/manual-one-shot` and `POST .../sam/{role}/analyze` accept `mode`; omission preserves cache mode. The UI uses the first endpoint with the existing manual action.
@@ -29,7 +29,7 @@ Identity includes original video SHA-256, `sam-3.1`, protocol `PROOFLAB_SAM_VIDE
 
 Private-video transfer, credits, billing approval, estimated cost limit, source SHA/frame/PTS and earlier-attempt checks remain in place. Server guards between processes prevent incompatible simultaneous requests; there are no automatic retries. Manual reconciliation of a possibly billed attempt still requires explicit acknowledgement. A failed new analysis returns `NEW_ANALYSIS_REQUIRES_MANUAL_RECONCILIATION` and does not enable the exceptional retry of the historical attempt.
 
-The key is read only on manual execution and cleared from the field; it is never persisted. Switching mode or port clears consent and invalidates older checks. Such changes are blocked during submission. The JSON inspector has an independent request generation and cannot leave status checks or submissions stuck.
+The key is configured in the **Settings** password field, which stays mounted across navigation. Only its availability is shared with Laboratory; its value is read and cleared on manual execution and never persisted. Read-only GET checks do not consume the key. Switching mode or port clears consent and invalidates older checks. Such changes are blocked during submission. The JSON inspector has an independent request generation and cannot leave status checks or submissions stuck.
 
 ## Local verification
 

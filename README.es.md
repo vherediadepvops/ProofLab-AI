@@ -9,6 +9,8 @@ predecir resultados y explicar diferencias entre la teoría y las observaciones.
 
 **Estado: alfa.** La prueba del propietario obtuvo **respuesta real `status: completed` de SAM 3.1** con caja y máscara codificada para una pelota sintética. El decodificador/overlay local de máscaras se verificó **con muestras sintéticas oficiales**, pero aún falta comprobar ese mismo resultado real en la nueva interfaz. La inferencia exitosa de Muse Spark sigue pendiente; no hay descubrimiento científico original.
 
+**Navegación:** Inicio contiene espacios para futuros videos explicativos; Laboratorio conserva el experimento de péndulo y sus cuatro vistas; Configuración reúne el token de uso único y la conexión local. Cambiar de sección conserva la investigación. El token permanece únicamente en el campo de contraseña durante la sesión y se borra al utilizarlo, cambiar de modo/conexión o recargar; no habilita pagos por sí mismo.
+
 ## Procedencia del código competitivo
 
 Este es un proyecto **nuevo**, independiente del prototipo privado anterior

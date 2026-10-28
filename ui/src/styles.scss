@@ -20,3 +20,44 @@ body{margin:0;background:#080b12;color:#ecf0f8;font-family:'Segoe UI',Arial,sans
   .shell.focus-shell .top.focus-top{height:54px;padding:0 13px}
   .shell.focus-shell .workspace.focus-workspace{padding:8px}
 }
+/* Shared dark laboratory surface; original experimental layouts stay intact. */
+app-root .studio-shell .laboratory-view {
+  .zone1-focus{background:#202022;border:0;color:#e8e8ef;box-shadow:none;padding:8px 0}
+  .focus-heading h1{color:#f0f0f5}
+  .focus-heading p,.focus-section-title p,.focus-note,.focus-disclaimer,.study-hint{color:#a0a4b1}
+  .focus-eyebrow{color:#829bb9}
+  .token-status{background:#1b2d25;color:#94c9ad;border-color:#375343}
+  .focus-config,.focus-video{background:#252529;border-color:#404048}
+  .focus-section-title h2,.parameter-grid label,.check-label,.followup-label{color:#d4d7e2}
+  .section-index,.length-hint{background:#233347;color:#a2c5e9}
+  .parameter-grid input,.followup-label input,.second-inline select{background:#19191c;border-color:#4a4d58;color:#e3e6ef}
+  .parameter-grid input:disabled,.followup-label input:disabled{background:#2d2e34;color:#8f95a5}
+  .config-bottom{border-color:#41414a}
+  .secondary-button{background:#25272e;border-color:#515969;color:#c5d8ef}
+  .primary-button,.file-action,.upload-strip-ready .file-action{background:#4199df;border-color:#4199df;color:#091c30}
+  .study-state{color:#a1afbd}
+  .trial-tabs{background:#191c23;border-color:#3b4655}
+  .trial-tabs button{color:#9eaabc}.trial-tabs button.current{background:#303e51;color:#d7e8fc;box-shadow:none}
+  .upload-strip,.next-trial-strip,.verification-strip,.placeholder-panel{background:#202125;border-color:#41454f}
+  .upload-strip strong,.placeholder-panel>span{color:#bacde2}.upload-strip p{color:#99a3b4}
+  .upload-strip-ready{background:#202c3a;border-color:#4b6785}
+  .next-trial-strip{color:#a8bad0}
+  .sam-stage3{background:#23272e;border-color:#46505e}
+  .sam-actions{border-color:#414c5c}
+  .master-studio{background:#1d1f24;border-color:#41454f;color:#d2d8e4}
+  .studio-heading h4{color:#d7e3f3}.studio-heading p,.view-meta,.rate-label,.timeline-meta{color:#a0aaba}
+  .eyebrow{color:#9ab4d5}
+  .proxy-label{background:#282c34;border-color:#424e61;color:#b4c7df}
+  .source-label{color:#91cfac}
+  .view-panel,.timeline,.kinematics-strip{background:#242830;border-color:#414b5c}
+  .view-panel.is-primary{border-color:#6589b2;box-shadow:none}
+  .view-title{color:#c5d4e8}
+  .view-index{background:#32435a;color:#c4dcf5}
+  .focus-action,.is-primary .focus-action,.frame-button,.zoom-action,.pivot-button,.pivot-cancel,.rate-label select{background:#273648;border-color:#53677f;color:#c7dff5}
+  .timecode,.kinematics-toolbar strong{color:#d3e4fa}.kinematics-toolbar span{color:#a0b1c6}
+  .measurement-group,.measurements>div{background:#202630;border-color:#3c4b60}
+  .measurements strong{color:#dce9f9}.measurements span,.group-caption,.vector-legend{color:#9bafc8}
+  .limitations,.pivot-hint,.science-provenance{background:#332e22;color:#cfbe94}
+  .focus-error,.player-error{background:#3d282a;color:#f1b8b8}
+  .loading-video{background:#22364a;color:#b6d4f0}
+}

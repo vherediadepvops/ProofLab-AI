@@ -1,9 +1,11 @@
 import {
-  Component, ElementRef, OnChanges, SimpleChanges, ViewChild,
+  Component, OnChanges, SimpleChanges,
   inject, input, output, signal
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { LabConnection } from './lab-connection';
 import {
   decodeSamVideoResponse, type SamVideoEvidence, type SamVideoFrame
 } from './sam-video-evidence';
@@ -57,34 +59,14 @@ interface SamReadiness {
               'Searches SQLite first. A HIT reuses verified evidence without a key or charge; a MISS requires manual permission to call Meta.')
             : (es?'Solicita un análisis nuevo. Una caché existente no se presenta como una nueva ejecución; requiere autorización manual y créditos.':
               'Requests a new analysis. Existing cache is never presented as a new run; manual permission and credits are required.')}}</p>
-          <details class="sam-connection">
-            <summary>{{es?'Conexión avanzada · API local':'Advanced connection · local API'}}</summary>
-            <label class="sam-api-selector">
-              {{es?'Puerto en esta PC':'Port on this computer'}}
-              <select [value]="localApiPort()" (change)="selectLocalPort($event)"
-                [disabled]="sending()">
-                <option value="5391">5391 · {{es?'Principal (pagos desactivados)':'Main (paid requests off)'}}</option>
-                <option value="5393">5393 · {{es?'Pruebas manuales':'Manual tests'}}</option>
-                <option value="5398">5398 · {{es?'Sesión temporal autorizada':'Authorized temporary session'}}</option>
-              </select>
-            </label>
-          </details>
           <button type="button" (click)="voidCheck()" [disabled]="checking() || sending()">
             {{es?'Comprobar caché, fotogramas y autorización (sin costo)':
               'Check cache, frames and permission (no cost)'}}
           </button>
           @if(checking()) {<span role="status">{{es?'Comprobando sin cobro…':'Checking without charge…'}}</span>}
-          <div class="sam-key-field">
-            <label for="sam-meta-token">{{es?'Token de Meta Model API (uso único)':
-              'Meta Model API key (single use)'}}</label>
-            <input #metaTokenInput id="sam-meta-token"
-              type="password" autocomplete="off" autocapitalize="off"
-              autocorrect="off" spellcheck="false" maxlength="1024"
-              placeholder="LLM_…" (input)="onTokenInput($event)"
-              [disabled]="sending()" aria-describedby="sam-token-privacy"/>
-            <p id="sam-token-privacy" class="sam-footnote">{{es
-              ? 'La clave solo se enviará a la API .NET local en la ejecución manual, y se borrará del campo al pulsar. No se guardará en SQLite, GitHub ni logs. Requiere servidor previamente autorizado; pegarla NO habilita cobros.'
-              : 'Only sent once to the local .NET API on manual execution and cleared from the field. Never saved to SQLite, GitHub or logs. Requires an already-authorized backend; pasting alone does NOT enable billing.'}}</p>
+          <div class="sam-settings-link">
+            <span>{{tokenEntered()?(es?'Token listo para un uso':'Key ready for one use'):(es?'Token en Configuración':'API key in Settings')}} · 127.0.0.1:{{localApiPort()}}</span>
+            <button type="button" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
           </div>
           @if(cacheStatus(); as s) {
             <p>{{es?'Estado':'Status'}}: <strong>{{s.status}}</strong></p>
@@ -242,10 +224,7 @@ interface SamReadiness {
       font-weight:600;font-size:.86rem;margin:8px 0}
     .sam-api-selector select{padding:6px;border:1px solid #72899b;
       background:#183040;color:white;border-radius:6px}
-    .sam-key-field{display:grid;gap:6px;margin:12px 0}
-    .sam-key-field label{font-weight:650;font-size:.86rem}
-    .sam-key-field input{display:block;max-width:600px;width:100%;padding:10px;
-      border:1px solid #72899b;border-radius:7px;background:#0e1820;color:#fff}
+    .sam-settings-link{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:14px 0;font-size:12px;color:#acbecd}
     .sam-approve{margin:6px 0}
     .sam-submit{font-weight:700}
     .sam-submit{margin-top:12px}
@@ -263,7 +242,9 @@ interface SamReadiness {
 })
 export class SamVideoReplay implements OnChanges {
   private readonly http=inject(HttpClient,{optional:true});
-  readonly localApiPort=signal<5391|5393|5398>(5391);
+  readonly connection=inject(LabConnection);
+  readonly localApiPort=this.connection.port;
+  constructor(){this.connection.changed.pipe(takeUntilDestroyed()).subscribe(()=>this.resetServerCheck());}
   readonly mode=signal<SamMode>('api-meta-cache');
   private get base():string {
     return 'http://127.0.0.1:'+this.localApiPort()+
@@ -273,13 +254,13 @@ export class SamVideoReplay implements OnChanges {
     const mode=(event.target as HTMLSelectElement).value;
     if(this.sending() || (mode!=='api-meta' && mode!=='api-meta-cache'))return;
     this.mode.set(mode);
+    this.connection.clearToken();
     this.resetServerCheck();
   }
   selectLocalPort(event:Event):void {
     const p=Number((event.target as HTMLSelectElement).value);
     if(this.sending() || (p!==5391 && p!==5393 && p!==5398))return;
-    this.localApiPort.set(p);
-    this.resetServerCheck();
+    this.connection.setPort(p);
   }
   private resetServerCheck():void {
     this.serial++;
@@ -291,7 +272,6 @@ export class SamVideoReplay implements OnChanges {
     this.transferConsent.set(false);
     this.paidConsent.set(false);
     this.retryConsent.set(false);
-    this.clearToken();
   }
   readonly studyId=input('');
   readonly videoRole=input<'baseline'|'followup'>('baseline');
@@ -304,19 +284,10 @@ export class SamVideoReplay implements OnChanges {
   readonly transferConsent=signal(false);
   readonly paidConsent=signal(false);
   readonly retryConsent=signal(false);
-  readonly tokenEntered=signal(false);
-  @ViewChild('metaTokenInput') private metaTokenInput?:ElementRef<HTMLInputElement>;
+  readonly tokenEntered=this.connection.hasToken;
   private static readonly reconciledOnce =
     'OWNER_APPROVED_ONE_MORE_SAM_ATTEMPT_2026_10_28_AFTER_CREDIT_DELTA_USD_0_37_USAGE_UNVERIFIED';
 
-  onTokenInput(event:Event):void {
-    // Store only presence, NEVER the bearer token in component state.
-    this.tokenEntered.set(!!(event.target as HTMLInputElement).value);
-  }
-  private clearToken():void {
-    if(this.metaTokenInput)this.metaTokenInput.nativeElement.value='';
-    this.tokenEntered.set(false);
-  }
   readonly checking=signal(false);
   readonly sending=signal(false);
   readonly result=signal<SamVideoEvidence|null>(null);
@@ -372,9 +343,7 @@ export class SamVideoReplay implements OnChanges {
     this.transferConsent.set(false);
     this.paidConsent.set(false);
     this.retryConsent.set(false);
-    // The operator should check the authorized process BEFORE entering
-    // a secret. Clear any stale input when the verification changes.
-    this.clearToken();
+    // A read-only check never consumes the key configured in Settings.
     try {
       const status=await firstValueFrom(this.http.get<SamCacheStatus>(
         this.url()+'/status?mode='+this.mode()));
@@ -406,15 +375,14 @@ export class SamVideoReplay implements OnChanges {
   async analyze():Promise<void> {
     const isRetry=this.cacheStatus()?.status===
       'PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION';
-    const tokenElement=this.metaTokenInput?.nativeElement;
     if(!this.http || this.checking() || this.sending() || !this.canOfferPaidRun() ||
-       !this.tokenEntered() || !tokenElement ||
+       !this.tokenEntered() || this.connection.busy() ||
        !this.transferConsent() || !this.paidConsent() ||
        (isRetry && !this.retryConsent()))return;
-    // Read the bearer key only inside the click callback. It is NEVER held
-    // in a signal, localStorage/sessionStorage or any app-side log.
-    const oneTimeToken=tokenElement.value.trim();
-    this.clearToken();
+    // Take and clear the Settings password field only on this authorized click.
+    const oneTimeToken=this.connection.takeToken();
+    if(!oneTimeToken)return;
+    this.connection.busy.set(true);
     const serial=++this.serial;
     this.sending.set(true);
     this.error.set('');
@@ -442,12 +410,12 @@ export class SamVideoReplay implements OnChanges {
         this.cacheStatus.set(null);
       }
     }finally{
+      this.connection.busy.set(false);
       if(serial===this.serial){
         this.sending.set(false);
         this.transferConsent.set(false);
         this.paidConsent.set(false);
         this.retryConsent.set(false);
-        this.clearToken();
       }
     }
   }
@@ -463,7 +431,6 @@ export class SamVideoReplay implements OnChanges {
     this.transferConsent.set(false);
     this.paidConsent.set(false);
     this.retryConsent.set(false);
-    this.clearToken();
     this.error.set('');
     this.selectedIndex.set(0);
     this.loading.set(false);

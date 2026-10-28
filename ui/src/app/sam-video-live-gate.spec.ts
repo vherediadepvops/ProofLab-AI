@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { SamVideoReplay } from './sam-video-replay';
+import { LabConnection } from './lab-connection';
 
 const sha='a'.repeat(64);
 const id='b'.repeat(32);
@@ -22,6 +23,12 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     fixture.componentRef.setInput('videoSha256',sha);
     fixture.detectChanges();
     const http=TestBed.inject(HttpTestingController);
+    const field=document.createElement('input');
+    field.type='password';
+    const connection=TestBed.inject(LabConnection);
+    connection.register(field);
+    field.addEventListener('input',()=>connection.confirmToken());
+    (fixture as any).settingsTokenField=field;
     return {fixture,component:fixture.componentInstance,http};
   }
   const state=(status='NOT_ANALYZED_WITH_SAM',allowed=false)=>({
@@ -98,7 +105,7 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     await component.analyze();
     http.expectNone(r=>r.method==='POST'); // spending consent missing
     component.paidConsent.set(true);
-    const input=fixture.nativeElement.querySelector('#sam-meta-token') as HTMLInputElement;
+    const input=(fixture as any).settingsTokenField as HTMLInputElement;
     const fakeKey='LLM_1234567890123456_TEST_ABCDEF1234567890';
     input.value=fakeKey;
     input.dispatchEvent(new Event('input'));
@@ -140,7 +147,7 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
       .flush(readiness(true));
     await check;fixture.detectChanges();
     expect(component.canOfferPaidRun()).toBeTrue();
-    const input=fixture.nativeElement.querySelector('#sam-meta-token') as HTMLInputElement;
+    const input=(fixture as any).settingsTokenField as HTMLInputElement;
     input.value='LLM_1234567890123456_BBBBBBBBBBBBBBBBB';
     input.dispatchEvent(new Event('input'));
     component.transferConsent.set(true);
@@ -163,7 +170,7 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     return {target:{value:mode}} as unknown as Event;
   }
   function enterToken(fixture:ReturnType<typeof setup>['fixture']):HTMLInputElement {
-    const input=fixture.nativeElement.querySelector('#sam-meta-token') as HTMLInputElement;
+    const input=(fixture as any).settingsTokenField as HTMLInputElement;
     input.value='LLM_SYNTHETIC_TEST_KEY_1234567890';
     input.dispatchEvent(new Event('input'));
     return input;
@@ -180,13 +187,15 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     await Promise.resolve();
   }
 
-  it('offers exactly two primary modes, defaults to cache and keeps connection advanced',()=>{
+  it('offers exactly two primary modes, defaults to cache and links to centralized settings',()=>{
     const {fixture,component,http}=setup();
     const select=fixture.nativeElement.querySelector('select.sam-mode') as HTMLSelectElement;
     expect(Array.from(select.options).map(o=>o.value)).toEqual([freshMode,cacheMode]);
     expect(select.value).toBe(cacheMode);
     expect(component.localApiPort()).toBe(5391);
-    expect(fixture.nativeElement.querySelector('details.sam-connection').open).toBeFalse();
+    expect(fixture.nativeElement.querySelector('details.sam-connection')).toBeNull();
+    expect(fixture.nativeElement.querySelector('input[type="password"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Abrir configuración');
     fixture.componentRef.setInput('language','en');
     fixture.detectChanges();
     expect(select.options[1].textContent).toContain('API Meta + cache');

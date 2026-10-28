@@ -1,44 +1,30 @@
-<div class="shell" [class.focus-shell]="workspace() === 'pendulum'">
-  <aside class="sidebar" [hidden]="workspace() === 'pendulum'">
-    <div class="brand"><div class="brand-icon">◈</div>
-      <div><strong>ProofLab AI</strong><small>EXPERIMENTAL INTELLIGENCE</small></div>
-    </div>
-    <div class="aside-label">{{words().workspace}}</div>
-    <button type="button" class="nav" hidden [class.active]="workspace() === 'math'" (click)="workspace.set('math')">∑ <span>{{words().sidebarMath}}</span></button>
-    <button type="button" class="nav" hidden [class.active]="workspace() === 'physics'" (click)="workspace.set('physics')">◎ <span>{{words().sidebarPhysics}}</span></button>
-    <button type="button" class="nav" [class.active]="workspace() === 'pendulum'" (click)="workspace.set('pendulum')">◉ <span>{{words().sidebarPendulum}}</span></button>
-    <button type="button" class="nav" hidden [class.active]="workspace() === 'meta'" (click)="openMetaTests()">✦ <span>{{words().sidebarMetaTests}}</span></button>
-    <div class="nav future" hidden>◫ <span>{{words().sidebarFuture}}</span></div>
-    <div class="aside-label second" hidden>{{words().tools}}</div>
-    <div class="meta-engine" hidden><i class="spark"></i><span><strong>Muse Spark 1.3</strong><small>{{metaAvailable() ? words().liveMeta : words().noMeta}}</small></span></div>
-    <div class="meta-engine" hidden><i class="sam"></i><span><strong>SAM 3.1</strong><small>{{metaAvailable() ? words().liveMeta : words().noMeta}}</small></span></div>
-    <div class="side-foot">
-      <span class="status-dot"></span> {{words().competition}}
-      <p>Meta Global AI Developer Hackathon</p>
-      <b>26 OCT 2026</b>
-    </div>
+<div class="shell studio-shell">
+  <aside class="sidebar">
+    <a class="brand" href="#home" (click)="$event.preventDefault(); openWorkspace('home')" aria-label="ProofLab AI">
+      <span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 28 28"><path d="M11 4v8L5 22a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2l-6-10V4M9 4h10M8 18h12"/><circle cx="13" cy="20" r="1"/></svg></span>
+      <div><strong>ProofLab AI</strong><small>SCIENTIFIC WORKSPACE</small></div>
+    </a>
+    <nav [attr.aria-label]="language()==='es'?'Navegación principal':'Main navigation'">
+      <button type="button" class="nav" [class.active]="workspace()==='home'" [attr.aria-current]="workspace()==='home'?'page':null" (click)="openWorkspace('home')">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-8H9v8H4a1 1 0 0 1-1-1Z"/></svg><span>{{language()==='es'?'Inicio':'Home'}}</span>
+      </button>
+      <button type="button" class="nav" [class.active]="workspace()==='pendulum'" [attr.aria-current]="workspace()==='pendulum'?'page':null" (click)="openWorkspace('pendulum')">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v7L4 20a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1l-6-10V3M7 16h10"/></svg><span>{{language()==='es'?'Laboratorio':'Laboratory'}}</span>
+      </button>
+      <button type="button" class="nav" [class.active]="workspace()==='settings'" [attr.aria-current]="workspace()==='settings'?'page':null" (click)="openWorkspace('settings')">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.6 2.3-2 .9-2.2-.7L2 9l1.7 1.6v2.8L2 15l2.2 3.5 2.2-.7 2 .9L9 21h6l.6-2.3 2-.9 2.2.7L22 15l-1.7-1.6v-2.8L22 9l-2.2-3.5-2.2.7-2-.9L15 3Z"/><circle cx="12" cy="12" r="3"/></svg><span>{{language()==='es'?'Configuración':'Settings'}}</span>
+      </button>
+    </nav>
+    <div class="side-foot"><span class="status-dot"></span>{{language()==='es'?'Espacio de investigación':'Research workspace'}}<p>Meta Global AI Developer<br>Hackathon 2026</p></div>
   </aside>
-
   <main class="content">
-    <header class="top" [class.focus-top]="workspace() === 'pendulum'">
-      <div class="focus-brand">
-        @if(workspace() === 'pendulum') {
-          <span class="focus-brand-mark">◈</span>
-          <strong>ProofLab AI</strong>
-          <span class="focus-brand-divider">/</span>
-          <span>{{language() === 'es' ? 'Péndulo' : 'Pendulum'}}</span>
-        } @else {
-          <span class="muted">{{words().topArea}}</span><span class="crumb">/</span><strong>{{words().topWorkspace}}</strong>
-        }
-      </div>
+    <header class="top studio-top">
+      <div class="studio-breadcrumb"><span>ProofLab AI</span><span class="crumb">/</span><strong>{{pageTitle()}}</strong></div>
       <div class="top-actions">
-        <span class="no-tokens" [hidden]="workspace() === 'pendulum'">{{metaAvailable() ? words().topActive : words().topOffline}}</span>
-        <div class="languages"><button [class.on]="language() === 'es'" (click)="setLanguage('es')">ES</button>
-          <button [class.on]="language() === 'en'" (click)="setLanguage('en')">EN</button></div>
+        <div class="languages" [attr.aria-label]="language()==='es'?'Idioma':'Language'"><button type="button" [class.on]="language()==='es'" [attr.aria-pressed]="language()==='es'" (click)="setLanguage('es')">ES</button><button type="button" [class.on]="language()==='en'" [attr.aria-pressed]="language()==='en'" (click)="setLanguage('en')">EN</button></div>
       </div>
     </header>
-
-    <section class="hero" [hidden]="workspace() === 'pendulum'">
+    <section class="hero" [hidden]="workspace() === 'pendulum' || workspace() === 'home' || workspace() === 'settings'">
       <div class="micro">PUSH THE FRONTIER <span>—</span> 2026 GLOBAL HACKATHON</div>
       <h1>{{workspace() === 'math' ? words().mathTitle : workspace() === 'meta' ? words().metaTestTitle : workspace() === 'pendulum' ? (language() === 'es' ? 'Demo estrella · Péndulo' : 'Flagship Demo · Pendulum') : words().prepare}}</h1>
       <p>{{workspace() === 'math' ? words().mathIntro : workspace() === 'meta' ? words().metaTestIntro : workspace() === 'pendulum' ? (language() === 'es' ? 'Primero un video; después una propuesta y una nueva prueba. Director Muse y SAM todavía pendientes.' : 'One video first; then a new proposal and a follow-up. Muse Director and SAM are still pending.') : words().intro}}</p>
@@ -46,7 +32,32 @@
       <div class="glyph" aria-hidden="true">∿</div>
     </section>
 
-    <div class="workspace" [class.focus-workspace]="workspace() === 'pendulum'">
+    <div class="workspace" [class.lab-workspace]="workspace() === 'pendulum'">
+      @if(workspace()==='home') {
+        <section class="home-view">
+          <header class="home-heading">
+            <div><p class="eyebrow">PROOFLAB AI</p><h1>{{language()==='es'?'De un video a evidencia científica.':'From video to scientific evidence.'}}</h1><p>{{language()==='es'?'Observa, mide y contrasta tus ideas en un mismo laboratorio.':'Observe, measure and test your ideas in one laboratory.'}}</p></div>
+            <button type="button" class="studio-primary" (click)="openWorkspace('pendulum')">{{language()==='es'?'Abrir laboratorio':'Open laboratory'}}<span aria-hidden="true">↗</span></button>
+          </header>
+          <div class="home-section-heading"><h2>{{language()==='es'?'Conoce ProofLab':'Meet ProofLab'}}</h2><span>{{language()==='es'?'Guía en video':'Video guide'}}</span></div>
+          <article class="featured-video">
+            <div class="video-cover">
+              <svg class="pendulum-illustration" viewBox="0 0 700 260" aria-hidden="true"><path class="illustration-grid" d="M0 60h700M0 130h700M0 200h700M140 0v260M280 0v260M420 0v260M560 0v260"/><path class="illustration-arc" d="M205 190Q350 290 495 190"/><path class="illustration-rope faint" d="M350 40 230 207M350 40 470 207"/><path class="illustration-rope" d="M350 40 415 234"/><path class="illustration-support" d="M300 40h100"/><circle class="illustration-bob ghost" cx="230" cy="207" r="16"/><circle class="illustration-bob" cx="415" cy="234" r="18"/><circle class="illustration-pivot" cx="350" cy="40" r="5"/></svg>
+              <div class="video-pending"><span class="play-outline" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 5 11 7-11 7Z"/></svg></span><span>{{language()==='es'?'Video de presentación':'Introduction video'}}</span><small>{{language()==='es'?'Próximamente':'Coming soon'}}</small></div>
+              <span class="video-label">{{language()==='es'?'EXPLORA · EXPERIMENTA · COMPRUEBA':'EXPLORE · EXPERIMENT · VERIFY'}}</span>
+            </div>
+            <div class="video-caption"><div><h3>{{language()==='es'?'Así funciona nuestro laboratorio':'How our laboratory works'}}</h3><p>{{language()==='es'?'Aquí encontrarás una demostración del recorrido, desde el video hasta la evidencia.':'A walkthrough from your recording to the resulting evidence will be available here.'}}</p></div><span class="coming-badge">{{language()==='es'?'En preparación':'In preparation'}}</span></div>
+          </article>
+          <div class="home-section-heading guide-heading"><h2>{{language()==='es'?'Paso a paso':'Step by step'}}</h2></div>
+          <div class="guide-grid">
+            <article class="guide-card"><div class="guide-cover"><span class="guide-number">01</span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3Z"/></svg></div><div class="guide-copy"><span>{{language()==='es'?'PRÓXIMAMENTE':'COMING SOON'}}</span><h3>{{language()==='es'?'Prepara tu experimento':'Prepare your experiment'}}</h3><p>{{language()==='es'?'Configura el péndulo y carga tu video.':'Set up the pendulum and upload your video.'}}</p></div></article>
+            <article class="guide-card"><div class="guide-cover"><span class="guide-number">02</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3H3v4m14-4h4v4M3 17v4h4m14-4v4h-4"/><circle cx="12" cy="12" r="5"/></svg></div><div class="guide-copy"><span>{{language()==='es'?'PRÓXIMAMENTE':'COMING SOON'}}</span><h3>{{language()==='es'?'Observa el movimiento':'Observe the motion'}}</h3><p>{{language()==='es'?'Explora las máscaras y las vistas sincronizadas.':'Explore the masks and synchronized views.'}}</p></div></article>
+            <article class="guide-card"><div class="guide-cover"><span class="guide-number">03</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18h17M7 15l4-5 4 3 5-7"/></svg></div><div class="guide-copy"><span>{{language()==='es'?'PRÓXIMAMENTE':'COMING SOON'}}</span><h3>{{language()==='es'?'Contrasta la evidencia':'Compare the evidence'}}</h3><p>{{language()==='es'?'Revisa las mediciones y sus límites.':'Review the measurements and their limitations.'}}</p></div></article>
+          </div>
+        </section>
+      }
+      <section class="settings-view" [hidden]="workspace()!=='settings'"><app-workspace-settings [language]="language()" /></section>
+
       @if(workspace() === 'meta') {
         <div class="section-line">
           <div><small>{{words().metaTestHeading}}</small>
@@ -209,8 +220,8 @@
         @if(metaTestLastResult()) { <p class="provenance">{{metaTestLastResult()}}</p> }
         @if(metaTestError()) { <div class="alert" role="alert">{{metaTestError()}}</div> }
       }
-      @if(workspace() === 'pendulum') {
-        <app-pendulum-zone-one [language]="language()" />
+      @if(labOpened() || workspace() === 'pendulum') {
+        <section class="laboratory-view" [hidden]="workspace() !== 'pendulum'"><app-pendulum-zone-one [language]="language()" /></section>
       }
       @if(workspace() === 'math') {
         <app-research-workflow [language]="language()" />
@@ -333,7 +344,7 @@
       </div>
       }
       @if(error()) { <div class="alert">{{error()}}</div> }
-      <footer><span><i class="status-dot"></i>{{words().ready}}</span><span>{{words().footer}}</span></footer>
+      <footer [hidden]="workspace() === 'home' || workspace() === 'settings' || workspace() === 'pendulum'"><span><i class="status-dot"></i>{{words().ready}}</span><span>{{words().footer}}</span></footer>
     </div>
   </main>
 </div>

@@ -1,8 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { LabConnection } from './lab-connection';
+import { WorkspaceSettings } from './workspace-settings';
 import { ResearchWorkflow } from './research-workflow';
 import { PendulumZoneOne } from './pendulum-zone-one';
 import { decodeSamResponse, type SamVisualization } from './sam-visualization';
@@ -204,16 +207,19 @@ const COPY = {
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, ResearchWorkflow, PendulumZoneOne],
+  imports: [CommonModule, FormsModule, ResearchWorkflow, PendulumZoneOne, WorkspaceSettings],
   templateUrl: './app.html',
-  styleUrl: './app.scss'
+  styleUrls: ['./app.scss', './app-studio.scss']
 })
 export class App implements OnInit {
   private readonly http = inject(HttpClient);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  readonly connection = inject(LabConnection);
+  readonly labOpened = signal(false);
   private readonly api = 'http://127.0.0.1:5391';
   readonly language = signal<Language>('es');
   readonly words = computed(() => COPY[this.language()]);
-  readonly workspace = signal<'math' | 'physics' | 'meta' | 'pendulum'>('pendulum');
+  readonly workspace = signal<'home' | 'settings' | 'math' | 'physics' | 'meta' | 'pendulum'>('home');
   readonly mathProblems = signal<MathProblem[]>([]);
   readonly mathChoice = signal('NAT-ADD-COMM');
   readonly mathStrategy = signal('omega');
@@ -250,10 +256,27 @@ export class App implements OnInit {
   readonly samOfflineResponse = signal('');
   readonly metaTestLastResult = signal('');
 
+  constructor() {
+    this.connection.settingsRequested.pipe(takeUntilDestroyed()).subscribe(() => this.openWorkspace('settings'));
+  }
+  openWorkspace(page:'home'|'pendulum'|'settings'):void {
+    if(page==='pendulum')this.labOpened.set(true);
+    if(this.workspace()==='pendulum' && page!=='pendulum')
+      this.host.nativeElement.querySelectorAll('app-pendulum-zone-one video').forEach(video => (video as HTMLVideoElement).pause());
+    this.workspace.set(page);
+    window.scrollTo(0,0);
+  }
+  pageTitle():string {
+    const es=this.language()==='es';
+    return this.workspace()==='home'?(es?'Inicio':'Home'):
+      this.workspace()==='settings'?(es?'Configuración':'Settings'):
+      this.workspace()==='pendulum'?(es?'Laboratorio':'Laboratory'):this.words().topWorkspace;
+  }
   ngOnInit(): void {
     const saved = localStorage.getItem('prooflab-ui-language');
     if (saved === 'es' || saved === 'en') this.setLanguage(saved);
     document.documentElement.lang = this.language();
+    if(this.workspace()==='math') {
     this.http.get<MathProblem[]>(this.api + '/api/math/problems')
       .subscribe({ next: problems => this.mathProblems.set(problems),
         error: () => this.mathError.set(this.language() === 'es'
@@ -262,6 +285,7 @@ export class App implements OnInit {
     this.http.get<MathStatus>(this.api + '/api/math/status')
       .subscribe({ next: info => this.mathEngineAvailable.set(info.leanAvailable),
         error: () => this.mathEngineAvailable.set(false) });
+    }
     this.http.get<Health>(this.api + '/api/health')
       .subscribe({ next: response => this.metaAvailable.set(response.metaModelApiEnabled),
         error: () => this.error.set(this.language() === 'es'

@@ -9,6 +9,8 @@ help explain why data may agree or disagree with a scientific hypothesis.
 
 **Project status: alpha.** The owner obtained a **real SAM 3.1 `status: completed` response** with a bounding box and encoded mask for a synthetic red ball. Local mask decoder/overlay code is tested against **official synthetic sample data**; replay of that specific live response in the updated UI remains to be tested. Successful Muse Spark inference is still unverified; no original discovery is claimed.
 
+**Navigation:** Home reserves space for future walkthrough videos; Laboratory keeps the pendulum experiment and its four views; Settings contains the single-use API key and local connection. Switching sections preserves the study. The key stays only in the session password field and is cleared after use, a mode/connection change or reload; it never enables billing by itself.
+
 ## Competition provenance
 
 This is a **new project**, distinct from the pre-event private prototype at

@@ -9,7 +9,7 @@
 | **API Meta** (`api-meta`) | Solicita una inferencia SAM nueva, aunque exista un análisis previo. No presenta la caché como ejecución nueva. Requiere autorización explícita, créditos y admisión del servidor; cada ejecución conserva su propio ID e historial. |
 | **API Meta + caché** (`api-meta-cache`, predeterminado) | Consulta SQLite por identidad exacta de video/modelo/protocolo/prompt y verifica los archivos. Un HIT recupera evidencia sin token, permiso de cobro ni llamada a Meta. Un MISS solo ofrece una llamada manual cuando el servidor la permite. |
 
-El selector principal tiene exactamente estas dos opciones. La selección de puerto local queda en **Conexión avanzada**, cerrada por defecto; 5391 sigue siendo el puerto principal. Elegir un puerto o pegar una clave no habilita pagos.
+El selector principal tiene exactamente estas dos opciones. El token se introduce en **Configuración**; la selección de puerto local queda allí en **Conexión avanzada**, cerrada por defecto; 5391 sigue siendo el puerto principal. Elegir un puerto o pegar una clave no habilita pagos.
 
 - `GET /api/science/director/pendulum/sessions/{id}/sam/{role}/status?mode=api-meta-cache` consulta el estado. También acepta `mode=api-meta`.
 - `POST .../sam/{role}/manual-one-shot` y `POST .../sam/{role}/analyze` reciben `mode`; omitirlo conserva el modo caché. La UI utiliza el primero con la acción manual existente.
@@ -29,7 +29,7 @@ La identidad incluye video original SHA-256, `sam-3.1`, protocolo `PROOFLAB_SAM_
 
 Se conservan las comprobaciones de transferencia del video privado, créditos, autorización de cobro, límite estimado, SHA/fotogramas/PTS e intentos previos. El servidor mantiene guardias entre procesos para evitar solicitudes simultáneas incompatibles y no hace reintentos automáticos. La reconciliación manual de un intento posiblemente facturado sigue siendo explícita. Un fallo de análisis nuevo devuelve `NEW_ANALYSIS_REQUIRES_MANUAL_RECONCILIATION` y no habilita el reintento excepcional del intento histórico.
 
-La clave se lee solo al ejecutar manualmente y se borra del campo; no se persiste. Cambiar modo o puerto limpia consentimientos y descarta comprobaciones anteriores. Durante un envío se bloquea ese cambio. El inspector JSON tiene un contador independiente y no puede dejar la consulta o el envío bloqueados.
+La clave se configura en el campo de contraseña de **Configuración**, que permanece montado al navegar. Solo su disponibilidad se comparte con Laboratorio; el valor se lee y borra al ejecutar manualmente y nunca se persiste. Las comprobaciones GET no consumen el token. Cambiar modo o puerto limpia consentimientos y descarta comprobaciones anteriores. Durante un envío se bloquea ese cambio. El inspector JSON tiene un contador independiente y no puede dejar la consulta o el envío bloqueados.
 
 ## Verificación local
 
