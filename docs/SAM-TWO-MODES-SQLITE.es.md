@@ -14,8 +14,18 @@ El selector principal tiene exactamente estas dos opciones. El token se introduc
 - `GET /api/science/director/pendulum/sessions/{id}/sam/{role}/status?mode=api-meta-cache` consulta el estado. También acepta `mode=api-meta`.
 - `POST .../sam/{role}/manual-one-shot` y `POST .../sam/{role}/analyze` reciben `mode`; omitirlo conserva el modo caché. La UI utiliza el primero con la acción manual existente.
 - El estado añade `analysisId`, `mode`, `cacheHit` y `storage`. Un HIT conserva `CACHED_META_...`. El modo nuevo usa `READY_FOR_FRESH_META_ANALYSIS` cuando corresponde; el permiso final depende de los controles del servidor.
-- `GET .../sam/{role}/evidence` recupera la última evidencia verificada. La UI recarga el reproductor mediante GET tras un HIT o una ejecución completada; nunca inicia un POST como consecuencia de reproducir.
+- `GET .../sam/{role}/evidence` recupera la última evidencia verificada. La UI recupera la evidencia mediante GET después de pulsar Procesar o completar una inferencia autorizada; verificar el costo o reproducir nunca inicia un POST a Meta.
 - Una ejecución nueva completada devuelve su ID y `cacheHit=false`. La presencia de metadatos de un análisis anterior en el estado no demuestra que se haya ejecutado uno nuevo.
+
+## Costo y botón Procesar
+
+Al cargar/restaurar un video o cambiar modo/puerto, la pantalla consulta automáticamente estado y preflight mediante GET locales. Siempre muestra el costo estimado de enviar el video original a Meta; con una caché válida también indica **US$0 por esta operación**. La estimación no es una factura. Coincidir significa identidad exacta del archivo original, modelo y protocolo, no parecido visual entre imágenes.
+
+**Procesar** permanece visible. En modo caché, un HIT selecciona el análisis existente sin token ni llamada de pago; un MISS exige token, consentimientos y autorización del servidor para enviar una única solicitud. API Meta exige esos mismos controles y solicita un análisis nuevo. Los intentos previos pendientes de reconciliación siguen bloqueados.
+
+En Laboratorio, antes de pulsar Procesar solo hay una vista estática: reproducción, avance de fotogramas, barra temporal y confirmación de revisión están bloqueados. El resultado debe corresponder al SHA y al ID de análisis seleccionado antes de habilitar reproducción. Los gráficos proceden exclusivamente de máscaras SAM verificadas; no se sustituye un error por rastreo local. Un resultado auténtico sin detecciones permite reproducir, indicando que no hay máscaras y sin inventar gráficos. Cambiar video, prueba, modo o puerto invalida el resultado visible.
+
+**Validación de este flujo (28/10/2026):** 77 pruebas Angular focalizadas correctas y build de producción correcto; sin nuevas inferencias Meta ni CI. Las pruebas del POST son simuladas; la caché existente se comprueba localmente. Persiste la advertencia de presupuesto inicial (569,90 kB frente a 500 kB).
 
 ## Persistencia y procedencia
 

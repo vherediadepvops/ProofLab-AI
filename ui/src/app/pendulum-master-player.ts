@@ -1,6 +1,6 @@
 import {
   AfterViewInit, Component, ElementRef, OnChanges, OnDestroy, SimpleChanges, ViewChild,
-  inject, input, signal
+  inject, input, output, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
@@ -57,6 +57,15 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly videoRole = input<'baseline'|'followup'>('baseline');
   readonly initialAngleDegrees = input(15);
   readonly samRefreshNonce = input(0);
+  readonly processingRequired=input(false);
+  readonly processedAnalysisId=input('');
+  readonly samApiPort=input<5391|5393|5398>(5391);
+  readonly processingReady=output<boolean>();
+  readonly samVerified=signal(false);
+  playbackLocked():boolean {return this.processingRequired() && !this.samVerified();}
+  private setVerified(value:boolean):void {
+    this.samVerified.set(value);this.processingReady.emit(value);
+  }
   readonly pivotMode = signal(false);
   readonly pivotSaving = signal(false);
   readonly pivotError = signal('');
@@ -185,25 +194,23 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   ngOnChanges(changes:SimpleChanges):void{
-    const key=this.studyId()+'|'+this.videoRole()+'|'+this.videoSha256();
-    if(this.revisionKey===key) {
-      if(changes['samRefreshNonce'] &&
-         this.http && /^[a-f0-9]{32}$/i.test(this.studyId()) &&
-         /^[a-f0-9]{64}$/i.test(this.videoSha256()))
-        void this.loadSam(++this.samSerial);
-      return;
-    }
+    const key=this.studyId()+'|'+this.videoRole()+'|'+this.videoSha256()+'|'+
+      this.samApiPort()+'|'+this.processingRequired()+'|'+this.processedAnalysisId();
+    if(this.revisionKey===key && !changes['samRefreshNonce'])return;
     this.revisionKey=key;
     const serial=++this.revisionSerial;
-    this.pivotRevision.set(null);
-    this.currentKinematics.set(null);
-    this.pivotMode.set(false);
-    this.pivotError.set('');
-    this.pivotSaving.set(false);
-    this.samTrack.set(null);
-    this.samPathCache.clear();
-    this.samStatus.set('CHECKING_SAM_CACHE');
     const samSerial=++this.samSerial;
+    this.masterVideo?.nativeElement.pause();
+    this.setVerified(false);
+    this.pivotRevision.set(null);this.currentKinematics.set(null);
+    this.pivotMode.set(false);this.pivotError.set('');this.pivotSaving.set(false);
+    this.samTrack.set(null);this.samPathCache.clear();
+    if(this.processingRequired() && !this.processedAnalysisId()) {
+      this.samStatus.set('AWAITING_PROCESS');
+      this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
+      return;
+    }
+    this.samStatus.set('CHECKING_SAM_CACHE');
     if(this.http && /^[a-f0-9]{32}$/i.test(this.studyId()) &&
        /^[a-f0-9]{64}$/i.test(this.videoSha256())) {
       void this.loadPivot(serial);
@@ -220,9 +227,15 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
    */
   private async loadSam(serial:number):Promise<void>{
     try {
-      const endpoint=this.api+'/'+this.studyId()+'/sam/'+this.videoRole()+'/evidence';
+      const endpoint='http://127.0.0.1:'+this.samApiPort()+
+        '/api/science/director/pendulum/sessions/'+this.studyId()+'/sam/'+this.videoRole()+'/evidence';
       const archive=await firstValueFrom(
         this.http!.get<AuthenticatedSamVideoArchive>(endpoint));
+      if(serial!==this.samSerial || this.disposed)return;
+      if(this.processingRequired() && (
+        archive.state.analysisId!==this.processedAnalysisId() ||
+        archive.receipt.analysisId!==this.processedAnalysisId()))
+        throw new Error('SAM_ANALYSIS_CHANGED_PROCESS_AGAIN');
       const {decodeSamVideoResponse}=await import('./sam-video-evidence');
       const result=await decodeSamVideoResponse(archive.rawResponseJson);
       if(serial!==this.samSerial || this.disposed)return;
@@ -230,18 +243,24 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       // A valid empty observation is NOT a corrupt cache, and never
       // generates imaginary SAM masks, points, vectors or ghost trails.
       if(result.result==='NO_MATCH'){
-        this.samTrack.set(null);
+        if(archive.state.sourceSha256!==this.videoSha256() ||
+           archive.receipt.originalVideoSha256!==this.videoSha256() ||
+           archive.state.status!=='CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW' ||
+           archive.receipt.providerEvidenceStatus!=='COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW' ||
+           archive.receipt.model!=='sam-3.1' || archive.receipt.concept!=='metal pendulum bob')
+          throw new Error('SAM_NO_MATCH_PROVENANCE_INVALID');
+        this.samTrack.set(null);this.setVerified(true);
         this.samStatus.set('SAM_3_1_COMPLETED_NO_MATCH');
         this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
         return;
       }
       const track=verifiedSamPlaybackTrack(archive,result,this.videoSha256());
-      this.samTrack.set(track);
+      this.samTrack.set(track);this.setVerified(true);
       this.samStatus.set('SAM_3_1_CACHED_MASKS_PENDING_HUMAN_BOB_REVIEW');
       this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
     } catch(e:unknown) {
       if(serial!==this.samSerial || this.disposed)return;
-      this.samTrack.set(null);
+      this.samTrack.set(null);this.setVerified(false);
       if((e as {status?:number})?.status===404){
         this.samStatus.set('NO_SAM_ARCHIVE_LOCAL_LEGACY_ONLY');
       }else{
@@ -273,7 +292,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   beginPivotSelection():void{
-    if(!this.http || !/^[a-f0-9]{32}$/i.test(this.studyId()) ||
+    if(this.playbackLocked() || !this.http || !/^[a-f0-9]{32}$/i.test(this.studyId()) ||
        !/^[a-f0-9]{64}$/i.test(this.videoSha256()) ||
        (this.points()?.length??0)<5 || this.pivotSaving())return;
     this.masterVideo?.nativeElement.pause();
@@ -356,6 +375,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   onPlay():void{
+    if(this.playbackLocked()){this.masterVideo?.nativeElement.pause();return;}
     this.playing.set(true);
     this.startFrameLoop();
   }
@@ -372,6 +392,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   togglePlayback():void{
+    if(this.playbackLocked())return;
     const video=this.masterVideo?.nativeElement;
     if(!video)return;
     if(video.paused){
@@ -391,6 +412,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   stepFrame(step:-1|1):void{
+    if(this.playbackLocked())return;
     const video=this.masterVideo?.nativeElement;
     if(!video)return;
     video.pause();
@@ -402,6 +424,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   scrub(event:Event):void{
+    if(this.playbackLocked())return;
     const video=this.masterVideo?.nativeElement;
     if(!video)return;
     const input=event.target as HTMLInputElement;
@@ -575,12 +598,18 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
 
+    if(this.playbackLocked()){
+      this.currentKinematics.set(null);
+      this.overlayStatus.set(this.samStatus());
+      this.paintedViews.set(4);
+      return;
+    }
     const sam=this.samTrack();
     // SAM authenticated cache takes priority. If an archive is invalid or
     // ambiguous, do NOT silently replace its observations with local data.
-    const legacy=this.samStatus()==='NO_SAM_ARCHIVE_LOCAL_LEGACY_ONLY';
+    const legacy=!this.processingRequired() && this.samStatus()==='NO_SAM_ARCHIVE_LOCAL_LEGACY_ONLY';
     const samples=sam?.points ?? (legacy?(this.points()??[]):[]);
-    const revision=this.pivotRevision();
+    const revision=(sam || !this.processingRequired())?this.pivotRevision():null;
     const frame=revision ?
       (sam?samAngularFrameAt(sam,{
         pivotXpx:revision.analysis.pivotXpx,

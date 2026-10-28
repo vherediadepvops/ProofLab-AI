@@ -1,5 +1,5 @@
 import {
-  Component, OnChanges, SimpleChanges,
+  Component, OnChanges, OnDestroy, SimpleChanges,
   inject, input, output, signal
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
@@ -9,6 +9,11 @@ import { LabConnection } from './lab-connection';
 import {
   decodeSamVideoResponse, type SamVideoEvidence, type SamVideoFrame
 } from './sam-video-evidence';
+
+export interface SamProcessingSelection {
+  studyId:string; videoRole:'baseline'|'followup'; sourceSha256:string;
+  analysisId:string; port:5391|5393|5398;
+}
 
 type SamMode='api-meta'|'api-meta-cache';
 interface SamCacheStatus {
@@ -59,11 +64,29 @@ interface SamReadiness {
               'Searches SQLite first. A HIT reuses verified evidence without a key or charge; a MISS requires manual permission to call Meta.')
             : (es?'Solicita un análisis nuevo. Una caché existente no se presenta como una nueva ejecución; requiere autorización manual y créditos.':
               'Requests a new analysis. Existing cache is never presented as a new run; manual permission and credits are required.')}}</p>
-          <button type="button" (click)="voidCheck()" [disabled]="checking() || sending()">
-            {{es?'Comprobar caché, fotogramas y autorización (sin costo)':
-              'Check cache, frames and permission (no cost)'}}
+          <div class="sam-quote" aria-live="polite">
+            @if(preflight(); as pf) {
+              <div><span>{{es?'Enviar este video a Meta':'Send this video to Meta'}}</span>
+                <strong>US$ {{pf.estimatedCostUsd.toFixed(4)}}</strong>
+                <small>{{es?'Costo estimado':'Estimated cost'}} · {{pf.sourceFrames}} {{es?'fotogramas':'frames'}} · {{pf.durationSeconds.toFixed(2)}} s</small>
+              </div>
+              <div><span>{{es?'Costo de esta operación':'Cost of this operation'}}</span>
+                <strong>{{cachedResultAvailable()?'US$ 0.00':'US$ '+pf.estimatedCostUsd.toFixed(4)}}</strong>
+                <small>{{cachedResultAvailable()
+                  ? (es?'Caché válida del mismo video':'Valid cache for this exact video')
+                  : (es?'Nueva solicitud a Meta · estimado':'New Meta request · estimated')}}</small>
+              </div>
+            } @else {
+              <p>{{checking()?(es?'Calculando costo del video…':'Estimating video cost…'):
+                (es?'Costo aún no disponible. Actualiza la comprobación.':'Cost is unavailable. Refresh the check.')}}</p>
+            }
+          </div>
+          <p class="sam-footnote">{{es
+            ? 'La estimación usa los fotogramas originales; no es una factura. Comprobar el costo no envía el video a Meta.'
+            : 'The estimate uses source frames; it is not an invoice. Checking cost does not send video to Meta.'}}</p>
+          <button type="button" class="sam-refresh" (click)="voidCheck()" [disabled]="checking() || sending() || connection.busy()">
+            {{es?'Actualizar costo y disponibilidad':'Refresh cost and availability'}}
           </button>
-          @if(checking()) {<span role="status">{{es?'Comprobando sin cobro…':'Checking without charge…'}}</span>}
           <div class="sam-settings-link">
             <span>{{tokenEntered()?(es?'Token listo para un uso':'Key ready for one use'):(es?'Token en Configuración':'API key in Settings')}} · 127.0.0.1:{{localApiPort()}}</span>
             <button type="button" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
@@ -74,30 +97,18 @@ interface SamReadiness {
               {{s.cacheHit===true ? 'HIT' : s.cacheHit===false ? 'MISS' : (es?'Sin confirmar':'Unconfirmed')}}
               @if(s.analysisId) { · {{es?'Análisis':'Analysis'}}: {{s.analysisId}} }
             </p>
-            @if(s.status.startsWith('CACHED_META_')) {
-              <p class="sam-caution">{{s.cacheHit===false && s.mode==='api-meta'
-                ? (es?'Nuevo análisis SAM guardado. Reproducirlo no genera nuevas llamadas.':
-                  'New SAM analysis saved. Replaying does not call Meta again.')
-                : (es?'Resultado SAM guardado. Abrirlo o reproducirlo NO genera nuevas llamadas.':
-                  'Cached SAM result. Opening or replaying does NOT call Meta again.')}}</p>
-              <button type="button" (click)="cacheUpdated.emit()">
-                {{es?'Volver a cargar las vistas SAM':'Reload SAM views'}}
-              </button>
+            @if(cachedResultAvailable()) {
+              <p class="sam-caution">{{es
+                ? 'Este video tiene un resultado guardado válido. Pulsa Procesar para cargarlo sin enviar el video ni consumir créditos.'
+                : 'A valid saved result exists for this video. Press Process to load it without uploading or spending credits.'}}</p>
+            } @else if(s.status.startsWith('CACHED_META_')) {
+              <p>{{es?'Nuevo análisis SAM guardado.':'New SAM analysis saved.'}}</p>
             }
             @if(s.status.includes('RECONCILIATION')) {
               <p class="sam-caution">{{es
                 ? 'Existe un intento previo posiblemente facturado. Se requiere revisión manual antes de otra ejecución; nunca habrá reintento automático.'
                 : 'A prior attempt may have been billed. Manual review is required before another execution; no automatic retry.'}}</p>
             }
-          }
-          @if(preflight(); as pf) {
-            <p>{{pf.sourceFrames}} {{es?'fotogramas originales':'source frames'}} ·
-              {{pf.durationSeconds.toFixed(3)}} s ·
-              {{pf.codec}} · {{es?'Costo estimado':'Estimated cost'}}:
-              US$ {{pf.estimatedCostUsd.toFixed(4)}}</p>
-            <p class="sam-footnote">{{es
-              ? 'Timestamps originales comprobados. El precio se estima, no es el cargo real.'
-              : 'Original timestamps verified. The cost is estimated, not a final invoice.'}}</p>
           }
           @if(readiness(); as ready) {
             <p class="sam-footnote">{{es?'Acceso Meta':'Meta access'}}:
@@ -124,14 +135,23 @@ interface SamReadiness {
                   : (es?'Confirmar uso de créditos Meta (hasta US$0,50 estimados)':
                     'Confirm Meta credit usage (up to US$0.50 estimated)')}}
               </button>
-              <button type="button" class="sam-submit" (click)="voidAnalyze()"
-                [disabled]="sending() || !tokenEntered() || !transferConsent() ||
-                  !paidConsent() ||
-                  (cacheStatus()?.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION' &&
-                    !retryConsent())">
-                {{es?'Ejecutar UNA prueba manual con SAM 3.1':'Run ONE manual SAM 3.1 test'}}
-              </button>
+
             </div>
+          }
+          <div class="sam-process-row">
+            <button type="button" class="sam-submit" (click)="process()" [disabled]="!canProcess()">
+              {{sending()?(es?'Procesando…':'Processing…'):(es?'Procesar':'Process')}}
+            </button>
+            <span>{{cachedResultAvailable()
+              ? (es?'Recuperar resultado guardado · sin costo':'Load saved result · no cost')
+              : (es?'Enviar una solicitud a Meta':'Send one request to Meta')}}</span>
+          </div>
+          @if(!cachedResultAvailable() && !checking() && !sending()) {
+            <p class="sam-footnote">{{canOfferPaidRun()
+              ? (es?'Configura el token y confirma transferencia y créditos para habilitar Procesar.':
+                'Configure the key and confirm transfer and credits to enable Process.')
+              : (es?'Procesar está bloqueado: revisa autorización del servidor, créditos y estado del video.':
+                'Process is blocked: check server permission, credits and video status.')}}</p>
           }
           @if(sending()) {
             <p role="status">{{es
@@ -217,7 +237,7 @@ interface SamReadiness {
     .sam-stage3 p{line-height:1.45;font-size:.86rem}
     .sam-file{display:block;margin:12px 0}
     .sam-file input{display:block;margin-top:8px;max-width:100%}
-    .sam-actions{border:1px solid #375766;border-radius:8px;padding:12px;margin:12px 0}
+    .sam-actions{overflow-wrap:anywhere;border:1px solid #375766;border-radius:8px;padding:12px;margin:12px 0}
     .sam-actions button{border:1px solid #74adba;border-radius:6px;background:#204251;color:white;padding:8px;cursor:pointer}
     .sam-actions button:disabled{opacity:.53;cursor:not-allowed}
     .sam-api-selector{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
@@ -227,7 +247,13 @@ interface SamReadiness {
     .sam-settings-link{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:14px 0;font-size:12px;color:#acbecd}
     .sam-approve{margin:6px 0}
     .sam-submit{font-weight:700}
-    .sam-submit{margin-top:12px}
+    .sam-actions .sam-submit{min-width:170px;padding:12px 24px;background:#459ff0;border-color:#459ff0;color:#07131f;font-size:1rem}
+    .sam-process-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:18px}
+    .sam-process-row span{font-size:.82rem;color:#bacbdb}
+    .sam-quote{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:18px 0}
+    .sam-quote>div{display:grid;gap:7px;padding:18px;background:#181d25;border:1px solid #405368;border-radius:10px}
+    .sam-quote strong{font-size:1.7rem;color:#f4f8ff}.sam-quote small{color:#b9cadb}
+    @media(max-width:620px){.sam-quote{grid-template-columns:1fr}}
     .sam-consent{padding:12px;margin-top:8px;border:1px dashed #779;display:grid;gap:8px}
     .sam-consent label{font-size:.86rem}
     .sam-caution{color:#f4c875;font-weight:700}
@@ -240,11 +266,11 @@ interface SamReadiness {
     .sam-frame-caption,.sam-disclaimer{font-size:.8rem;color:#c2cdd9}
   `]
 })
-export class SamVideoReplay implements OnChanges {
+export class SamVideoReplay implements OnChanges, OnDestroy {
   private readonly http=inject(HttpClient,{optional:true});
   readonly connection=inject(LabConnection);
   readonly localApiPort=this.connection.port;
-  constructor(){this.connection.changed.pipe(takeUntilDestroyed()).subscribe(()=>this.resetServerCheck());}
+  constructor(){this.connection.changed.pipe(takeUntilDestroyed()).subscribe(()=>{this.resetServerCheck();this.scheduleCheck();});}
   readonly mode=signal<SamMode>('api-meta-cache');
   private get base():string {
     return 'http://127.0.0.1:'+this.localApiPort()+
@@ -256,6 +282,7 @@ export class SamVideoReplay implements OnChanges {
     this.mode.set(mode);
     this.connection.clearToken();
     this.resetServerCheck();
+    this.scheduleCheck();
   }
   selectLocalPort(event:Event):void {
     const p=Number((event.target as HTMLSelectElement).value);
@@ -264,6 +291,7 @@ export class SamVideoReplay implements OnChanges {
   }
   private resetServerCheck():void {
     this.serial++;
+    this.processingReset.emit();
     this.checking.set(false);
     this.error.set('');
     this.cacheStatus.set(null);
@@ -277,7 +305,49 @@ export class SamVideoReplay implements OnChanges {
   readonly videoRole=input<'baseline'|'followup'>('baseline');
   readonly language=input<'es'|'en'>('es');
   readonly videoSha256=input('');
-  readonly cacheUpdated=output<void>();
+  readonly autoCheck=input(true);
+  readonly cacheUpdated=output<SamProcessingSelection>();
+  readonly processingReset=output<void>();
+  private disposed=false;
+  private scheduleCheck():void {
+    const serial=this.serial;
+    if(!this.autoCheck())return;
+    queueMicrotask(()=>{
+      if(!this.disposed && serial===this.serial && this.studyId() && this.videoSha256())
+        void this.check();
+    });
+  }
+  ngOnDestroy():void {this.disposed=true;this.serial++;this.offlineSerial++;}
+  cachedResultAvailable():boolean {
+    const s=this.cacheStatus();
+    return this.mode()==='api-meta-cache' && !!s && s.cacheHit===true &&
+      s.status==='CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW' &&
+      s.sourceSha256===this.videoSha256() && !!s.analysisId;
+  }
+  canProcess():boolean {
+    if(this.checking() || this.sending() || this.connection.busy())return false;
+    return this.cachedResultAvailable() || (this.canOfferPaidRun() &&
+      this.tokenEntered() && this.transferConsent() && this.paidConsent() &&
+      (this.cacheStatus()?.status!=='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION' ||
+        this.retryConsent()));
+  }
+  private openResult(state:SamCacheStatus):void {
+    if(state.sourceSha256!==this.videoSha256() ||
+       state.status!=='CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW' ||
+       !state.analysisId || (this.mode()==='api-meta' && state.cacheHit!==false))
+      throw new Error('SAM_RESULT_DOES_NOT_MATCH_REQUEST');
+    this.cacheUpdated.emit({studyId:this.studyId(),videoRole:this.videoRole(),
+      sourceSha256:this.videoSha256(),analysisId:state.analysisId,port:this.localApiPort()});
+  }
+  async process():Promise<void> {
+    if(!this.canProcess())return;
+    if(this.cachedResultAvailable()) {
+      this.processingReset.emit();
+      this.openResult(this.cacheStatus()!);
+      return;
+    }
+    await this.analyze();
+  }
   readonly cacheStatus=signal<SamCacheStatus|null>(null);
   readonly preflight=signal<SamPreflight|null>(null);
   readonly readiness=signal<SamReadiness|null>(null);
@@ -335,6 +405,7 @@ export class SamVideoReplay implements OnChanges {
   async check():Promise<void> {
     if(!this.http || this.checking() || this.sending())return;
     const serial=++this.serial;
+    this.processingReset.emit();
     this.checking.set(true);
     this.error.set('');
     this.cacheStatus.set(null);
@@ -350,14 +421,13 @@ export class SamVideoReplay implements OnChanges {
       if(serial!==this.serial)return;
       if(status.sourceSha256!==this.videoSha256())throw new Error('VIDEO_SHA_MISMATCH');
       this.cacheStatus.set(status);
-      if(this.mode()==='api-meta-cache' && status.status.startsWith('CACHED_META_')){
-        this.preflight.set(null);this.readiness.set(null);
-        this.cacheUpdated.emit();
-        return;
-      }
       const pf=await firstValueFrom(this.http.get<SamPreflight>(this.url()+'/preflight'));
       if(serial!==this.serial)return;
+      if(pf.sourceSha256!==this.videoSha256() || !Number.isFinite(pf.estimatedCostUsd) ||
+         pf.estimatedCostUsd<=0 || !Number.isSafeInteger(pf.sourceFrames) || pf.sourceFrames<=0)
+        throw new Error('INVALID_VIDEO_QUOTE');
       this.preflight.set(pf);
+      if(this.cachedResultAvailable())return; // free reuse never depends on billing readiness
       const access=await firstValueFrom(
         this.http.get<SamReadiness>('http://127.0.0.1:'+
           this.localApiPort()+'/api/meta/readiness'));
@@ -382,6 +452,7 @@ export class SamVideoReplay implements OnChanges {
     // Take and clear the Settings password field only on this authorized click.
     const oneTimeToken=this.connection.takeToken();
     if(!oneTimeToken)return;
+    this.processingReset.emit();
     this.connection.busy.set(true);
     const serial=++this.serial;
     this.sending.set(true);
@@ -400,8 +471,8 @@ export class SamVideoReplay implements OnChanges {
             ? SamVideoReplay.reconciledOnce : null
         },{headers:{'X-ProofLab-Manual-Action':'sam-one-shot'}}));
       if(serial!==this.serial)return;
+      this.openResult(state); // player verifies this exact analysis before unlocking
       this.cacheStatus.set(state);
-      this.cacheUpdated.emit(); // master player re-reads provider cache
     }catch(e){
       if(serial===this.serial){
         this.error.set(this.es?
@@ -436,6 +507,7 @@ export class SamVideoReplay implements OnChanges {
     this.loading.set(false);
     this.checking.set(false);
     this.sending.set(false);
+    this.scheduleCheck();
   }
   async onFile(event:Event):Promise<void> {
     const control=event.target as HTMLInputElement;

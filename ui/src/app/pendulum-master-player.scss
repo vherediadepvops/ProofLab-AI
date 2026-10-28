@@ -61,3 +61,5 @@
 .color-velocity{color:#00a99a}.color-tangent{color:#d28823;margin-left:9px}.color-radial{color:#ad53c7;margin-left:9px}
 .science-provenance{font-size:10px;line-height:1.5;color:#836221;background:#fffaec;padding:8px;border-radius:6px;margin-top:9px}
 @media(max-width:850px){.kinematics-metrics{grid-template-columns:1fr}}
+.processing-notice{padding:14px 18px;border:1px solid #4a647c;border-radius:9px;background:#1d3041;color:#d8eaff;font-size:.9rem;line-height:1.5}
+.timeline button:disabled,.timeline select:disabled,.timeline input:disabled{opacity:.4;cursor:not-allowed}

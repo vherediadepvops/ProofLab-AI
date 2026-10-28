@@ -17,8 +17,9 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
       providers:[provideHttpClient(),provideHttpClientTesting()]
     }).compileComponents();
   });
-  function setup(){
+  function setup(autoCheck=false){
     const fixture=TestBed.createComponent(SamVideoReplay);
+    fixture.componentRef.setInput('autoCheck',autoCheck);
     fixture.componentRef.setInput('studyId',id);
     fixture.componentRef.setInput('videoSha256',sha);
     fixture.detectChanges();
@@ -73,23 +74,27 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     http.verify();fixture.destroy();
   });
 
-  it('a cache hit emits replay without checking billing or issuing a POST',async()=>{
-    const {fixture,component,http}=setup();
+  it('automatically quotes a cached video but waits for Process before opening results',async()=>{
+    const {fixture,component,http}=setup(true);
     const notification=jasmine.createSpy('cacheUpdated');
     component.cacheUpdated.subscribe(notification);
-    const task=component.check();
+    await Promise.resolve();
     http.expectOne(url+'/status?mode='+cacheMode)
       .flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await task;fixture.detectChanges();
-    expect(notification).toHaveBeenCalledTimes(1);
-    expect(fixture.nativeElement.textContent).toContain('HIT');
-    expect(fixture.nativeElement.textContent).toContain('analysis-test-001');
-    expect(component.tokenEntered()).toBeFalse();
+    await Promise.resolve();
+    http.expectOne(url+'/preflight').flush(preflight);
+    await fixture.whenStable();fixture.detectChanges();
+    expect(notification).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('0.3656');
+    expect(fixture.nativeElement.textContent).toContain('US$ 0.00');
+    expect(fixture.nativeElement.querySelector('.sam-submit').disabled).toBeFalse();
+    expect(component.preflight()?.sourceFrames).toBe(1828);
     expect(component.readiness()).toBeNull();
-    expect(component.preflight()).toBeNull();
-    expect(component.canOfferPaidRun()).toBeFalse();
-    http.expectNone(url+'/preflight');
-    http.expectNone(r=>r.method==='POST');
+    await component.process();
+    expect(notification).toHaveBeenCalledOnceWith({studyId:id,videoRole:'baseline',
+      sourceSha256:sha,analysisId:'analysis-test-001',port:5391});
+    expect(component.tokenEntered()).toBeFalse();
+    http.expectNone(r=>r.method==='POST' || r.url.endsWith('/readiness'));
     http.verify();fixture.destroy();
   });
 
@@ -317,6 +322,8 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     expect(component.checking()).toBeTrue();
     http.expectOne(url.replace(':5391',':5393')+'/status?mode='+cacheMode)
       .flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
+    await Promise.resolve();
+    http.expectOne(url.replace(':5391',':5393')+'/preflight').flush(preflight);
     await newCheck;
     expect(component.checking()).toBeFalse();
     http.verify();fixture.destroy();
@@ -330,6 +337,8 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     await component.onFile({target:offline} as unknown as Event);
     expect(component.checking()).toBeTrue();
     req.flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
+    await Promise.resolve();
+    http.expectOne(url+'/preflight').flush(preflight);
     await check;
     expect(component.checking()).toBeFalse();
     expect(component.cacheStatus()?.cacheHit).toBeTrue();
@@ -404,4 +413,48 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     http.expectNone(r=>r.method==='POST');
     http.verify();fixture.destroy();
   });
+  it('quotes a new upload automatically with GET only and exposes disabled Process while blocked',async()=>{
+    const {fixture,component,http}=setup(true);
+    await Promise.resolve();
+    await resolvePreflight(http,false);
+    await fixture.whenStable();fixture.detectChanges();
+    expect(component.preflight()?.estimatedCostUsd).toBe(.3656);
+    expect(fixture.nativeElement.querySelector('.sam-submit').textContent).toContain('Procesar');
+    expect(fixture.nativeElement.querySelector('.sam-submit').disabled).toBeTrue();
+    expect(fixture.nativeElement.textContent).toContain('US$ 0.3656');
+    http.expectNone(r=>r.method==='POST');http.verify();fixture.destroy();
+  });
+
+  it('refreshes the quote after a mode change but never reuses cache for fresh Meta mode',async()=>{
+    const {fixture,component,http}=setup(true);
+    await Promise.resolve();
+    http.expectOne(url+'/status?mode='+cacheMode)
+      .flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
+    await Promise.resolve();http.expectOne(url+'/preflight').flush(preflight);
+    await fixture.whenStable();
+    expect(component.cachedResultAvailable()).toBeTrue();
+    component.selectMode(modeEvent(freshMode));
+    await Promise.resolve();await resolveFresh(http,false);
+    await fixture.whenStable();fixture.detectChanges();
+    expect(component.cachedResultAvailable()).toBeFalse();
+    expect(component.canProcess()).toBeFalse();
+    expect(fixture.nativeElement.textContent).not.toContain('US$ 0.00');
+    http.expectNone(r=>r.method==='POST');http.verify();fixture.destroy();
+  });
+
+  it('rejects a paid completion for a different source without opening old results',async()=>{
+    const {fixture,component,http}=setup();
+    const check=component.check();await resolvePreflight(http,true);await check;
+    enterToken(fixture);component.transferConsent.set(true);component.paidConsent.set(true);
+    const opened=jasmine.createSpy('opened');component.cacheUpdated.subscribe(opened);
+    const process=component.process();
+    http.expectOne(url+'/manual-one-shot').flush({
+      ...state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'),
+      sourceSha256:'f'.repeat(64)});
+    await process;
+    expect(opened).not.toHaveBeenCalled();expect(component.cacheStatus()).toBeNull();
+    expect(component.error()).toContain('facturada');
+    http.verify();fixture.destroy();
+  });
+
 });

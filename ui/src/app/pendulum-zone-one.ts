@@ -1,9 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { Component, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PendulumDirector } from './pendulum-director';
 import { PendulumMasterPlayer } from './pendulum-master-player';
-import { SamVideoReplay } from './sam-video-replay';
+import { LabConnection } from './lab-connection';
+import { SamVideoReplay, type SamProcessingSelection } from './sam-video-replay';
 
 /**
  * Jury-facing Zone 1. Reuses the same validated Director session, upload,
@@ -21,6 +22,34 @@ export class PendulumZoneOne extends PendulumDirector {
   readonly activeTrial = signal<'baseline'|'followup'>('baseline');
   readonly registeringAndUploading = signal(false);
   readonly samRefreshNonce = signal(0);
+  readonly connection=inject(LabConnection);
+  readonly samSelection=signal<SamProcessingSelection|null>(null);
+  readonly playbackReady=signal(false);
+  clearProcessed():void {
+    this.samSelection.set(null);this.playbackReady.set(false);this.checkedVideo.set(false);
+  }
+  acceptProcessed(selection:SamProcessingSelection):void {
+    const clip=selection.videoRole==='followup'?this.session()?.followup:this.session()?.baseline;
+    if(selection.studyId!==this.session()?.id || selection.sourceSha256!==clip?.sha256 ||
+       selection.port!==this.connection.port())return;
+    this.samSelection.set(selection);
+    this.samRefreshNonce.update(value=>value+1);
+  }
+  processedAnalysis(role:'baseline'|'followup'):string {
+    const selected=this.samSelection(),study=this.session();
+    const clip=role==='followup'?study?.followup:study?.baseline;
+    return selected?.studyId===study?.id && selected?.videoRole===role &&
+      selected?.sourceSha256===clip?.sha256 && selected?.port===this.connection.port()
+      ? selected.analysisId : '';
+  }
+  selectTrial(role:'baseline'|'followup'):void {
+    if(this.connection.busy())return;
+    this.clearProcessed();this.activeTrial.set(role);
+  }
+  onPlaybackReady(ready:boolean):void {
+    this.playbackReady.set(ready);
+    if(!ready)this.checkedVideo.set(false);
+  }
 
   /**
    * Select the first recording immediately. The study's theoretical inputs
@@ -31,7 +60,7 @@ export class PendulumZoneOne extends PendulumDirector {
     const control = event.target as HTMLInputElement;
     const file = control.files?.[0];
     if (!file || this.registeringAndUploading() ||
-        this.busy() || !!this.stageBusy()) return;
+        this.busy() || !!this.stageBusy() || this.connection.busy()) return;
 
     const autoRegister = role === 'baseline' && !this.session();
     if (autoRegister) {
@@ -79,6 +108,7 @@ export class PendulumZoneOne extends PendulumDirector {
   newFocusedStudy():void {
     if (this.registeringAndUploading() ||
         this.busy() || !!this.stageBusy()) return;
+    this.clearProcessed();
     this.reset();
     this.activeTrial.set('baseline');
   }

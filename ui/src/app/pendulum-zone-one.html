@@ -82,7 +82,7 @@
             <span class="state-dot"></span>
           </span>
           <button class="secondary-button" type="button"
-            (click)="newFocusedStudy()" [disabled]="registeringAndUploading() || busy() || !!stageBusy()">
+            (click)="newFocusedStudy()" [disabled]="registeringAndUploading() || busy() || !!stageBusy() || connection.busy()">
             {{es ? 'Nueva investigación' : 'New study'}}
           </button>
         } @else {
@@ -102,7 +102,7 @@
         ? 'followup' : 'baseline'"
       [videoSha256]="(activeTrial()==='followup' && session()?.followup?.sha256
         ? session()?.followup?.sha256 : session()?.baseline?.sha256) ?? ''"
-      (cacheUpdated)="samRefreshNonce.set(samRefreshNonce()+1)"/>
+      (processingReset)="clearProcessed()" (cacheUpdated)="acceptProcessed($event)"/>
   }
 
   <section class="focus-video">
@@ -120,10 +120,10 @@
       </div>
       @if(session()?.followup && session()?.baseline) {
         <div class="trial-tabs" role="group" [attr.aria-label]="es ? 'Seleccionar experimento' : 'Select experiment'">
-          <button type="button" [class.current]="activeTrial() === 'baseline'" (click)="activeTrial.set('baseline')">
+          <button type="button" [class.current]="activeTrial() === 'baseline'" (click)="selectTrial('baseline')" [disabled]="connection.busy()">
             {{es ? 'Prueba 1' : 'Trial 1'}}
           </button>
-          <button type="button" [class.current]="activeTrial() === 'followup'" (click)="activeTrial.set('followup')">
+          <button type="button" [class.current]="activeTrial() === 'followup'" (click)="selectTrial('followup')" [disabled]="connection.busy()">
             {{es ? 'Prueba 2' : 'Trial 2'}}
           </button>
         </div>
@@ -149,8 +149,9 @@
           @if(s.followup; as clip) {
             @if(clip.previewAvailable) {
               <app-pendulum-master-player [videoUrl]="reviewVideo('followup')"
-                [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'"
-                [samRefreshNonce]="samRefreshNonce()"
+                [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'" [processedAnalysisId]="processedAnalysis('followup')"
+                [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
+                [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
                 [initialAngleDegrees]="s.angleDegrees ?? 15"
                 [name]="clip.originalFilename"
                 [originalWidth]="clip.media.width" [originalHeight]="clip.media.height"
@@ -163,8 +164,9 @@
         } @else {
           @if(s.baseline.previewAvailable) {
             <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
-              [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'"
-              [samRefreshNonce]="samRefreshNonce()"
+              [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'" [processedAnalysisId]="processedAnalysis('baseline')"
+              [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
+                [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
               [initialAngleDegrees]="s.angleDegrees ?? 15"
               [name]="s.baseline.originalFilename"
               [originalWidth]="s.baseline.media.width" [originalHeight]="s.baseline.media.height"
@@ -179,13 +181,13 @@
           <div class="verification-strip">
             <label class="check-label">
               <input type="checkbox" [ngModel]="checkedVideo()"
-                (ngModelChange)="checkedVideo.set($event)" [disabled]="busy()"/>
+                (ngModelChange)="checkedVideo.set($event)" [disabled]="busy() || !playbackReady()"/>
               <span>{{es
                 ? 'He revisado el video y confirmo que la trayectoria sigue la plomada'
                 : 'I reviewed the video and confirm the trajectory follows the bob'}}</span>
             </label>
             <button class="secondary-button" type="button" (click)="confirm()"
-              [disabled]="busy() || !checkedVideo() || s.baseline.spectral.periodSeconds === null">
+              [disabled]="busy() || !playbackReady() || !checkedVideo() || s.baseline.spectral.periodSeconds === null">
               {{es ? 'Confirmar revisión' : 'Confirm review'}}
             </button>
             @if(s.baseline.spectral.periodSeconds === null) {
@@ -263,23 +265,23 @@
           <div class="placeholder-screen">⌁</div></div>
       </div>
       <p class="focus-note">{{es
-        ? 'Carga el video para registrar el experimento y activar las tres vistas.'
-        : 'Upload a video to register the experiment and enable the three views.'}}</p>
+        ? 'Carga el video, revisa el costo y pulsa Procesar para activar la reproducción y los gráficos.'
+        : 'Upload a video, review the cost and press Process to enable playback and overlays.'}}</p>
     }
 
     @if(registeringAndUploading()) {
       <p class="loading-video" role="status">{{es
-        ? 'Registrando parámetros y procesando el video. Conservamos el original.'
-        : 'Registering parameters and processing the video. Original preserved.'}}</p>
+        ? 'Registrando parámetros y preparando el video. Conservamos el original.'
+        : 'Registering parameters and preparing the video. Original preserved.'}}</p>
     } @else if(stageBusy()) {
       <p class="loading-video" role="status">{{es
-        ? 'Procesando el video localmente…'
-        : 'Processing the video locally…'}}</p>
+        ? 'Preparando la vista previa local…'
+        : 'Preparing the local preview…'}}</p>
     }
     @if(error()) {<p class="focus-error" role="alert">{{error()}}</p>}
   </section>
 
   <p class="focus-disclaimer">{{es
-    ? 'Seguimiento local experimental · NO SAM 3.1 · reproducción compatible de 12 FPS · videos originales intactos'
-    : 'Experimental local tracking · NOT SAM 3.1 · browser proxy at 12 FPS · original video preserved'}}</p>
+    ? 'SAM detecta; ProofLab calcula vectores y rastro · reproducción a 12 FPS después de Procesar · originales intactos'
+    : 'SAM detects; ProofLab computes vectors and trails · 12 FPS playback after Process · originals preserved'}}</p>
 </section>

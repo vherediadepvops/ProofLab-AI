@@ -4,12 +4,12 @@ import type { ImagePivot, KinematicFrame } from './pendulum-kinematics';
 
 export interface AuthenticatedSamVideoArchive {
   state: {
-    status: string; sourceSha256: string; provenance: string;
+    status: string; sourceSha256: string; provenance: string; analysisId?:string;
   };
   receipt: {
     model: string; concept: string; originalVideoSha256: string;
     providerEvidenceStatus: string; framePtsSeconds: number[];
-    sourceFrameCount: number;
+    sourceFrameCount: number; analysisId?:string;
   };
   rawResponseJson: string;
 }

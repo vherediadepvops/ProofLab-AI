@@ -14,8 +14,18 @@ The primary selector contains exactly these two options. The key is entered in *
 - `GET /api/science/director/pendulum/sessions/{id}/sam/{role}/status?mode=api-meta-cache` reads status. It also accepts `mode=api-meta`.
 - `POST .../sam/{role}/manual-one-shot` and `POST .../sam/{role}/analyze` accept `mode`; omission preserves cache mode. The UI uses the first endpoint with the existing manual action.
 - Status adds `analysisId`, `mode`, `cacheHit` and `storage`. A HIT retains `CACHED_META_...`. Fresh mode uses `READY_FOR_FRESH_META_ANALYSIS` where applicable; final admission remains subject to server controls.
-- `GET .../sam/{role}/evidence` returns the latest verified evidence. After a HIT or completed execution, the UI reloads the player through GET; replay never initiates a POST.
+- `GET .../sam/{role}/evidence` returns the latest verified evidence. The UI retrieves evidence through GET after Process is pressed or an authorized inference completes; checking cost or playing never starts a Meta POST.
 - A completed fresh execution returns its ID and `cacheHit=false`. Earlier analysis metadata in status does not establish that a new execution occurred.
+
+## Cost and Process button
+
+Uploading/restoring a video or changing mode/port automatically performs local status and preflight GET requests. The screen always quotes sending the original video to Meta; valid cache also shows **US$0 for this operation**. This estimate is not an invoice. A match means exact source-file/model/protocol identity, not visual similarity between images.
+
+**Process** stays visible. In cache mode, a HIT selects the existing analysis without a key or paid call; a MISS requires a key, consent and server authorization before one request. Meta API requires the same controls and requests a fresh analysis. Earlier attempts requiring reconciliation remain blocked.
+
+Before Process is pressed in Laboratory, the preview is static: playback, frame stepping, timeline and review confirmation are locked. The returned source SHA and selected analysis ID must match before playback unlocks. Overlays use verified SAM masks exclusively; errors never fall back to local tracking. A genuine completed zero-detection result enables playback with a no-detections notice and no fabricated overlays. Changing video, trial, mode or port invalidates visible results.
+
+**Flow validation (2026-10-28):** 77 focused Angular tests passed and production build succeeded; no new Meta inference or CI. POST tests are mocked; existing cache is checked locally. The initial bundle budget warning remains (569.90 kB against 500 kB).
 
 ## Persistence and provenance
 

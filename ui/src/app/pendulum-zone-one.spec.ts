@@ -7,13 +7,14 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
   const theoryUrl='http://127.0.0.1:5391/api/science/pendulum/mathematical-model';
   const studyUrl='http://127.0.0.1:5391/api/science/director/pendulum/sessions';
 
-  function verifyHttp(http:HttpTestingController):void{
+  async function verifyHttp(http:HttpTestingController):Promise<void>{
+    await Promise.resolve();
     const pending=http.match(req=>req.method==='GET' &&
-      (req.url.includes('/kinematics/') ||
-       req.url.includes('/sam/') && req.url.endsWith('/evidence')));
+      (req.url.includes('/kinematics/') || req.url.includes('/sam/')));
     for(const request of pending)
-      request.flush({error:'No pivot yet'},
+      request.flush({error:'Synthetic unavailable result'},
         {status:404,statusText:'Not Found'});
+    await Promise.resolve();
     http.verify();
   }
 
@@ -98,7 +99,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.querySelector('.technical-protocol')).toBeNull();
     expect(component.includeSecondTrial()).toBeFalse();
     expect(root.querySelector('app-pendulum-director')).toBeNull();
-    verifyHttp(http);
+    await verifyHttp(http);
   });
 
   it('starts one-video research from the compact parameters and then shows the upload',async()=>{
@@ -119,7 +120,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.textContent).toContain('Sube tu primera grabación');
     expect((root.querySelector('#focus-length') as HTMLInputElement).disabled).toBeTrue();
     expect(root.querySelectorAll('.placeholder-panel').length).toBe(3);
-    verifyHttp(http);
+    await verifyHttp(http);
   });
 
   it('wires the immediately visible file input to the upload action',async()=>{
@@ -130,7 +131,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     uploader.dispatchEvent(new Event('change',{bubbles:true}));
     expect(trigger).toHaveBeenCalled();
     expect(trigger.calls.mostRecent().args[1]).toBe('baseline');
-    verifyHttp(http);
+    await verifyHttp(http);
   });
 
   it('uploads directly: freezes the current model before transferring the first video',async()=>{
@@ -177,7 +178,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
 // The offline SAM JSON inspector has its own separate optional file input.
     expect(root.textContent).toContain('He revisado el video');
     http.expectNone(req=>req.url.includes('/api/meta/'));
-    verifyHttp(http);
+    await verifyHttp(http);
   });
 
   it('rejects unsupported videos BEFORE creating any research record',async()=>{
@@ -193,7 +194,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.querySelector('.upload-strip-ready input[type=file]')).not.toBeNull();
     http.expectNone(studyUrl);
     http.expectNone(req=>req.url.includes('/video/baseline'));
-    verifyHttp(http);
+    await verifyHttp(http);
   });
 
   it('keeps the upload control available if registering the study fails',async()=>{
@@ -215,7 +216,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(control.value).toBe('');
     expect(root.querySelector('.upload-strip-ready input[type=file]')).not.toBeNull();
     http.expectNone(r=>r.url.includes('/video/baseline'));
-    verifyHttp(http);
+    await verifyHttp(http);
   });
 
   it('shows the video selector again immediately after New study',async()=>{
@@ -231,21 +232,16 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.querySelectorAll('.placeholder-panel').length).toBe(3);
     expect((root.querySelector('#focus-length') as HTMLInputElement).disabled).toBeFalse();
     expect(localStorage.getItem('prooflab-director-current')).toBeNull();
-    verifyHttp(http);
+    await verifyHttp(http);
   });
 
-  it('reloads verified player evidence after a cache HIT with GET requests only',async()=>{
+  it('quotes cache automatically, locks playback until Process, and never POSTs for reuse',async()=>{
     const {root,component,fixture,http}=await init();
     component.session.set({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});
-    fixture.detectChanges();
-    verifyHttp(http); // finish the initial player read
-    await Promise.resolve();
+    fixture.detectChanges();await Promise.resolve();
     const controls=root.querySelector('app-sam-video-replay')!;
-    (controls.querySelector('button') as HTMLButtonElement).click();
     const samUrl=studyUrl+'/'+session.id+'/sam/baseline';
-    const status=http.expectOne(samUrl+'/status?mode=api-meta-cache');
-    expect(status.request.method).toBe('GET');
-    status.flush({
+    http.expectOne(samUrl+'/status?mode=api-meta-cache').flush({
       status:'CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW',
       sourceSha256:video.sha256,cacheKey:'c'.repeat(64),
       sourceFrames:1828,estimatedCostUsd:.3656,canRunLive:false,
@@ -253,16 +249,39 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       cacheHit:true,storage:'SQLite',analysisId:'integration-cache-hit'
     });
     await Promise.resolve();
+    http.expectOne(samUrl+'/preflight').flush({
+      sourceSha256:video.sha256,sourceFrames:1828,estimatedCostUsd:.3656,
+      durationSeconds:30.5,codec:'hevc',supportsSingleCall:true
+    });
+    await fixture.whenStable();fixture.detectChanges();
+    const play=root.querySelector('.play-main') as HTMLButtonElement;
+    expect(play.disabled).toBeTrue();
+    expect(controls.textContent).toContain('US$ 0.00');
+    expect(controls.textContent).toContain('US$ 0.3656');
+    http.expectNone(samUrl+'/evidence');
+    (controls.querySelector('.sam-submit') as HTMLButtonElement).click();
     fixture.detectChanges();
     const evidence=http.expectOne(samUrl+'/evidence');
     expect(evidence.request.method).toBe('GET');
-    // This test covers the reload wiring; validated overlay parsing has its own suite.
-    evidence.flush({error:'Synthetic absent response'},{status:404,statusText:'Not Found'});
-    expect(controls.textContent).toContain('integration-cache-hit');
-    expect(controls.textContent).toContain('HIT');
-    http.expectNone(req=>req.method==='POST' || req.url.endsWith('/preflight') ||
-      req.url.endsWith('/readiness'));
-    verifyHttp(http);
+    evidence.flush({
+      state:{status:'CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW',
+        sourceSha256:video.sha256,analysisId:'integration-cache-hit'},
+      receipt:{model:'sam-3.1',concept:'metal pendulum bob',
+        originalVideoSha256:video.sha256,analysisId:'integration-cache-hit',
+        providerEvidenceStatus:'COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW'},
+      rawResponseJson:JSON.stringify({model:'sam-3.1',status:'completed',
+        output:[{content:[{type:'output_text',text:''}]}]})
+    });
+    http.expectOne(studyUrl+'/'+session.id+'/kinematics/baseline')
+      .flush({}, {status:404,statusText:'Not Found'});
+    await fixture.whenStable();
+    for(let i=0;i<30 && !component.playbackReady();i++)
+      await new Promise<void>(resolve=>setTimeout(resolve,10));
+    fixture.detectChanges();
+    expect(play.disabled).toBeFalse();
+    expect(root.textContent).toContain('SAM no detectó objetos');
+    http.expectNone(req=>req.method==='POST' || req.url.endsWith('/readiness'));
+    await verifyHttp(http);fixture.destroy();
   });
 
   it('fills the four-perspective viewer with one video and a default combined primary',async()=>{
@@ -285,9 +304,10 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.querySelectorAll('.placeholder-panel').length).toBe(0);
     expect(player?.textContent).toContain('Rastro fantasma');
     expect(root.textContent).toContain('He revisado el video');
-    expect(root.textContent).toContain('NO SAM 3.1');
+    expect(root.textContent).toContain('pulsa Procesar');
+    expect((root.querySelector('.play-main') as HTMLButtonElement).disabled).toBeTrue();
     expect(root.querySelectorAll('.model-chart').length).toBe(0);
-    verifyHttp(http);
+    await verifyHttp(http);
   });
 
   it('still allows optional manual 80 cm experiments without displaying math graphs',async()=>{
@@ -308,7 +328,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     fixture.detectChanges();
     expect(root.querySelectorAll('.followup-label input').length).toBe(1);
     expect(root.querySelectorAll('.model-chart').length).toBe(0);
-    verifyHttp(http);
+    await verifyHttp(http);
   });
 
   it('keeps the same player slot for two videos, never six simultaneous windows',async()=>{
@@ -327,6 +347,6 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(source.getAttribute('src')).toContain('/preview/followup');
     expect(root.querySelectorAll('canvas').length).toBe(3);
     expect(root.querySelectorAll('.model-chart').length).toBe(0);
-    verifyHttp(http);
+    await verifyHttp(http);
   });
 });

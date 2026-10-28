@@ -12,6 +12,23 @@
       H.264 · {{proxyFps()}} FPS</span>
   </div>
 
+  @if(processingRequired()) {
+    <p class="processing-notice" role="status">
+      @if(playbackLocked()) {
+        {{samStatus()==='AWAITING_PROCESS'
+          ? (es?'Video cargado. Revisa el costo y pulsa Procesar. La reproducción y los gráficos se habilitarán al validar el resultado.':
+            'Video uploaded. Review the cost and press Process. Playback and overlays unlock after result validation.')
+          : samStatus()==='CHECKING_SAM_CACHE'
+          ? (es?'Validando el resultado SAM del video…':'Validating the video SAM result…')
+          : (es?'No se pudo validar el resultado. Actualiza la comprobación y revisa el estado antes de procesar otra vez.':
+            'The result could not be validated. Refresh the check and inspect status before processing again.')}}
+      } @else {
+        {{samTrack()?(es?'Procesado · gráficos calculados desde las máscaras de SAM':'Processed · overlays calculated from SAM masks'):
+          (es?'Procesado · SAM no detectó objetos; reproducción disponible sin gráficos inventados.':
+            'Processed · SAM found no objects; playback is available without fabricated overlays.')}}
+      }
+    </p>
+  }
   <div class="views-grid" [class.is-zoomed]="zoomed()" data-layout="focus-switcher">
     <div class="view-panel" data-view="combined" [class.is-primary]="activeView()==='combined'"
       [style.grid-area]="gridArea('combined')">
@@ -31,7 +48,7 @@
         <canvas #combinedCanvas class="synchronized-canvas" [style.transform]="imageTransform()"
           [attr.aria-label]="es?'Fotograma con vectores y rastro sincronizados':'Frame with synchronized vectors and trail'"></canvas>
       </div>
-      <div class="view-meta">{{samTrack()
+      <div class="view-meta">{{processingRequired() && !samTrack() ? (es?'Sin resultado SAM con máscaras':'No SAM mask result') : samTrack()
         ? (es?'SAM 3.1 · máscaras y centros guardados · pendiente revisión humana':'SAM 3.1 · cached masks and centroids · human review pending')
         : (es?'Seguimiento local provisional NO SAM':'Provisional LOCAL tracking NOT SAM')}}</div>
     </div>
@@ -55,7 +72,7 @@
         <video #masterVideo
           class="master-source" [style.transform]="imageTransform()"
           [src]="videoUrl()" crossorigin="anonymous"
-          preload="auto" playsinline
+          preload="metadata" playsinline
           (loadedmetadata)="onLoadedMetadata()"
           (loadeddata)="onDecodedFrame()"
           (seeked)="onDecodedFrame()"
@@ -116,7 +133,7 @@
     </div>
   </div>
 
-  @if(studyId() && videoSha256()) {
+  @if(studyId() && videoSha256() && !playbackLocked()) {
     <div class="kinematics-strip">
       <div class="kinematics-toolbar">
         <div>
@@ -128,7 +145,7 @@
               'Human-selected pivot · LOCAL NOT SAM')}}</span>
         </div>
         <button type="button" class="pivot-button" (click)="beginPivotSelection()"
-          [disabled]="pivotSaving() || (points()?.length ?? 0)<5">
+          [disabled]="playbackLocked() || pivotSaving() || (points()?.length ?? 0)<5">
           {{pivotRevision()
             ? (es ? 'Corregir pivote' : 'Adjust pivot')
             : (es ? 'Marcar pivote' : 'Select pivot')}}
@@ -202,17 +219,17 @@
         [attr.aria-label]="es ? 'Alternar zoom de vistas' : 'Toggle view zoom'">
         {{zoomed() ? (es ? 'Ajustar imagen' : 'Fit image') : (es ? 'Ampliar imagen 1,6×' : 'Zoom 1.6×')}}
       </button>
-      <button class="play-main" type="button" (click)="togglePlayback()"
+      <button class="play-main" type="button" (click)="togglePlayback()" [disabled]="playbackLocked()"
         [attr.aria-label]="playing() ? (es?'Pausar todas las vistas':'Pause all views') : (es?'Reproducir todas las vistas':'Play all views')">
         {{playing() ? 'Ⅱ' : '▶'}}
         <span>{{playing()?(es?'Pausar':'Pause'):(es?'Reproducir':'Play')}}</span>
       </button>
-      <button type="button" class="frame-button" (click)="stepFrame(-1)"
+      <button type="button" class="frame-button" (click)="stepFrame(-1)" [disabled]="playbackLocked()"
         [attr.aria-label]="es?'Fotograma anterior':'Previous frame'">|◀</button>
-      <button type="button" class="frame-button" (click)="stepFrame(1)"
+      <button type="button" class="frame-button" (click)="stepFrame(1)" [disabled]="playbackLocked()"
         [attr.aria-label]="es?'Fotograma siguiente':'Next frame'">▶|</button>
       <label class="rate-label">{{es?'Velocidad':'Speed'}}
-        <select [value]="playbackRate()" (change)="setSpeed(+$any($event.target).value)"
+        <select [disabled]="playbackLocked()" [value]="playbackRate()" (change)="setSpeed(+$any($event.target).value)"
           [attr.aria-label]="es?'Velocidad de reproducción':'Playback speed'">
           <option value="0.25">0,25×</option>
           <option value="0.5">0,5×</option>
@@ -223,7 +240,7 @@
       </label>
       <span class="timecode">{{timecode}} / {{lengthcode}}</span>
     </div>
-    <input type="range" class="timeline-range"
+    <input type="range" class="timeline-range" [disabled]="playbackLocked()"
       min="0" [max]="duration() || 1" [step]="frameStepSeconds"
       [value]="currentTime()" (input)="scrub($event)"
       [attr.aria-label]="es?'Posición del fotograma compartido':'Shared video playhead'"/>
@@ -237,7 +254,10 @@
 
   @if(error()) {<p class="player-error" role="alert">{{error()}}</p>}
   <p class="limitations">
-    {{samTrack()
+    {{processingRequired() && !samTrack()
+      ? (es?'Los vectores y el rastro requieren máscaras válidas de SAM. No se sustituirán por seguimiento local.':
+        'Vectors and trails require valid SAM masks. Local tracking is not substituted.')
+      : samTrack()
       ? (es
         ? 'Se recuperó una respuesta auténtica del proveedor SAM 3.1 desde la caché privada. Centros y máscaras son observaciones de imagen; los vectores y el rastro se calculan localmente con tiempos originales. El video reproducido es un proxy a 12 FPS: la superposición puede diferir de los 60 FPS de origen. Sin revisión humana, incertidumbre ni unidades métricas certificadas.'
         : 'A genuine SAM 3.1 provider response was recovered from the private cache. Image-mask centroids drive locally computed vectors and trails using source timestamps. The displayed browser proxy is 12 FPS, not the 60 FPS source, so overlay timing has display limits. No independent bob review, uncertainty or calibrated physical units yet.')

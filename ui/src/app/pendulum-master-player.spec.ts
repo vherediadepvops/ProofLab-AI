@@ -347,6 +347,63 @@ describe('One-clock three-view pendulum laboratory',()=>{
     fixture.destroy();
   });
 
+  it('blocks all playback and local overlays before Process even when local tracking and pivot exist',()=>{
+    const {fixture,component,source,root}=init();
+    const http=TestBed.inject(HttpTestingController);
+    fixture.componentRef.setInput('processingRequired',true);
+    fixture.componentRef.setInput('studyId',study);
+    fixture.componentRef.setInput('videoSha256',sha);
+    fixture.detectChanges();
+    component.pivotRevision.set(revision);
+    const play=spyOn(source,'play').and.resolveTo();
+    const pause=spyOn(source,'pause').and.stub();
+    const ctx=(root.querySelector('canvas') as HTMLCanvasElement).getContext('2d')!;
+    spyOn(ctx,'drawImage').and.stub();const arrow=spyOn(ctx,'stroke');
+    source.currentTime=1;
+    component.togglePlayback();component.stepFrame(1);
+    component.scrub({target:{value:'3'}} as unknown as Event);
+    component.onPlay();component.paintFrame(1);
+    expect(play).not.toHaveBeenCalled();expect(pause).toHaveBeenCalled();
+    expect(source.currentTime).toBe(1);expect(arrow).not.toHaveBeenCalled();
+    expect(component.currentKinematics()).toBeNull();
+    expect(component.samTrack()).toBeNull();
+    expect((root.querySelector('.play-main') as HTMLButtonElement).disabled).toBeTrue();
+    http.expectNone(()=>true);http.verify();fixture.destroy();
+  });
+
+  it('rejects an older analysis when a newly processed result was requested',async()=>{
+    const {fixture,component}=init();
+    const http=TestBed.inject(HttpTestingController);
+    fixture.componentRef.setInput('processingRequired',true);
+    fixture.componentRef.setInput('processedAnalysisId','new-analysis');
+    fixture.componentRef.setInput('studyId',study);
+    fixture.componentRef.setInput('videoSha256',sha);
+    fixture.detectChanges();
+    http.expectOne(r=>r.url.endsWith('/kinematics/baseline')).flush({}, {status:404,statusText:'Not Found'});
+    http.expectOne(r=>r.url.endsWith('/sam/baseline/evidence')).flush({
+      state:{analysisId:'old-analysis'},receipt:{analysisId:'old-analysis'}
+    });
+    await fixture.whenStable();fixture.detectChanges();
+    expect(component.playbackLocked()).toBeTrue();
+    expect(component.samTrack()).toBeNull();
+    expect(component.samStatus()).toBe('SAM_CACHE_INVALID_OR_AMBIGUOUS_NO_FALLBACK');
+    http.verify();fixture.destroy();
+  });
+
+  it('clears the verified result and pauses immediately when the processed selection resets',()=>{
+    const {fixture,component,source}=init();
+    fixture.componentRef.setInput('processingRequired',true);
+    fixture.detectChanges();
+    component.samVerified.set(true);
+    const pause=spyOn(source,'pause').and.stub();
+    fixture.componentRef.setInput('samRefreshNonce',1);
+    fixture.detectChanges();
+    expect(pause).toHaveBeenCalled();
+    expect(component.playbackLocked()).toBeTrue();
+    expect(component.samTrack()).toBeNull();
+    TestBed.inject(HttpTestingController).verify();fixture.destroy();
+  });
+
   it('pauses master video, frame steps with 12fps decoder cadence, and stops overlays',()=>{
     const {fixture,component,source}=init();
     const videoPause=spyOn(source,'pause').and.stub();
