@@ -9,6 +9,7 @@ describe('ProofLab Competition Research Lab', () => {
   beforeEach(async () => {
     localStorage.removeItem('prooflab-research-current');
     localStorage.removeItem('prooflab-ui-language');
+    localStorage.removeItem('prooflab-director-current');
     await TestBed.configureTestingModule({
       imports: [App],
       providers: [provideHttpClient(), provideHttpClientTesting()]
@@ -68,6 +69,45 @@ describe('ProofLab Competition Research Lab', () => {
     expect(visible[0].textContent).toContain('Péndulo');
     expect(links.length).toBeGreaterThan(1); // code preserved
     // Existing math probes intentionally remain active for hidden legacy tests.
+  });
+
+  it('uses the full browser width in Pendulum focus and hides the large hero', async () => {
+    const fixture=TestBed.createComponent(App);
+    fixture.detectChanges();
+    const controller=TestBed.inject(HttpTestingController);
+    const requests=controller.match(() => true);
+    requests.forEach(req => {
+      if(req.request.url.includes('/api/math/problems') ||
+         req.request.url.includes('/api/math/conjectures')) {
+        req.flush([]);
+      } else if(req.request.url.includes('/api/math/status')) {
+        req.flush({leanAvailable:false,phase:'KNOWN_BENCHMARK_VERIFICATION'});
+      } else if(req.request.url.includes('/api/health')) {
+        req.flush({metaModelApiEnabled:false,appVersion:'2026.10.26-alpha'});
+      } else if(req.request.url.includes('/api/meta/readiness')) {
+        req.flush({liveCallsPermitted:false});
+      } else if(req.request.url.includes('/api/science/pendulum/mathematical-model')) {
+        req.flush({source:'DETERMINISTIC_NONLINEAR_THEORY',
+          baseline:{nonlinearPeriodSeconds:1.425},followUp:null});
+      } else {
+        req.flush({});
+      }
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const root=fixture.nativeElement as HTMLElement;
+    const shell=root.querySelector('.shell.focus-shell');
+    const pane=root.querySelector('.workspace.focus-workspace') as HTMLElement;
+    expect(shell).not.toBeNull();
+    expect(root.querySelector('aside.sidebar')?.hasAttribute('hidden')).toBeTrue();
+    expect(root.querySelector('section.hero')?.hasAttribute('hidden')).toBeTrue();
+    expect(pane).not.toBeNull();
+    expect(root.querySelector('app-pendulum-zone-one')).not.toBeNull();
+    expect(root.querySelector('app-pendulum-director')).toBeNull();
+    expect(root.querySelector('details.technical-protocol')).toBeNull();
+    expect(getComputedStyle(pane).maxWidth).toBe('none');
+    controller.verify();
+    fixture.destroy();
   });
 
   it('shows competition edition and honest known-theorem notice', () => {

@@ -1,0 +1,246 @@
+<section class="zone1-focus">
+  <header class="focus-heading">
+    <div>
+      <span class="focus-eyebrow">PROOFLAB AI <span class="separator">/</span> {{es ? 'LABORATORIO DE PÉNDULO' : 'PENDULUM LAB'}}</span>
+      <h1>{{es ? 'Investiga un fenómeno con un video' : 'Investigate a phenomenon with video'}}</h1>
+      <p>{{es
+        ? 'Configura tu péndulo y observa el mismo movimiento desde tres perspectivas sincronizadas.'
+        : 'Configure your pendulum and inspect the same motion in three synchronized views.'}}</p>
+    </div>
+    <span class="token-status">0 META TOKENS</span>
+  </header>
+
+  <section class="focus-config" aria-label="Parámetros físicos del péndulo">
+    <div class="focus-section-title">
+      <span class="section-index">01</span>
+      <div>
+        <h2>{{es ? 'Configura el péndulo' : 'Configure the pendulum'}}</h2>
+        <p>{{es ? 'Sistema sexagesimal para el ángulo · modelo matemático local' :
+          'Sexagesimal angle in degrees · local mathematical model'}}</p>
+      </div>
+    </div>
+
+    <div class="parameter-grid">
+      <label>
+        <span>{{es ? 'Longitud de la cuerda (cm)' : 'String length (cm)'}}</span>
+        <input id="focus-length" type="number" min="10" max="500" step="5"
+          [ngModel]="baselineLength() * 100"
+          (ngModelChange)="baselineLength.set(+$event / 100);refreshTheory()"
+          [disabled]="!!session() || busy()"/>
+      </label>
+      <label>
+        <span>{{es ? 'Ángulo inicial (°)' : 'Initial angle (°)'}}</span>
+        <input id="focus-angle" type="number" min="1" max="85" step="1"
+          [ngModel]="initialAngleDegrees()"
+          (ngModelChange)="initialAngleDegrees.set(+$event);refreshTheory()"
+          [disabled]="!!session() || busy()"/>
+      </label>
+      <label>
+        <span>{{es ? 'Masa de la plomada (g)' : 'Bob mass (g)'}}</span>
+        <input id="focus-mass" type="number" min="10" max="5000" step="10"
+          [ngModel]="massGrams()"
+          (ngModelChange)="massGrams.set(+$event);refreshTheory()"
+          [disabled]="!!session() || busy()"/>
+      </label>
+    </div>
+
+    <div class="config-bottom">
+      <div class="second-config">
+        <label class="check-label">
+          <input type="checkbox" [ngModel]="includeSecondTrial()"
+            (ngModelChange)="includeSecondTrial.set($event);refreshTheory()"
+            [disabled]="!!session() || busy()"/>
+          <span>{{es ? 'Agregar una segunda prueba' : 'Add a second experiment'}}</span>
+        </label>
+        @if(includeSecondTrial()) {
+          <div class="second-inline">
+            <select [ngModel]="followUpMode()"
+              (ngModelChange)="followUpMode.set($event);refreshTheory()"
+              [disabled]="!!session() || busy()"
+              [attr.aria-label]="es ? 'Selección de longitud del segundo experimento' : 'Second experiment length mode'">
+              <option value="recommended">{{es ? 'Propuesta local (sin IA)' : 'Local preset (not AI)'}}</option>
+              <option value="manual">{{es ? 'Longitud libre' : 'Custom length'}}</option>
+            </select>
+            @if(followUpMode() === 'manual') {
+              <label class="followup-label">
+                <span>{{es ? 'Segunda longitud (cm)' : 'Second length (cm)'}}</span>
+                <input type="number" min="10" max="500" step="5"
+                  [ngModel]="manualFollowUpLength() * 100"
+                  (ngModelChange)="manualFollowUpLength.set(+$event / 100);refreshTheory()"
+                  [disabled]="!!session() || busy()"/>
+              </label>
+            } @else {
+              <span class="length-hint">{{recommendedFollowUpLength * 100 | number:'1.0-0'}} cm</span>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="study-actions">
+        @if(session(); as s) {
+          <span class="study-state">{{es ? 'Investigación activa' : 'Active study'}}
+            <span class="state-dot"></span>
+          </span>
+          <button class="secondary-button" type="button"
+            (click)="newFocusedStudy()" [disabled]="busy() || !!stageBusy()">
+            {{es ? 'Nueva investigación' : 'New study'}}
+          </button>
+        } @else {
+          <button class="primary-button" type="button"
+            (click)="start()" [disabled]="busy() || !model() || modelLoading()">
+            {{es ? 'Iniciar investigación' : 'Start study'}}
+          </button>
+        }
+      </div>
+    </div>
+    @if(modelError()) {<p class="focus-error" role="alert">{{modelError()}}</p>}
+  </section>
+
+  <section class="focus-video">
+    <div class="video-heading">
+      <div class="focus-section-title">
+        <span class="section-index">02</span>
+        <div>
+          <h2>{{es ? 'Video y tres vistas sincronizadas' : 'Video and three synchronized views'}}</h2>
+          <p>{{es
+            ? 'Una sola línea de tiempo controla el video original de referencia, los vectores y el rastro fantasma.'
+            : 'One timeline controls the reference video, motion vectors and the ghost trail.'}}</p>
+        </div>
+      </div>
+      @if(session()?.followup && session()?.baseline) {
+        <div class="trial-tabs" role="group" [attr.aria-label]="es ? 'Seleccionar experimento' : 'Select experiment'">
+          <button type="button" [class.current]="activeTrial() === 'baseline'" (click)="activeTrial.set('baseline')">
+            {{es ? 'Prueba 1' : 'Trial 1'}}
+          </button>
+          <button type="button" [class.current]="activeTrial() === 'followup'" (click)="activeTrial.set('followup')">
+            {{es ? 'Prueba 2' : 'Trial 2'}}
+          </button>
+        </div>
+      }
+    </div>
+
+    @if(session(); as s) {
+      @if(!s.baseline) {
+        <div class="upload-strip">
+          <div>
+            <strong>{{es ? 'Sube tu primera grabación' : 'Upload your first recording'}}</strong>
+            <p>{{es ? 'MOV, MP4 y otros formatos de teléfonos · máximo 240 MB' :
+              'MOV, MP4 and other phone formats · 240 MB maximum'}}</p>
+          </div>
+          <label class="file-action">
+            {{es ? 'Seleccionar video' : 'Select video'}}
+            <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
+              [disabled]="!!stageBusy() || busy()" (change)="uploadFocused($event,'baseline')"/>
+          </label>
+        </div>
+      } @else {
+        @if(activeTrial() === 'followup' && s.followup) {
+          @if(s.followup; as clip) {
+            @if(clip.previewAvailable) {
+              <app-pendulum-master-player [videoUrl]="reviewVideo('followup')"
+                [name]="clip.originalFilename"
+                [originalWidth]="clip.media.width" [originalHeight]="clip.media.height"
+                [originalFps]="clip.media.nominalFramesPerSecond"
+                [points]="clip.tracking.pixelSamples ?? null" [language]="language()"/>
+            } @else {
+              <p class="focus-note">{{es ? 'Este video no tiene copia reproducible. Revísalo en el reproductor original.' : 'No playable proxy was generated. Review the original source file.'}}</p>
+            }
+          }
+        } @else {
+          @if(s.baseline.previewAvailable) {
+            <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
+              [name]="s.baseline.originalFilename"
+              [originalWidth]="s.baseline.media.width" [originalHeight]="s.baseline.media.height"
+              [originalFps]="s.baseline.media.nominalFramesPerSecond"
+              [points]="s.baseline.tracking.pixelSamples ?? null" [language]="language()"/>
+          } @else {
+            <p class="focus-note">{{es ? 'La grabación se guardó, pero no tiene reproducción compatible. Comprueba el video original.' : 'The recording was saved, but browser playback is unavailable. Check its original file.'}}</p>
+          }
+        }
+
+        @if(!s.humanReview) {
+          <div class="verification-strip">
+            <label class="check-label">
+              <input type="checkbox" [ngModel]="checkedVideo()"
+                (ngModelChange)="checkedVideo.set($event)" [disabled]="busy()"/>
+              <span>{{es
+                ? 'He revisado el video y confirmo que la trayectoria sigue la plomada'
+                : 'I reviewed the video and confirm the trajectory follows the bob'}}</span>
+            </label>
+            <button class="secondary-button" type="button" (click)="confirm()"
+              [disabled]="busy() || !checkedVideo() || s.baseline.spectral.periodSeconds === null">
+              {{es ? 'Confirmar revisión' : 'Confirm review'}}
+            </button>
+            @if(s.baseline.spectral.periodSeconds === null) {
+              <p class="focus-note">{{es
+                ? 'Sin período local confiable: aún no se puede registrar una revisión para continuar.'
+                : 'No reliable local period: review cannot advance yet.'}}</p>
+            }
+          </div>
+        }
+
+        @if(s.humanReview && (s.includeSecondTrial ?? true)) {
+          <div class="next-trial-strip">
+            @if(!s.proposal) {
+              <span>{{es ? 'Siguiente: registrar predicción antes del segundo video.' :
+                'Next: register the prediction before uploading a second video.'}}</span>
+              <button class="secondary-button" type="button" [disabled]="busy()"
+                (click)="propose()">
+                {{es ? 'Registrar predicción local (sin IA)' : 'Register local prediction (not AI)'}}
+              </button>
+            } @else if(!s.followup) {
+              <span>{{es ? 'Predicción registrada · segunda longitud:' :
+                'Prediction recorded · second length:'}}
+                {{s.proposal.theory.followUpLengthMeters * 100 | number:'1.0-0'}} cm
+              </span>
+              <label class="file-action">
+                {{es ? 'Subir segunda grabación' : 'Upload second recording'}}
+                <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
+                  [disabled]="!!stageBusy() || busy()" (change)="uploadFocused($event,'followup')"/>
+              </label>
+            } @else {
+              <span>{{es ? 'Dos videos guardados · cambia de prueba con las pestañas superiores' :
+                'Two videos saved · switch using the trial tabs above'}}</span>
+            }
+          </div>
+        }
+      }
+
+      @if(!s.baseline) {
+        <div class="placeholder-grid" aria-label="Tres vistas del video pendientes">
+          <div class="placeholder-panel">
+            <span>01 · {{es ? 'VIDEO ORIGINAL' : 'SOURCE VIDEO'}}</span>
+            <div class="placeholder-screen">▶</div>
+          </div>
+          <div class="placeholder-panel">
+            <span>02 · {{es ? 'VECTORES' : 'VECTORS'}}</span>
+            <div class="placeholder-screen">↗</div>
+          </div>
+          <div class="placeholder-panel">
+            <span>03 · {{es ? 'RASTRO FANTASMA' : 'GHOST TRAIL'}}</span>
+            <div class="placeholder-screen">⌁</div>
+          </div>
+        </div>
+      }
+    } @else {
+      <div class="placeholder-grid" aria-label="Tres vistas del video pendientes">
+        <div class="placeholder-panel"><span>01 · {{es ? 'VIDEO ORIGINAL' : 'SOURCE VIDEO'}}</span>
+          <div class="placeholder-screen">▶</div></div>
+        <div class="placeholder-panel"><span>02 · {{es ? 'VECTORES' : 'VECTORS'}}</span>
+          <div class="placeholder-screen">↗</div></div>
+        <div class="placeholder-panel"><span>03 · {{es ? 'RASTRO FANTASMA' : 'GHOST TRAIL'}}</span>
+          <div class="placeholder-screen">⌁</div></div>
+      </div>
+      <p class="focus-note">{{es ? 'Inicia la investigación para cargar un video y activar las tres vistas.' :
+        'Start a study to upload one video and enable all three views.'}}</p>
+    }
+
+    @if(stageBusy()) {
+      <p class="loading-video">{{es ? 'Procesando el video localmente…' : 'Processing the video locally…'}}</p>
+    }
+    @if(error()) {<p class="focus-error" role="alert">{{error()}}</p>}
+  </section>
+  <p class="focus-disclaimer">{{es
+    ? 'Seguimiento local experimental · NO SAM 3.1 · reproducción compatible de 12 FPS · videos originales intactos'
+    : 'Experimental local tracking · NOT SAM 3.1 · browser proxy at 12 FPS · original video preserved'}}</p>
+</section>

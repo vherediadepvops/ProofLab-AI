@@ -1,5 +1,5 @@
-<div class="shell">
-  <aside class="sidebar">
+<div class="shell" [class.focus-shell]="workspace() === 'pendulum'">
+  <aside class="sidebar" [hidden]="workspace() === 'pendulum'">
     <div class="brand"><div class="brand-icon">◈</div>
       <div><strong>ProofLab AI</strong><small>EXPERIMENTAL INTELLIGENCE</small></div>
     </div>
@@ -20,16 +20,25 @@
   </aside>
 
   <main class="content">
-    <header class="top">
-      <div><span class="muted">{{words().topArea}}</span><span class="crumb">/</span><strong>{{words().topWorkspace}}</strong></div>
+    <header class="top" [class.focus-top]="workspace() === 'pendulum'">
+      <div class="focus-brand">
+        @if(workspace() === 'pendulum') {
+          <span class="focus-brand-mark">◈</span>
+          <strong>ProofLab AI</strong>
+          <span class="focus-brand-divider">/</span>
+          <span>{{language() === 'es' ? 'Péndulo' : 'Pendulum'}}</span>
+        } @else {
+          <span class="muted">{{words().topArea}}</span><span class="crumb">/</span><strong>{{words().topWorkspace}}</strong>
+        }
+      </div>
       <div class="top-actions">
-        <span class="no-tokens">{{metaAvailable() ? words().topActive : words().topOffline}}</span>
+        <span class="no-tokens" [hidden]="workspace() === 'pendulum'">{{metaAvailable() ? words().topActive : words().topOffline}}</span>
         <div class="languages"><button [class.on]="language() === 'es'" (click)="setLanguage('es')">ES</button>
           <button [class.on]="language() === 'en'" (click)="setLanguage('en')">EN</button></div>
       </div>
     </header>
 
-    <section class="hero">
+    <section class="hero" [hidden]="workspace() === 'pendulum'">
       <div class="micro">PUSH THE FRONTIER <span>—</span> 2026 GLOBAL HACKATHON</div>
       <h1>{{workspace() === 'math' ? words().mathTitle : workspace() === 'meta' ? words().metaTestTitle : workspace() === 'pendulum' ? (language() === 'es' ? 'Demo estrella · Péndulo' : 'Flagship Demo · Pendulum') : words().prepare}}</h1>
       <p>{{workspace() === 'math' ? words().mathIntro : workspace() === 'meta' ? words().metaTestIntro : workspace() === 'pendulum' ? (language() === 'es' ? 'Primero un video; después una propuesta y una nueva prueba. Director Muse y SAM todavía pendientes.' : 'One video first; then a new proposal and a follow-up. Muse Director and SAM are still pending.') : words().intro}}</p>
@@ -37,7 +46,7 @@
       <div class="glyph" aria-hidden="true">∿</div>
     </section>
 
-    <div class="workspace">
+    <div class="workspace" [class.focus-workspace]="workspace() === 'pendulum'">
       @if(workspace() === 'meta') {
         <div class="section-line">
           <div><small>{{words().metaTestHeading}}</small>
@@ -201,16 +210,7 @@
         @if(metaTestError()) { <div class="alert" role="alert">{{metaTestError()}}</div> }
       }
       @if(workspace() === 'pendulum') {
-        <app-pendulum-director [language]="language()" />
-        <details class="technical-protocol">
-          <summary>{{language() === 'es'
-            ? 'Modo técnico avanzado · seis grabaciones, CSV y validación de repetibilidad'
-            : 'Advanced technical mode · six recordings, CSV and repeatability checks'}}</summary>
-          <p>{{language() === 'es'
-            ? 'Este laboratorio conserva los experimentos de calibración anteriores. No forma parte de la experiencia principal del jurado.'
-            : 'This laboratory keeps previous calibration studies. It is not part of the jury’s main experience.'}}</p>
-          <app-pendulum-study [language]="language()" />
-        </details>
+        <app-pendulum-zone-one [language]="language()" />
       }
       @if(workspace() === 'math') {
         <app-research-workflow [language]="language()" />

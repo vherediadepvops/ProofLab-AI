@@ -1,2 +1,22 @@
 *{box-sizing:border-box}
 body{margin:0;background:#080b12;color:#ecf0f8;font-family:'Segoe UI',Arial,sans-serif}
+
+/* Péndulo only: full-width juror workspace, without deleting legacy screens. */
+.shell.focus-shell{display:block;min-height:100vh;background:#0b111b}
+.shell.focus-shell .sidebar[hidden],
+.shell.focus-shell .hero[hidden]{display:none!important}
+.shell.focus-shell .content{width:100%;min-width:0}
+.shell.focus-shell .top.focus-top{height:58px;padding:0 clamp(17px,2vw,36px);background:#101724;border-bottom:1px solid #29374a}
+.shell.focus-shell .focus-brand{display:flex;align-items:center;gap:12px;color:#dce9f6;font-size:13px}
+.shell.focus-shell .focus-brand strong{font-size:15px;font-weight:750;letter-spacing:-.3px}
+.shell.focus-shell .focus-brand-mark{display:grid;place-items:center;width:29px;height:29px;border:1px solid #7470d7;border-radius:8px;color:#bab1fb;font-size:18px}
+.shell.focus-shell .focus-brand-divider{color:#6e83a0}
+.shell.focus-shell .top-actions{gap:10px}
+.shell.focus-shell .workspace.focus-workspace{width:100%;max-width:none;margin:0;padding:clamp(12px,1.6vw,27px);box-sizing:border-box}
+@media(min-width:1600px){
+  .shell.focus-shell .workspace.focus-workspace{padding:20px 30px}
+}
+@media(max-width:700px){
+  .shell.focus-shell .top.focus-top{height:54px;padding:0 13px}
+  .shell.focus-shell .workspace.focus-workspace{padding:8px}
+}
