@@ -75,9 +75,11 @@ Local verification: 70 focused Angular tests and a successful build, including m
 
 ### Values painted on the video
 
-Combined and vector views draw θ (°), ω (rad/s) and frame time inside the image. They use the same values and decoded frame as the cards: updates follow playback, seeking and frame stepping, and stay fixed while paused. Missing valid data shows “—” with a short reason. Readout size adapts to the view; switching language while paused repaints the text. Original and trail views retain their previous presentation.
+Combined and vector views show only θ (°) and ω (rad/s) in a translucent micro label following the SAM centre, about 20 displayed pixels above it. No fixed box or timestamp is painted inside the image. Values share the cards' decoded frame during playback, pause, seeking and frame stepping. Missing detection hides the label; a missing derivative alone displays “—” for ω. ES/EN formatting and small-view sizing remain.
 
-Player tests: 27/27 passed and build succeeded; existing initial bundle warning: 600.85 kB / 500 kB. No new Meta calls or CI.
+The tangential arrow starts at that centre; its direction follows the sign of ω and original image geometry (v = ω·r), not the sign of θ. Arrows, mask, cord and trail use finer translucent strokes. Measurements and original video are unchanged.
+
+Local verification: 27/27 player tests and build passed; existing initial bundle warning: 600.44 kB / 500 kB. No new Meta calls or CI.
 
 ## Manual key and Process admission (2026-10-28)
 

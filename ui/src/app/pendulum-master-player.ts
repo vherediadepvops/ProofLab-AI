@@ -642,16 +642,16 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const endX=x+Math.cos(angle)*length,endY=y+Math.sin(angle)*length;
     const head=Math.min(16*unit,length*.4);
     ctx.save();
-    ctx.lineCap='round';ctx.lineJoin='round';
+    ctx.lineCap='round';ctx.lineJoin='round';ctx.globalAlpha=.72;
     ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(endX,endY);
-    // Dark outline keeps the coloured shaft visible against light video frames.
-    ctx.strokeStyle='rgba(4,12,21,.85)';ctx.lineWidth=7*unit;ctx.stroke();
-    ctx.strokeStyle=color;ctx.lineWidth=4*unit;ctx.stroke();
+    // Fine translucent strokes preserve the video beneath the vector.
+    ctx.strokeStyle='rgba(4,12,21,.45)';ctx.lineWidth=3*unit;ctx.stroke();
+    ctx.strokeStyle=color;ctx.lineWidth=1.6*unit;ctx.stroke();
     ctx.beginPath();ctx.moveTo(endX,endY);
     ctx.lineTo(endX-head*Math.cos(angle-.5),endY-head*Math.sin(angle-.5));
     ctx.lineTo(endX-head*Math.cos(angle+.5),endY-head*Math.sin(angle+.5));
     ctx.closePath();
-    ctx.strokeStyle='rgba(4,12,21,.85)';ctx.lineWidth=2*unit;ctx.stroke();
+    ctx.strokeStyle='rgba(4,12,21,.45)';ctx.lineWidth=unit;ctx.stroke();
     ctx.fillStyle=color;ctx.fill();
     ctx.restore();
   }
@@ -669,8 +669,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     ctx.save();
     ctx.scale(canvas.width/track.frameWidth,canvas.height/track.frameHeight);
     ctx.translate(mark.left,mark.top);
-    ctx.fillStyle='rgba(10,244,183,.26)';
-    ctx.strokeStyle='#43f1ce';
+    ctx.fillStyle='rgba(10,244,183,.12)';
+    ctx.strokeStyle='rgba(67,241,206,.65)';
     ctx.lineWidth=2;
     ctx.fill(path);
     ctx.stroke(path);
@@ -689,61 +689,44 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const radius=Math.min(length*.28,60*unit);
     const theta=measurement.angleDegrees*Math.PI/180;
     ctx.save();
-    ctx.lineWidth=1.5*unit;ctx.strokeStyle='#b5c7db';
+    ctx.lineWidth=.8*unit;ctx.strokeStyle='rgba(181,199,219,.45)';
     ctx.setLineDash([5*unit,5*unit]);
     ctx.beginPath();ctx.moveTo(px,py);
     ctx.lineTo(px,Math.min(canvas.height,py+length));ctx.stroke();
     ctx.setLineDash([]);
-    ctx.lineWidth=2*unit;ctx.strokeStyle='#ffcf70';
+    ctx.lineWidth=unit;ctx.strokeStyle='rgba(255,207,112,.55)';
     ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(bx,by);ctx.stroke();
     // Canvas y points down; a positive angle moves from vertical towards right.
     ctx.beginPath();ctx.arc(px,py,radius,Math.PI/2,Math.PI/2-theta,theta>0);ctx.stroke();
-    const text='θ '+this.cordAngleText();
-    ctx.font='600 '+(15*unit)+'px system-ui';ctx.textBaseline='middle';
-    const width=ctx.measureText(text).width+16*unit,height=28*unit;
-    const x=Math.max(0,Math.min(canvas.width-width,px+Math.sin(theta/2)*(radius+18*unit)+12*unit));
-    const y=Math.max(height/2,Math.min(canvas.height-height/2,py+Math.cos(theta/2)*(radius+18*unit)));
-    ctx.fillStyle='rgba(13,22,32,.9)';ctx.fillRect(x,y-height/2,width,height);
-    ctx.fillStyle='#ffe2a8';ctx.fillText(text,x+8*unit,y);
     ctx.restore();
   }
 
-  /** Values painted on the same frame as the vectors, never on a separate clock. */
-  private paintFrameReadout(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
-      time:number):void {
+  /** Micro readout follows the current SAM centroid on the decoded frame. */
+  private paintFrameReadout(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement):void {
+    const bob=this.currentCordAngle();
+    if(!bob)return; // No detection means no floating label at an invented position.
     const bounds=this.readoutBounds.get(canvas);
     const fit=bounds?Math.min(bounds.width/canvas.width,bounds.height/canvas.height):0;
-    // Readability follows the displayed view; cap width to stay within the image.
-    const unit=Math.min(canvas.width/240,Math.max(Math.min(canvas.width,canvas.height)/480,
-      fit>0?12/(22*fit):0));
+    // About 12 CSS px, with 20 CSS px clearance above the bob; fit small previews.
+    const unit=Math.min(canvas.width/150,
+      fit>0?1/fit:Math.min(canvas.width,canvas.height)/480);
+    const bx=bob.bobXpx*canvas.width/480,by=bob.bobYpx*canvas.height/270;
     const lines=[
-      {text:'θ '+this.cordAngleText(),color:'#ffe2a8'},
-      {text:'ω '+this.angularVelocityText()+' rad/s',color:'#a6efed'}
+      {text:'θ: '+this.cordAngleText(),color:'#ffe2a8'},
+      {text:'ω: '+this.angularVelocityText()+' rad/s',color:'#a6efed'}
     ];
-    const stamp='t '+formatMediaTime(time);
-    const note=this.currentCordAngle()===null
-      ? (this.pivotRevision()?(this.es?'Sin detección':'No detection'):
-          (this.es?'Marca suspensión':'Select suspension'))
-      : this.angularVelocityAtFrame()===null
-        ? (this.es?'ω sin medición':'ω unavailable') : '';
     ctx.save();
-    ctx.font='600 '+(22*unit)+'px system-ui';
-    const width=Math.max(...lines.map(line=>ctx.measureText(line.text).width),
-      ctx.measureText(stamp).width,ctx.measureText(note).width)+28*unit;
-    const height=(note?126:104)*unit,x=12*unit,y=12*unit;
-    ctx.fillStyle='rgba(10,21,33,.88)';ctx.strokeStyle='#718ba8';
-    ctx.lineWidth=unit;ctx.beginPath();
-    ctx.roundRect(x,y,width,height,9*unit);ctx.fill();ctx.stroke();
-    ctx.textBaseline='middle';
+    ctx.font='600 '+(12*unit)+'px system-ui';
+    ctx.textBaseline='bottom';ctx.globalAlpha=.85;
+    const width=Math.max(...lines.map(line=>ctx.measureText(line.text).width));
+    const x=Math.max(4*unit,Math.min(canvas.width-width-4*unit,bx-width/2));
+    const bottom=Math.max(31*unit,Math.min(canvas.height-4*unit,by-20*unit));
+    ctx.lineJoin='round';ctx.lineWidth=2*unit;ctx.strokeStyle='rgba(4,12,21,.8)';
     lines.forEach((line,index)=>{
-      ctx.fillStyle=line.color;ctx.fillText(line.text,x+14*unit,y+(25+31*index)*unit);
+      const y=bottom-(1-index)*15*unit;
+      ctx.strokeText(line.text,x,y);
+      ctx.fillStyle=line.color;ctx.fillText(line.text,x,y);
     });
-    ctx.font='500 '+(14*unit)+'px ui-monospace,monospace';
-    ctx.fillStyle='#c2d3e5';ctx.fillText(stamp,x+14*unit,y+86*unit);
-    if(note){
-      ctx.font='500 '+(12*unit)+'px system-ui';
-      ctx.fillStyle='#b8c6d6';ctx.fillText(note,x+14*unit,y+110*unit);
-    }
     ctx.restore();
   }
 
@@ -894,18 +877,19 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       const trail=trailingMotion(samples,time);
       const ghostCanvas=canvases[1]!;
       const fx=ghostCanvas.width/480,fy=ghostCanvas.height/270;
+      const trailUnit=Math.min(ghostCanvas.width,ghostCanvas.height)/480;
       for(const ghostCtx of [ctxs[1]!,ctxs[2]!]){
       for(let i=0;i<trail.length;i++){
         const item=trail[i];
         const ratio=(i+1)/trail.length;
         ghostCtx.beginPath();
-        ghostCtx.fillStyle='rgba(217,151,255,'+(.12+.56*ratio).toFixed(2)+')';
-        ghostCtx.arc(item.x*fx,item.y*fy,Math.max(3,ghostCanvas.width/100),
+        ghostCtx.fillStyle='rgba(217,151,255,'+(.04+.18*ratio).toFixed(2)+')';
+        ghostCtx.arc(item.x*fx,item.y*fy,1.4*trailUnit,
           0,2*Math.PI);
         ghostCtx.fill();
       }
       ghostCtx.beginPath();
-      ghostCtx.strokeStyle='#e5b1ff';ghostCtx.lineWidth=2;
+      ghostCtx.strokeStyle='rgba(229,177,255,.45)';ghostCtx.lineWidth=trailUnit;
       trail.forEach((item,i)=>{
         if(i===0)ghostCtx.moveTo(item.x*fx,item.y*fy);
         else ghostCtx.lineTo(item.x*fx,item.y*fy);
@@ -928,8 +912,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const cordAngle=this.currentCordAngle();
     if(revision && cordAngle)this.paintCordAngle(ctxs[2]!,canvases[2]!,cordAngle,revision);
     if(sam){
-      this.paintFrameReadout(ctxs[0]!,canvases[0]!,time);
-      this.paintFrameReadout(ctxs[2]!,canvases[2]!,time);
+      this.paintFrameReadout(ctxs[0]!,canvases[0]!);
+      this.paintFrameReadout(ctxs[2]!,canvases[2]!);
     }
     const duration=this.duration();
     this.currentTime.set(Math.max(0,Math.min(duration||time,time)));

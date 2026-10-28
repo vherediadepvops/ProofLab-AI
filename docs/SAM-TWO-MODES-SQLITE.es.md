@@ -75,9 +75,11 @@ Verificación local: 70 pruebas Angular focalizadas y build correctos; incluye d
 
 ### Lecturas pintadas sobre el video
 
-Las vistas combinada y de vectores dibujan θ (°), ω (rad/s) y el tiempo del fotograma dentro de la imagen. Usan los mismos valores y el mismo fotograma decodificado que las tarjetas: se actualizan al reproducir, buscar o avanzar un cuadro, y permanecen estables al pausar. Sin dato válido muestran «—» y la causa breve. El tamaño de lectura se adapta a la vista; cambiar idioma con el video pausado también repinta el texto. Original y rastro conservan su presentación anterior.
+Las vistas combinada y de vectores muestran únicamente θ (°) y ω (rad/s) en una microetiqueta semitransparente que sigue al centro SAM, unos 20 píxeles visibles por encima. No hay caja fija ni tiempo dentro de la imagen. Los valores usan el mismo fotograma decodificado que las tarjetas, incluida pausa, búsqueda y avance de un cuadro. Sin detección se oculta la etiqueta; si falta solo la derivada, ω muestra «—». Se conserva el formato ES/EN y la adaptación a vistas pequeñas.
 
-Pruebas del reproductor: 27/27 correctas y build correcto; advertencia de tamaño inicial existente: 600,85 kB / 500 kB. Sin llamadas nuevas a Meta ni CI.
+La flecha tangencial nace en ese centro; su dirección depende del signo de ω y de la geometría original (v = ω·r), no del signo de θ. Flechas, máscara, cuerda y rastro usan trazos más finos y transparentes. Las mediciones y el video original no cambian.
+
+Verificación local: 27/27 pruebas del reproductor y build correctos; advertencia de tamaño inicial existente: 600,44 kB / 500 kB. Sin llamadas nuevas a Meta ni CI.
 
 ## Token manual y habilitación de Procesar (28/10/2026)
 
