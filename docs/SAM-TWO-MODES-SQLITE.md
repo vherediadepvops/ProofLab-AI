@@ -27,6 +27,16 @@ Before Process is pressed in Laboratory, the preview is static: playback, frame 
 
 **Flow validation (2026-10-28):** 77 focused Angular tests passed and production build succeeded; no new Meta inference or CI. POST tests are mocked; existing cache is checked locally. The initial bundle budget warning remains (569.90 kB against 500 kB).
 
+## Explicit video selection and loading states
+
+The Laboratory opens empty even with a remembered study. **Test video** loads the configured local recording only after a click. **New trial** reveals **Upload video** and preserves previous studies on the server. Loading a video never runs SAM.
+
+For a local installation, copy `ui/public/demo-video.example.json` to `ui/public/demo-video.json` and enter an existing study ID with a video and browser preview. Restart the Angular server after creating this file. Git ignores this local configuration; never include private study IDs, recordings or tokens in the public example.
+
+Preview loading and cost checking proceed independently once video metadata is available. Each card has its own indeterminate activity bar; no fabricated percentages. Process requires a ready preview and a completed valid estimate, including cache HITs. Both cache reuse and Meta processing remain busy through result validation; duplicate clicks and source/mode/port changes are blocked. Errors stop activity and leave playback locked.
+
+Local validation of this change: 58 focused Angular tests and a successful build. Paid requests are covered with mocked HTTP only. CI is not required.
+
 ## Persistence and provenance
 
 `SamVideoEvidenceIndex` uses Microsoft.Data.Sqlite at `.private/physics/sam-video-evidence.sqlite`, separate from Lean mathematical memory. SQLite stores **metadata only**: video SHA, model/protocol, prompt hash, response and receipt hashes, private relative path, analysis ID, timestamp, frame count and provenance. It does not store keys, videos, masks, coordinates, plaintext prompts or complete responses.

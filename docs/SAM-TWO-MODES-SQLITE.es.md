@@ -27,6 +27,16 @@ En Laboratorio, antes de pulsar Procesar solo hay una vista estática: reproducc
 
 **Validación de este flujo (28/10/2026):** 77 pruebas Angular focalizadas correctas y build de producción correcto; sin nuevas inferencias Meta ni CI. Las pruebas del POST son simuladas; la caché existente se comprueba localmente. Persiste la advertencia de presupuesto inicial (569,90 kB frente a 500 kB).
 
+## Selección explícita y estados de carga
+
+El Laboratorio inicia vacío aunque exista una sesión recordada. **Video de prueba** carga la grabación local configurada solo al pulsarlo. **Nueva prueba** muestra **Subir video** y conserva los estudios anteriores en el servidor. Cargar un video no ejecuta SAM.
+
+Para configurar la demostración en una instalación local, copiar `ui/public/demo-video.example.json` a `ui/public/demo-video.json` y escribir el ID de un estudio existente con video y vista previa. Reiniciar el servidor Angular después de crear este archivo. Este archivo está ignorado por Git; no incluir videos, tokens ni identificadores privados en el ejemplo público.
+
+La vista previa y la consulta del costo avanzan independientemente al estar disponibles los datos del video. Sus tarjetas muestran barras de actividad separadas, sin porcentajes ficticios. Procesar requiere vista previa lista y estimación válida terminada, incluso con HIT. Al procesar desde caché o Meta se indica actividad hasta validar el resultado; se bloquean dobles clics y cambios de fuente/modo/puerto. Un error detiene el indicador y deja la reproducción bloqueada.
+
+Validación local de este ajuste: 58 pruebas Angular focalizadas y build correcto. Las solicitudes de pago se prueban con HTTP simulado. No requiere CI.
+
 ## Persistencia y procedencia
 
 `SamVideoEvidenceIndex` usa Microsoft.Data.Sqlite bajo `.private/physics/sam-video-evidence.sqlite`, separado de la memoria matemática de Lean. SQLite guarda **solo metadatos**: SHA del video, modelo/protocolo, hash del prompt, hashes de respuesta y recibo, ruta privada relativa, ID de análisis, fecha, cantidad de fotogramas y procedencia. No guarda tokens, videos, máscaras, coordenadas, prompts en texto claro ni respuestas completas.

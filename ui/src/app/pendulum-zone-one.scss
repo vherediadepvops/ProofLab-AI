@@ -70,3 +70,7 @@ app-pendulum-master-player{display:block;width:100%}
 .video-toolbar .file-action{gap:7px;background:#2c6399;border:1px solid #2c6399;font-weight:650;min-height:39px;box-sizing:border-box;padding:9px 14px}
 .video-toolbar .file-action:focus-within{outline:2px solid #70b6f8;outline-offset:3px}
 @media(max-width:700px){.video-toolbar{align-items:stretch;flex-direction:column;gap:14px;padding:14px}.video-toolbar-actions{width:100%}.video-toolbar-actions>*{flex:1;justify-content:center}}
+.video-toolbar .demo-video{background:#233c56;border-color:#4d7aa6;color:#d3e8ff}
+.focus-video>app-lab-activity{margin-bottom:14px}
+.file-action:focus-within{outline:2px solid #70b6f8;outline-offset:3px}
+.video-toolbar-actions{flex-wrap:wrap}

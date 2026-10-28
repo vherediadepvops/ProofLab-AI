@@ -1,6 +1,9 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+import { LabActivity } from './lab-activity';
 import { PendulumDirector } from './pendulum-director';
 import { PendulumMasterPlayer } from './pendulum-master-player';
 import { LabConnection } from './lab-connection';
@@ -14,11 +17,51 @@ import { SamVideoReplay, type SamProcessingSelection } from './sam-video-replay'
 @Component({
   selector: 'app-pendulum-zone-one',
   standalone: true,
-  imports: [CommonModule, FormsModule, PendulumMasterPlayer, SamVideoReplay],
+  imports: [CommonModule, FormsModule, PendulumMasterPlayer, SamVideoReplay, LabActivity],
   templateUrl: './pendulum-zone-one.html',
   styleUrl: './pendulum-zone-one.scss'
 })
 export class PendulumZoneOne extends PendulumDirector {
+  private readonly demoHttp=inject(HttpClient);
+  readonly sourceChoice=signal<'empty'|'demo'|'upload'>('empty');
+  readonly demoLoading=signal(false);
+  readonly previewState=signal<'empty'|'loading'|'ready'|'error'>('empty');
+  readonly resultState=signal<'idle'|'loading'|'ready'|'error'>('idle');
+
+  override ngOnInit():void {
+    // Enter empty even when a previous study is saved. Loading is an explicit action.
+    void this.refreshTheory();
+  }
+
+  async loadDemo():Promise<void> {
+    if(this.videoActionsBusy())return;
+    this.newFocusedStudy();
+    this.sourceChoice.set('demo');this.demoLoading.set(true);
+    this.previewState.set('loading');
+    try {
+      // Local deployment configuration contains only a study ID, never video bytes or keys.
+      const config=await firstValueFrom(this.demoHttp.get<{studyId:string}>('demo-video.json'));
+      if(!/^[a-f0-9]{32}$/i.test(config.studyId))throw new Error('INVALID_DEMO');
+      await this.restore(config.studyId);
+      if(!this.session()?.baseline?.previewAvailable)throw new Error('DEMO_UNAVAILABLE');
+      this.checkedVideo.set(false);
+    } catch {
+      this.session.set(null);this.previewState.set('error');
+      this.error.set(this.es?'No se pudo cargar el video de prueba. Puedes reintentarlo o iniciar una nueva prueba.':
+        'Could not load the test video. Try again or start a new trial.');
+    } finally {this.demoLoading.set(false);}
+  }
+
+  sourcePending():boolean {
+    return this.demoLoading() || this.registeringAndUploading() || !!this.stageBusy();
+  }
+  videoLoading():boolean {return this.sourcePending() || this.previewState()==='loading';}
+  onPreviewState(state:'loading'|'ready'|'error'):void {this.previewState.set(state);}
+  onProcessingStarted():void {this.resultState.set('loading');}
+  onProcessingFinished(ready:boolean):void {
+    this.resultState.set(ready?'ready':'error');this.onPlaybackReady(ready);
+  }
+
   readonly activeTrial = signal<'baseline'|'followup'>('baseline');
   readonly registeringAndUploading = signal(false);
   readonly samRefreshNonce = signal(0);
@@ -26,7 +69,7 @@ export class PendulumZoneOne extends PendulumDirector {
   readonly samSelection=signal<SamProcessingSelection|null>(null);
   readonly playbackReady=signal(false);
   clearProcessed():void {
-    this.samSelection.set(null);this.playbackReady.set(false);this.checkedVideo.set(false);
+    this.samSelection.set(null);this.playbackReady.set(false);this.checkedVideo.set(false);this.resultState.set('idle');
   }
   acceptProcessed(selection:SamProcessingSelection):void {
     const clip=selection.videoRole==='followup'?this.session()?.followup:this.session()?.baseline;
@@ -43,8 +86,8 @@ export class PendulumZoneOne extends PendulumDirector {
       ? selected.analysisId : '';
   }
   selectTrial(role:'baseline'|'followup'):void {
-    if(this.connection.busy())return;
-    this.clearProcessed();this.activeTrial.set(role);
+    if(role===this.activeTrial() || this.videoActionsBusy())return;
+    this.clearProcessed();this.previewState.set('loading');this.activeTrial.set(role);
   }
   onPlaybackReady(ready:boolean):void {
     this.playbackReady.set(ready);
@@ -62,6 +105,7 @@ export class PendulumZoneOne extends PendulumDirector {
     if (!file || this.registeringAndUploading() ||
         this.busy() || !!this.stageBusy() || this.connection.busy()) return;
 
+    this.sourceChoice.set('upload');
     const autoRegister = role === 'baseline' && !this.session();
     if (autoRegister) {
       // Preflight BEFORE creating a study to avoid orphan records on invalid
@@ -78,6 +122,7 @@ export class PendulumZoneOne extends PendulumDirector {
       this.error.set('');
     }
 
+    this.previewState.set('loading');
     try {
       if (autoRegister) {
         // Always refresh from the currently visible length/angle/mass, so a
@@ -100,13 +145,15 @@ export class PendulumZoneOne extends PendulumDirector {
       }
     } finally {
       if (autoRegister) this.registeringAndUploading.set(false);
+      const clip=role==='baseline'?this.session()?.baseline:this.session()?.followup;
+      if(!clip?.previewAvailable)this.previewState.set(this.error()?'error':'empty');
       // Also clear after failed registration, to allow selecting same file.
       control.value = '';
     }
   }
 
   videoActionsBusy():boolean {
-    return this.registeringAndUploading() || this.busy() || !!this.stageBusy() || this.connection.busy();
+    return this.videoLoading() || this.busy() || this.resultState()==='loading' || this.connection.busy();
   }
 
   async uploadNewTrial(event:Event):Promise<void> {
@@ -128,5 +175,6 @@ export class PendulumZoneOne extends PendulumDirector {
     this.clearProcessed();
     this.reset();
     this.activeTrial.set('baseline');
+    this.sourceChoice.set('upload');this.previewState.set('empty');
   }
 }

@@ -3,6 +3,7 @@ import {
   inject, input, output, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { LabActivity } from './lab-activity';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import {
@@ -27,7 +28,7 @@ import {
 @Component({
   selector: 'app-pendulum-master-player',
   standalone: true,
-  imports: [CommonModule],
+  imports: [LabActivity,CommonModule],
   templateUrl: './pendulum-master-player.html',
   styleUrl: './pendulum-master-player.scss'
 })
@@ -61,6 +62,15 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly processedAnalysisId=input('');
   readonly samApiPort=input<5391|5393|5398>(5391);
   readonly processingReady=output<boolean>();
+  readonly processingFinished=output<boolean>();
+  readonly processingPending=input(false);
+  readonly previewStateChanged=output<'loading'|'ready'|'error'>();
+  readonly previewLoading=signal(true);
+  onPreviewError():void {
+    this.previewLoading.set(false);
+    this.error.set(this.es?'El navegador no pudo decodificar la vista previa.':'Browser preview decode failed.');
+    this.previewStateChanged.emit('error');
+  }
   readonly samVerified=signal(false);
   playbackLocked():boolean {return this.processingRequired() && !this.samVerified();}
   private setVerified(value:boolean):void {
@@ -194,6 +204,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   ngOnChanges(changes:SimpleChanges):void{
+    if(changes['videoUrl']) {
+      this.previewLoading.set(true);this.error.set('');
+      this.previewStateChanged.emit('loading');
+    }
     const key=this.studyId()+'|'+this.videoRole()+'|'+this.videoSha256()+'|'+
       this.samApiPort()+'|'+this.processingRequired()+'|'+this.processedAnalysisId();
     if(this.revisionKey===key && !changes['samRefreshNonce'])return;
@@ -251,12 +265,14 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
           throw new Error('SAM_NO_MATCH_PROVENANCE_INVALID');
         this.samTrack.set(null);this.setVerified(true);
         this.samStatus.set('SAM_3_1_COMPLETED_NO_MATCH');
+        this.processingFinished.emit(true);
         this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
         return;
       }
       const track=verifiedSamPlaybackTrack(archive,result,this.videoSha256());
       this.samTrack.set(track);this.setVerified(true);
       this.samStatus.set('SAM_3_1_CACHED_MASKS_PENDING_HUMAN_BOB_REVIEW');
+      this.processingFinished.emit(true);
       this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
     } catch(e:unknown) {
       if(serial!==this.samSerial || this.disposed)return;
@@ -266,6 +282,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       }else{
         this.samStatus.set('SAM_CACHE_INVALID_OR_AMBIGUOUS_NO_FALLBACK');
       }
+      this.processingFinished.emit(false);
       this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
     }
   }
@@ -371,6 +388,9 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   onDecodedFrame():void{
     const video=this.masterVideo?.nativeElement;
     if(!video)return;
+    if(this.previewLoading() && video.readyState>=2) {
+      this.previewLoading.set(false);this.previewStateChanged.emit('ready');
+    }
     this.paintFrame(video.currentTime);
   }
 

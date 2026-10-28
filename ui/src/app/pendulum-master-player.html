@@ -12,7 +12,7 @@
       H.264 · {{proxyFps()}} FPS</span>
   </div>
 
-  @if(processingRequired()) {
+  @if(processingRequired() && !previewLoading() && !processingPending()) {
     <p class="processing-notice" role="status">
       @if(playbackLocked()) {
         {{samStatus()==='AWAITING_PROCESS'
@@ -29,7 +29,14 @@
       }
     </p>
   }
-  <div class="views-grid" [class.is-zoomed]="zoomed()" data-layout="focus-switcher">
+  <div class="viewer-frame" [attr.aria-busy]="previewLoading() || processingPending()">
+  @if(previewLoading() || processingPending()) {
+    <div class="viewer-loading">
+      <app-lab-activity [label]="previewLoading()?(es?'Cargando video…':'Loading video…'):(es?'Procesando video…':'Processing video…')"
+        [detail]="previewLoading()?(es?'Preparando la vista previa. El costo se calcula por separado.':'Preparing the preview. Cost is calculated separately.'):(es?'Preparando el resultado y las vistas sincronizadas.':'Preparing the result and synchronized views.')"/>
+    </div>
+  }
+  <div class="views-grid" [class.loading-views]="previewLoading() || processingPending()" [class.is-zoomed]="zoomed()" data-layout="focus-switcher">
     <div class="view-panel" data-view="combined" [class.is-primary]="activeView()==='combined'"
       [style.grid-area]="gridArea('combined')">
       <div class="view-title">
@@ -80,7 +87,7 @@
           (play)="onPlay()"
           (pause)="onPause()"
           (ended)="onEnded()"
-          (error)="error.set(es ? 'El navegador no pudo decodificar la vista previa.' : 'Browser preview decode failed.')"
+          (error)="onPreviewError()"
           [attr.aria-label]="es ? 'Video fuente y reloj maestro' : 'Source video and master clock'"></video>
       </div>
       <div class="view-meta">{{es?'Original visual de referencia, sin anotaciones':'Unmodified reference view (browser-compatible copy)'}}</div>
@@ -104,7 +111,7 @@
         <canvas #vectorCanvas class="synchronized-canvas" [style.transform]="imageTransform()"
           [attr.aria-label]="es?'Mismo fotograma con velocidad aparente local':'Same frame with local image-space velocity'"></canvas>
       </div>
-      <div class="view-meta">{{samTrack()
+      <div class="view-meta">{{processingRequired() && !samTrack() ? (es?'Disponible después de procesar con SAM':'Available after SAM processing') : samTrack()
         ? (es?'Velocidad en px/s calculada desde centros SAM · NO metros':'Pixel/s velocity derived from SAM centres · NOT metres')
         : (es?'Flecha local provisional · píxeles/segundo':'Provisional local vector · pixels/second')}}</div>
     </div>
@@ -127,10 +134,12 @@
         <canvas #ghostCanvas class="synchronized-canvas" [style.transform]="imageTransform()"
           [attr.aria-label]="es?'Mismo fotograma con posiciones pasadas estimadas':'Same frame with estimated recent motion trail'"></canvas>
       </div>
-      <div class="view-meta">{{samTrack()
+      <div class="view-meta">{{processingRequired() && !samTrack() ? (es?'Disponible después de procesar con SAM':'Available after SAM processing') : samTrack()
         ? (es?'Últimos 1,5 s · trayectoria SAM guardada':'Last 1.5 s · cached SAM path')
         : (es?'Últimos 1,5 s · candidatos locales':'Last 1.5 s · local candidates')}}</div>
     </div>
+  </div>
+
   </div>
 
   @if(studyId() && videoSha256() && !playbackLocked()) {

@@ -119,6 +119,9 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     component.cacheUpdated.subscribe(notification);
     const submit=component.analyze();
     const request=http.expectOne(url+'/manual-one-shot');
+    fixture.detectChanges();
+    expect(component.processing()).toBeTrue();
+    expect(fixture.nativeElement.querySelector('.sam-progress')?.textContent).toContain('Procesando con Meta');
     expect(request.request.method).toBe('POST');
     expect(request.request.headers.get('X-ProofLab-Manual-Action')).toBe('sam-one-shot');
     expect(request.request.body.modelApiToken).toBe(fakeKey);
@@ -131,6 +134,10 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     request.flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
     await submit;fixture.detectChanges();
     expect(notification).toHaveBeenCalledTimes(1);
+    expect(component.processing()).toBeTrue();
+    fixture.componentRef.setInput('validationState','ready');fixture.detectChanges();
+    expect(component.processing()).toBeFalse();
+    expect(component.connection.busy()).toBeFalse();
     expect(component.transferConsent()).toBeFalse();
     expect(component.paidConsent()).toBeFalse();
     expect(component.canOfferPaidRun()).toBeFalse();
@@ -454,6 +461,47 @@ describe('SAM one-time paid inference gate and cached replay UI',()=>{
     await process;
     expect(opened).not.toHaveBeenCalled();expect(component.cacheStatus()).toBeNull();
     expect(component.error()).toContain('facturada');
+    http.verify();fixture.destroy();
+  });
+
+  it('never enables cached processing when the cost check fails',async()=>{
+    const {fixture,component,http}=setup();
+    const check=component.check();
+    http.expectOne(url+'/status?mode='+cacheMode)
+      .flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
+    await Promise.resolve();
+    expect(component.canProcess()).toBeFalse();
+    http.expectOne(url+'/preflight').flush({}, {status:503,statusText:'Unavailable'});
+    await check;fixture.detectChanges();
+    expect(component.cachedResultAvailable()).toBeTrue();
+    expect(component.preflight()).toBeNull();
+    expect(component.canProcess()).toBeFalse();
+    const opened=jasmine.createSpy();component.cacheUpdated.subscribe(opened);
+    await component.process();expect(opened).not.toHaveBeenCalled();
+    http.verify();fixture.destroy();
+  });
+
+  it('waits independently for video readiness and keeps cached processing busy until validation ends',async()=>{
+    const {fixture,component,http}=setup();
+    fixture.componentRef.setInput('mediaReady',false);fixture.detectChanges();
+    const check=component.check();
+    http.expectOne(url+'/status?mode='+cacheMode)
+      .flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
+    await Promise.resolve();http.expectOne(url+'/preflight').flush(preflight);await check;
+    expect(component.canProcess()).toBeFalse();
+    fixture.componentRef.setInput('mediaReady',true);fixture.detectChanges();
+    expect(component.canProcess()).toBeTrue();
+    const opened=jasmine.createSpy();component.cacheUpdated.subscribe(opened);
+    await component.process();fixture.detectChanges();
+    expect(component.processing()).toBeTrue();
+    expect(fixture.nativeElement.querySelector('.sam-progress [role=progressbar]')).not.toBeNull();
+    await component.process();await component.check();
+    expect(opened).toHaveBeenCalledTimes(1);
+    http.expectNone(()=>true);
+    fixture.componentRef.setInput('validationState','error');fixture.detectChanges();
+    expect(component.processing()).toBeFalse();
+    expect(component.connection.busy()).toBeFalse();
+    expect(component.error()).toContain('validar');
     http.verify();fixture.destroy();
   });
 

@@ -63,3 +63,7 @@
 @media(max-width:850px){.kinematics-metrics{grid-template-columns:1fr}}
 .processing-notice{padding:14px 18px;border:1px solid #4a647c;border-radius:9px;background:#1d3041;color:#d8eaff;font-size:.9rem;line-height:1.5}
 .timeline button:disabled,.timeline select:disabled,.timeline input:disabled{opacity:.4;cursor:not-allowed}
+.viewer-frame{position:relative;isolation:isolate}
+.viewer-loading{position:absolute;z-index:2;inset:0;display:flex;align-items:flex-start;justify-content:center;padding:clamp(20px,7vw,90px) 20px;background:linear-gradient(180deg,#101925d9,#10192588);border-radius:10px}
+.viewer-loading app-lab-activity{width:min(100%,470px)}
+.views-grid.loading-views{pointer-events:none;opacity:.3}

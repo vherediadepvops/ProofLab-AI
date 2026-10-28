@@ -40,3 +40,5 @@ local-evidence/
 
 .local-preview/
 .vscode-test/
+# Machine-local demo selection (contains a private study ID).
+/ui/public/demo-video.json
