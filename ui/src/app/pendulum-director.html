@@ -10,6 +10,144 @@
     <span class="offline">0 META TOKENS</span>
   </div>
 
+  <section class="theory-workbench" aria-label="Modelo matemático del péndulo">
+    <div class="eyebrow">01 · {{es?'MODELO MATEMÁTICO INDEPENDIENTE':'INDEPENDENT MATHEMATICAL MODEL'}}</div>
+    <h3>{{es?'Configura el péndulo':'Set up the pendulum'}}</h3>
+    <p>{{es
+      ? 'Estos gráficos se obtienen exclusivamente de la ecuación no lineal, sin usar los videos ni Meta. Modifica los parámetros para recalcular el modelo.'
+      : 'These graphs come only from the nonlinear physical equation, not video or Meta. Change parameters to recompute the model.'}}</p>
+    <div class="workbench-grid">
+      <label>{{es?'Longitud desde pivote al centro (m)':'Pivot-to-bob length (m)'}}
+        <input type="number" min="0.1" max="5" step="0.05"
+          [ngModel]="baselineLength()" (ngModelChange)="baselineLength.set(+$event);refreshTheory()"
+          [disabled]="!!session() || busy()" />
+      </label>
+      <label>{{es?'Ángulo inicial (grados)':'Initial angle (degrees)'}}
+        <input type="number" min="1" max="85" step="1"
+          [ngModel]="initialAngleDegrees()" (ngModelChange)="initialAngleDegrees.set(+$event);refreshTheory()"
+          [disabled]="!!session() || busy()" />
+      </label>
+      <label>{{es?'Masa de la plomada (g)':'Bob mass (g)'}}
+        <input type="number" min="10" max="5000" step="10"
+          [ngModel]="massGrams()" (ngModelChange)="massGrams.set(+$event);refreshTheory()"
+          [disabled]="!!session() || busy()" />
+      </label>
+    </div>
+    <label class="review">
+      <input type="checkbox" [ngModel]="includeSecondTrial()"
+        (ngModelChange)="includeSecondTrial.set($event);refreshTheory()"
+        [disabled]="!!session() || busy()" />
+      {{es?'Agregar segunda prueba cambiando la longitud de cuerda':'Add a second trial by changing the string length'}}
+    </label>
+    @if(includeSecondTrial()) {
+      <div class="second-choice">
+        <label>{{es?'Elección de la segunda longitud':'How to select the second length'}}
+          <select [ngModel]="followUpMode()"
+            (ngModelChange)="followUpMode.set($event);refreshTheory()" [disabled]="!!session() || busy()">
+            <option value="recommended">{{es?'Control local sugerido (ej. 80 cm) · NO IA':'Suggested local control (e.g. 80 cm) · NOT AI'}}</option>
+            <option value="manual">{{es?'Libre: longitud elegida por el investigador':'Custom: researcher-selected length'}}</option>
+          </select>
+        </label>
+        @if(followUpMode() === 'manual') {
+          <label>{{es?'Longitud de segunda prueba (m)':'Follow-up length (m)'}}
+            <input type="number" min="0.1" max="5" step="0.05"
+              [ngModel]="manualFollowUpLength()" (ngModelChange)="manualFollowUpLength.set(+$event);refreshTheory()"
+              [disabled]="!!session() || busy()" />
+          </label>
+        } @else {
+          <p>{{es?'Longitud sugerida por regla local (no por Muse):':'Locally suggested length (not Muse):'}}
+            <strong>{{recommendedFollowUpLength*100 | number:'1.0-0'}} cm</strong></p>
+        }
+      </div>
+    }
+    @if(modelLoading()) {<p class="tiny">{{es?'Recalculando modelo físico local…':'Recomputing local physics…'}}</p>}
+    @if(modelError()) {<p class="error" role="alert">{{modelError()}}</p>}
+    @if(model(); as m) {
+      <div class="metrics">
+        <div>
+          <small>{{es?'Período aproximado (ángulo pequeño)':'Small-angle approximate period'}}</small>
+          <strong>{{m.baseline.smallAnglePeriodSeconds | number:'1.3-3'}} s</strong>
+        </div>
+        <div>
+          <small>{{es?'Período no lineal teórico':'Nonlinear theoretical period'}}</small>
+          <strong>{{m.baseline.nonlinearPeriodSeconds | number:'1.3-3'}} s</strong>
+        </div>
+        <div>
+          <small>{{es?'Energía inicial':'Initial energy'}}</small>
+          <strong>{{m.baseline.initialPotentialJoules | number:'1.4-4'}} J</strong>
+        </div>
+      </div>
+      @if(m.followUp; as second) {
+        <p class="model-comparison">
+          {{es?'Segunda prueba teórica':'Second theoretical trial'}}:
+          <strong>{{second.lengthMeters*100 | number:'1.0-0'}} cm</strong> ·
+          {{es?'período':'period'}} <strong>{{second.nonlinearPeriodSeconds | number:'1.3-3'}} s</strong> ·
+          {{es?'variación prevista':'predicted change'}}
+          <strong>{{m.predictedPeriodIncreasePercent | number:'1.2-2'}} %</strong>
+        </p>
+      }
+      <div class="plot-legend">
+        <span><i class="legend-primary"></i>{{es?'Teoría · primera prueba':'Theory · first trial'}}</span>
+        @if(m.followUp) {
+          <span><i class="legend-second"></i>{{es?'Teoría · segunda prueba':'Theory · second trial'}}</span>
+        }
+      </div>
+      @if(paths(); as graph) {
+        <div class="model-charts">
+          <section class="model-chart">
+            <h4>{{es?'Gráfico 1 · Desplazamiento horizontal vs tiempo':'Graph 1 · Horizontal displacement vs time'}}</h4>
+            <svg viewBox="0 0 680 198" role="img"
+              [attr.aria-label]="es?'Oscilación horizontal teórica en centímetros':'Theoretical horizontal oscillation in centimetres'">
+              <path d="M36 15 V175 H644" class="axis"/>
+              <path d="M36 95 H644" class="zero-axis"/>
+              <polyline [attr.points]="graph.motionA" class="theory-primary"/>
+              @if(graph.motionB) {<polyline [attr.points]="graph.motionB" class="theory-second"/>}
+              <text x="35" y="191">0 s</text><text x="605" y="191">20 s</text>
+              <text x="40" y="11">x (cm)</text>
+            </svg>
+            <p>{{es?'Al variar la longitud cambia la frecuencia; al variar el ángulo cambia la amplitud.':'Length changes frequency; angle changes amplitude.'}}</p>
+          </section>
+          <section class="model-chart">
+            <h4>{{es?'Gráfico 2 · Trayectoria del péndulo en el plano XY':'Graph 2 · Pendulum trajectory in the XY plane'}}</h4>
+            <svg viewBox="0 0 680 198" role="img"
+              [attr.aria-label]="es?'Trayectoria teórica x e y en centímetros':'Theoretical x y trajectory in centimetres'">
+              <path d="M36 15 V175 H644" class="axis"/>
+              <path d="M340 15 V175" class="zero-axis"/>
+              <polyline [attr.points]="graph.xyA" class="theory-primary"/>
+              @if(graph.xyB){<polyline [attr.points]="graph.xyB" class="theory-second"/>}
+              <text x="43" y="191">−x</text><text x="595" y="191">+x (cm)</text>
+              <text x="345" y="11">{{es?'altura':'height'}}</text>
+            </svg>
+            <p>{{es?'Vista 2D: desplazamiento horizontal y elevación respecto al punto más bajo.':'2D view: horizontal position and height above the lowest point.'}}</p>
+          </section>
+          <section class="model-chart">
+            <h4>{{es?'Gráfico 3 · Transformación de energía (primera prueba)':'Graph 3 · Energy transformation (first trial)'}}</h4>
+            <svg viewBox="0 0 680 198" role="img"
+              [attr.aria-label]="es?'Energía cinética potencial y total del modelo':'Model kinetic potential and total energy'">
+              <path d="M36 15 V175 H644" class="axis"/>
+              <polyline [attr.points]="graph.kinetic" class="energy-kinetic"/>
+              <polyline [attr.points]="graph.potential" class="energy-potential"/>
+              <polyline [attr.points]="graph.total" class="energy-total"/>
+              <text x="35" y="191">0 s</text><text x="600" y="191">20 s</text>
+              <text x="39" y="11">E (J)</text>
+            </svg>
+            <div class="plot-legend energy-legend">
+              <span><i class="legend-kinetic"></i>{{es?'Cinética':'Kinetic'}}</span>
+              <span><i class="legend-potential"></i>{{es?'Potencial':'Potential'}}</span>
+              <span><i class="legend-total"></i>{{es?'Total':'Total'}}</span>
+            </div>
+            <p>{{es?'La masa cambia la energía, pero no el período ideal. Sin rozamiento, la energía total se conserva.':'Mass changes energy, not the ideal period. Without damping, total energy is conserved.'}}</p>
+          </section>
+        </div>
+      }
+      <p class="tiny">{{es?'Modelo:':'Model:'}} {{m.equation}} ·
+        {{es?'Sin rozamiento, sin observaciones del video ni IA.':'No damping, no video observations and no AI.'}}</p>
+      <button class="quiet" type="button" (click)="downloadTheoreticalCsv()">
+        {{es?'Exportar muestras del modelo (CSV)':'Export model samples (CSV)'}}
+      </button>
+    }
+  </section>
+
   <div class="stages">
     <span [class.active]="!session()?.baseline">1 · {{es?'Observar':'Observe'}}</span>
     <span [class.active]="!!session()?.baseline && !session()?.proposal">2 · {{es?'Proponer':'Propose'}}</span>
@@ -26,14 +164,13 @@
   @if(!session()) {
     <div class="start">
       <h3>01 · {{es?'Primera observación':'First observation'}}</h3>
-      <p>{{es?'Introduce únicamente la longitud medida del péndulo; no hace falta escribir fórmulas ni resultados.':'Enter only the measured pendulum length. No formula or results required.'}}</p>
-      <label>{{es?'Longitud desde pivote hasta centro de plomada (metros)':'Pivot-to-bob-centre length (metres)'}}
-        <input type="number" min="0.1" max="5" step="0.05"
-          [ngModel]="baselineLength()" (ngModelChange)="baselineLength.set(+$event)"
-          [disabled]="busy()" />
-      </label>
-      <button class="primary" [disabled]="busy()" (click)="start()">
-        {{es?'Iniciar una investigación':'Start a research study'}}
+      <p>{{es
+        ? 'El modelo anterior está listo. Inicia el protocolo para registrar los parámetros y subir el primer video.'
+        : 'The model above is ready. Start a study to freeze the chosen parameters and upload the first video.'}}</p>
+      <button class="primary" [disabled]="busy() || !model() || modelLoading()" (click)="start()">
+        {{es
+          ? (includeSecondTrial()?'Iniciar investigación de dos pruebas':'Iniciar investigación de una prueba')
+          : (includeSecondTrial()?'Start a two-trial study':'Start a one-trial study')}}
       </button>
     </div>
   } @else if(session(); as s) {
@@ -43,9 +180,17 @@
         {{es?'Nueva investigación':'New study'}}
       </button>
     </div>
+    @if(s.modelSha256) {
+      <p class="hash">{{es?'Modelo teórico registrado antes de recibir videos':'Theory registered before video submission'}} ·
+        SHA-256: {{s.modelSha256}}
+      </p>
+    }
     <div class="step">
-      <h3>01 · {{es?'Observar el péndulo':'Observe the pendulum'}}</h3>
-      <p>{{es?'Longitud declarada':'Declared length'}}: <strong>{{s.baselineLengthMeters*100 | number:'1.0-0'}} cm</strong></p>
+      <h3>02 · {{es?'Observar el péndulo':'Observe the pendulum'}}</h3>
+      <p>{{es?'Longitud declarada':'Declared length'}}: <strong>{{s.baselineLengthMeters*100 | number:'1.0-0'}} cm</strong>
+        · {{es?'Ángulo':'Angle'}} <strong>{{s.angleDegrees ?? 15 | number:'1.0-0'}}°</strong>
+        · {{es?'Masa':'Mass'}} <strong>{{s.massGrams ?? 300 | number:'1.0-0'}} g</strong>
+      </p>
       @if(!s.baseline) {
         <label>{{es?'Sube un solo video original (MOV, MP4 y otros)':'Upload one original video (MOV, MP4 and others)'}}
           <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
@@ -70,12 +215,42 @@
             ? 'No hay vista previa reproducible. Para confirmar identidad de la plomada, revisa el video original completo en otro reproductor.'
             : 'Playable preview unavailable. Review the full original video in another player before confirming bob identity.'}}</p>
         }
-        @if(s.baseline.tracking.observations.length>10) {
-          <svg viewBox="0 0 400 110" class="graph" role="img"
-            [attr.aria-label]="es?'Trayectoria local sin validación visual':'Unverified local motion trajectory'">
-            <polyline fill="none" stroke="#3182bd" stroke-width="2"
-              [attr.points]="trajectory(s.baseline.tracking.observations)" />
-          </svg>
+        @if(evidencePlots().baseline; as observed) {
+          <div class="evidence-studio">
+            <strong>{{es?'GRÁFICOS OBTENIDOS DE COORDENADAS DEL VIDEO':'CHARTS DERIVED FROM VIDEO COORDINATES'}}</strong>
+            <p class="caution">{{es
+              ? 'Datos del seguimiento de fondo LOCAL, NO de SAM ni de Muse. Aquí x está en píxeles y la velocidad en píxeles/segundo: no son medidas espaciales calibradas ni el plano XY físico.'
+              : 'LOCAL background tracking, NOT SAM or Muse. Horizontal position is in pixels and speed in pixels/second; these are not calibrated physical XY measurements.'}}</p>
+            <div class="model-charts">
+              <section class="model-chart">
+                <h4>{{es?'Video 1 · Posición horizontal vs tiempo':'Video 1 · Horizontal position vs time'}}</h4>
+                <svg viewBox="0 0 680 198" role="img"
+                  [attr.aria-label]="es?'Posiciones medidas en píxeles':'Tracked pixel positions'">
+                  <path d="M36 15 V175 H644" class="axis"/>
+                  <polyline class="video-observed" [attr.points]="observed.position"/>
+                  <text x="38" y="11">x (px)</text><text x="596" y="191">t (s)</text>
+                </svg>
+              </section>
+              <section class="model-chart">
+                <h4>{{es?'Video 1 · Velocidad horizontal estimada':'Video 1 · Estimated horizontal speed'}}</h4>
+                <svg viewBox="0 0 680 198" role="img"
+                  [attr.aria-label]="es?'Velocidad calculada de coordenadas por tiempo':'Velocity from pixel coordinates and time'">
+                  <path d="M36 15 V175 H644" class="axis"/>
+                  <polyline class="video-observed" [attr.points]="observed.velocity"/>
+                  <text x="38" y="11">v (px/s)</text><text x="596" y="191">t (s)</text>
+                </svg>
+              </section>
+              <section class="model-chart">
+                <h4>{{es?'Video 1 · Plano de fase de imagen':'Video 1 · Image phase space'}}</h4>
+                <svg viewBox="0 0 680 198" role="img"
+                  [attr.aria-label]="es?'Espacio de fase posición y velocidad calculada':'Image position versus computed velocity'">
+                  <path d="M36 15 V175 H644" class="axis"/>
+                  <polyline class="video-observed" [attr.points]="observed.phase"/>
+                  <text x="38" y="11">v (px/s)</text><text x="565" y="191">x (px)</text>
+                </svg>
+              </section>
+            </div>
+          </div>
         }
         <div class="metrics">
           <div><small>{{es?'Período detectado (preliminar)':'Detected period (preliminary)'}}</small>
@@ -85,6 +260,13 @@
           <div><small>{{es?'Fotogramas con detecciones':'Frames with detections'}}</small>
             <strong>{{s.baseline.tracking.detectedFrames}} / {{s.baseline.tracking.framesAnalyzed}}</strong></div>
         </div>
+        @if(baselinePeriodDiscrepancyPercent !== null) {
+          <p class="model-comparison">
+            {{es?'Modelo no lineal vs señal del video · diferencia relativa preliminar:':'Nonlinear theory vs video trace · preliminary relative discrepancy:'}}
+            <strong>{{baselinePeriodDiscrepancyPercent | number:'1.2-2'}} %</strong>.
+            {{es?'No representa la incertidumbre total del experimento.':'Not the full measurement uncertainty.'}}
+          </p>
+        }
         @if(!s.humanReview) {
           <p class="caution">{{es
             ? 'Antes de continuar, observa el video y comprueba que la curva corresponde a la plomada, no a manos o sombras. Esta confirmación humana no constituye validación independiente.'
@@ -109,15 +291,24 @@
       }
     </div>
 
-    @if(s.humanReview) {
+    @if(s.humanReview && (s.includeSecondTrial ?? true)) {
       <div class="step">
         <h3>02 · {{es?'Decidir el siguiente experimento':'Decide the next experiment'}}</h3>
         @if(!s.proposal) {
           <p>{{es
             ? 'Aquí Muse Spark debería razonar a partir del primer resultado y elegir una prueba. Ese agente todavía no está integrado.'
             : 'Muse Spark should reason over the first result and choose the next test here. That agent is not integrated yet.'}}</p>
+          <p class="model-comparison">
+            {{es?'Modo seleccionado':'Selection'}}:
+            {{(s.followUpMode === 'manual')
+              ? (es?'longitud elegida por ti':'researcher-selected length')
+              : (es?'control local predefinido':'preset local control')}}
+            @if(s.followUpMode === 'manual') {
+              · {{(s.selectedFollowUpLengthMeters ?? 0)*100 | number:'1.0-0'}} cm
+            }
+          </p>
           <button class="primary" [disabled]="busy()" (click)="propose()">
-            {{es?'Registrar propuesta local de control (NO IA)':'Register a local control proposal (NOT AI)'}}
+            {{es?'Registrar predicción de segunda prueba (sin IA)':'Freeze second-trial prediction (not AI)'}}
           </button>
         } @else {
           <p class="caution">{{es?s.proposal.reasonEs:s.proposal.reasonEn}}</p>
@@ -131,6 +322,30 @@
           </div>
           <p class="hash">{{es?'Predicción congelada':'Frozen prediction'}} · SHA-256: {{s.proposal.predictionSha256}}</p>
           <p class="hash">UTC: {{s.proposal.registeredAtUtc}}</p>
+        }
+      </div>
+    }
+
+    @if(s.humanReview && !(s.includeSecondTrial ?? true)) {
+      <div class="step">
+        <h3>03 · {{es?'Contrastar la única prueba':'Evaluate the single trial'}}</h3>
+        <p>{{es
+          ? 'Esta investigación solo necesita un video. Comparamos el período medido localmente con la predicción no lineal previamente configurada.'
+          : 'This study needs just one video. We compare the locally estimated period against the configured nonlinear theory.'}}</p>
+        @if(!s.singleComparison) {
+          <button class="primary" type="button" [disabled]="busy()" (click)="compareSingle()">
+            {{es?'Comparar teoría y video (sin Meta)':'Compare theory and video (no Meta)'}}
+          </button>
+        } @else if(s.singleComparison; as single) {
+          <div class="metrics">
+            <div><small>{{es?'Período teórico no lineal':'Nonlinear theoretical period'}}</small>
+              <strong>{{single.predictedNonlinearPeriodSeconds | number:'1.3-3'}} s</strong></div>
+            <div><small>{{es?'Período preliminar del video':'Preliminary video period'}}</small>
+              <strong>{{single.observedLocalPeriodSeconds | number:'1.3-3'}} s</strong></div>
+            <div><small>{{es?'Error relativo de período':'Relative period discrepancy'}}</small>
+              <strong>{{single.relativePeriodErrorPercent | number:'1.2-2'}} %</strong></div>
+          </div>
+          <p class="caution">{{es?single.limitationsEs:single.limitationsEn}}</p>
         }
       </div>
     }
@@ -165,6 +380,40 @@
               <polyline fill="none" stroke="#3182bd" stroke-width="2"
                 [attr.points]="trajectory(s.followup.tracking.observations)" />
             </svg>
+          }
+          @if(evidencePlots().followup; as observed) {
+            <div class="evidence-studio">
+              <strong>{{es?'EVIDENCIA DE LA SEGUNDA GRABACIÓN · LOCAL, NO SAM':'SECOND VIDEO OBSERVATIONS · LOCAL, NOT SAM'}}</strong>
+              <p class="caution">{{es
+                ? 'Gráficos derivados de seguimiento de imagen: píxeles y píxeles/segundo, sin calibración espacial.'
+                : 'Image tracking charts in pixels and pixels/second, without physical spatial calibration.'}}</p>
+              <div class="model-charts">
+                <section class="model-chart">
+                  <h4>{{es?'Video 2 · Posición vs tiempo':'Video 2 · Position vs time'}}</h4>
+                  <svg viewBox="0 0 680 198" role="img">
+                    <path d="M36 15 V175 H644" class="axis"/>
+                    <polyline class="video-observed" [attr.points]="observed.position"/>
+                    <text x="38" y="11">x (px)</text><text x="596" y="191">t (s)</text>
+                  </svg>
+                </section>
+                <section class="model-chart">
+                  <h4>{{es?'Video 2 · Velocidad horizontal':'Video 2 · Horizontal speed'}}</h4>
+                  <svg viewBox="0 0 680 198" role="img">
+                    <path d="M36 15 V175 H644" class="axis"/>
+                    <polyline class="video-observed" [attr.points]="observed.velocity"/>
+                    <text x="38" y="11">v (px/s)</text><text x="596" y="191">t (s)</text>
+                  </svg>
+                </section>
+                <section class="model-chart">
+                  <h4>{{es?'Video 2 · Fase de imagen':'Video 2 · Image phase space'}}</h4>
+                  <svg viewBox="0 0 680 198" role="img">
+                    <path d="M36 15 V175 H644" class="axis"/>
+                    <polyline class="video-observed" [attr.points]="observed.phase"/>
+                    <text x="38" y="11">v (px/s)</text><text x="565" y="191">x (px)</text>
+                  </svg>
+                </section>
+              </div>
+            </div>
           }
           <p>{{es?'Segundo período preliminar':'Follow-up preliminary period'}}:
             <strong>{{s.followup.spectral.periodSeconds === null ? '—' :

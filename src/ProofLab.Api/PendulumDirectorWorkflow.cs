@@ -11,7 +11,13 @@ namespace ProofLab.Api;
 /// Files are local-only; no internet-facing anonymous uploads, Meta usage or
 /// unsafe execution of AI-generated instructions.
 /// </summary>
-public sealed record DirectorStartRequest(double BaselineLengthMeters);
+public sealed record DirectorStartRequest(
+    double BaselineLengthMeters,
+    double AngleDegrees = 15,
+    double MassGrams = 300,
+    bool IncludeSecondTrial = true,
+    string FollowUpMode = "recommended",
+    double? SelectedFollowUpLengthMeters = null);
 public sealed record DirectorHumanReviewRequest(bool BobConfirmed);
 public sealed record DirectorVideoEvidence(
     string Role, string VideoId, string OriginalFilename, long Bytes,
@@ -32,6 +38,15 @@ public sealed record DirectorComparison(
     double PredictedIncreasePercent, double ObservedIncreasePercent,
     double ChangeGapPercentagePoints, string LimitationsEs,
     string LimitationsEn);
+public sealed record DirectorSingleComparison(
+    DateTimeOffset ComparedAtUtc,
+    double PredictedNonlinearPeriodSeconds,
+    double PredictedSmallAnglePeriodSeconds,
+    double ObservedLocalPeriodSeconds,
+    double RelativePeriodErrorPercent,
+    string Status,
+    string LimitationsEs,
+    string LimitationsEn);
 public sealed record DirectorSession(
     string Id, double BaselineLengthMeters, DateTimeOffset CreatedAtUtc,
     string Step, string ModelStatus,
@@ -39,7 +54,14 @@ public sealed record DirectorSession(
     DirectorHumanReview? HumanReview,
     DirectorProposal? Proposal,
     DirectorVideoEvidence? Followup,
-    DirectorComparison? Comparison);
+    DirectorComparison? Comparison,
+    double AngleDegrees = 15,
+    double MassGrams = 300,
+    bool IncludeSecondTrial = true,
+    string FollowUpMode = "recommended",
+    double? SelectedFollowUpLengthMeters = null,
+    DirectorSingleComparison? SingleComparison = null,
+    string? ModelSha256 = null);
 
 public sealed class PendulumDirectorWorkflow(
     IWebHostEnvironment environment, VideoMediaDecoder decoder)
@@ -55,12 +77,28 @@ public sealed class PendulumDirectorWorkflow(
     public async Task<DirectorSession> StartAsync(
         DirectorStartRequest input, CancellationToken ct)
     {
-        _ = ScientificModels.Predict(new ExperimentSetup(ExperimentKind.Pendulum,
-            LengthMeters: input.BaselineLengthMeters)); // independent validity gate
+        _ = PendulumMathematicalModel.Predict(
+            new PendulumMathematicalRequest(input.BaselineLengthMeters,
+                input.AngleDegrees,input.MassGrams,
+                input.IncludeSecondTrial && input.FollowUpMode == "manual"
+                    ? input.SelectedFollowUpLengthMeters
+                    : null));
+        if(input.FollowUpMode is not ("manual" or "recommended"))
+            throw new ArgumentException("Select manual or recommended follow-up.");
+        if(input.IncludeSecondTrial && input.FollowUpMode == "manual" &&
+           input.SelectedFollowUpLengthMeters is null)
+            throw new ArgumentException("A manual second length is required.");
+        if(!input.IncludeSecondTrial && input.SelectedFollowUpLengthMeters is not null)
+            throw new ArgumentException("Second length is not allowed when follow-up is disabled.");
         var id = Guid.NewGuid().ToString("N");
         var metadata = new DirectorSession(id, input.BaselineLengthMeters,
             DateTimeOffset.UtcNow, "AWAITING_FIRST_VIDEO", NotAi,
-            null, null, null, null, null);
+            null, null, null, null, null,
+            input.AngleDegrees,input.MassGrams,input.IncludeSecondTrial,
+            input.FollowUpMode,input.IncludeSecondTrial &&
+                input.FollowUpMode=="manual"
+                ? input.SelectedFollowUpLengthMeters : null);
+        metadata = metadata with { ModelSha256 = CalculateModelHash(metadata) };
         await gate.WaitAsync(ct);
         try
         {
@@ -96,7 +134,8 @@ public sealed class PendulumDirectorWorkflow(
             var session = await LoadUnlockedAsync(id, ct);
             if (role == "baseline" && session.Baseline is not null)
                 throw new ArgumentException("Initial video is already registered.");
-            if (role == "followup" && (session.Proposal is null ||
+            if (role == "followup" && (!session.IncludeSecondTrial ||
+                                       session.Proposal is null ||
                                        session.Followup is not null))
                 throw new ArgumentException("Register a proposal before the second video.");
             if (role == "baseline" && session.Proposal is not null)
@@ -192,18 +231,35 @@ public sealed class PendulumDirectorWorkflow(
         try
         {
             var session = await LoadUnlockedAsync(id,ct);
+            if(!session.IncludeSecondTrial)
+                throw new ArgumentException("This study was configured for one trial only.");
             if(session.Proposal is not null) return session; // frozen once written
             if(session.Baseline is null || session.HumanReview?.BobConfirmed != true)
                 throw new ArgumentException("First review the observed bob movement.");
             // A fixed demonstrator control; MUST NOT be attributed to Muse Spark.
-            var prediction = PendulumDirectorProtocol.RecommendLocalControl(
-                session.BaselineLengthMeters);
+            var manual = session.FollowUpMode == "manual";
+            var lengths = manual
+                ? PendulumTrialProtocol.Predict(
+                    session.BaselineLengthMeters,
+                    session.SelectedFollowUpLengthMeters ??
+                        throw new InvalidDataException("No manual length selected."))
+                : PendulumDirectorProtocol.RecommendLocalControl(
+                    session.BaselineLengthMeters);
+            // Freeze the nonlinear finite-angle period displayed by the workbench,
+            // not a different small-angle approximation.
+            var prediction = PendulumDirectorProtocol.UseNonlinearModel(
+                lengths,session.AngleDegrees,session.MassGrams);
+            var source = manual ? "USER_SELECTED_LENGTH_NOT_META_AI_NOT_SAM" : NotAi;
             var stamp = DateTimeOffset.UtcNow;
             var sha = CalculateProposalHash(id, session.Baseline.Sha256,
-                prediction, NotAi, stamp);
-            var proposal = new DirectorProposal(NotAi,
-                "Control local predefinido: variar la longitud para comprobar la ley T∝√L. NO es una decisión de Muse Spark.",
-                "Local preset: change length to test T∝√L. This is NOT a Muse Spark decision.",
+                prediction, source, stamp);
+            var proposal = new DirectorProposal(source,
+                manual
+                    ? "Longitud de control elegida por el usuario, no por Muse Spark."
+                    : "Control local predefinido para comprobar la relación del período con la longitud; NO es una decisión de Muse Spark.",
+                manual
+                    ? "The follow-up length was chosen by the user, not Muse Spark."
+                    : "Preset local length-control experiment, NOT a Muse Spark decision.",
                 stamp,session.Baseline.Sha256,prediction,sha);
             await WriteNewAsync(PathFor(id,"proposal.json"),proposal,ct);
             return await LoadUnlockedAsync(id,ct);
@@ -218,6 +274,8 @@ public sealed class PendulumDirectorWorkflow(
         {
             var session = await LoadUnlockedAsync(id,ct);
             if(session.Comparison is not null)return session;
+            if(!session.IncludeSecondTrial)
+                throw new ArgumentException("Use single-trial comparison for this study.");
             if(session.Baseline?.Spectral.PeriodSeconds is not double first ||
                session.Followup?.Spectral.PeriodSeconds is not double second ||
                session.Proposal is null)
@@ -231,6 +289,45 @@ public sealed class PendulumDirectorWorkflow(
                 "Las coordenadas proceden de sustracción local de fondo, no de SAM. La confirmación humana es declarativa, no revisión independiente. El error de muestreo, desenfoque y sesgo de seguimiento sigue pendiente.",
                 "Coordinates come from local background subtraction, not SAM. User acknowledgement is not independent validation. Frame timing, blur and tracker bias remain unquantified.");
             await WriteNewAsync(PathFor(id,"comparison.json"),conclusion,ct);
+            return await LoadUnlockedAsync(id,ct);
+        }
+        finally{gate.Release();}
+    }
+
+    /// <summary>
+    /// Compare one real locally-tracked period with theory, without requiring
+    /// a second video. User's bob check is an acknowledgement only.
+    /// </summary>
+    public async Task<DirectorSession> CompareSingleAsync(string id,CancellationToken ct)
+    {
+        await gate.WaitAsync(ct);
+        try
+        {
+            var session=await LoadUnlockedAsync(id,ct);
+            if(session.IncludeSecondTrial)
+                throw new ArgumentException("This research requires the planned follow-up video.");
+            if(session.SingleComparison is not null) return session;
+            if(session.HumanReview?.BobConfirmed != true ||
+               session.Baseline?.Spectral.PeriodSeconds is not double observed)
+                throw new ArgumentException("Review one usable video before comparison.");
+            var predicted=PendulumMathematicalModel.Predict(
+                new PendulumMathematicalRequest(session.BaselineLengthMeters,
+                    session.AngleDegrees,session.MassGrams)).Baseline;
+            var relativeError=Math.Abs(observed-predicted.NonlinearPeriodSeconds) /
+                              predicted.NonlinearPeriodSeconds*100;
+            var result=new DirectorSingleComparison(
+                DateTimeOffset.UtcNow,
+                predicted.NonlinearPeriodSeconds,
+                predicted.SmallAnglePeriodSeconds,
+                observed, relativeError,
+                "PRELIMINARY_LOCAL_SINGLE_VIDEO_NOT_SAM_OR_VALIDATED",
+                "Período extraído de coordenadas automáticas sin segmentación SAM; " +
+                "el reconocimiento humano es una declaración, no auditoría científica. " +
+                "El error numérico no incluye incertidumbre sistemática, escala o tiempo.",
+                "Period comes from unverified local tracking, not SAM; " +
+                "the user's acknowledgement is not independent scientific validation. " +
+                "Numerical disagreement does not represent a complete uncertainty budget.");
+            await WriteNewAsync(PathFor(id,"single-comparison.json"),result,ct);
             return await LoadUnlockedAsync(id,ct);
         }
         finally{gate.Release();}
@@ -270,25 +367,34 @@ public sealed class PendulumDirectorWorkflow(
     {
         var original=await ReadOptionalAsync<DirectorSession>(PathFor(id,"session.json"),ct)
             ?? throw new FileNotFoundException("Director session not found.");
-        if(original.Id!=id.ToLowerInvariant())
-            throw new InvalidDataException("Session identity mismatch.");
+        if(original.Id!=id.ToLowerInvariant() ||
+           original.ModelSha256 is not null &&
+           !string.Equals(original.ModelSha256,CalculateModelHash(original),
+               StringComparison.Ordinal))
+            throw new InvalidDataException("Theoretical model snapshot integrity mismatch.");
         var first=await ReadOptionalAsync<DirectorVideoEvidence>(PathFor(id,"baseline.json"),ct);
         var review=await ReadOptionalAsync<DirectorHumanReview>(PathFor(id,"human-review.json"),ct);
         var proposal=await ReadOptionalAsync<DirectorProposal>(PathFor(id,"proposal.json"),ct);
         var second=await ReadOptionalAsync<DirectorVideoEvidence>(PathFor(id,"followup.json"),ct);
         var result=await ReadOptionalAsync<DirectorComparison>(PathFor(id,"comparison.json"),ct);
+        var single=await ReadOptionalAsync<DirectorSingleComparison>(PathFor(id,"single-comparison.json"),ct);
         if(first is not null && first.Role!="baseline" ||
            second is not null && second.Role!="followup" ||
            review is not null && (review.VideoSha256!=first?.Sha256 ||
                                   !review.BobConfirmed) ||
            proposal is not null &&
              (proposal.BaselineSha256!=first?.Sha256 ||
-              review is null || proposal.Source!=NotAi ||
+              review is null ||
+              proposal.Source is not ("LOCAL_PROTOCOL_NOT_META_AI_NOT_SAM" or
+                "USER_SELECTED_LENGTH_NOT_META_AI_NOT_SAM") ||
               proposal.PredictionSha256!=CalculateProposalHash(
                   id,proposal.BaselineSha256,proposal.Theory,
                   proposal.Source,proposal.RegisteredAtUtc)) ||
            second is not null && proposal is null ||
-           result is not null && (proposal is null || second is null) ||
+           result is not null && (proposal is null || second is null ||
+                                  !original.IncludeSecondTrial) ||
+           single is not null && (original.IncludeSecondTrial ||
+              review is null || first is null || proposal is not null) ||
            first is not null && first.UploadedAtUtc < original.CreatedAtUtc ||
            review is not null && (first is null ||
                                   review.ReviewedAtUtc < first.UploadedAtUtc) ||
@@ -299,7 +405,8 @@ public sealed class PendulumDirectorWorkflow(
            result is not null && (second is null ||
                                   result.ComparedAtUtc < second.UploadedAtUtc))
             throw new InvalidDataException("Research order/provenance mismatch.");
-        var step=result is not null ? "COMPARED_PRELIMINARY":
+        var step=single is not null ? "SINGLE_COMPARED_PRELIMINARY":
+            result is not null ? "COMPARED_PRELIMINARY":
             second is not null ? "READY_TO_COMPARE":
             proposal is not null ? "AWAITING_SECOND_VIDEO":
             review is not null ? "READY_TO_PROPOSE":
@@ -308,7 +415,8 @@ public sealed class PendulumDirectorWorkflow(
             first is not null ? "INITIAL_VIDEO_NEEDS_REVIEW":"AWAITING_FIRST_VIDEO";
         return original with {
             Step=step, ModelStatus=NotAi,Baseline=first,HumanReview=review,
-            Proposal=proposal,Followup=second,Comparison=result
+            Proposal=proposal,Followup=second,Comparison=result,
+            SingleComparison=single
         };
     }
 
@@ -325,6 +433,22 @@ public sealed class PendulumDirectorWorkflow(
         await using var stream=new FileStream(path,FileMode.CreateNew,FileAccess.Write,
             FileShare.None,4096,true);
         await JsonSerializer.SerializeAsync(stream,input,Json,ct);
+    }
+
+    /// <summary>
+    /// A local integrity checksum over pre-observation theoretical parameters.
+    /// It cannot establish independent publication or video acquisition time.
+    /// </summary>
+    private static string CalculateModelHash(DirectorSession s)
+    {
+        var bytes=Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {
+            protocol="PROOFLAB_THEORY_SNAPSHOT_V1",
+            modelVersion=PendulumMathematicalModel.Provenance,
+            s.Id,s.CreatedAtUtc,s.BaselineLengthMeters,
+            s.AngleDegrees,s.MassGrams,s.IncludeSecondTrial,
+            s.FollowUpMode,s.SelectedFollowUpLengthMeters
+        },Json));
+        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     }
 
     /// <summary>

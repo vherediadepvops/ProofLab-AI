@@ -3,7 +3,9 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { PendulumDirector } from './pendulum-director';
 
-describe('Flagship two-video research experience — not pretending AI', () => {
+describe('ProofLab physical workbench and guided flagship experiment', () => {
+  const modelApi='http://127.0.0.1:5391/api/science/pendulum/mathematical-model';
+  const studyApi='http://127.0.0.1:5391/api/science/director/pendulum/sessions';
   beforeEach(async () => {
     localStorage.removeItem('prooflab-director-current');
     await TestBed.configureTestingModule({
@@ -12,143 +14,285 @@ describe('Flagship two-video research experience — not pretending AI', () => {
     }).compileComponents();
   });
 
-  const root = {
-    id: 'd'.repeat(32), baselineLengthMeters: .5,
-    createdAtUtc: '2026-10-27T20:00:00Z',
-    step: 'AWAITING_FIRST_VIDEO', modelStatus: 'LOCAL_PROTOCOL_NOT_META_AI_NOT_SAM',
-    baseline: null, humanReview: null, proposal: null,
-    followup: null, comparison: null
-  };
-  const sample = (role: 'baseline' | 'followup', period: number) => ({
-    role, videoId: role[0].repeat(32),
-    originalFilename: 'video-'+role+'.MOV',bytes:47000000,
-    sha256: 'b'.repeat(64),uploadedAtUtc:'2026-10-27T20:01:00Z',
-    media: { codec: 'hevc', durationSeconds: 30, width:1920,height:1080,
-      nominalFramesPerSecond:60,containerFormat:'mov' },
-    tracking: {framesAnalyzed:360,detectedFrames:340,detectionRate:.944,
-      outcome:'LOCAL_TRACKING_CANDIDATE_REQUIRES_VIDEO_REVIEW',
-      method:'LOCAL_NOT_SAM', limitations:'review required',
-      observations:[{timeSeconds:0,position:60},{timeSeconds:.1,position:100}]},
-    spectral: {periodSeconds:period,fitRSquared:.978,
-      status:'PERIOD_CANDIDATE_REQUIRES_MANUAL_BOB_VERIFICATION'},
-    posterAvailable:false
+  const sample=(t:number,x:number, kinetic:number) => ({
+    timeSeconds:t,angleDegrees:15,angularVelocityRadiansPerSecond:0,
+    horizontalCentimeters:x,elevationCentimeters:2,
+    kineticJoules:kinetic,potentialJoules:.05-kinetic,totalJoules:.05
   });
-  const proposal = {
+  const trial=(length:number,period:number) => ({
+    lengthMeters:length,initialAngleDegrees:15,massGrams:300,
+    smallAnglePeriodSeconds:length===.5?1.419:1.795,
+    nonlinearPeriodSeconds:period,
+    amplitudeCentimeters:13,initialPotentialJoules:.05,
+    maximumRelativeEnergyDriftPercent:0.00001,
+    samples:[sample(0,13,0),sample(5,-13,.03),
+      sample(10,13,0),sample(15,-13,.03),sample(20,13,0)]
+  });
+  const theory=(two:boolean) => ({
+    source:'DETERMINISTIC_NONLINEAR_RK4_THEORY_NOT_META_NOT_SAM',
+    standardGravityMetersPerSecondSquared:9.80665,
+    equation:'d²θ/dt²+(g/L)sinθ=0',
+    assumptions:'Ideal point mass, no damping',
+    baseline:trial(.5,1.425),
+    followUp:two?trial(.8,1.803):null,
+    predictedPeriodIncreasePercent:two?26.491:null
+  });
+  const root=(two=false)=>({
+    id:'d'.repeat(32),baselineLengthMeters:.5,
+    angleDegrees:15,massGrams:300,includeSecondTrial:two,
+    followUpMode:'recommended' as const,selectedFollowUpLengthMeters:null,
+    createdAtUtc:'2026-10-27T20:00:00Z',
+    step:'AWAITING_FIRST_VIDEO',modelStatus:'LOCAL_PROTOCOL_NOT_META_AI_NOT_SAM',
+    baseline:null,humanReview:null,proposal:null,followup:null,
+    comparison:null,singleComparison:null
+  });
+  const video=(role:'baseline'|'followup',period:number)=>({
+    role,videoId:role[0].repeat(32),
+    originalFilename:'iphone-'+role+'.MOV',bytes:47000000,
+    sha256:'b'.repeat(64),uploadedAtUtc:'2026-10-27T20:01:00Z',
+    media:{codec:'hevc',durationSeconds:30,width:1920,height:1080,
+      nominalFramesPerSecond:60,containerFormat:'mov'},
+    tracking:{framesAnalyzed:360,detectedFrames:340,detectionRate:.94,
+      outcome:'LOCAL_TRACKING_CANDIDATE_REQUIRES_VIDEO_REVIEW',method:'LOCAL_NOT_SAM',
+      limitations:'review',observations:[
+        {timeSeconds:0,position:60},{timeSeconds:.1,position:100}]},
+    spectral:{periodSeconds:period,fitRSquared:.97,
+      status:'PERIOD_CANDIDATE_REQUIRES_MANUAL_BOB_VERIFICATION'},
+    posterAvailable:false,previewAvailable:false
+  });
+  const proposal={
     source:'LOCAL_PROTOCOL_NOT_META_AI_NOT_SAM',
-    reasonEs:'Control local, NO IA', reasonEn:'Local control, NOT AI',
-    registeredAtUtc:'2026-10-27T20:03:00Z',
-    baselineSha256:'b'.repeat(64),predictionSha256:'a'.repeat(64),
-    theory: {baselineLengthMeters:.5,followUpLengthMeters:.8,
+    reasonEs:'Control local, NO IA',reasonEn:'Local control, NOT AI',
+    registeredAtUtc:'2026-10-27T20:03:00Z',baselineSha256:'b'.repeat(64),
+    predictionSha256:'a'.repeat(64),
+    theory:{baselineLengthMeters:.5,followUpLengthMeters:.8,
       expectedBaselinePeriodSeconds:1.419,expectedFollowUpPeriodSeconds:1.795,
       predictedIncreasePercent:26.49}
   };
-  function init() {
+
+  async function initialize(two=false) {
     const fixture=TestBed.createComponent(PendulumDirector);
+    const component=fixture.componentInstance;
+    component.includeSecondTrial.set(two);
     fixture.detectChanges();
-    const controller=TestBed.inject(HttpTestingController);
-    return {fixture,component:fixture.componentInstance,controller};
+    const http=TestBed.inject(HttpTestingController);
+    const req=http.expectOne(modelApi);
+    expect(req.request.body).toEqual({
+      lengthMeters:.5,angleDegrees:15,massGrams:300,
+      followUpLengthMeters:two?.8:null
+    });
+    req.flush(theory(two));
+    await Promise.resolve();
+    fixture.detectChanges();
+    return {component,fixture,http,rootEl:fixture.nativeElement as HTMLElement};
   }
 
-  it('begins with one video only, no six-video requirement', async () => {
-    const {component,fixture,controller}=init();
-    expect(fixture.nativeElement.textContent).toContain('Investiga un fenómeno con un video');
+  it('displays three reproducible mathematical plots before any video', async () => {
+    const {component,fixture,http,rootEl}=await initialize();
+    expect(component.model()?.baseline.nonlinearPeriodSeconds).toBe(1.425);
+    expect(rootEl.querySelectorAll('.model-chart').length).toBe(3);
+    expect(rootEl.textContent).toContain('1.425 s');
+    expect(rootEl.textContent).toContain('Energía inicial');
+    expect(rootEl.textContent).toContain('No se harán llamadas a Meta');
     const started=component.start();
-    const req=controller.expectOne('http://127.0.0.1:5391/api/science/director/pendulum/sessions');
-    expect(req.request.body).toEqual({baselineLengthMeters:.5});
-    req.flush(root);
+    const req=http.expectOne(studyApi);
+    expect(req.request.body).toEqual({
+      baselineLengthMeters:.5,angleDegrees:15,massGrams:300,
+      includeSecondTrial:false,followUpMode:'recommended',
+      selectedFollowUpLengthMeters:null
+    });
+    req.flush(root(false));
     await started;
     fixture.detectChanges();
-    const inputs=(fixture.nativeElement as HTMLElement).querySelectorAll('input[type=file]');
-    expect(inputs.length).toBe(1);
-    expect(fixture.nativeElement.textContent).toContain('01 · Observar el péndulo');
-    expect(fixture.nativeElement.textContent).toContain('NO dirige este experimento');
-    controller.expectNone(r=>r.url.includes('/api/meta/test'));
-    controller.verify();
+    expect(rootEl.querySelectorAll('input[type=file]').length).toBe(1);
+    expect(rootEl.textContent).toContain('Investiga un fenómeno con un video');
+    http.expectNone(x=>x.url.includes('/meta/'));
+    http.verify();
   });
 
-  it('requires initial video and human confirmation before locally freezing a prediction', async () => {
-    const {component,fixture,controller}=init();
+  it('updates the entire theoretical model after angle or mass changes', async () => {
+    const {component,fixture,http,rootEl}=await initialize();
+    const before=component.paths()?.motionA;
+    component.initialAngleDegrees.set(35);
+    component.massGrams.set(500);
+    const pending=component.refreshTheory();
+    const req=http.expectOne(modelApi);
+    expect(req.request.body).toEqual({
+      lengthMeters:.5,angleDegrees:35,massGrams:500,
+      followUpLengthMeters:null
+    });
+    req.flush({...theory(false),baseline:{
+      ...trial(.5,1.46),initialAngleDegrees:35,massGrams:500,
+      initialPotentialJoules:.155,samples:[
+        sample(0,29,0),sample(5,-29,.09),sample(10,29,0),
+        sample(15,-29,.09),sample(20,29,0)]
+    }});
+    await pending;
+    fixture.detectChanges();
+    expect(rootEl.textContent).toContain('1.460 s');
+    expect(component.paths()?.motionA).not.toEqual(before);
+    http.verify();
+  });
+
+  it('offers recommended or free second trial without Muse calls', async () => {
+    const {component,fixture,http,rootEl}=await initialize();
+    component.includeSecondTrial.set(true);
+    let pending=component.refreshTheory();
+    let req=http.expectOne(modelApi);
+    expect(req.request.body.followUpLengthMeters).toBe(.8);
+    req.flush(theory(true));
+    await pending;
+    fixture.detectChanges();
+    expect(rootEl.textContent).toContain('80 cm');
+    component.followUpMode.set('manual');
+    component.manualFollowUpLength.set(.9);
+    pending=component.refreshTheory();
+    req=http.expectOne(modelApi);
+    expect(req.request.body.followUpLengthMeters).toBe(.9);
+    req.flush({...theory(true),followUp:trial(.9,1.92)});
+    await pending;
+    const starting=component.start();
+    req=http.expectOne(studyApi);
+    expect(req.request.body.includeSecondTrial).toBeTrue();
+    expect(req.request.body.followUpMode).toBe('manual');
+    expect(req.request.body.selectedFollowUpLengthMeters).toBe(.9);
+    req.flush({...root(true),followUpMode:'manual',selectedFollowUpLengthMeters:.9});
+    await starting;
+    http.verify();
+  });
+
+  it('allows a complete single-trial theoretical comparison without another video', async () => {
+    const {component,fixture,http,rootEl}=await initialize();
+    const session={...root(false),baseline:video('baseline',1.416),
+      humanReview:{bobConfirmed:true,reviewedAtUtc:'2026-10-27T20:02:00Z'},
+      step:'READY_TO_PROPOSE'};
+    component.session.set(session);
+    fixture.detectChanges();
+    expect(rootEl.textContent).toContain('Esta investigación solo necesita un video');
+    const pending=component.compareSingle();
+    const request=http.expectOne(studyApi+'/'+session.id+'/compare-single');
+    request.flush({...session,step:'SINGLE_COMPARED_PRELIMINARY',
+      singleComparison:{
+        predictedNonlinearPeriodSeconds:1.425,
+        predictedSmallAnglePeriodSeconds:1.419,
+        observedLocalPeriodSeconds:1.416,
+        relativePeriodErrorPercent:.63,
+        status:'PRELIMINARY_LOCAL_SINGLE_VIDEO_NOT_SAM_OR_VALIDATED',
+        limitationsEs:'Sin SAM ni revisión independiente.',
+        limitationsEn:'No independent review.'
+      }
+    });
+    await pending;
+    fixture.detectChanges();
+    expect(rootEl.textContent).toContain('0.63 %');
+    expect(rootEl.querySelectorAll('input[type=file]').length).toBe(0);
+    http.verify();
+  });
+
+  it('keeps manual review and a frozen local proposal before second video', async () => {
+    const {component,fixture,http,rootEl}=await initialize(true);
     const started=component.start();
-    controller.expectOne('http://127.0.0.1:5391/api/science/director/pendulum/sessions')
-      .flush(root);
+    http.expectOne(studyApi).flush(root(true));
     await started;
     const file=new File([new Uint8Array(14000)],'iphone.MOV',
       {type:'video/quicktime'});
     const control={files:[file],value:'selected'};
     const uploading=component.upload({target:control} as unknown as Event,'baseline');
-    const req=controller.expectOne(r=>r.url.includes('/video/baseline') &&
-      r.urlWithParams.includes('filename=iphone.MOV'));
-    expect(req.request.body).toBe(file);
-    const first={...root,baseline:sample('baseline',1.416),
+    const uploaded=http.expectOne(req=>req.url.includes('/video/baseline') &&
+      req.urlWithParams.includes('filename=iphone.MOV'));
+    expect(uploaded.request.body).toBe(file);
+    const observed={...root(true),baseline:video('baseline',1.416),
       step:'AWAITING_HUMAN_BOB_REVIEW'};
-    req.flush(first);
+    uploaded.flush(observed);
     await uploading;
     fixture.detectChanges();
     expect(control.value).toBe('');
-    expect(fixture.nativeElement.textContent).toContain('1.416 s');
-    expect(fixture.nativeElement.textContent).not.toContain('80 cm');
+    expect(rootEl.textContent).toContain('1.416 s');
     component.checkedVideo.set(true);
     const confirming=component.confirm();
-    const check=controller.expectOne('http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+root.id+'/review-baseline');
-    expect(check.request.body).toEqual({bobConfirmed:true});
-    const reviewed={...first,step:'READY_TO_PROPOSE',
+    const review=http.expectOne(studyApi+'/'+root(true).id+'/review-baseline');
+    expect(review.request.body).toEqual({bobConfirmed:true});
+    const reviewed={...observed,step:'READY_TO_PROPOSE',
       humanReview:{bobConfirmed:true,reviewedAtUtc:'2026-10-27T20:02:00Z'}};
-    check.flush(reviewed);
+    review.flush(reviewed);
     await confirming;
-
-    const registering=component.propose();
-    const proposeCall=controller.expectOne('http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+root.id+'/propose-local-control');
-    proposeCall.flush({...reviewed,proposal,step:'AWAITING_SECOND_VIDEO'});
-    await registering;
+    const proposing=component.propose();
+    http.expectOne(studyApi+'/'+root(true).id+'/propose-local-control')
+      .flush({...reviewed,proposal,step:'AWAITING_SECOND_VIDEO'});
+    await proposing;
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('80 cm');
-    expect(fixture.nativeElement.textContent).toContain('NO IA');
-    expect(fixture.nativeElement.textContent).toContain('SHA-256');
-    expect((fixture.nativeElement as HTMLElement).querySelectorAll('input[type=file]').length).toBe(1);
-    controller.expectNone(r=>r.url.includes('/api/meta/') || r.url.includes('/api/math/'));
-    controller.verify();
+    expect(rootEl.textContent).toContain('80 cm');
+    expect(rootEl.textContent).toContain('NO IA');
+    expect(rootEl.textContent).toContain('SHA-256');
+    expect(rootEl.querySelectorAll('input[type=file]').length).toBe(1);
+    http.expectNone(r=>r.url.includes('/meta/'));
+    http.verify();
   });
 
-  it('compares only after a separate follow-up video is available', async () => {
-    const {component,fixture,controller}=init();
-    const state={...root,baseline:sample('baseline',1.416),
-      humanReview:{bobConfirmed:true,reviewedAtUtc:'2026-10-27T20:02:00Z'},
-      proposal,followup:sample('followup',1.798),
-      step:'READY_TO_COMPARE'};
-    component.session.set(state);
-    fixture.detectChanges();
-    const comparing=component.compare();
-    const result=controller.expectOne('http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+root.id+'/compare');
-    result.flush({...state,step:'COMPARED_PRELIMINARY',
-      comparison:{status:'PRELIMINARY_LOCAL_COMPARISON_NOT_AI_SAM_OR_CERTIFIED',
-        source:'LOCAL_PROTOCOL_NOT_META_AI_NOT_SAM',comparedAtUtc:'2026-10-27T20:04:00Z',
-        baselinePeriodSeconds:1.416,followUpPeriodSeconds:1.798,
-        predictedIncreasePercent:26.49,observedIncreasePercent:26.98,
-        changeGapPercentagePoints:.49,
-        limitationsEs:'Sin SAM ni revisión independiente.',
-        limitationsEn:'No SAM or independent review.'}});
-    await comparing;
-    fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('26.98');
-    expect(fixture.nativeElement.textContent).toContain('Sin SAM ni revisión independiente.');
-    controller.verify();
-  });
-
-  it('shows a browser-compatible review clip before asking to confirm bob identity', () => {
-    const {component,fixture,controller}=init();
+  it('keeps browser-compatible review video for the human check', async () => {
+    const {component,fixture,http,rootEl}=await initialize();
     component.session.set({
-      ...root,
-      baseline:{...sample('baseline',1.416),previewAvailable:true},
+      ...root(false),baseline:{...video('baseline',1.416),previewAvailable:true},
       step:'AWAITING_HUMAN_BOB_REVIEW'
     });
     fixture.detectChanges();
-    const video=(fixture.nativeElement as HTMLElement).querySelector('video');
-    expect(video).not.toBeNull();
-    expect(video?.hasAttribute('controls')).toBeTrue();
-    expect(video?.querySelector('source')?.getAttribute('src')).toBe(
-      'http://127.0.0.1:5391/api/science/director/pendulum/sessions/' +
-      root.id+'/preview/baseline');
-    expect(fixture.nativeElement.textContent).toContain('Vista previa H.264');
-    controller.verify();
+    const player=rootEl.querySelector('video');
+    expect(player?.hasAttribute('controls')).toBeTrue();
+    expect(player?.querySelector('source')?.getAttribute('src')).toBe(
+      studyApi+'/'+root(false).id+'/preview/baseline');
+    expect(rootEl.textContent).toContain('Vista previa H.264');
+    http.verify();
+  });
+
+  it('renders video-derived pixel/velocity/phase plots separately from theoretical charts', async () => {
+    const {component,fixture,http,rootEl}=await initialize();
+    const captured=Array.from({length:30},(_,i)=>({
+      timeSeconds:i/12, position:120+50*Math.sin(i/4)
+    }));
+    component.session.set({
+      ...root(false),
+      baseline:{
+        ...video('baseline',1.416),
+        tracking:{
+          ...video('baseline',1.416).tracking,
+          observations:captured
+        }
+      },
+      step:'AWAITING_HUMAN_BOB_REVIEW'
+    });
+    fixture.detectChanges();
+    expect(component.evidencePlots().baseline?.count).toBe(30);
+    expect(rootEl.querySelectorAll('.theory-workbench .model-chart').length).toBe(3);
+    expect(rootEl.querySelectorAll('.evidence-studio .model-chart').length).toBe(3);
+    expect(rootEl.textContent).toContain('píxeles/segundo');
+    expect(rootEl.textContent).toContain('NO de SAM ni de Muse');
+    expect(component.baselinePeriodDiscrepancyPercent).toBeGreaterThan(0);
+    http.verify();
+  });
+
+  it('reports the observed two-trial change without claiming SAM', async () => {
+    const {component,fixture,http,rootEl}=await initialize(true);
+    const session={...root(true),baseline:video('baseline',1.416),
+      followup:video('followup',1.798),proposal,
+      humanReview:{bobConfirmed:true,reviewedAtUtc:'2026-10-27T20:02:00Z'},
+      step:'READY_TO_COMPARE'};
+    component.session.set(session);
+    fixture.detectChanges();
+    const pending=component.compare();
+    http.expectOne(studyApi+'/'+session.id+'/compare')
+      .flush({...session,step:'COMPARED_PRELIMINARY',comparison:{
+        status:'PRELIMINARY_LOCAL_COMPARISON_NOT_AI_SAM_OR_CERTIFIED',
+        source:'LOCAL_PROTOCOL_NOT_META_AI_NOT_SAM',
+        baselinePeriodSeconds:1.416,followUpPeriodSeconds:1.798,
+        predictedIncreasePercent:26.49,observedIncreasePercent:26.98,
+        changeGapPercentagePoints:.49,comparedAtUtc:'2026-10-27T20:04:00Z',
+        limitationsEs:'Sin SAM ni revisión independiente.',
+        limitationsEn:'No SAM or independent review.'
+      }});
+    await pending;
+    fixture.detectChanges();
+    expect(rootEl.textContent).toContain('26.98');
+    expect(rootEl.textContent).toContain('Sin SAM ni revisión independiente.');
+    http.verify();
   });
 });

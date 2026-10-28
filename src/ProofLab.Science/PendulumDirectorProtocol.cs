@@ -19,6 +19,30 @@ public static class PendulumDirectorProtocol
         return PendulumTrialProtocol.Predict(lengthMeters, followup);
     }
 
+    /// <summary>
+    /// Make the registered second-video prediction agree with the same
+    /// nonlinear ideal model shown in the mathematical workbench.
+    /// No observational input is supplied and no Meta inference is used.
+    /// </summary>
+    public static PendulumTrialHypothesis UseNonlinearModel(
+        PendulumTrialHypothesis lengths, double angleDegrees, double massGrams)
+    {
+        ArgumentNullException.ThrowIfNull(lengths);
+        var theory = PendulumMathematicalModel.Predict(
+            new PendulumMathematicalRequest(lengths.BaselineLengthMeters,
+                angleDegrees, massGrams, lengths.FollowUpLengthMeters));
+        var followup = theory.FollowUp ??
+            throw new ArgumentException("Follow-up theoretical model missing.");
+        return lengths with
+        {
+            ExpectedBaselinePeriodSeconds = theory.Baseline.NonlinearPeriodSeconds,
+            ExpectedFollowUpPeriodSeconds = followup.NonlinearPeriodSeconds,
+            PredictedIncreasePercent = theory.PredictedPeriodIncreasePercent!.Value,
+            Formula = "d²θ/dt²+(g/L)sin(θ)=0; T=2π√(L/g)/AGM(1,cos(θ₀/2))",
+            Assumptions = theory.Assumptions
+        };
+    }
+
     public static bool HasUsableInitialSignal(PendulumSpectralAssessment evidence) =>
         evidence is not null &&
         evidence.Status == PendulumSpectralEstimator.Candidate &&

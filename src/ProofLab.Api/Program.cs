@@ -327,6 +327,15 @@ app.MapPost("/api/science/evaluate", (EvidenceRequest input) =>
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 });
 
+// Interactive theoretical workbench (zero Meta tokens). It never consumes
+// observational video coordinates, so predicted and measured curves stay independent.
+app.MapPost("/api/science/pendulum/mathematical-model",
+    (PendulumMathematicalRequest request) =>
+{
+    try { return Results.Ok(PendulumMathematicalModel.Predict(request)); }
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+});
+
 // No model calls: register the 50→80 cm theoretical prediction before submitting
 // either coordinate series. Not evidence that the videos were filmed afterwards.
 // Main flagship flow: one initial video is analysed BEFORE a locally proposed
@@ -379,6 +388,13 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/compare",
     async (string id,PendulumDirectorWorkflow director,CancellationToken ct) =>
 {
     try {return Results.Ok(await director.CompareAsync(id,ct));}
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+});
+app.MapPost("/api/science/director/pendulum/sessions/{id}/compare-single",
+    async(string id,PendulumDirectorWorkflow director,CancellationToken ct) =>
+{
+    try {return Results.Ok(await director.CompareSingleAsync(id,ct));}
     catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
 });

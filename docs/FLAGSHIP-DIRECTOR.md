@@ -1,12 +1,12 @@
 # ProofLab AI — Correct flagship jury experience (Mission 2)
 
-**October 27, 2026 — guided two-video research journey.**
+**October 27, 2026 — guided one-or-two-video research journey.** **Update D-027:** the ideal nonlinear model computes three theoretical charts before upload. The user sets length/angle/mass and optionally enables a second length (local non-AI control or manual choice). One trial compares theory with a single video; two trials freeze the follow-up prediction before accepting the second video. Three additional plots from local video positions (px/px/s) are NOT SAM outputs. [Physical modeling and limits EN](PENDULUM-MATHEMATICAL-WORKBENCH.md).
 
 ## Why this change was needed
 
 A judge must NOT be required to upload six videos. Three takes of each pendulum length are a useful **technical repeatability benchmark**, not the agreed central demonstration. The intended flagship starts with **one real video**. ProofLab analyzes it, requests a second experiment, **freezes a new prediction before receiving the second video**, then compares independent observations and reports uncertainty. The existing six-video laboratory remains available under **Advanced technical mode**, with earlier data preserved.
 
-At the beginning the user only declares the measured pendulum length and uploads an original MOV/MP4/etc. The user does **not** provide formulas or observed periods. A new **ProofLab Research Director** UI displays the initial local motion trace, requests explicit human confirmation, and advances step by step. **Muse Spark does NOT autonomously control this increment; SAM 3.1 does NOT yet track genuine video**. Neither simulated AI actions nor paid API requests are performed.
+At the beginning the user sets **length, initial angle and bob mass**, chooses **one or two trials**, and examines three nonlinear theoretical plots **before uploading any video**. The user does not supply formulas or period values. An optional second length is a locally suggested control or human choice, never a fake Muse recommendation. [Mathematical workbench details](PENDULUM-MATHEMATICAL-WORKBENCH.md). A new **ProofLab Research Director** UI displays the initial local motion trace, requests explicit human confirmation, and advances step by step. **Muse Spark does NOT autonomously control this increment; SAM 3.1 does NOT yet track genuine video**. Neither simulated AI actions nor paid API requests are performed.
 
 ## What the current, Meta-free prototype actually does
 

@@ -1,12 +1,12 @@
 # ProofLab AI — Experiencia central correcta del jurado (Misión 2)
 
-**27 de octubre de 2026 — flujo principal de investigación en dos videos.**
+**27 de octubre de 2026 — flujo principal configurable de una o dos pruebas.** **Actualización D-027:** el modelo ideal no lineal calcula 3 gráficos teóricos antes del primer video. El usuario introduce longitud/ángulo/masa, elige si habrá segunda prueba y su longitud (regla de control local NO IA, o libre). En modo una prueba se compara teoría vs único video; con dos, se registra predicción antes del segundo video. Tres gráficos adicionales posteriores al video provienen de coordenadas del seguidor local (px/px/s), no de SAM. [Modelo y límites ES](PENDULUM-MATHEMATICAL-WORKBENCH.es.md).
 
 ## Qué cambió y por qué
 
 El jurado NO debe cargar seis videos. Esa era una **prueba técnica de repetibilidad** útil para desarrollo interno, no la experiencia principal solicitada. El objetivo es que una persona entregue **un video inicial**, el investigador científico evalúe evidencia, solicite otro experimento, **registre su predicción antes de recibir el segundo video**, compare resultados y explique incertidumbre. Se conserva el laboratorio antiguo de hasta 3+3 videos bajo un desplegable **Modo técnico avanzado**, sin perder datos.
 
-En el primer paso el usuario solo declara la longitud del péndulo y carga un archivo original MOV/MP4/etc.; no introduce fórmulas o valores del período. La interfaz «ProofLab Research Director» presenta visualización de la primera señal, solicitud de confirmación humana y resultados. Un modelo futuro podrá dirigir estas etapas, pero **en este incremento Muse Spark NO ejecuta decisiones autónomas y SAM 3.1 NO rastrea video real**.
+En el primer paso el usuario configura **longitud, ángulo inicial y masa**, escoge **una o dos pruebas** y observa los tres gráficos teóricos calculados por el motor no lineal **antes de cargar video**. No introduce fórmulas ni valores del período. Para dos pruebas puede elegir control local sugerido o longitud manual, nunca presentado como Muse. [Detalle del modelo matemático](PENDULUM-MATHEMATICAL-WORKBENCH.es.md). La interfaz «ProofLab Research Director» presenta visualización de la primera señal, solicitud de confirmación humana y resultados. Un modelo futuro podrá dirigir estas etapas, pero **en este incremento Muse Spark NO ejecuta decisiones autónomas y SAM 3.1 NO rastrea video real**.
 
 ## Secuencia real implementada sin Meta (prototipo)
 

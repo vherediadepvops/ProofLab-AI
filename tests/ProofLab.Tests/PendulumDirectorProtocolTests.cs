@@ -28,6 +28,24 @@ public sealed class PendulumDirectorProtocolTests
         Assert.NotEqual(proposed.BaselineLengthMeters,proposed.FollowUpLengthMeters);
     }
 
+    [Fact]
+    public void FrozenFollowUpUsesTheSameFiniteAngleModelAsTheInteractiveCharts()
+    {
+        var lengths=PendulumDirectorProtocol.RecommendLocalControl(.5);
+        var corrected=PendulumDirectorProtocol.UseNonlinearModel(lengths,65,300);
+        var model=PendulumMathematicalModel.Predict(
+            new PendulumMathematicalRequest(.5,65,300,.8));
+        Assert.Equal(model.Baseline.NonlinearPeriodSeconds,
+            corrected.ExpectedBaselinePeriodSeconds);
+        Assert.Equal(model.FollowUp!.NonlinearPeriodSeconds,
+            corrected.ExpectedFollowUpPeriodSeconds);
+        Assert.Equal(model.PredictedPeriodIncreasePercent,
+            corrected.PredictedIncreasePercent);
+        Assert.True(corrected.ExpectedBaselinePeriodSeconds >
+                    lengths.ExpectedBaselinePeriodSeconds);
+        Assert.Contains("AGM",corrected.Formula);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(double.NaN)]
