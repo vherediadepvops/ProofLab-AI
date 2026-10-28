@@ -75,11 +75,11 @@ Verificación local: 70 pruebas Angular focalizadas y build correctos; incluye d
 
 ### Lecturas pintadas sobre el video
 
-Las vistas combinada y de vectores muestran únicamente θ (°) y ω (rad/s) en una microetiqueta semitransparente que sigue al centro SAM, unos 20 píxeles visibles por encima. No hay caja fija ni tiempo dentro de la imagen. Los valores usan el mismo fotograma decodificado que las tarjetas, incluida pausa, búsqueda y avance de un cuadro. Sin detección se oculta la etiqueta; si falta solo la derivada, ω muestra «—». Se conserva el formato ES/EN y la adaptación a vistas pequeñas.
+Las vistas combinada y de vectores muestran únicamente θ (°) y ω (rad/s) en una microetiqueta semitransparente que sigue al centro SAM, unos 20 píxeles visibles por encima. No hay caja fija ni tiempo dentro de la imagen. Los valores usan el mismo fotograma decodificado que la cabecera compacta de la vista combinada, incluida pausa, búsqueda y avance de un cuadro. El panel grande de mediciones y el título/metadata repetidos del reproductor se retiraron; θ y ω se muestran en 12 px en esa cabecera. Corregir suspensión permanece junto a los controles de reproducción. Sin detección se oculta la etiqueta; si falta solo la derivada, ω muestra «—». Se conserva el formato ES/EN y la adaptación a vistas pequeñas.
 
 La flecha cian nace en ese centro y sigue la tangente según el signo de ω. Su largo representa |ω| con una escala fija por video, pivote y geometría: L = Lmáx·|ω|/máx(|ω| válido medido), con Lmáx igual al 18,75 % del lado corto de la imagen. No depende del radio instantáneo, no satura por fotograma ni se reescala al buscar. El trazo y la punta se reducen también al acercarse a cero; con ω = 0 no se dibuja. No se fuerzan ceros, pausas o máximos por el ángulo teórico: se conserva la medida SAM. Flechas, máscara, cuerda y rastro usan trazos más finos y transparentes. Las mediciones y el video original no cambian.
 
-Verificación local: 28/28 pruebas del reproductor y build correctos; advertencia de tamaño inicial existente: 600,98 kB / 500 kB. Sin llamadas nuevas a Meta ni CI.
+Verificación local: 28/28 pruebas del reproductor y build correctos; advertencia de tamaño inicial existente: 590,94 kB / 500 kB. Sin llamadas nuevas a Meta ni CI.
 
 ## Token manual y habilitación de Procesar (28/10/2026)
 

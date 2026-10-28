@@ -84,8 +84,10 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(root.querySelectorAll('video').length).toBe(1);
     expect(root.querySelectorAll('canvas').length).toBe(3);
     expect(root.querySelectorAll('.view-panel').length).toBe(4);
-    expect(root.textContent).toContain('Cuatro perspectivas, un solo reloj');
-    expect(root.textContent).toContain('VIDEO ORIGINAL');
+    expect(root.querySelector('.studio-heading')).toBeNull();
+    expect(root.querySelector('.cord-angle-card')).toBeNull();
+    expect(root.querySelector('[data-view="combined"] .header-readings')).not.toBeNull();
+    expect(root.textContent).toContain('Video original');
     expect(root.textContent).toContain('No hay evidencia SAM 3.1');
     expect(component.sourceFps()).toBe(60);
     fixture.destroy();
@@ -244,9 +246,9 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(component.currentKinematics()?.angleDegrees).toBe(26.57);
     expect(component.overlayStatus()).toBe('LOCAL_ANGULAR_CANDIDATE_NOT_SAM');
     expect(stroke).toHaveBeenCalled();
-    expect(root.textContent).toContain('Laboratorio · Ángulo y velocidad angular');
-    expect(root.textContent).toContain('2.000');
-    expect(root.textContent).toContain('NO calibrado en metros');
+    expect(root.querySelector('.kinematics-strip')).toBeNull();
+    expect(component.currentKinematics()?.angularVelocityRadiansPerSecond).toBe(2);
+    expect(root.querySelector('.pivot-button')?.closest('.playback-buttons')).not.toBeNull();
     expect(root.querySelectorAll('video').length).toBe(1);
     expect(root.querySelectorAll('canvas').length).toBe(3);
     http.verify();
@@ -376,7 +378,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(component.currentKinematics()?.isValid).toBeFalse();
     expect(component.currentCordAngle()?.angleDegrees).toBeCloseTo(-30,8);
     expect(root.querySelector('.angle-value')?.textContent).toContain('−30,0°');
-    expect(root.querySelector('.angle-direction')?.textContent).toContain('Izquierda');
+    expect(root.querySelector('.angle-value')?.getAttribute('title')).toContain('Izquierda');
     expect(arc.calls.allArgs().some(a=>Math.abs(a[3]-Math.PI/2)<1e-8 &&
       Math.abs(a[4]-2*Math.PI/3)<1e-8 && a[5]===false)).toBeTrue();
     expect(dash.calls.allArgs().some(a=>Array.from(a[0]).length===2)).toBeTrue();
@@ -395,7 +397,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     fixture.componentRef.setInput('language','en');fixture.detectChanges();
     expect(component.cordAngleText()).toBe('+30.0°');
     expect(component.cordAngleDirection()).toBe('Right');
-    expect(root.querySelector('.cord-angle-explanation')?.textContent).toContain('image vertical');
+    expect(root.querySelector('.angle-value')?.getAttribute('title')).toContain('image vertical');
     component.paintFrame(1.03);fixture.detectChanges();
     expect(component.currentCordAngle()).toBeNull();
     expect(root.querySelector('.angle-value')?.textContent).toContain('—');
@@ -447,7 +449,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
       const expected=velocity<0?'−0,400':velocity>0?'+0,400':'0,000';
       expect(root.querySelector('.angular-velocity-value')?.textContent).toContain(expected);
       expect(root.querySelector('.angular-velocity-value')?.textContent).toContain('rad/s');
-      expect(root.querySelector('.angular-degrees')?.textContent).toContain(
+      expect(root.querySelector('.angular-velocity-value')?.getAttribute('title')).toContain(
         velocity<0?'−22,9':velocity>0?'+22,9':'0,0');
       expect(component.angularVelocityDirection()).toContain(
         velocity<0?'Hacia la izquierda':velocity>0?'Hacia la derecha':'≈ 0');
@@ -474,7 +476,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
       expect(readout.calls.allArgs().map(args=>args[0])).toContain('ω: +0.400 rad/s');
     expect(component.angularVelocityText()).toBe('+0.400');
     expect(component.angularVelocityDirection()).toBe('Moving right');
-    expect(root.querySelector('.angular-velocity-reading')?.textContent).toContain('ANGULAR VELOCITY');
+    expect(root.querySelector('.angular-velocity-value')?.getAttribute('aria-label')).toBe('Angular velocity');
     readouts.forEach(spy=>spy.calls.reset());
     component.paintFrame(.10);fixture.detectChanges();
     expect(component.currentCordAngle()).not.toBeNull();

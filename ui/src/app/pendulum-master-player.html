@@ -1,17 +1,4 @@
 <section class="master-studio">
-  <div class="studio-heading">
-    <div>
-      <div class="eyebrow">{{es ? 'ZONA 1 · VIDEO CIENTÍFICO' : 'ZONE 1 · SCIENTIFIC VIDEO'}}</div>
-      <h4>{{es ? 'Cuatro perspectivas, un solo reloj' : 'Four perspectives, one media clock'}}</h4>
-      <p>{{name()}} · {{originalWidth()}}×{{originalHeight()}} ·
-        {{originalFps() | number:'1.0-2'}} FPS
-        <span class="source-label">{{es ? 'ARCHIVO ORIGINAL CONSERVADO' : 'ORIGINAL PRESERVED'}}</span>
-      </p>
-    </div>
-    <span class="proxy-label">{{es ? 'VIDEO ORIGINAL' : 'ORIGINAL VIDEO'}} ·
-      {{originalCodec() || '—'}} · {{originalFps() | number:'1.0-2'}} FPS</span>
-  </div>
-
   @if(processingRequired() && !previewLoading() && !processingPending()) {
     <p class="processing-notice" role="status">
       @if(playbackLocked()) {
@@ -39,9 +26,22 @@
   <div class="views-grid" [class.loading-views]="previewLoading() || processingPending()" [class.is-zoomed]="zoomed()" data-layout="focus-switcher">
     <div class="view-panel" data-view="combined" [class.is-primary]="activeView()==='combined'"
       [style.grid-area]="gridArea('combined')">
-      <div class="view-title">
+      <div class="view-title combined-title">
         <span class="view-index">00</span>
-        {{es ? 'Vectores + rastro fantasma' : 'Vectors + ghost trail'}}
+        <span class="view-name">{{es ? 'Vectores + rastro fantasma' : 'Vectors + ghost trail'}}</span>
+        <span class="header-readings"
+          [attr.aria-label]="es?'Ángulo y velocidad angular':'Angle and angular velocity'">
+          <span class="angle-value" [class.value-missing]="!currentCordAngle()"
+            [title]="cordAngleHint()+' · '+cordAngleDirection()+' · '+(es?'Referencia: vertical de la imagen':'Reference: image vertical')"
+            [attr.aria-label]="es?'Ángulo con la vertical':'Angle from vertical'">
+            θ <strong>{{cordAngleText()}}</strong>
+          </span>
+          <span class="angular-velocity-value" [class.value-missing]="angularVelocityAtFrame()===null"
+            [title]="angularVelocityHint()+' · '+angularVelocityDirection()+(angularVelocityAtFrame()!==null?' · '+angularVelocityText(true)+' °/s':'')"
+            [attr.aria-label]="es?'Velocidad angular':'Angular velocity'">
+            ω <strong>{{angularVelocityText()}}</strong><span class="velocity-unit">rad/s</span>
+          </span>
+        </span>
         <button class="focus-action" type="button" (click)="selectView('combined')"
           [attr.aria-pressed]="activeView()==='combined'"
           [attr.aria-label]="es ? 'Ampliar vista combinada' : 'Expand combined view'">
@@ -141,118 +141,6 @@
 
   </div>
 
-  @if(studyId() && videoSha256() && !playbackLocked()) {
-    <div class="kinematics-strip">
-      <div class="kinematics-toolbar">
-        <div>
-          <strong>{{es ? 'Laboratorio · Ángulo y velocidad angular' : 'Laboratory · Angle and angular velocity'}}</strong>
-          <span>{{samTrack()
-            ? (es?'Pivote humano + posiciones de SAM 3.1; sin calibración física':
-              'Human pivot + SAM 3.1 positions; no metric calibration')
-            : (es?'Pivote humano · seguimiento local NO SAM':
-              'Human-selected pivot · LOCAL NOT SAM')}}</span>
-        </div>
-        <button type="button" class="pivot-button" (click)="beginPivotSelection()"
-          [disabled]="playbackLocked() || pivotSaving() || (points()?.length ?? 0)<5">
-          {{pivotRevision()
-            ? (es ? 'Corregir suspensión' : 'Adjust suspension')
-            : (es ? 'Marcar suspensión' : 'Select suspension')}}
-        </button>
-        @if(pivotMode()) {
-          <button type="button" class="pivot-cancel" (click)="cancelPivotSelection()"
-            [disabled]="pivotSaving()">{{es ? 'Cancelar' : 'Cancel'}}</button>
-        }
-      </div>
-      <section class="cord-angle-card" [class.angle-missing]="!currentCordAngle()"
-        [attr.aria-label]="es?'Ángulo y velocidad angular de la cuerda':'String angle and angular velocity'">
-        <div class="cord-angle-reading">
-          <span class="angle-caption">{{es?'ÁNGULO CON LA VERTICAL':'ANGLE FROM VERTICAL'}}</span>
-          <div class="angle-value"><span class="angle-symbol">θ</span>
-            <strong>{{cordAngleText()}}</strong>
-          </div>
-          <span class="angle-direction">{{cordAngleDirection()}}</span>
-        </div>
-        <div class="angular-velocity-reading" [class.velocity-missing]="angularVelocityAtFrame()===null">
-          <span class="angle-caption">{{es?'VELOCIDAD ANGULAR':'ANGULAR VELOCITY'}}</span>
-          <div class="angular-velocity-value"><span class="velocity-symbol">ω</span>
-            <strong>{{angularVelocityText()}}</strong><span class="velocity-unit">rad/s</span>
-          </div>
-          <span class="angular-velocity-direction">{{angularVelocityDirection()}}</span>
-          @if(angularVelocityAtFrame()!==null) {
-            <span class="angular-degrees">{{angularVelocityText(true)}} °/s</span>
-          }
-        </div>
-        <div class="cord-angle-explanation">
-          <p>{{cordAngleHint()}}</p>
-          <p class="angular-velocity-hint">{{angularVelocityHint()}}</p>
-          <div class="angle-legend">
-            <span><i class="vertical-key"></i>{{es?'Vertical':'Vertical'}}</span>
-            <span><i class="cord-key"></i>{{es?'Eje de la cuerda':'String axis'}}</span>
-            <span>{{es?'− izquierda · + derecha':'− left · + right'}}</span>
-          </div>
-          <small>{{es?'Referencia: vertical de la imagen. La cámara debe estar nivelada y perpendicular al plano del movimiento.':
-            'Reference: image vertical. The camera must be level and perpendicular to the plane of motion.'}}</small>
-        </div>
-      </section>
-      @if(pivotMode()) {
-        <p class="pivot-hint" role="status">{{es
-          ? 'Video pausado y ajustado: haz clic sobre el punto de suspensión del péndulo en Video original.'
-          : 'Video paused and fitted: click the suspension point in Source video.'}}</p>
-      }
-      @if(pivotSaving()) {
-        <p class="pivot-hint" role="status">{{es
-          ? 'Guardando nueva revisión del pivote y calculando derivadas locales…'
-          : 'Saving pivot revision and calculating local derivatives…'}}</p>
-      }
-      @if(pivotRevision(); as rev) {
-        <details class="additional-kinematics">
-          <summary>{{es?'Más mediciones · experimentales':'More measurements · experimental'}}</summary>
-        <div class="kinematics-metrics">
-          <div class="measurement-group">
-            <div class="group-caption">{{samTrack()
-              ? (es?'OBSERVADO POR SAM · CENTROIDE CANDIDATO':
-                'SAM OBSERVED · CANDIDATE CENTROID')
-              : (es?'OBSERVADO · CANDIDATO LOCAL NO SAM':
-                'OBSERVED · LOCAL CANDIDATE NOT SAM')}}</div>
-            <div class="measurements">
-              <div><span>θ (°)</span><strong>{{formatMetric(currentKinematics()?.isValid ? currentKinematics()?.angleDegrees : null,1)}}</strong></div>
-              <div><span>ω (rad/s)</span><strong>{{formatMetric(currentKinematics()?.isValid ? currentKinematics()?.angularVelocityRadiansPerSecond : null,3)}}</strong></div>
-              <div><span>α (rad/s²)</span><strong>{{formatMetric(currentKinematics()?.isValid ? currentKinematics()?.angularAccelerationRadiansPerSecondSquared : null,2)}}</strong></div>
-              <div><span>v (px/s)</span><strong>{{formatMetric(currentKinematics()?.isValid ? currentKinematics()?.apparentTangentialSpeedPixelsPerSecond : null,1)}}</strong></div>
-            </div>
-            <div class="vector-legend"><span class="color-velocity">●</span> {{es?'v tangencial':'tangent v'}}
-              <span class="color-tangent">●</span> {{es?'a tangencial':'tangent a'}}
-              <span class="color-radial">●</span> {{es?'a centrípeta':'centripetal a'}}</div>
-          </div>
-          <div class="measurement-group">
-            <div class="group-caption">{{es ? 'MODELO IDEAL · NO MEDIDO' : 'IDEAL MODEL · NOT OBSERVED'}}</div>
-            <div class="measurements">
-              <div><span>{{es?'ω máx. al centro':'ω max. center'}} (rad/s)</span>
-                <strong>{{formatMetric(rev.analysis.theoreticalMaxAngularSpeedRadPerSec,3)}}</strong></div>
-              <div><span>{{es?'ω ideal a θ actual':'ω ideal at current θ'}} (rad/s)</span>
-                <strong>{{formatMetric(idealAtFrame(),3)}}</strong></div>
-            </div>
-          </div>
-        </div>
-        <p class="science-provenance">
-          @if(samTrack(); as sam) {
-            {{es?'Fuente: máscaras SAM 3.1 guardadas':'Source: cached SAM 3.1 masks'}} ·
-            {{es?'Centroides':'Centroids'}}: {{sam.points.length}} ·
-            {{es?'Identidad de objeto':'Object identity'}}: {{sam.objectId}} ·
-            {{es?'SIN VALIDACIÓN DE PLOMADA NI METROS':'BOB IDENTITY / METRES NOT VALIDATED'}}
-          } @else {
-            {{es?'Derivadas locales candidatas':'Local candidate derivatives'}}:
-            {{rev.analysis.derivativePoints}}/{{rev.analysis.sourcePoints}} ·
-            {{es?'Calidad':'Quality'}}: {{rev.analysis.qualityStatus}} ·
-            {{es?'NO calibrado en metros; NO es SAM; confirmar visualmente':'NOT calibrated in metres; NOT SAM; review visually'}}
-          }
-        </p>
-        </details>
-      }
-      @if(pivotError()) {<p class="player-error" role="alert">{{pivotError()}}</p>}
-    </div>
-  }
-
   <div class="timeline" role="group"
     [attr.aria-label]="es?'Controles de reproducción sincronizada':'Synchronized playback controls'">
     <div class="playback-buttons">
@@ -280,8 +168,29 @@
           <option value="2">2×</option>
         </select>
       </label>
+      @if(studyId() && videoSha256() && !playbackLocked()) {
+        <button type="button" class="pivot-button" (click)="beginPivotSelection()"
+          [disabled]="pivotSaving() || (points()?.length ?? 0)<5">
+          {{pivotRevision() ? (es?'Corregir suspensión':'Adjust suspension') : (es?'Marcar suspensión':'Select suspension')}}
+        </button>
+        @if(pivotMode()) {
+          <button type="button" class="pivot-cancel" (click)="cancelPivotSelection()"
+            [disabled]="pivotSaving()">{{es?'Cancelar':'Cancel'}}</button>
+        }
+      }
       <span class="timecode">{{timecode}} / {{lengthcode}}</span>
     </div>
+      @if(pivotMode()) {
+        <p class="pivot-hint" role="status">{{es
+          ? 'Video pausado y ajustado: haz clic sobre el punto de suspensión del péndulo en Video original.'
+          : 'Video paused and fitted: click the suspension point in Source video.'}}</p>
+      }
+      @if(pivotSaving()) {
+        <p class="pivot-hint" role="status">{{es
+          ? 'Guardando nueva revisión del pivote y calculando derivadas locales…'
+          : 'Saving pivot revision and calculating local derivatives…'}}</p>
+      }
+      @if(pivotError()) {<p class="player-error" role="alert">{{pivotError()}}</p>}
     <input type="range" class="timeline-range" [disabled]="playbackLocked()"
       min="0" [max]="duration() || 1" [step]="frameStepSeconds"
       [value]="currentTime()" (input)="scrub($event)"

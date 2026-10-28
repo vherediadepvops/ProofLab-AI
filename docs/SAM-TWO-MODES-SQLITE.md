@@ -75,11 +75,11 @@ Local verification: 70 focused Angular tests and a successful build, including m
 
 ### Values painted on the video
 
-Combined and vector views show only θ (°) and ω (rad/s) in a translucent micro label following the SAM centre, about 20 displayed pixels above it. No fixed box or timestamp is painted inside the image. Values share the cards' decoded frame during playback, pause, seeking and frame stepping. Missing detection hides the label; a missing derivative alone displays “—” for ω. ES/EN formatting and small-view sizing remain.
+Combined and vector views show only θ (°) and ω (rad/s) in a translucent micro label following the SAM centre, about 20 displayed pixels above it. No fixed box or timestamp is painted inside the image. Values share the combined view's compact header and decoded frame during playback, pause, seeking and frame stepping. The large measurements panel and duplicate player title/metadata were removed; θ and ω now appear at 12 px in that header. Adjust suspension remains beside the playback controls. Missing detection hides the label; a missing derivative alone displays “—” for ω. ES/EN formatting and small-view sizing remain.
 
 The cyan arrow starts at that centre and follows the tangent with the sign of ω. Its length represents |ω| on a fixed scale per video, pivot and image geometry: L = Lmax·|ω|/max(valid measured |ω|), with Lmax set to 18.75% of the shorter image side. Length is independent of instantaneous radius, never saturates per frame and does not rescale on seeking. Shaft and head shrink towards zero too; ω = 0 draws no arrow. No zeros, pauses or maxima are forced from a theoretical angle: measured SAM values remain unchanged. Arrows, mask, cord and trail use finer translucent strokes. Measurements and original video are unchanged.
 
-Local verification: 28/28 player tests and build passed; existing initial bundle warning: 600.98 kB / 500 kB. No new Meta calls or CI.
+Local verification: 28/28 player tests and build passed; existing initial bundle warning: 590.94 kB / 500 kB. No new Meta calls or CI.
 
 ## Manual key and Process admission (2026-10-28)
 
