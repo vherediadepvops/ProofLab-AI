@@ -244,7 +244,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(component.currentKinematics()?.angleDegrees).toBe(26.57);
     expect(component.overlayStatus()).toBe('LOCAL_ANGULAR_CANDIDATE_NOT_SAM');
     expect(stroke).toHaveBeenCalled();
-    expect(root.textContent).toContain('Etapa 2 · Medición angular');
+    expect(root.textContent).toContain('Laboratorio · Ángulo de la cuerda');
     expect(root.textContent).toContain('2.000');
     expect(root.textContent).toContain('NO calibrado en metros');
     expect(root.querySelectorAll('video').length).toBe(1);
@@ -285,6 +285,71 @@ describe('One-clock three-view pendulum laboratory',()=>{
     component.toggleZoom();component.paintFrame(at);
     expect(component.currentKinematics()?.angleDegrees).toBeCloseTo(30,8);
     fixture.destroy();
+  });
+
+
+  it('shows SAM string angles at endpoints without derivatives, clears missing frames and keeps the original clean',()=>{
+    const {fixture,component,source,root}=init();
+    fixture.componentRef.setInput('studyId',study);
+    fixture.componentRef.setInput('videoSha256',sha);
+    fixture.componentRef.setInput('processingRequired',true);
+    fixture.detectChanges();
+    Object.defineProperty(source,'videoWidth',{configurable:true,value:1080});
+    Object.defineProperty(source,'videoHeight',{configurable:true,value:1920});
+    component.onLoadedMetadata();
+    const points=[-30,0,30].map((degrees,timeSeconds)=>{
+      const theta=degrees*Math.PI/180;
+      return {timeSeconds,x:240+300*Math.sin(theta)/1080*480,
+        y:60+300*Math.cos(theta)/1920*270,approximateRadiusPixels:8};
+    });
+    const masks=points.map((p,frameIndex)=>({
+      frameIndex,timeSeconds:p.timeSeconds,left:0,top:0,right:1,bottom:1,
+      centroidXpx:p.x/480*1920,centroidYpx:p.y/270*1080,
+      foregroundPixels:100,maskPath:'M0 0h1v1Z'
+    }));
+    const sam={frameWidth:1920,frameHeight:1080,
+      source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE' as const,objectId:'bob',points,masks};
+    component.samTrack.set(sam);component.samVerified.set(true);
+    component.pivotRevision.set(revision);
+    for(const canvas of Array.from(root.querySelectorAll('canvas')))
+      spyOn(canvas.getContext('2d')!,'drawImage').and.stub();
+    const combined=root.querySelector('canvas')!.getContext('2d')!;
+    const arc=spyOn(combined,'arc').and.callThrough();
+    const dash=spyOn(combined,'setLineDash').and.callThrough();
+    component.paintFrame(0);fixture.detectChanges();
+    expect(component.currentKinematics()?.isValid).toBeFalse();
+    expect(component.currentCordAngle()?.angleDegrees).toBeCloseTo(-30,8);
+    expect(root.querySelector('.angle-value')?.textContent).toContain('−30,0°');
+    expect(root.querySelector('.angle-direction')?.textContent).toContain('Izquierda');
+    expect(arc.calls.allArgs().some(a=>Math.abs(a[3]-Math.PI/2)<1e-8 &&
+      Math.abs(a[4]-2*Math.PI/3)<1e-8 && a[5]===false)).toBeTrue();
+    expect(dash.calls.allArgs().some(a=>Array.from(a[0]).length===2)).toBeTrue();
+    component.paintFrame(1);fixture.detectChanges();
+    expect(component.cordAngleText()).toBe('0,0°');
+    expect(component.cordAngleDirection()).toBe('En la vertical');
+    component.paintFrame(2);fixture.detectChanges();
+    expect(component.cordAngleText()).toBe('+30,0°');
+    expect(component.cordAngleDirection()).toBe('Derecha');
+    const original=root.querySelector('[data-view="original"]')!;
+    expect(original.querySelectorAll('canvas').length).toBe(0);
+    expect(original.querySelector('video')).toBe(source);
+    component.toggleZoom();component.paintFrame(2);
+    expect(component.currentCordAngle()?.angleDegrees).toBeCloseTo(30,8);
+    fixture.componentRef.setInput('language','en');fixture.detectChanges();
+    expect(component.cordAngleText()).toBe('+30.0°');
+    expect(component.cordAngleDirection()).toBe('Right');
+    expect(root.querySelector('.cord-angle-explanation')?.textContent).toContain('image vertical');
+    component.paintFrame(1.03);fixture.detectChanges();
+    expect(component.currentCordAngle()).toBeNull();
+    expect(root.querySelector('.angle-value')?.textContent).toContain('—');
+    expect(component.cordAngleHint()).toContain('No valid detection');
+    component.pivotRevision.set(null);component.paintFrame(1);fixture.detectChanges();
+    expect(component.currentCordAngle()).toBeNull();
+    expect(component.cordAngleHint()).toContain('suspension point');
+    component.pivotRevision.set(revision);component.paintFrame(1);
+    component.samVerified.set(false);component.paintFrame(1);
+    expect(component.currentCordAngle()).toBeNull();
+    TestBed.inject(HttpTestingController).verify();fixture.destroy();
   });
 
   it('marks the real video pivot after forcing fit, then POSTs SHA-linked geometry',async()=>{

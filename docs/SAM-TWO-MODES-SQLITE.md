@@ -55,6 +55,16 @@ This correction applies to the Laboratory SAM flow. Historical local-tracking re
 
 Local validation: all 55 focused tests passed, including 15 combinations of −30°/0°/30° angles and portrait/landscape/square/4K dimensions; these 15 regressions failed before the fix. Integration covers decoded orientation, tangent/radius orthogonality and stable pivots/zoom. Build passed with the existing initial-size warning (587.59 kB / 500 kB).
 
+### String angle from vertical
+
+The Laboratory highlights θ in degrees and the side of inclination: negative to the left, positive to the right and zero on the vertical. The combined view adds a dashed vertical from the suspension point, the suspension-to-bob-centre axis and the angle arc; the original stays unannotated. Other existing values are under “More measurements · experimental”.
+
+This estimates the string axis using the SAM centroid and the user-selected suspension point, rather than detecting the string independently. The reference is image vertical; physical interpretation requires a level camera perpendicular to the plane of motion. atan2(Δx, Δy) uses decoded-original proportions, without metres, declared string length or fitting to the ideal initial angle.
+
+The reading follows the decoded frame and a nearby mask within half a nominal frame interval (at most 55 ms). Missing detection, missing suspension or a degenerate axis shows “—”. A gap never retains the previous value or substitutes local tracking. One valid centre supports an angle even without derivatives; zoom and viewport size do not change the reading.
+
+Local validation: 66 focused Angular tests and a successful production build. Coverage includes −30°/0°/+30° in portrait, landscape 4K and square images, endpoints without derivatives, gaps, the Process gate, ES/EN signs and the unannotated original. Existing initial bundle warning: 595.62 kB / 500 kB. No new Meta calls or CI.
+
 ## Manual key and Process admission (2026-10-28)
 
 The key registered in Settings satisfies the manual request credential requirement without duplicating it in the server MODEL_API_KEY. The server still checks its format, confirmed credits, owner approval, the billing switch and the shared request budget before reservation. Cache admission and final reservation recognize the same one-use key; it is neither persisted nor used to enable other calls globally.

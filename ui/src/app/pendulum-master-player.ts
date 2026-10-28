@@ -8,7 +8,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import {
   type KinematicRevision, type KinematicFrame, type ImageSize, pivotFromClick,
-  sampleAtTime, vectorAt, idealAngularSpeedAtAngle
+  sampleAtTime, vectorAt, idealAngularSpeedAtAngle, measureCordAngle, type CordAngleMeasurement
 } from './pendulum-kinematics';
 import {
   type CandidatePixelPoint, formatMediaTime, motionAt,
@@ -79,6 +79,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly previewStateChanged=output<'loading'|'ready'|'error'>();
   readonly previewLoading=signal(true);
   onPreviewError():void {
+    this.currentCordAngle.set(null);
     this.previewLoading.set(false);
     const codec=this.originalCodec() || this.name().split('.').pop() || '';
     this.error.set(this.es?
@@ -96,6 +97,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly pivotError = signal('');
   readonly pivotRevision = signal<KinematicRevision|null>(null);
   readonly currentKinematics = signal<KinematicFrame|null>(null);
+  readonly currentCordAngle = signal<CordAngleMeasurement|null>(null);
 
   readonly playing = signal(false);
   readonly currentTime = signal(0);
@@ -232,7 +234,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const samSerial=++this.samSerial;
     this.masterVideo?.nativeElement.pause();
     this.setVerified(false);
-    this.pivotRevision.set(null);this.currentKinematics.set(null);
+    this.pivotRevision.set(null);this.currentKinematics.set(null);this.currentCordAngle.set(null);
     this.pivotMode.set(false);this.pivotError.set('');this.pivotSaving.set(false);
     this.samTrack.set(null);this.samPathCache.clear();this.sourceFramePts=[];
     if(this.processingRequired() && !this.processedAnalysisId()) {
@@ -548,6 +550,28 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     return value!=null && Number.isFinite(value)?value.toFixed(digits):'—';
   }
 
+  cordAngleText():string {
+    const value=this.currentCordAngle()?.angleDegrees;
+    if(value==null)return '—';
+    const rounded=Math.round(value*10)/10;
+    return (rounded>0?'+':rounded<0?'−':'')+
+      Math.abs(rounded).toFixed(1).replace('.',this.es?',':'.')+'°';
+  }
+
+  cordAngleDirection():string {
+    const value=this.currentCordAngle()?.angleDegrees;
+    if(value==null)return this.es?'Sin medición':'No measurement';
+    if(Math.abs(value)<.05)return this.es?'En la vertical':'On the vertical';
+    return value>0?(this.es?'Derecha':'Right'):(this.es?'Izquierda':'Left');
+  }
+
+  cordAngleHint():string {
+    if(!this.samTrack())return this.es?'Se necesitan detecciones de la plomada para medir el ángulo.':'Bob detections are required to measure the angle.';
+    if(!this.pivotRevision())return this.es?'Marca el punto de suspensión para medir el ángulo.':'Select the suspension point to measure the angle.';
+    if(!this.currentCordAngle())return this.es?'Sin detección válida en este fotograma.':'No valid detection in this frame.';
+    return this.es?'Estimado entre la suspensión y el centro de la plomada.':'Estimated between the suspension point and the bob centre.';
+  }
+
   idealAtFrame():number|null {
     const revision=this.pivotRevision(),frame=this.currentKinematics();
     if(!revision || !frame || !frame.isValid)return null;
@@ -591,6 +615,37 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     ctx.lineWidth=2;
     ctx.fill(path);
     ctx.stroke(path);
+    ctx.restore();
+  }
+
+  /** Reference and arc share the native image geometry and decoded media clock. */
+  private paintCordAngle(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
+      measurement:CordAngleMeasurement,revision:KinematicRevision):void {
+    const unit=Math.min(canvas.width,canvas.height)/480;
+    const px=revision.analysis.pivotXpx*canvas.width/480;
+    const py=revision.analysis.pivotYpx*canvas.height/270;
+    const bx=measurement.bobXpx*canvas.width/480;
+    const by=measurement.bobYpx*canvas.height/270;
+    const length=Math.hypot(bx-px,by-py);
+    const radius=Math.min(length*.28,60*unit);
+    const theta=measurement.angleDegrees*Math.PI/180;
+    ctx.save();
+    ctx.lineWidth=1.5*unit;ctx.strokeStyle='#b5c7db';
+    ctx.setLineDash([5*unit,5*unit]);
+    ctx.beginPath();ctx.moveTo(px,py);
+    ctx.lineTo(px,Math.min(canvas.height,py+length));ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineWidth=2*unit;ctx.strokeStyle='#ffcf70';
+    ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(bx,by);ctx.stroke();
+    // Canvas y points down; a positive angle moves from vertical towards right.
+    ctx.beginPath();ctx.arc(px,py,radius,Math.PI/2,Math.PI/2-theta,theta>0);ctx.stroke();
+    const text='θ '+this.cordAngleText();
+    ctx.font='600 '+(15*unit)+'px system-ui';ctx.textBaseline='middle';
+    const width=ctx.measureText(text).width+16*unit,height=28*unit;
+    const x=Math.max(0,Math.min(canvas.width-width,px+Math.sin(theta/2)*(radius+18*unit)+12*unit));
+    const y=Math.max(height/2,Math.min(canvas.height-height/2,py+Math.cos(theta/2)*(radius+18*unit)));
+    ctx.fillStyle='rgba(13,22,32,.9)';ctx.fillRect(x,y-height/2,width,height);
+    ctx.fillStyle='#ffe2a8';ctx.fillText(text,x+8*unit,y);
     ctx.restore();
   }
 
@@ -658,7 +713,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     }
 
     if(this.playbackLocked()){
-      this.currentKinematics.set(null);
+      this.currentKinematics.set(null);this.currentCordAngle.set(null);
       this.overlayStatus.set(this.samStatus());
       this.paintedViews.set(4);
       return;
@@ -679,11 +734,19 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       },time,geometry):sampleAtTime(revision.analysis.samples,time)) : null;
     this.currentKinematics.set(frame);
     const mask=sam?nearestSamMask(sam,time):null;
+    // The angle needs one actual observation, not valid velocity/acceleration.
+    // A missing source-frame detection must never retain the last angle.
+    const angleMask=sam?nearestSamMask(sam,time,Math.min(.055,.5/this.sourceFps())):null;
+    this.currentCordAngle.set(sam && angleMask && revision
+      ? measureCordAngle(angleMask.centroidXpx/sam.frameWidth*480,
+          angleMask.centroidYpx/sam.frameHeight*270,revision.analysis,geometry)
+      : null);
     if(sam && mask) {
       try{
         this.paintSamMask(ctxs[0]!,canvases[0]!,sam,mask);
         this.paintSamMask(ctxs[2]!,canvases[2]!,sam,mask);
       }catch{
+        this.currentCordAngle.set(null);
         this.overlayStatus.set('SAM_MASK_PATH_INVALID_NO_FABRICATED_OVERLAY');
         return;
       }
@@ -763,6 +826,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       this.paintAngular(ctxs[1]!,canvases[1]!,frame,revision,false,geometry);
       this.paintAngular(ctxs[2]!,canvases[2]!,frame,revision,true,geometry);
     }
+    const cordAngle=this.currentCordAngle();
+    if(revision && cordAngle)this.paintCordAngle(ctxs[2]!,canvases[2]!,cordAngle,revision);
     const duration=this.duration();
     this.currentTime.set(Math.max(0,Math.min(duration||time,time)));
     this.lastPaintedTime.set(time);

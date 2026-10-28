@@ -145,7 +145,7 @@
     <div class="kinematics-strip">
       <div class="kinematics-toolbar">
         <div>
-          <strong>{{es ? 'Etapa 2 · Medición angular' : 'Stage 2 · Angular measurements'}}</strong>
+          <strong>{{es ? 'Laboratorio · Ángulo de la cuerda' : 'Laboratory · String angle'}}</strong>
           <span>{{samTrack()
             ? (es?'Pivote humano + posiciones de SAM 3.1; sin calibración física':
               'Human pivot + SAM 3.1 positions; no metric calibration')
@@ -155,14 +155,34 @@
         <button type="button" class="pivot-button" (click)="beginPivotSelection()"
           [disabled]="playbackLocked() || pivotSaving() || (points()?.length ?? 0)<5">
           {{pivotRevision()
-            ? (es ? 'Corregir pivote' : 'Adjust pivot')
-            : (es ? 'Marcar pivote' : 'Select pivot')}}
+            ? (es ? 'Corregir suspensión' : 'Adjust suspension')
+            : (es ? 'Marcar suspensión' : 'Select suspension')}}
         </button>
         @if(pivotMode()) {
           <button type="button" class="pivot-cancel" (click)="cancelPivotSelection()"
             [disabled]="pivotSaving()">{{es ? 'Cancelar' : 'Cancel'}}</button>
         }
       </div>
+      <section class="cord-angle-card" [class.angle-missing]="!currentCordAngle()"
+        [attr.aria-label]="es?'Ángulo de la cuerda con la vertical':'String angle from vertical'">
+        <div class="cord-angle-reading">
+          <span class="angle-caption">{{es?'ÁNGULO CON LA VERTICAL':'ANGLE FROM VERTICAL'}}</span>
+          <div class="angle-value"><span class="angle-symbol">θ</span>
+            <strong>{{cordAngleText()}}</strong>
+          </div>
+          <span class="angle-direction">{{cordAngleDirection()}}</span>
+        </div>
+        <div class="cord-angle-explanation">
+          <p>{{cordAngleHint()}}</p>
+          <div class="angle-legend">
+            <span><i class="vertical-key"></i>{{es?'Vertical':'Vertical'}}</span>
+            <span><i class="cord-key"></i>{{es?'Eje de la cuerda':'String axis'}}</span>
+            <span>{{es?'− izquierda · + derecha':'− left · + right'}}</span>
+          </div>
+          <small>{{es?'Referencia: vertical de la imagen. La cámara debe estar nivelada y perpendicular al plano del movimiento.':
+            'Reference: image vertical. The camera must be level and perpendicular to the plane of motion.'}}</small>
+        </div>
+      </section>
       @if(pivotMode()) {
         <p class="pivot-hint" role="status">{{es
           ? 'Video pausado y ajustado: haz clic sobre el punto de suspensión del péndulo en Video original.'
@@ -174,6 +194,8 @@
           : 'Saving pivot revision and calculating local derivatives…'}}</p>
       }
       @if(pivotRevision(); as rev) {
+        <details class="additional-kinematics">
+          <summary>{{es?'Más mediciones · experimentales':'More measurements · experimental'}}</summary>
         <div class="kinematics-metrics">
           <div class="measurement-group">
             <div class="group-caption">{{samTrack()
@@ -214,6 +236,7 @@
             {{es?'NO calibrado en metros; NO es SAM; confirmar visualmente':'NOT calibrated in metres; NOT SAM; review visually'}}
           }
         </p>
+        </details>
       }
       @if(pivotError()) {<p class="player-error" role="alert">{{pivotError()}}</p>}
     </div>

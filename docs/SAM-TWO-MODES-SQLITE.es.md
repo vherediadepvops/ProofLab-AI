@@ -55,6 +55,16 @@ Este ajuste corresponde al flujo SAM del Laboratorio. Los registros históricos 
 
 Validación local: 55 pruebas focalizadas correctas, incluidas 15 combinaciones de ángulos −30°/0°/30° y formatos vertical/horizontal/cuadrado/4K; estas 15 regresiones fallaban antes de la corrección. Integración comprueba orientación decodificada, vectores tangentes perpendiculares al radio y pivote/zoom estables. Build correcto con advertencia existente de tamaño inicial (587,59 kB / 500 kB).
 
+### Ángulo de la cuerda con la vertical
+
+El Laboratorio destaca θ en grados y el lado de inclinación: negativo a la izquierda, positivo a la derecha y cero sobre la vertical. La vista combinada añade una vertical discontinua desde el punto de suspensión, el eje suspensión–centro de la plomada y el arco del ángulo; el original sigue sin anotaciones. Las otras magnitudes existentes quedan en «Más mediciones · experimentales».
+
+Es una estimación del eje de la cuerda mediante el centroide SAM y la suspensión marcada por el usuario, no una detección independiente de la cuerda. La referencia es la vertical de la imagen; requiere cámara nivelada y perpendicular al plano del movimiento para interpretarla físicamente. Se calcula atan2(Δx, Δy) con las proporciones del original decodificado, sin metros ni longitud declarada ni ajuste al ángulo inicial ideal.
+
+La lectura usa el fotograma decodificado y una máscara próxima dentro de medio intervalo nominal (máximo 55 ms). Sin detección, sin suspensión o con eje degenerado se muestra «—». No se conserva el último valor en un hueco ni se sustituye por rastreo local. Un único centro válido permite medir el ángulo aunque no haya derivadas; zoom y tamaño de ventana no cambian la lectura.
+
+Validación local: 66 pruebas Angular focalizadas correctas y build de producción correcto. Se cubren −30°/0°/+30° en vertical, horizontal 4K y cuadrado, extremos sin derivadas, huecos, bloqueo antes de Procesar, signos ES/EN y conservación del original. Advertencia existente: tamaño inicial 595,62 kB / 500 kB. Sin llamadas nuevas a Meta ni CI.
+
 ## Token manual y habilitación de Procesar (28/10/2026)
 
 El token registrado en Configuración satisface el requisito de credencial de la solicitud manual; no exige duplicarlo en MODEL_API_KEY del servidor. El servidor sigue validando su formato, créditos confirmados, autorización, interruptor de pagos y presupuesto compartido antes de reservar la solicitud. La admisión de caché y la reserva final reconocen el mismo token de un solo uso; no se guarda ni habilita globalmente otras llamadas.

@@ -16,6 +16,24 @@ export function originalImageOffset(
     dy:(y-pivot.pivotYpx)*image.height/270};
 }
 
+export interface CordAngleMeasurement {
+  angleDegrees:number;
+  bobXpx:number;
+  bobYpx:number;
+}
+
+/** Suspension-to-centroid angle from downward image vertical, right positive.
+ * An image measurement, independent of derivative availability or ideal values.
+ */
+export function measureCordAngle(
+  x:number,y:number,pivot:ImagePivot,image:ImageSize
+):CordAngleMeasurement|null {
+  const offset=originalImageOffset(x,y,pivot,image);
+  if(!offset || Math.hypot(offset.dx,offset.dy)<5)return null;
+  return {angleDegrees:Math.atan2(offset.dx,offset.dy)*180/Math.PI,
+    bobXpx:x,bobYpx:y};
+}
+
 export interface KinematicFrame {
   timeSeconds:number;
   bobXpx:number;

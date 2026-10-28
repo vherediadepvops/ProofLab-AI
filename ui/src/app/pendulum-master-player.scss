@@ -70,3 +70,15 @@
 
 .player-error a{color:#9bcbff;margin-left:8px}
 .playback-performance{font-size:11px;color:#cdbb94;line-height:1.5;margin:8px 0}
+
+.cord-angle-card{display:grid;grid-template-columns:minmax(190px,.65fr) minmax(0,1.7fr);gap:24px;align-items:center;margin-top:14px;padding:22px;border:1px solid #4c637b;border-radius:12px;background:linear-gradient(110deg,#1b3043,#1b232e);color:#dce9f6}
+.cord-angle-reading{min-width:0}.angle-caption{font-size:10px;letter-spacing:.1em;color:#b2c9df;font-weight:700}
+.angle-value{display:flex;align-items:baseline;gap:12px;margin:6px 0}.angle-symbol{color:#ffcf70;font-size:25px}
+.angle-value strong{font-size:clamp(30px,3vw,44px);line-height:1.15;letter-spacing:-.03em;color:#ffe2a8;font-variant-numeric:tabular-nums}
+.angle-direction{font-size:12px;color:#b5cce1}.angle-missing .angle-value strong{color:#96a9bd}
+.cord-angle-explanation p{font-size:13px;line-height:1.5;margin:0 0 10px;color:#dce9f6}
+.cord-angle-explanation small{display:block;color:#a6b5c6;font-size:11px;line-height:1.6;margin-top:12px}
+.angle-legend{display:flex;gap:16px;flex-wrap:wrap;color:#c6d6e7;font-size:11px}.angle-legend span{display:inline-flex;align-items:center;gap:7px}
+.angle-legend i{display:inline-block;width:22px;border-top:2px solid #ffcf70}.angle-legend .vertical-key{border-top:2px dashed #b5c7db}
+.additional-kinematics{margin-top:14px}.additional-kinematics>summary{cursor:pointer;color:#9fb6d0;font-size:12px;padding:5px 0}
+@media(max-width:630px){.cord-angle-card{grid-template-columns:1fr;gap:16px;padding:18px}.cord-angle-reading{padding-bottom:14px;border-bottom:1px solid #3b5065}.angle-value strong{font-size:38px}}
