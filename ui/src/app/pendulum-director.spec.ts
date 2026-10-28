@@ -242,8 +242,8 @@ describe('ProofLab physical workbench and guided flagship experiment', () => {
     expect(mediaElement).not.toBeNull();
     expect(mediaElement?.getAttribute('src')).toBe(
       studyApi+'/'+root(false).id+'/preview/baseline');
-    expect(master?.querySelectorAll('canvas').length).toBe(2);
-    expect(rootEl.textContent).toContain('Tres vistas, un solo reloj');
+    expect(master?.querySelectorAll('canvas').length).toBe(3);
+    expect(rootEl.textContent).toContain('Cuatro perspectivas, un solo reloj');
     http.verify();
   });
 

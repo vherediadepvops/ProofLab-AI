@@ -162,7 +162,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(component.registeringAndUploading()).toBeFalse();
     expect(component.session()?.baseline?.originalFilename).toBe('50CM_1.MOV');
     expect(root.querySelectorAll('video').length).toBe(1);
-    expect(root.querySelectorAll('canvas').length).toBe(2);
+    expect(root.querySelectorAll('canvas').length).toBe(3);
     expect(root.querySelectorAll('input[type=file]').length).toBe(0);
     expect(root.textContent).toContain('He revisado el video');
     http.expectNone(req=>req.url.includes('/api/meta/'));
@@ -223,14 +223,17 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     http.verify();
   });
 
-  it('fills the full three-view viewer using one player for the source clip',async()=>{
+  it('fills the four-perspective viewer with one video and a default combined primary',async()=>{
     const {root,component,fixture,http}=await init();
     component.session.set({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});
     fixture.detectChanges();
     const player=root.querySelector('app-pendulum-master-player');
     expect(player).not.toBeNull();
+    expect(root.textContent).toContain('Cuatro perspectivas sincronizadas');
+    expect(root.querySelectorAll('.view-panel').length).toBe(4);
+    expect(root.querySelector('[data-view="combined"]')?.classList.contains('is-primary')).toBeTrue();
     expect(root.querySelectorAll('video').length).toBe(1);
-    expect(root.querySelectorAll('canvas').length).toBe(2);
+    expect(root.querySelectorAll('canvas').length).toBe(3);
     expect(root.querySelectorAll('.placeholder-panel').length).toBe(0);
     expect(player?.textContent).toContain('Rastro fantasma');
     expect(root.textContent).toContain('He revisado el video');
@@ -274,7 +277,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     fixture.detectChanges();
     const source=root.querySelector('video.master-source') as HTMLVideoElement;
     expect(source.getAttribute('src')).toContain('/preview/followup');
-    expect(root.querySelectorAll('canvas').length).toBe(2);
+    expect(root.querySelectorAll('canvas').length).toBe(3);
     expect(root.querySelectorAll('.model-chart').length).toBe(0);
     http.verify();
   });

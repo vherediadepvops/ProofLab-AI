@@ -39,8 +39,9 @@ describe('One-clock three-view pendulum laboratory',()=>{
   it('never starts three separate media decoders',()=>{
     const {fixture,root,component}=init();
     expect(root.querySelectorAll('video').length).toBe(1);
-    expect(root.querySelectorAll('canvas').length).toBe(2);
-    expect(root.textContent).toContain('Tres vistas, un solo reloj');
+    expect(root.querySelectorAll('canvas').length).toBe(3);
+    expect(root.querySelectorAll('.view-panel').length).toBe(4);
+    expect(root.textContent).toContain('Cuatro perspectivas, un solo reloj');
     expect(root.textContent).toContain('H.264');
     expect(root.textContent).toContain('NO de SAM');
     expect(component.proxyFps()).toBe(12);
@@ -55,10 +56,81 @@ describe('One-clock three-view pendulum laboratory',()=>{
     component.paintFrame(1.25);
     expect(spies[0]).toHaveBeenCalledOnceWith(source,0,0,640,360);
     expect(spies[1]).toHaveBeenCalledOnceWith(source,0,0,640,360);
+    expect(spies[2]).toHaveBeenCalledOnceWith(source,0,0,640,360);
     expect(component.frameNumber()).toBe(15);
     expect(component.lastPaintedTime()).toBe(1.25);
-    expect(component.paintedViews()).toBe(3);
+    expect(component.paintedViews()).toBe(4);
     expect(component.overlayStatus()).toBe('LOCAL_PIXEL_CANDIDATE_NOT_SAM');
+    fixture.destroy();
+  });
+
+  it('starts with combined primary and interchanges cards without recreating or seeking the video',()=>{
+    const {fixture,component,source,root}=init();
+    const card=(id:string)=>root.querySelector('[data-view="'+id+'"]') as HTMLElement;
+    expect(component.activeView()).toBe('combined');
+    expect(card('combined').style.gridArea).toBe('main');
+    expect(card('original').style.gridArea).toBe('side1');
+    expect(card('vectors').style.gridArea).toBe('side2');
+    expect(card('ghost').style.gridArea).toBe('side3');
+    expect(root.querySelectorAll('.view-panel:not(.is-primary)').length).toBe(3);
+    source.currentTime=5.5;
+    source.playbackRate=.5;
+    const before=root.querySelector('video');
+    (card('original').querySelector('.focus-action') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.activeView()).toBe('original');
+    expect(card('original').style.gridArea).toBe('main');
+    expect(card('combined').style.gridArea).toBe('side1');
+    expect(card('vectors').style.gridArea).toBe('side2');
+    expect(card('ghost').style.gridArea).toBe('side3');
+    expect(root.querySelector('video')).toBe(before);
+    expect(source.currentTime).toBe(5.5);
+    expect(source.playbackRate).toBe(.5);
+    (card('vectors').querySelector('.view-surface') as HTMLElement).click();
+    fixture.detectChanges();
+    expect(card('vectors').style.gridArea).toBe('main');
+    expect(card('original').style.gridArea).toBe('side2');
+    expect(card('combined').style.gridArea).toBe('side1');
+    expect(card('ghost').style.gridArea).toBe('side3');
+    expect(root.querySelector('video')).toBe(before);
+    expect(source.currentTime).toBe(5.5);
+    (card('ghost').querySelector('.focus-action') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(card('ghost').style.gridArea).toBe('main');
+    expect(card('vectors').style.gridArea).toBe('side3');
+    expect(card('combined').style.gridArea).toBe('side1');
+    expect(card('original').style.gridArea).toBe('side2');
+    expect(root.querySelectorAll('video').length).toBe(1);
+    expect(root.querySelectorAll('canvas').length).toBe(3);
+    fixture.destroy();
+  });
+
+  it('zooms all views uniformly without changing source frame or playback position',()=>{
+    const {fixture,component,source,root}=init();
+    source.currentTime=4.2;
+    const button=root.querySelector('button.zoom-action') as HTMLButtonElement;
+    button.click();fixture.detectChanges();
+    expect(component.zoomed()).toBeTrue();
+    expect(root.querySelector('.views-grid')?.classList.contains('is-zoomed')).toBeTrue();
+    expect(source.currentTime).toBe(4.2);
+    button.click();fixture.detectChanges();
+    expect(component.zoomed()).toBeFalse();
+    expect(source.currentTime).toBe(4.2);
+    fixture.destroy();
+  });
+
+  it('renders vector and trail overlays into the combined canvas from one shared frame',()=>{
+    const {fixture,component,source,root}=init();
+    const combined=root.querySelector('canvas') as HTMLCanvasElement;
+    const main=Array.from(root.querySelectorAll('canvas'))[0] as HTMLCanvasElement;
+    const ctx=main.getContext('2d')!;
+    const shapes=spyOn(ctx,'arc').and.callThrough();
+    component.paintFrame(1.25);
+    expect(component.lastPaintedTime()).toBe(1.25);
+    expect(shapes).toHaveBeenCalled();
+    expect(root.querySelector('video')).toBe(source);
+    expect(combined).not.toBeNull();
+    expect(component.paintedViews()).toBe(4);
     fixture.destroy();
   });
 
@@ -85,7 +157,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     fixture.detectChanges();
     component.paintFrame(3);
     expect(component.overlayStatus()).toBe('NO_2D_TRACK_FOR_THIS_VIDEO');
-    expect(component.paintedViews()).toBe(3);
+    expect(component.paintedViews()).toBe(4);
     fixture.destroy();
   });
 });

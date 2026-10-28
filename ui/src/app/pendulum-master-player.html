@@ -2,7 +2,7 @@
   <div class="studio-heading">
     <div>
       <div class="eyebrow">{{es ? 'ZONA 1 · VIDEO CIENTÍFICO' : 'ZONE 1 · SCIENTIFIC VIDEO'}}</div>
-      <h4>{{es ? 'Tres vistas, un solo reloj' : 'Three views, one media clock'}}</h4>
+      <h4>{{es ? 'Cuatro perspectivas, un solo reloj' : 'Four perspectives, one media clock'}}</h4>
       <p>{{name()}} · {{originalWidth()}}×{{originalHeight()}} ·
         {{originalFps() | number:'1.0-2'}} FPS
         <span class="source-label">{{es ? 'ARCHIVO ORIGINAL CONSERVADO' : 'ORIGINAL PRESERVED'}}</span>
@@ -12,13 +12,37 @@
       H.264 · {{proxyFps()}} FPS</span>
   </div>
 
-  <div class="views-grid">
-    <div class="view-panel">
+  <div class="views-grid" [class.is-zoomed]="zoomed()" data-layout="focus-switcher">
+    <div class="view-panel" data-view="combined" [class.is-primary]="activeView()==='combined'"
+      [style.grid-area]="gridArea('combined')">
+      <div class="view-title">
+        <span class="view-index">00</span>
+        {{es ? 'Vectores + rastro fantasma' : 'Vectors + ghost trail'}}
+        <button class="focus-action" type="button" (click)="selectView('combined')"
+          [attr.aria-pressed]="activeView()==='combined'"
+          [attr.aria-label]="es ? 'Ampliar vista combinada' : 'Expand combined view'">
+          {{activeView()==='combined' ? (es ? 'Principal' : 'Main') : (es ? 'Ampliar' : 'Expand')}}
+        </button>
+      </div>
+      <div class="view-surface" (click)="selectView('combined')">
+        <canvas #combinedCanvas class="synchronized-canvas"
+          [attr.aria-label]="es?'Fotograma con vectores y rastro sincronizados':'Frame with synchronized vectors and trail'"></canvas>
+      </div>
+      <div class="view-meta">{{es?'Seguimiento local: vectores aparentes + posiciones pasadas':'Local candidates: apparent vectors + past positions'}}</div>
+    </div>
+
+    <div class="view-panel" data-view="original" [class.is-primary]="activeView()==='original'"
+      [style.grid-area]="gridArea('original')">
       <div class="view-title">
         <span class="view-index">01</span>
-        {{es ? 'Video principal' : 'Main video'}}
+        {{es ? 'Video original' : 'Source video'}}
+        <button class="focus-action" type="button" (click)="selectView('original')"
+          [attr.aria-pressed]="activeView()==='original'"
+          [attr.aria-label]="es ? 'Ampliar video original' : 'Expand source video'">
+          {{activeView()==='original' ? (es ? 'Principal' : 'Main') : (es ? 'Ampliar' : 'Expand')}}
+        </button>
       </div>
-      <div class="view-surface">
+      <div class="view-surface" (click)="selectView('original')">
         <video #masterVideo
           class="master-source"
           [src]="videoUrl()" crossorigin="anonymous"
@@ -36,24 +60,36 @@
       <div class="view-meta">{{es?'Original visual de referencia, sin anotaciones':'Unmodified reference view (browser-compatible copy)'}}</div>
     </div>
 
-    <div class="view-panel">
+    <div class="view-panel" data-view="vectors" [class.is-primary]="activeView()==='vectors'"
+      [style.grid-area]="gridArea('vectors')">
       <div class="view-title">
         <span class="view-index">02</span>
         {{es ? 'Vectores de movimiento' : 'Motion vectors'}}
+        <button class="focus-action" type="button" (click)="selectView('vectors')"
+          [attr.aria-pressed]="activeView()==='vectors'"
+          [attr.aria-label]="es ? 'Ampliar vectores' : 'Expand vectors'">
+          {{activeView()==='vectors' ? (es ? 'Principal' : 'Main') : (es ? 'Ampliar' : 'Expand')}}
+        </button>
       </div>
-      <div class="view-surface">
+      <div class="view-surface" (click)="selectView('vectors')">
         <canvas #vectorCanvas class="synchronized-canvas"
           [attr.aria-label]="es?'Mismo fotograma con velocidad aparente local':'Same frame with local image-space velocity'"></canvas>
       </div>
       <div class="view-meta">{{es?'Flecha de velocidad aparente · píxeles/segundo':'Image-space velocity arrow · pixels/second'}}</div>
     </div>
 
-    <div class="view-panel">
+    <div class="view-panel" data-view="ghost" [class.is-primary]="activeView()==='ghost'"
+      [style.grid-area]="gridArea('ghost')">
       <div class="view-title">
         <span class="view-index">03</span>
         {{es ? 'Rastro fantasma' : 'Ghost trail'}}
+        <button class="focus-action" type="button" (click)="selectView('ghost')"
+          [attr.aria-pressed]="activeView()==='ghost'"
+          [attr.aria-label]="es ? 'Ampliar rastro fantasma' : 'Expand ghost trail'">
+          {{activeView()==='ghost' ? (es ? 'Principal' : 'Main') : (es ? 'Ampliar' : 'Expand')}}
+        </button>
       </div>
-      <div class="view-surface">
+      <div class="view-surface" (click)="selectView('ghost')">
         <canvas #ghostCanvas class="synchronized-canvas"
           [attr.aria-label]="es?'Mismo fotograma con posiciones pasadas estimadas':'Same frame with estimated recent motion trail'"></canvas>
       </div>
@@ -64,6 +100,11 @@
   <div class="timeline" role="group"
     [attr.aria-label]="es?'Controles de reproducción sincronizada':'Synchronized playback controls'">
     <div class="playback-buttons">
+      <button class="zoom-action" type="button" (click)="toggleZoom()"
+        [attr.aria-pressed]="zoomed()"
+        [attr.aria-label]="es ? 'Alternar zoom de vistas' : 'Toggle view zoom'">
+        {{zoomed() ? (es ? 'Ajustar imagen' : 'Fit image') : (es ? 'Ampliar imagen 1,6×' : 'Zoom 1.6×')}}
+      </button>
       <button class="play-main" type="button" (click)="togglePlayback()"
         [attr.aria-label]="playing() ? (es?'Pausar todas las vistas':'Pause all views') : (es?'Reproducir todas las vistas':'Play all views')">
         {{playing() ? 'Ⅱ' : '▶'}}
@@ -92,7 +133,7 @@
     <div class="timeline-meta">
       <span>{{es?'Fotograma de reproducción':'Playback frame'}}:
         {{frameNumber()}} · {{es?'Vistas sincronizadas':'Views synchronized'}}:
-        {{paintedViews()}}/3</span>
+        {{paintedViews()}}/4</span>
       <span>{{es?'Rastreo':'Tracking'}}: {{overlayStatus()}}</span>
     </div>
   </div>
@@ -100,7 +141,7 @@
   @if(error()) {<p class="player-error" role="alert">{{error()}}</p>}
   <p class="limitations">
     {{es
-      ? 'Las tres vistas usan el mismo fotograma decodificado. La copia H.264 es de 12 FPS; el MOV/MP4 original conserva su resolución/FPS en el servidor. Flechas y rastros provienen de candidatos locales de movimiento, NO de SAM 3.1 ni de mediciones físicas calibradas. Si faltan coordenadas 2D, no se inventan vectores.'
-      : 'All views share the same decoded source frame. This browser H.264 proxy is 12 FPS; the original MOV/MP4 with source resolution/FPS remains private. Arrows and trails are experimental LOCAL motion candidates, NOT SAM 3.1 or calibrated physical measurements. Missing 2D data is never invented.'}}
+      ? 'Las cuatro perspectivas usan un solo video decodificado. La copia H.264 es de 12 FPS; el MOV/MP4 original conserva su resolución/FPS en el servidor. Flechas y rastros provienen de candidatos locales de movimiento, NO de SAM 3.1 ni de mediciones físicas calibradas. Si faltan coordenadas 2D, no se inventan vectores.'
+      : 'All four perspectives share one decoded source frame. This browser H.264 proxy is 12 FPS; the original MOV/MP4 with source resolution/FPS remains private. Arrows and trails are experimental LOCAL motion candidates, NOT SAM 3.1 or calibrated physical measurements. Missing 2D data is never invented.'}}
   </p>
 </section>

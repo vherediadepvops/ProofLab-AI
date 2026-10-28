@@ -100,10 +100,12 @@
       <div class="focus-section-title">
         <span class="section-index">02</span>
         <div>
-          <h2>{{es ? 'Video y tres vistas sincronizadas' : 'Video and three synchronized views'}}</h2>
+          <h2>{{session()?.baseline?.previewAvailable
+            ? (es ? 'Cuatro perspectivas sincronizadas' : 'Four synchronized perspectives')
+            : (es ? 'Video y tres vistas sincronizadas' : 'Video and three synchronized views')}}</h2>
           <p>{{es
-            ? 'Una sola línea de tiempo controla el video original de referencia, los vectores y el rastro fantasma.'
-            : 'One timeline controls the reference video, motion vectors and the ghost trail.'}}</p>
+            ? 'Una sola línea de tiempo controla el video original, los vectores y el rastro. Selecciona cualquier miniatura para ampliarla.'
+            : 'One timeline controls source video, vectors and trail. Select any thumbnail to expand it.'}}</p>
         </div>
       </div>
       @if(session()?.followup && session()?.baseline) {

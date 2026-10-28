@@ -25,6 +25,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
   @ViewChild('masterVideo') masterVideo?: ElementRef<HTMLVideoElement>;
   @ViewChild('vectorCanvas') vectorCanvas?: ElementRef<HTMLCanvasElement>;
   @ViewChild('ghostCanvas') ghostCanvas?: ElementRef<HTMLCanvasElement>;
+  @ViewChild('combinedCanvas') combinedCanvas?: ElementRef<HTMLCanvasElement>;
   readonly videoUrl = input.required<string>();
   readonly name = input('pendulum.mp4');
   readonly originalFps = input(60);
@@ -43,6 +44,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
   readonly frameNumber = signal(0);
   readonly paintedViews = signal(0);
   readonly overlayStatus = signal('LOCAL_NOT_SAM');
+  readonly activeView = signal<'combined'|'original'|'vectors'|'ghost'>('combined');
+  readonly viewSlots = signal<('combined'|'original'|'vectors'|'ghost')[]>(
+    ['combined','original','vectors','ghost']);
+  readonly zoomed = signal(false);
   private frameCallbackId:number|null=null;
   private fallbackRafId:number|null=null;
   private disposed=false;
@@ -52,6 +57,24 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
   get timecode():string{return formatMediaTime(this.currentTime());}
   get lengthcode():string{return formatMediaTime(this.duration());}
   get frameStepSeconds():number{return 1/Math.max(1,this.proxyFps());}
+
+  gridArea(view:'combined'|'original'|'vectors'|'ghost'):string {
+    const position=this.viewSlots().indexOf(view);
+    return position===0?'main':'side'+position;
+  }
+
+  selectView(view:'combined'|'original'|'vectors'|'ghost'):void {
+    const existing=this.viewSlots(),slot=existing.indexOf(view);
+    if(slot<=0)return;
+    const next=[...existing];
+    // Exact swap: old main occupies the clicked thumbnail's former slot.
+    [next[0],next[slot]]=[next[slot],next[0]];
+    this.viewSlots.set(next);
+    this.activeView.set(view);
+    // The HTMLVideoElement remains in the DOM with its original clock.
+  }
+
+  toggleZoom():void { this.zoomed.update(value=>!value); }
 
   ngAfterViewInit():void{
     // Angular may create the video after a study response. This component
@@ -178,7 +201,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
     const width=Math.min(1280,videoWidth);
     const height=Math.max(1,Math.round(width*videoHeight/videoWidth));
     for(const canvas of [this.vectorCanvas?.nativeElement,
-       this.ghostCanvas?.nativeElement]){
+       this.ghostCanvas?.nativeElement,this.combinedCanvas?.nativeElement]){
       if(!canvas)continue;
       canvas.width=width;
       canvas.height=height;
@@ -192,7 +215,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
   paintFrame(mediaTime:number):void{
     const video=this.masterVideo?.nativeElement;
     const canvases=[this.vectorCanvas?.nativeElement,
-                    this.ghostCanvas?.nativeElement];
+                    this.ghostCanvas?.nativeElement,
+                    this.combinedCanvas?.nativeElement];
     if(!video || canvases.some(x=>!x))return;
     const time=Number.isFinite(mediaTime)?mediaTime:video.currentTime;
     if(!Number.isFinite(time))return;
@@ -223,7 +247,6 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
     if(detected){
       this.overlayStatus.set('LOCAL_PIXEL_CANDIDATE_NOT_SAM');
       const canvas=canvases[0]!;
-      const ctx=ctxs[0]!;
       const factorX=canvas.width/480, factorY=canvas.height/270;
       const x=detected.x*factorX,y=detected.y*factorY;
       const vx=detected.vxPixelsPerSecond*factorX;
@@ -231,6 +254,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
       const magnitude=Math.hypot(vx,vy);
       const length=magnitude<3?0:Math.min(94,magnitude*.12);
       const angle=Math.atan2(vy,vx);
+      for(const ctx of [ctxs[0]!,ctxs[2]!]){
       ctx.lineWidth=Math.max(2,canvas.width/275);
       ctx.strokeStyle='#46e0e2';
       ctx.fillStyle='#46e0e2';
@@ -247,9 +271,11 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
       ctx.font='600 13px system-ui';ctx.fillStyle='#46e0e2';
       ctx.fillText('v '+detected.speedPixelsPerSecond.toFixed(1)+' px/s',
         14,Math.max(23,canvas.height-16));
+      }
       const trail=trailingMotion(samples,time);
-      const ghostCtx=ctxs[1]!,ghostCanvas=canvases[1]!;
+      const ghostCanvas=canvases[1]!;
       const fx=ghostCanvas.width/480,fy=ghostCanvas.height/270;
+      for(const ghostCtx of [ctxs[1]!,ctxs[2]!]){
       for(let i=0;i<trail.length;i++){
         const item=trail[i];
         const ratio=(i+1)/trail.length;
@@ -266,6 +292,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
         else ghostCtx.lineTo(item.x*fx,item.y*fy);
       });
       if(trail.length>1)ghostCtx.stroke();
+      }
     }else{
       this.overlayStatus.set(samples.length>0
         ? 'NO_RELIABLE_LOCAL_SAMPLE_AT_THIS_FRAME'
@@ -275,7 +302,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnDestroy {
     this.currentTime.set(Math.max(0,Math.min(duration||time,time)));
     this.lastPaintedTime.set(time);
     this.frameNumber.set(Math.round(time*this.proxyFps()));
-    this.paintedViews.set(3); // source video plus 2 canvases
+    this.paintedViews.set(4); // one master video + three derived canvases
     this.didPaint=true;
   }
 }
