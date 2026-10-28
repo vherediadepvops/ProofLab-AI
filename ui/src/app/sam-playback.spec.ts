@@ -89,10 +89,41 @@ describe('scientific SAM playback archive adapter',()=>{
     expect(frame?.isValid).toBeTrue();
     expect(frame?.angularVelocityRadiansPerSecond).toBeCloseTo(.5,2);
     expect(frame?.angularAccelerationRadiansPerSecondSquared).toBeCloseTo(0,2);
-    expect(frame?.apparentTangentialSpeedPixelsPerSecond).toBeCloseTo(50,1);
+    expect(frame?.apparentTangentialSpeedPixelsPerSecond).toBeCloseTo(200,1); // 100 grid pixels = 400 original pixels
     expect(frame?.tangentialSpeedMetersPerSecond).toBeNull();
     for(let i=3;i<track.points.length;i++)
       track.points[i].timeSeconds=.4+(i-3)*.04; // genuine temporal gap
     expect(samAngularFrameAt(track,{pivotXpx:240,pivotYpx:20},.4)?.isValid).toBeFalse();
+  });
+  for(const [width,height] of [[1080,1920],[1920,1080],[1080,1080],[2160,3840],[3840,2160]]) {
+    for(const degrees of [-30,0,30]) {
+      it('preserves known angle and derivatives at '+width+'x'+height+' / '+degrees+' degrees',()=>{
+        const radius=Math.min(width,height)/4,at=.12;
+        const pivot={pivotXpx:240,pivotYpx:40.5};
+        const points=[.04,.08,.12,.16,.20].map(t=>{
+          const dt=t-at,theta=degrees*Math.PI/180+.4*dt+.4*dt*dt;
+          return {timeSeconds:t,
+            x:(width/2+radius*Math.sin(theta))/width*480,
+            y:(height*.15+radius*Math.cos(theta))/height*270,
+            approximateRadiusPixels:8};
+        });
+        const track:SamPlaybackTrack={frameWidth:width,frameHeight:height,
+          source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',points,masks:[]};
+        const frame=samAngularFrameAt(track,pivot,at)!;
+        expect(frame.isValid).toBeTrue();
+        expect(frame.angleDegrees).toBeCloseTo(degrees,8);
+        expect(frame.angularVelocityRadiansPerSecond).toBeCloseTo(.4,8);
+        expect(frame.angularAccelerationRadiansPerSecondSquared).toBeCloseTo(.8,8);
+        expect(frame.apparentTangentialSpeedPixelsPerSecond).toBeCloseTo(.4*radius,8);
+        expect(frame.bobXpx).toBe(points[2].x); // saved/drawing coordinates stay compatible
+        expect(frame.tangentialSpeedMetersPerSecond).toBeNull();
+      });
+    }
+  }
+
+  it('does not report an angular measurement without valid original dimensions',()=>{
+    const track=verifiedSamPlaybackTrack(archive(),result(),sha);
+    expect(samAngularFrameAt(track,{pivotXpx:240,pivotYpx:20},.12,
+      {width:0,height:1920})).toBeNull();
   });
 });

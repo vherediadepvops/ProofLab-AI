@@ -253,6 +253,40 @@ describe('One-clock three-view pendulum laboratory',()=>{
     fixture.destroy();
   });
 
+
+  it('uses decoded portrait geometry for SAM angles and arrows, preserving the saved pivot',()=>{
+    const {fixture,component,source,root}=init();
+    Object.defineProperty(source,'videoWidth',{configurable:true,value:1080});
+    Object.defineProperty(source,'videoHeight',{configurable:true,value:1920});
+    component.onLoadedMetadata();
+    // Container metadata and SAM raster may differ; the displayed original is portrait.
+    const radius=300,at=.12,px=240,py=60;
+    const points=[.04,.08,.12,.16,.20].map(t=>{
+      const dt=t-at,theta=Math.PI/6+.4*dt+.4*dt*dt;
+      return {timeSeconds:t,x:px+radius*Math.sin(theta)/1080*480,
+        y:py+radius*Math.cos(theta)/1920*270,approximateRadiusPixels:8};
+    });
+    component.samTrack.set({frameWidth:640,frameHeight:360,
+      source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',points,masks:[]});
+    component.pivotRevision.set(revision);
+    for(const canvas of Array.from(root.querySelectorAll('canvas')))
+      spyOn(canvas.getContext('2d')!,'drawImage').and.stub();
+    const arrows=spyOn<any>(component,'drawArrow').and.stub();
+    component.paintFrame(at);
+    expect(component.currentKinematics()?.angleDegrees).toBeCloseTo(30,8);
+    expect(component.currentKinematics()?.angularVelocityRadiansPerSecond).toBeCloseTo(.4,8);
+    expect(component.currentKinematics()?.angularAccelerationRadiansPerSecondSquared).toBeCloseTo(.8,8);
+    expect(component.currentKinematics()?.apparentTangentialSpeedPixelsPerSecond).toBeCloseTo(120,8);
+    const velocity=arrows.calls.allArgs().find(args=>args[5]==='#3cf2da')!;
+    expect(velocity[3]).toBeCloseTo(120*Math.cos(Math.PI/6),8);
+    expect(velocity[4]).toBeCloseTo(-60,8);
+    expect(component.pivotRevision()?.analysis.pivotXpx).toBe(px);
+    expect(component.pivotRevision()?.analysis.pivotYpx).toBe(py);
+    component.toggleZoom();component.paintFrame(at);
+    expect(component.currentKinematics()?.angleDegrees).toBeCloseTo(30,8);
+    fixture.destroy();
+  });
+
   it('marks the real video pivot after forcing fit, then POSTs SHA-linked geometry',async()=>{
     const {fixture,component,source,root}=init();
     const http=TestBed.inject(HttpTestingController);

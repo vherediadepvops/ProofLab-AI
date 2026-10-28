@@ -47,6 +47,14 @@ Si falla la reproducción o el navegador no admite el códec, se muestra un erro
 
 Verificación local: original HEVC de 59,94 FPS, bytes/SHA idénticos, imagen decodificada 1080×1920 con rotación y las tres vistas a esa resolución. 13 comprobaciones HTTP, 12 de navegador y 77 pruebas Angular focalizadas correctas; tras ajustar el redondeo de PTS, 33 pruebas afectadas repetidas correctamente. API y UI compiladas. Tamaño inicial de UI: 587,11 kB (advertencia existente frente a 500 kB). Pruebas unitarias cubren dimensiones 4K y cadencias 120/240; no se hizo una prueba de rendimiento con grabación real 4K/240. Sin CI ni nuevas llamadas a Meta.
 
+### Geometría de las mediciones SAM
+
+Las posiciones y el pivote guardado mantienen su cuadrícula compatible de 480×270 solo para almacenamiento/dibujo. Antes de calcular ángulo, derivadas angulares, radio y vectores, se recuperan las proporciones de `videoWidth/videoHeight` del original decodificado, incluida su orientación. Así, un video vertical o cuadrado no se trata como si fuera 16:9. La rapidez en px/s se expresa en píxeles del original; el tamaño de la ventana y el zoom no alteran las magnitudes. Las máscaras y los pivotes históricos no se reescriben.
+
+Este ajuste corresponde al flujo SAM del Laboratorio. Los registros históricos del seguimiento local conservan su sistema y procedencia. El ángulo todavía se refiere a la vertical de la imagen: quedan pendientes la confirmación de vertical física, perspectiva y calibración métrica. No se habilitan m/s ni se ajustan observaciones al modelo ideal.
+
+Validación local: 55 pruebas focalizadas correctas, incluidas 15 combinaciones de ángulos −30°/0°/30° y formatos vertical/horizontal/cuadrado/4K; estas 15 regresiones fallaban antes de la corrección. Integración comprueba orientación decodificada, vectores tangentes perpendiculares al radio y pivote/zoom estables. Build correcto con advertencia existente de tamaño inicial (587,59 kB / 500 kB).
+
 ## Persistencia y procedencia
 
 `SamVideoEvidenceIndex` usa Microsoft.Data.Sqlite bajo `.private/physics/sam-video-evidence.sqlite`, separado de la memoria matemática de Lean. SQLite guarda **solo metadatos**: SHA del video, modelo/protocolo, hash del prompt, hashes de respuesta y recibo, ruta privada relativa, ID de análisis, fecha, cantidad de fotogramas y procedencia. No guarda tokens, videos, máscaras, coordenadas, prompts en texto claro ni respuestas completas.

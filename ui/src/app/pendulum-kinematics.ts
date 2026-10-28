@@ -1,5 +1,20 @@
 /** Geometría de reproducción del péndulo: coordenadas de IMAGEN, no metros. */
 export interface ImagePivot { pivotXpx:number; pivotYpx:number; }
+export interface ImageSize { width:number; height:number; }
+
+/**
+ * Stored pivots/points use a 480x270 drawing grid. Undo its anisotropic scale
+ * before measuring angles, distances or vector directions. These are original
+ * image pixels, not metres; decoded dimensions include the video's rotation.
+ */
+export function originalImageOffset(
+  x:number,y:number,pivot:ImagePivot,image:ImageSize
+):{dx:number;dy:number}|null {
+  if(![x,y,pivot.pivotXpx,pivot.pivotYpx,image.width,image.height].every(Number.isFinite) ||
+      image.width<=0 || image.height<=0)return null;
+  return {dx:(x-pivot.pivotXpx)*image.width/480,
+    dy:(y-pivot.pivotYpx)*image.height/270};
+}
 
 export interface KinematicFrame {
   timeSeconds:number;
@@ -84,16 +99,19 @@ export function sampleAtTime(
   return Math.abs(f.timeSeconds-time)<=tolerance?f:null;
 }
 
+/** Vector components use the supplied image pixel dimensions. */
 export function vectorAt(
-  sample:KinematicFrame,pivot:ImagePivot
+  sample:KinematicFrame,pivot:ImagePivot,
+  image:ImageSize={width:480,height:270}
 ):{vx:number;vy:number;atx:number;aty:number;arx:number;ary:number}|null {
   const omega=sample.angularVelocityRadiansPerSecond;
   const alpha=sample.angularAccelerationRadiansPerSecondSquared;
   if(!sample.isValid || omega===null || alpha===null ||
      ![sample.bobXpx,sample.bobYpx,pivot.pivotXpx,pivot.pivotYpx,
        omega,alpha].every(Number.isFinite))return null;
-  const dx=sample.bobXpx-pivot.pivotXpx;
-  const dy=sample.bobYpx-pivot.pivotYpx;
+  const offset=originalImageOffset(sample.bobXpx,sample.bobYpx,pivot,image);
+  if(!offset)return null;
+  const {dx,dy}=offset;
   const radius=Math.hypot(dx,dy);
   if(radius<5)return null;
   const tx=dy/radius,ty=-dx/radius;

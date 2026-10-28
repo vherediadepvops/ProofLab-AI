@@ -7,7 +7,7 @@ import { LabActivity } from './lab-activity';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import {
-  type KinematicRevision, type KinematicFrame, pivotFromClick,
+  type KinematicRevision, type KinematicFrame, type ImageSize, pivotFromClick,
   sampleAtTime, vectorAt, idealAngularSpeedAtAngle
 } from './pendulum-kinematics';
 import {
@@ -596,7 +596,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   /** Draw candidate geometric measurements; never paint metric XY. */
   private paintAngular(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
-      frame:KinematicFrame|null,revision:KinematicRevision,showArrows:boolean):void {
+      frame:KinematicFrame|null,revision:KinematicRevision,showArrows:boolean,
+      geometry:ImageSize):void {
     const fx=canvas.width/480,fy=canvas.height/270;
     const pivotX=revision.analysis.pivotXpx*fx;
     const pivotY=revision.analysis.pivotYpx*fy;
@@ -614,11 +615,12 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       ctx.strokeStyle='#ffe6a3';ctx.lineWidth=2;ctx.stroke();
       if(showArrows){
         const v=vectorAt(frame,{pivotXpx:revision.analysis.pivotXpx,
-          pivotYpx:revision.analysis.pivotYpx});
+          pivotYpx:revision.analysis.pivotYpx},geometry);
         if(v){
-          this.drawArrow(ctx,bx,by,v.vx*fx,v.vy*fy,'#3cf2da',.22);
-          this.drawArrow(ctx,bx,by,v.atx*fx,v.aty*fy,'#ffb34d',.035);
-          this.drawArrow(ctx,bx,by,v.arx*fx,v.ary*fy,'#fb83ff',.035);
+          const sx=canvas.width/geometry.width,sy=canvas.height/geometry.height;
+          this.drawArrow(ctx,bx,by,v.vx*sx,v.vy*sy,'#3cf2da',.22);
+          this.drawArrow(ctx,bx,by,v.atx*sx,v.aty*sy,'#ffb34d',.035);
+          this.drawArrow(ctx,bx,by,v.arx*sx,v.ary*sy,'#fb83ff',.035);
         }
       }
     }
@@ -667,11 +669,14 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const legacy=!this.processingRequired() && this.samStatus()==='NO_SAM_ARCHIVE_LOCAL_LEGACY_ONLY';
     const samples=sam?.points ?? (legacy?(this.points()??[]):[]);
     const revision=(sam || !this.processingRequired())?this.pivotRevision():null;
+    const geometry:ImageSize=sam
+      ? {width:video.videoWidth,height:video.videoHeight}
+      : {width:480,height:270}; // Legacy saved derivatives retain their own coordinate system.
     const frame=revision ?
       (sam?samAngularFrameAt(sam,{
         pivotXpx:revision.analysis.pivotXpx,
         pivotYpx:revision.analysis.pivotYpx
-      },time):sampleAtTime(revision.analysis.samples,time)) : null;
+      },time,geometry):sampleAtTime(revision.analysis.samples,time)) : null;
     this.currentKinematics.set(frame);
     const mask=sam?nearestSamMask(sam,time):null;
     if(sam && mask) {
@@ -720,7 +725,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
         ctx.closePath();ctx.fill();
       }
       ctx.font='600 13px system-ui';ctx.fillStyle='#46e0e2';
-      ctx.fillText('v '+detected.speedPixelsPerSecond.toFixed(1)+' px/s',
+      ctx.fillText('v '+(sam?magnitude:detected.speedPixelsPerSecond).toFixed(1)+' px/s',
         14,Math.max(23,canvas.height-16));
       }
       }
@@ -754,9 +759,9 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
           :'NO_2D_TRACK_FOR_THIS_VIDEO'));
     }
     if(revision){
-      this.paintAngular(ctxs[0]!,canvases[0]!,frame,revision,true);
-      this.paintAngular(ctxs[1]!,canvases[1]!,frame,revision,false);
-      this.paintAngular(ctxs[2]!,canvases[2]!,frame,revision,true);
+      this.paintAngular(ctxs[0]!,canvases[0]!,frame,revision,true,geometry);
+      this.paintAngular(ctxs[1]!,canvases[1]!,frame,revision,false,geometry);
+      this.paintAngular(ctxs[2]!,canvases[2]!,frame,revision,true,geometry);
     }
     const duration=this.duration();
     this.currentTime.set(Math.max(0,Math.min(duration||time,time)));

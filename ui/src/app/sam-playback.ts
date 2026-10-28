@@ -1,6 +1,6 @@
 import type { SamVideoEvidence } from './sam-video-evidence';
 import type { CandidatePixelPoint } from './pendulum-master-sync';
-import type { ImagePivot, KinematicFrame } from './pendulum-kinematics';
+import { originalImageOffset, type ImagePivot, type ImageSize, type KinematicFrame } from './pendulum-kinematics';
 
 export interface AuthenticatedSamVideoArchive {
   state: {
@@ -92,6 +92,7 @@ export function verifiedSamPlaybackTrack(
     throw new Error('SAM_TOO_FEW_VALID_MASKS_TO_COMPUTE_MOTION');
 
   // Existing drawing algorithms operate in 480×270 IMAGE coordinates.
+  // Drawing only: measurements must undo this scale with originalImageOffset.
   // These are not metres; the source frame raster is scaled explicitly.
   const points:CandidatePixelPoint[]=masks.map(m=>({
     timeSeconds:m.timeSeconds,
@@ -127,9 +128,12 @@ export function nearestSamMask(track:SamPlaybackTrack,time:number,
  * Pixel-space angular derivatives from SAM mask centroids and a manually
  * selected pivot. Never force zero/max velocity to match the ideal model.
  * A gap makes the derivative unavailable rather than interpolating it.
+ * Bob X/Y remain in the persisted 480x270 grid for drawing compatibility;
+ * angle/derivatives and speed are measured in undistorted original image pixels.
  */
 export function samAngularFrameAt(
   track:SamPlaybackTrack,pivot:ImagePivot,time:number,
+  image:ImageSize={width:track.frameWidth,height:track.frameHeight},
   tolerance=.055
 ):KinematicFrame|null {
   const points=track.points;
@@ -142,10 +146,11 @@ export function samAngularFrameAt(
     Math.abs(points[left].timeSeconds-time)?right:left;
   if(Math.abs(points[i].timeSeconds-time)>tolerance)return null;
   const central=points[i];
+  const offset=originalImageOffset(central.x,central.y,pivot,image);
+  if(!offset)return null;
   const base:KinematicFrame={
     timeSeconds:central.timeSeconds,bobXpx:central.x,bobYpx:central.y,
-    angleDegrees:Math.atan2(central.x-pivot.pivotXpx,
-      central.y-pivot.pivotYpx)*180/Math.PI,
+    angleDegrees:Math.atan2(offset.dx,offset.dy)*180/Math.PI,
     angularVelocityRadiansPerSecond:null,
     angularAccelerationRadiansPerSecondSquared:null,
     apparentTangentialSpeedPixelsPerSecond:null,
@@ -159,12 +164,14 @@ export function samAngularFrameAt(
   const dt1=central.timeSeconds-prev.timeSeconds;
   const dt2=next.timeSeconds-central.timeSeconds;
   if(dt1<=0 || dt2<=0 || dt1>.2 || dt2>.2)return base;
-  const radius=Math.hypot(central.x-pivot.pivotXpx,central.y-pivot.pivotYpx);
+  const radius=Math.hypot(offset.dx,offset.dy);
   if(!Number.isFinite(radius) || radius<5)return base;
-  const theta=(p:CandidatePixelPoint)=>Math.atan2(
-    p.x-pivot.pivotXpx,p.y-pivot.pivotYpx);
+  const before=originalImageOffset(prev.x,prev.y,pivot,image);
+  const after=originalImageOffset(next.x,next.y,pivot,image);
+  if(!before || !after)return base;
   const unwrap=(a:number,b:number)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
-  const t0=theta(central),tp=theta(prev),tn=theta(next);
+  const t0=Math.atan2(offset.dx,offset.dy);
+  const tp=Math.atan2(before.dx,before.dy),tn=Math.atan2(after.dx,after.dy);
   const leftSlope=unwrap(t0,tp)/dt1;
   const rightSlope=unwrap(tn,t0)/dt2;
   const omega=(leftSlope*dt2+rightSlope*dt1)/(dt1+dt2);

@@ -47,6 +47,14 @@ Playback or codec failure shows an explicit error and original-download link; no
 
 Local verification: original 59.94 FPS HEVC, identical bytes/SHA, rotated 1080×1920 decoded image and three native-resolution views. 13 HTTP checks, 12 browser checks and 77 focused Angular tests passed; after the PTS rounding adjustment, all 33 affected tests passed again. API and UI builds succeeded. UI initial size: 587.11 kB (existing warning against 500 kB). Unit tests cover 4K dimensions and 120/240 cadence; no real 4K/240 recording performance benchmark was run. No CI or new Meta calls.
 
+### SAM measurement geometry
+
+Saved positions and pivots retain their compatible 480×270 grid for storage/drawing only. Angles, angular derivatives, radius and vectors first recover the decoded original's `videoWidth/videoHeight` proportions, including orientation. Portrait and square videos are therefore not measured as 16:9. Pixel speed uses original image pixels; viewport size and zoom do not change measurements. Historical masks and pivots are not rewritten.
+
+This correction applies to the Laboratory SAM flow. Historical local-tracking records retain their own coordinate system and provenance. Angles still reference image vertical: physical vertical, perspective and metric calibration remain pending. No m/s values are enabled and observations are not fitted to ideal predictions.
+
+Local validation: all 55 focused tests passed, including 15 combinations of −30°/0°/30° angles and portrait/landscape/square/4K dimensions; these 15 regressions failed before the fix. Integration covers decoded orientation, tangent/radius orthogonality and stable pivots/zoom. Build passed with the existing initial-size warning (587.59 kB / 500 kB).
+
 ## Persistence and provenance
 
 `SamVideoEvidenceIndex` uses Microsoft.Data.Sqlite at `.private/physics/sam-video-evidence.sqlite`, separate from Lean mathematical memory. SQLite stores **metadata only**: video SHA, model/protocol, prompt hash, response and receipt hashes, private relative path, analysis ID, timestamp, frame count and provenance. It does not store keys, videos, masks, coordinates, plaintext prompts or complete responses.

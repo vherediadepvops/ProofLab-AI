@@ -1,5 +1,5 @@
 import {
-  pivotFromClick,sampleAtTime,vectorAt,idealAngularSpeedAtAngle,
+  pivotFromClick,sampleAtTime,vectorAt,idealAngularSpeedAtAngle,originalImageOffset,
   type KinematicFrame
 } from './pendulum-kinematics';
 
@@ -67,5 +67,25 @@ describe('Stage 2 image-plane pivot and derivative frame mapping',()=>{
     expect(vectorAt(sample(0,null,2),{pivotXpx:240,pivotYpx:60})).toBeNull();
     expect(vectorAt(sample(0,1,null),{pivotXpx:240,pivotYpx:60})).toBeNull();
     expect(vectorAt(sample(0,1,2),{pivotXpx:290,pivotYpx:160})).toBeNull();
+  });
+  it('makes portrait tangential vectors perpendicular to the original radius',()=>{
+    const pivot={pivotXpx:240,pivotYpx:60},size={width:1080,height:1920};
+    const offset=originalImageOffset(290,160,pivot,size)!;
+    const v=vectorAt(sample(0,2,3),pivot,size)!;
+    expect(offset.dx).toBeCloseTo(112.5,8);
+    expect(offset.dy).toBeCloseTo(100*1920/270,8);
+    expect(v.vx*offset.dx+v.vy*offset.dy).toBeCloseTo(0,7);
+    expect(v.atx*offset.dx+v.aty*offset.dy).toBeCloseTo(0,7);
+    expect(v.vx).toBeCloseTo(2*offset.dy,8);
+    expect(v.vy).toBeCloseTo(-2*offset.dx,8);
+    expect(v.arx).toBeCloseTo(-4*offset.dx,8);
+    expect(v.ary).toBeCloseTo(-4*offset.dy,8);
+  });
+  it('rejects missing original dimensions instead of assuming landscape geometry',()=>{
+    const pivot={pivotXpx:240,pivotYpx:60};
+    for(const size of [{width:0,height:1920},{width:1080,height:NaN},{width:-1,height:270}]) {
+      expect(originalImageOffset(290,160,pivot,size)).toBeNull();
+      expect(vectorAt(sample(0),pivot,size)).toBeNull();
+    }
   });
 });
