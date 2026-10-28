@@ -6,6 +6,8 @@ using ProofLab.Science;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient("meta", client =>
     client.Timeout = TimeSpan.FromSeconds(45));
+builder.Services.AddHttpClient("sam-video", client =>
+    client.Timeout = TimeSpan.FromMinutes(15));
 builder.Services.AddSingleton<MetaCallSafetyBudget>();
 builder.Services.AddSingleton<MetaLiveAccess>();
 builder.Services.AddScoped<MetaModelClient>();
@@ -23,6 +25,8 @@ builder.Services.AddSingleton<VideoMediaDecoder>();
 builder.Services.AddSingleton<PendulumVideoWorkflow>();
 builder.Services.AddSingleton<PendulumDirectorWorkflow>();
 builder.Services.AddSingleton<PendulumDirectorKinematicsStore>();
+builder.Services.AddSingleton<SamVideoMetaTransport>();
+builder.Services.AddSingleton<PendulumSamCache>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -420,6 +424,66 @@ app.MapGet("/api/science/director/pendulum/sessions/{id}/kinematics/{role}",
     catch (InvalidDataException) { return Results.Conflict(new { error = "Evidence provenance mismatch." }); }
 });
 
+// Stage 3: provider-specific SAM observation archive. A cache HIT never
+// reserves credits or calls Meta. Only an explicit localhost POST can ask for
+// a new inference, after checking the backend payment gates and source SHA.
+// Imported JSON from the offline viewer is never accepted as provider truth.
+app.MapGet("/api/science/director/pendulum/sessions/{id}/sam/{role}/status",
+    async (string id,string role,PendulumSamCache sam,
+        HttpContext context,CancellationToken ct) =>
+{
+    if(context.Connection.RemoteIpAddress is not System.Net.IPAddress address ||
+       !System.Net.IPAddress.IsLoopback(address))
+        return Results.StatusCode(403);
+    try {return Results.Ok(await sam.StatusAsync(id,role,ct));}
+    catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new{error="Original video unavailable."});}
+    catch(InvalidDataException){return Results.Conflict(new{error="Source or cache integrity mismatch."});}
+});
+app.MapGet("/api/science/director/pendulum/sessions/{id}/sam/{role}/preflight",
+    async (string id,string role,PendulumSamCache sam,
+        HttpContext context,CancellationToken ct) =>
+{
+    if(context.Connection.RemoteIpAddress is not System.Net.IPAddress address ||
+       !System.Net.IPAddress.IsLoopback(address))
+        return Results.StatusCode(403);
+    try {return Results.Ok(await sam.PreflightAsync(id,role,ct));}
+    catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new{error="Original video unavailable."});}
+    catch(InvalidDataException){return Results.Conflict(new{error="Video frame timing integrity mismatch."});}
+    catch(InvalidOperationException ex){return Results.Problem(ex.Message,statusCode:503);}
+});
+app.MapGet("/api/science/director/pendulum/sessions/{id}/sam/{role}/evidence",
+    async (string id,string role,PendulumSamCache sam,
+        HttpContext context,CancellationToken ct) =>
+{
+    if(context.Connection.RemoteIpAddress is not System.Net.IPAddress address ||
+       !System.Net.IPAddress.IsLoopback(address))
+        return Results.StatusCode(403);
+    try {return Results.Ok(await sam.ReadArchiveAsync(id,role,ct));}
+    catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new{error="No authentic cached SAM evidence."});}
+    catch(InvalidDataException){return Results.Conflict(new{error="SAM cache integrity mismatch."});}
+});
+app.MapPost("/api/science/director/pendulum/sessions/{id}/sam/{role}/analyze",
+    async (string id,string role,SamVideoRunRequest input,
+        PendulumSamCache sam,HttpContext context,CancellationToken ct) =>
+{
+    if(context.Connection.RemoteIpAddress is not System.Net.IPAddress address ||
+       !System.Net.IPAddress.IsLoopback(address))
+        return Results.StatusCode(403);
+    try {
+        var result=await sam.RunOnceAsync(id,role,input,ct);
+        return Results.Ok(result.State);
+    }
+    catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new{error="Original video unavailable."});}
+    catch(InvalidDataException){return Results.Conflict(new{error="SAM scientific evidence integrity mismatch."});}
+    catch(InvalidOperationException ex){return Results.Conflict(new{error=ex.Message});}
+    catch(HttpRequestException ex){return MetaSafeDiagnostics.ProviderFailure(ex,"sam-3.1");}
+    catch(FormatException){return Results.Problem("Unexpected or incomplete SAM provider output.",statusCode:502);}
+});
+// This is private browser review media. Real SAM uses the SHA-checked original.
 app.MapGet("/api/science/director/pendulum/sessions/{id}/poster/{role}",
     async(string id,string role,PendulumDirectorWorkflow director,CancellationToken ct) =>
 {

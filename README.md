@@ -37,6 +37,8 @@ during the event. Do not misrepresent demonstration data as physical evidence.
 
 - **Stage 3 SAM VIDEO parser (local / NON-BILLABLE):** decodes user-supplied completed SAM 3.1 video JSON with the official parser, stable frame/object IDs, mask-pixel centroids and an on-demand Zone 1 mask inspector. Uses synthetic tests; **no real pendulum SAM call, video-SHA/PTS linking, verified bob identity or cost** yet. [Stage 3 guide](docs/SAM-VIDEO-STAGE3.md).
 
+- **Stage 3 authentic-SAM archive (before SQLite):** server-side original MOV SHA validation, stream-copy MP4 remux, frame/PTS comparisons, one-call owner-approval and estimated-cost gates, durable provider receipt and no automatic retry. When a genuine cached response exists, the synchronized video renderer uses SAM mask centroids for deterministic vectors and ghost trails without another provider call. Historical FFmpeg signals remain clearly labeled NOT SAM. Real local 1920×1080 HEVC QA: 1,828 source/remux frames, 0 s maximum PTS difference, theoretical US$0.3656. **Paid calls OFF; no authentic SAM pendulum video result or scientific bob approval yet.** [Stage 3 cache guide EN](docs/SAM-VIDEO-CACHE-STAGE3.md).
+
 - .NET 10 ASP.NET Core API, with independent scientific prediction and evaluation.
 - Pendulum: small-angle prediction `T=2π√(L/g)` is kept separate from independent local motion estimates, based on rising crossings or a robust sinusoidal fit. **No predicted period is fed into the estimator; measured bob identity still requires visual validation.**
 - Rolling solid sphere on an incline: predicted `a=(5/7)g·sin(θ)` and

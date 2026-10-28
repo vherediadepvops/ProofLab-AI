@@ -1,5 +1,5 @@
 import {
-  AfterViewInit, Component, ElementRef, OnChanges, OnDestroy, ViewChild,
+  AfterViewInit, Component, ElementRef, OnChanges, OnDestroy, SimpleChanges, ViewChild,
   inject, input, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -13,6 +13,10 @@ import {
   type CandidatePixelPoint, formatMediaTime, motionAt,
   seekByFrame, trailingMotion
 } from './pendulum-master-sync';
+import {
+  verifiedSamPlaybackTrack, nearestSamMask, samAngularFrameAt,
+  type AuthenticatedSamVideoArchive, type SamPlaybackTrack, type SamPlaybackMask
+} from './sam-playback';
 
 /**
  * ONE HTMLVideoElement is the only media clock and decoder.
@@ -32,6 +36,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   private readonly api='http://127.0.0.1:5391/api/science/director/pendulum/sessions';
   private revisionSerial=0;
   private revisionKey='';
+  private samSerial=0;
+  private readonly samPathCache=new Map<number,Path2D>();
+  readonly samTrack=signal<SamPlaybackTrack|null>(null);
+  readonly samStatus=signal('CHECKING_SAM_CACHE');
   @ViewChild('masterVideo') masterVideo?: ElementRef<HTMLVideoElement>;
   @ViewChild('vectorCanvas') vectorCanvas?: ElementRef<HTMLCanvasElement>;
   @ViewChild('ghostCanvas') ghostCanvas?: ElementRef<HTMLCanvasElement>;
@@ -48,6 +56,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly videoSha256 = input('');
   readonly videoRole = input<'baseline'|'followup'>('baseline');
   readonly initialAngleDegrees = input(15);
+  readonly samRefreshNonce = input(0);
   readonly pivotMode = signal(false);
   readonly pivotSaving = signal(false);
   readonly pivotError = signal('');
@@ -175,9 +184,15 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       Array.isArray(value.analysis?.samples);
   }
 
-  ngOnChanges():void{
+  ngOnChanges(changes:SimpleChanges):void{
     const key=this.studyId()+'|'+this.videoRole()+'|'+this.videoSha256();
-    if(this.revisionKey===key)return;
+    if(this.revisionKey===key) {
+      if(changes['samRefreshNonce'] &&
+         this.http && /^[a-f0-9]{32}$/i.test(this.studyId()) &&
+         /^[a-f0-9]{64}$/i.test(this.videoSha256()))
+        void this.loadSam(++this.samSerial);
+      return;
+    }
     this.revisionKey=key;
     const serial=++this.revisionSerial;
     this.pivotRevision.set(null);
@@ -185,9 +200,46 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     this.pivotMode.set(false);
     this.pivotError.set('');
     this.pivotSaving.set(false);
+    this.samTrack.set(null);
+    this.samPathCache.clear();
+    this.samStatus.set('CHECKING_SAM_CACHE');
+    const samSerial=++this.samSerial;
     if(this.http && /^[a-f0-9]{32}$/i.test(this.studyId()) &&
-       /^[a-f0-9]{64}$/i.test(this.videoSha256()))
+       /^[a-f0-9]{64}$/i.test(this.videoSha256())) {
       void this.loadPivot(serial);
+      void this.loadSam(samSerial);
+    } else {
+      this.samStatus.set('NO_SAM_ARCHIVE_LOCAL_LEGACY_ONLY');
+    }
+  }
+
+  /**
+   * Only the server's SHA-checked provider archive is eligible to drive
+   * the three observation views. The offline JSON inspector is never wired
+   * into these scientific overlays.
+   */
+  private async loadSam(serial:number):Promise<void>{
+    try {
+      const endpoint=this.api+'/'+this.studyId()+'/sam/'+this.videoRole()+'/evidence';
+      const archive=await firstValueFrom(
+        this.http!.get<AuthenticatedSamVideoArchive>(endpoint));
+      const {decodeSamVideoResponse}=await import('./sam-video-evidence');
+      const result=await decodeSamVideoResponse(archive.rawResponseJson);
+      if(serial!==this.samSerial || this.disposed)return;
+      const track=verifiedSamPlaybackTrack(archive,result,this.videoSha256());
+      this.samTrack.set(track);
+      this.samStatus.set('SAM_3_1_CACHED_MASKS_PENDING_HUMAN_BOB_REVIEW');
+      this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
+    } catch(e:unknown) {
+      if(serial!==this.samSerial || this.disposed)return;
+      this.samTrack.set(null);
+      if((e as {status?:number})?.status===404){
+        this.samStatus.set('NO_SAM_ARCHIVE_LOCAL_LEGACY_ONLY');
+      }else{
+        this.samStatus.set('SAM_CACHE_INVALID_OR_AMBIGUOUS_NO_FALLBACK');
+      }
+      this.paintFrame(this.masterVideo?.nativeElement.currentTime??0);
+    }
   }
 
   private async loadPivot(serial:number):Promise<void>{
@@ -275,6 +327,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     this.disposed=true;
     this.stopFrameLoop();
     ++this.revisionSerial;
+    ++this.samSerial;
+    this.samPathCache.clear();
     this.masterVideo?.nativeElement.pause();
   }
 
@@ -426,6 +480,27 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     ctx.closePath();ctx.fill();
   }
 
+  private paintSamMask(
+    ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
+    track:SamPlaybackTrack,mark:SamPlaybackMask):void {
+    let path=this.samPathCache.get(mark.frameIndex);
+    if(!path) {
+      path=new Path2D(mark.maskPath);
+      this.samPathCache.set(mark.frameIndex,path);
+      if(this.samPathCache.size>96)
+        this.samPathCache.delete(this.samPathCache.keys().next().value!);
+    }
+    ctx.save();
+    ctx.scale(canvas.width/track.frameWidth,canvas.height/track.frameHeight);
+    ctx.translate(mark.left,mark.top);
+    ctx.fillStyle='rgba(10,244,183,.26)';
+    ctx.strokeStyle='#43f1ce';
+    ctx.lineWidth=2;
+    ctx.fill(path);
+    ctx.stroke(path);
+    ctx.restore();
+  }
+
   /** Draw candidate geometric measurements; never paint metric XY. */
   private paintAngular(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
       frame:KinematicFrame|null,revision:KinematicRevision,showArrows:boolean):void {
@@ -491,16 +566,41 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
 
-    const samples=this.points()??[];
+    const sam=this.samTrack();
+    // SAM authenticated cache takes priority. If an archive is invalid or
+    // ambiguous, do NOT silently replace its observations with local data.
+    const legacy=this.samStatus()==='NO_SAM_ARCHIVE_LOCAL_LEGACY_ONLY';
+    const samples=sam?.points ?? (legacy?(this.points()??[]):[]);
     const revision=this.pivotRevision();
-    const frame=revision?sampleAtTime(revision.analysis.samples,time):null;
+    const frame=revision ?
+      (sam?samAngularFrameAt(sam,{
+        pivotXpx:revision.analysis.pivotXpx,
+        pivotYpx:revision.analysis.pivotYpx
+      },time):sampleAtTime(revision.analysis.samples,time)) : null;
     this.currentKinematics.set(frame);
-    const detected=motionAt(samples,time);
+    const mask=sam?nearestSamMask(sam,time):null;
+    if(sam && mask) {
+      try{
+        this.paintSamMask(ctxs[0]!,canvases[0]!,sam,mask);
+        this.paintSamMask(ctxs[2]!,canvases[2]!,sam,mask);
+      }catch{
+        this.overlayStatus.set('SAM_MASK_PATH_INVALID_NO_FABRICATED_OVERLAY');
+        return;
+      }
+    }
+    // A SAM frame with no nearby authentic mask is NOT an observation:
+    // do not reuse a distant centroid or silently show FFmpeg vectors.
+    const detected=sam && !mask ? null : motionAt(samples,time);
     if(detected){
-      this.overlayStatus.set(revision
-        ? (frame?.isValid?'LOCAL_ANGULAR_CANDIDATE_NOT_SAM'
-          :'ANGULAR_DERIVATIVE_UNAVAILABLE')
-        :'LOCAL_PIXEL_CANDIDATE_NOT_SAM');
+      this.overlayStatus.set(sam
+        ? (revision
+          ? (frame?.isValid?'SAM_3_1_CACHED_PX_KINEMATICS_REVIEW_PENDING'
+            :'SAM_MASK_VALID_ANGULAR_DERIVATIVE_MISSING')
+          :'SAM_3_1_CACHED_PX_TRACK_REVIEW_PENDING')
+        : (revision
+          ? (frame?.isValid?'LOCAL_ANGULAR_CANDIDATE_NOT_SAM'
+            :'ANGULAR_DERIVATIVE_UNAVAILABLE')
+          :'LOCAL_PIXEL_CANDIDATE_NOT_SAM'));
       const canvas=canvases[0]!;
       const factorX=canvas.width/480, factorY=canvas.height/270;
       const x=detected.x*factorX,y=detected.y*factorY;
@@ -551,11 +651,12 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       if(trail.length>1)ghostCtx.stroke();
       }
     }else{
-      this.overlayStatus.set(revision
-        ? 'NO_RELIABLE_TRACK_FOR_THIS_FRAME'
-        : (samples.length>0
-          ? 'NO_RELIABLE_LOCAL_SAMPLE_AT_THIS_FRAME'
-          : 'NO_2D_TRACK_FOR_THIS_VIDEO'));
+      this.overlayStatus.set(sam
+        ? 'SAM_NO_RELIABLE_MASK_DERIVATIVE_AT_THIS_PROXY_FRAME'
+        : (!legacy ? this.samStatus() :
+          revision?'NO_RELIABLE_LOCAL_TRACK_FOR_THIS_FRAME'
+          : samples.length>0?'NO_RELIABLE_LOCAL_SAMPLE_AT_THIS_FRAME'
+          :'NO_2D_TRACK_FOR_THIS_VIDEO'));
     }
     if(revision){
       this.paintAngular(ctxs[0]!,canvases[0]!,frame,revision,true);

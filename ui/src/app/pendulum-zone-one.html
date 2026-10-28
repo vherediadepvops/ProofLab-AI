@@ -140,6 +140,7 @@
             @if(clip.previewAvailable) {
               <app-pendulum-master-player [videoUrl]="reviewVideo('followup')"
                 [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'"
+                [samRefreshNonce]="samRefreshNonce()"
                 [initialAngleDegrees]="s.angleDegrees ?? 15"
                 [name]="clip.originalFilename"
                 [originalWidth]="clip.media.width" [originalHeight]="clip.media.height"
@@ -153,6 +154,7 @@
           @if(s.baseline.previewAvailable) {
             <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
               [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'"
+              [samRefreshNonce]="samRefreshNonce()"
               [initialAngleDegrees]="s.angleDegrees ?? 15"
               [name]="s.baseline.originalFilename"
               [originalWidth]="s.baseline.media.width" [originalHeight]="s.baseline.media.height"
@@ -269,8 +271,12 @@
   @if(session()?.baseline) {
     @defer (on interaction) {
       <app-sam-video-replay [language]="language()"
+        [studyId]="session()?.id ?? ''"
+        [videoRole]="(activeTrial()==='followup' && session()?.followup?.sha256)
+          ? 'followup' : 'baseline'"
         [videoSha256]="(activeTrial()==='followup' && session()?.followup?.sha256
-          ? session()?.followup?.sha256 : session()?.baseline?.sha256) ?? ''"/>
+          ? session()?.followup?.sha256 : session()?.baseline?.sha256) ?? ''"
+        (cacheUpdated)="samRefreshNonce.set(samRefreshNonce()+1)"/>
     } @placeholder {
       <button type="button" class="secondary-button">
         {{es ? 'Etapa 3 · Inspeccionar máscaras SAM (sin costo)' :

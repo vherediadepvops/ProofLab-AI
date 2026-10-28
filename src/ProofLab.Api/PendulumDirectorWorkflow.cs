@@ -78,6 +78,33 @@ public sealed class PendulumDirectorWorkflow(
     private static readonly string NotAi = PendulumDirectorProtocol.Source;
     public bool DecoderAvailable => decoder.Available;
 
+    /// <summary>
+    /// Resolve the exact private uploaded original for scientific processing.
+    /// Never substitute the 12-FPS review proxy. Recheck the disk SHA-256
+    /// before allowing a third-party video submission.
+    /// </summary>
+    public async Task<(DirectorVideoEvidence Evidence, string OriginalPath)> GetVerifiedOriginalAsync(
+        string id, string role, CancellationToken ct)
+    {
+        if (role is not ("baseline" or "followup"))
+            throw new ArgumentException("Invalid video role.");
+        var session = await ReadAsync(id, ct);
+        var record = role == "baseline" ? session.Baseline : session.Followup;
+        if (record is null)
+            throw new FileNotFoundException("No original video for this trial.");
+        var ext = VideoClipPolicy.CheckNameAndSize(record.OriginalFilename, record.Bytes);
+        var path = PathFor(session.Id, role + ext);
+        var info = new FileInfo(path);
+        if (!info.Exists || info.Length != record.Bytes)
+            throw new InvalidDataException("Source video missing or size mismatch.");
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.Read, 128 * 1024, useAsync: true);
+        var digest = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();
+        if (!string.Equals(digest, record.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Source video SHA-256 mismatch.");
+        return (record, path);
+    }
+
     public async Task<DirectorSession> StartAsync(
         DirectorStartRequest input, CancellationToken ct)
     {

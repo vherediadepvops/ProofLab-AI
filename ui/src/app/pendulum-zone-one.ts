@@ -20,6 +20,7 @@ import { SamVideoReplay } from './sam-video-replay';
 export class PendulumZoneOne extends PendulumDirector {
   readonly activeTrial = signal<'baseline'|'followup'>('baseline');
   readonly registeringAndUploading = signal(false);
+  readonly samRefreshNonce = signal(0);
 
   /**
    * Select the first recording immediately. The study's theoretical inputs

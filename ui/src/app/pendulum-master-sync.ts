@@ -9,6 +9,8 @@ export interface CandidatePixelPoint {
   x: number;
   y: number;
   approximateRadiusPixels: number;
+  source?:'SAM_3_1_CACHED_PROVIDER_CENTROID_NOT_CALIBRATED'|
+    'LOCAL_CANDIDATE_NOT_SAM';
 }
 export interface CandidateVector {
   timeSeconds: number;
@@ -17,7 +19,8 @@ export interface CandidateVector {
   vxPixelsPerSecond: number;
   vyPixelsPerSecond: number;
   speedPixelsPerSecond: number;
-  source: 'LOCAL_CANDIDATE_NOT_SAM';
+  source: 'LOCAL_CANDIDATE_NOT_SAM'|
+    'SAM_3_1_CACHED_PROVIDER_CENTROID_NOT_CALIBRATED';
 }
 
 export function nearestMotionTime(
@@ -59,7 +62,8 @@ export function motionAt(
   return {
     timeSeconds:anchor.timeSeconds,x:anchor.x,y:anchor.y,
     vxPixelsPerSecond:vx,vyPixelsPerSecond:vy,
-    speedPixelsPerSecond:speed,source:'LOCAL_CANDIDATE_NOT_SAM'
+    speedPixelsPerSecond:speed,
+    source:anchor.source??'LOCAL_CANDIDATE_NOT_SAM'
   };
 }
 

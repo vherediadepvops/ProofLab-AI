@@ -9,7 +9,8 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
 
   function verifyHttp(http:HttpTestingController):void{
     const pending=http.match(req=>req.method==='GET' &&
-      req.url.includes('/kinematics/'));
+      (req.url.includes('/kinematics/') ||
+       req.url.includes('/sam/') && req.url.endsWith('/evidence')));
     for(const request of pending)
       request.flush({error:'No pivot yet'},
         {status:404,statusText:'Not Found'});

@@ -44,11 +44,11 @@ export interface SamVideoEvidence {
   warningCount: number;
 }
 
-const MAX_JSON_CHARS = 24_000_000;
-const MAX_OUTPUT_CHARS = 20_000_000;
-const MAX_MASK_PIXELS = 15_000_000;
-const MAX_VECTOR_CHARS = 5_000_000;
-const MAX_DETECTIONS = 1500;
+const MAX_JSON_CHARS = 90_000_000;
+const MAX_OUTPUT_CHARS = 85_000_000;
+const MAX_MASK_PIXELS = 200_000_000;
+const MAX_VECTOR_CHARS = 50_000_000;
+const MAX_DETECTIONS = 3000;
 
 /** Only accept an explicitly completed SAM response; no guessed model output. */
 function completedOutput(raw: string): string {

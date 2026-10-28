@@ -37,6 +37,8 @@ se desarrollaron durante el evento. No presentaremos simulaciones como datos rea
 
 - **Etapa 3, parser SAM para VIDEO (local / SIN COBROS):** decodifica JSON completo aportado por el usuario mediante el parser oficial, preserva frame/ID de objeto y calcula centroides desde máscaras, con visor opcional en Zona 1. Solo probado con muestras sintéticas; **aún NO hay llamada SAM al péndulo, vínculo SHA/PTS ni validación de identidad de plomada**. [Guía Etapa 3](docs/SAM-VIDEO-STAGE3.es.md).
 
+- **Etapa 3, fuente SAM auténtica y caché antes de SQLite:** nuevo backend controla SHA del MOV, remux MP4 sin recodificar, comparación exacta de fotogramas/PTS, permiso y presupuesto de una llamada SAM, recibo de respuesta e imposibilidad de reintento automático. Si existe resultado auténtico guardado, las cuatro vistas del reproductor recuperan máscaras/centroides SAM, vectores y rastro calculados en píxeles por ProofLab sin tokens adicionales. Las posiciones históricas FFmpeg se etiquetan NO SAM. Se probó localmente un MOV 1920×1080 HEVC de 1.828 frames: MP4 de 1.828 frames con diferencia PTS 0 s y costo teórico US$0,3656; **cobros Meta OFF, ninguna inferencia SAM nueva ni revisión humana completada**. [Etapa 3 caché ES](docs/SAM-VIDEO-CACHE-STAGE3.es.md).
+
 - API ASP.NET Core .NET 10 con predicción y evaluación científica independientes.
 - Péndulo: predicción `T=2π√(L/g)` independiente de la medición; cálculo local mediante cruces ascendentes o estimador sinusoidal robusto. **No se utiliza el período previsto para ajustar las observaciones ni se certifica seguimiento físico sin revisión del video.**
 - Esfera maciza rodando por una rampa: aceleración teórica

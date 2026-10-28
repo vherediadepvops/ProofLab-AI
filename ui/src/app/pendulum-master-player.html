@@ -31,7 +31,9 @@
         <canvas #combinedCanvas class="synchronized-canvas" [style.transform]="imageTransform()"
           [attr.aria-label]="es?'Fotograma con vectores y rastro sincronizados':'Frame with synchronized vectors and trail'"></canvas>
       </div>
-      <div class="view-meta">{{es?'Seguimiento local: vectores aparentes + posiciones pasadas':'Local candidates: apparent vectors + past positions'}}</div>
+      <div class="view-meta">{{samTrack()
+        ? (es?'SAM 3.1 · máscaras y centros guardados · pendiente revisión humana':'SAM 3.1 · cached masks and centroids · human review pending')
+        : (es?'Seguimiento local provisional NO SAM':'Provisional LOCAL tracking NOT SAM')}}</div>
     </div>
 
     <div class="view-panel" data-view="original" [class.is-primary]="activeView()==='original'"
@@ -85,7 +87,9 @@
         <canvas #vectorCanvas class="synchronized-canvas" [style.transform]="imageTransform()"
           [attr.aria-label]="es?'Mismo fotograma con velocidad aparente local':'Same frame with local image-space velocity'"></canvas>
       </div>
-      <div class="view-meta">{{es?'Flecha de velocidad aparente · píxeles/segundo':'Image-space velocity arrow · pixels/second'}}</div>
+      <div class="view-meta">{{samTrack()
+        ? (es?'Velocidad en px/s calculada desde centros SAM · NO metros':'Pixel/s velocity derived from SAM centres · NOT metres')
+        : (es?'Flecha local provisional · píxeles/segundo':'Provisional local vector · pixels/second')}}</div>
     </div>
 
     <div class="view-panel" data-view="ghost" [class.is-primary]="activeView()==='ghost'"
@@ -106,7 +110,9 @@
         <canvas #ghostCanvas class="synchronized-canvas" [style.transform]="imageTransform()"
           [attr.aria-label]="es?'Mismo fotograma con posiciones pasadas estimadas':'Same frame with estimated recent motion trail'"></canvas>
       </div>
-      <div class="view-meta">{{es?'Últimos 1,5 segundos · centros candidatos':'Previous 1.5 seconds · candidate centroids'}}</div>
+      <div class="view-meta">{{samTrack()
+        ? (es?'Últimos 1,5 s · trayectoria SAM guardada':'Last 1.5 s · cached SAM path')
+        : (es?'Últimos 1,5 s · candidatos locales':'Last 1.5 s · local candidates')}}</div>
     </div>
   </div>
 
@@ -115,7 +121,11 @@
       <div class="kinematics-toolbar">
         <div>
           <strong>{{es ? 'Etapa 2 · Medición angular' : 'Stage 2 · Angular measurements'}}</strong>
-          <span>{{es ? 'Pivote humano · seguimiento local NO SAM' : 'Human-selected pivot · LOCAL NOT SAM'}}</span>
+          <span>{{samTrack()
+            ? (es?'Pivote humano + posiciones de SAM 3.1; sin calibración física':
+              'Human pivot + SAM 3.1 positions; no metric calibration')
+            : (es?'Pivote humano · seguimiento local NO SAM':
+              'Human-selected pivot · LOCAL NOT SAM')}}</span>
         </div>
         <button type="button" class="pivot-button" (click)="beginPivotSelection()"
           [disabled]="pivotSaving() || (points()?.length ?? 0)<5">
@@ -141,7 +151,11 @@
       @if(pivotRevision(); as rev) {
         <div class="kinematics-metrics">
           <div class="measurement-group">
-            <div class="group-caption">{{es ? 'OBSERVADO · CANDIDATO DE IMAGEN' : 'OBSERVED · IMAGE CANDIDATE'}}</div>
+            <div class="group-caption">{{samTrack()
+              ? (es?'OBSERVADO POR SAM · CENTROIDE CANDIDATO':
+                'SAM OBSERVED · CANDIDATE CENTROID')
+              : (es?'OBSERVADO · CANDIDATO LOCAL NO SAM':
+                'OBSERVED · LOCAL CANDIDATE NOT SAM')}}</div>
             <div class="measurements">
               <div><span>θ (°)</span><strong>{{formatMetric(currentKinematics()?.isValid ? currentKinematics()?.angleDegrees : null,1)}}</strong></div>
               <div><span>ω (rad/s)</span><strong>{{formatMetric(currentKinematics()?.isValid ? currentKinematics()?.angularVelocityRadiansPerSecond : null,3)}}</strong></div>
@@ -162,11 +176,19 @@
             </div>
           </div>
         </div>
-        <p class="science-provenance">{{es?'Derivadas candidatas':'Candidate derivatives'}}:
-          {{rev.analysis.derivativePoints}}/{{rev.analysis.sourcePoints}} ·
-          {{es?'Calidad':'Quality'}}: {{rev.analysis.qualityStatus}} ·
-          {{es?'NO calibrado en metros; confirmar plomada/pivote visualmente.':
-            'NOT calibrated in meters; visually verify bob and pivot.'}}</p>
+        <p class="science-provenance">
+          @if(samTrack(); as sam) {
+            {{es?'Fuente: máscaras SAM 3.1 guardadas':'Source: cached SAM 3.1 masks'}} ·
+            {{es?'Centroides':'Centroids'}}: {{sam.points.length}} ·
+            {{es?'Identidad de objeto':'Object identity'}}: {{sam.objectId}} ·
+            {{es?'SIN VALIDACIÓN DE PLOMADA NI METROS':'BOB IDENTITY / METRES NOT VALIDATED'}}
+          } @else {
+            {{es?'Derivadas locales candidatas':'Local candidate derivatives'}}:
+            {{rev.analysis.derivativePoints}}/{{rev.analysis.sourcePoints}} ·
+            {{es?'Calidad':'Quality'}}: {{rev.analysis.qualityStatus}} ·
+            {{es?'NO calibrado en metros; NO es SAM; confirmar visualmente':'NOT calibrated in metres; NOT SAM; review visually'}}
+          }
+        </p>
       }
       @if(pivotError()) {<p class="player-error" role="alert">{{pivotError()}}</p>}
     </div>
@@ -215,8 +237,12 @@
 
   @if(error()) {<p class="player-error" role="alert">{{error()}}</p>}
   <p class="limitations">
-    {{es
-      ? 'Las cuatro perspectivas usan un solo video decodificado. La copia H.264 es de 12 FPS; el MOV/MP4 original conserva su resolución/FPS en el servidor. Flechas y rastros provienen de candidatos locales de movimiento, NO de SAM 3.1 ni de mediciones físicas calibradas. Si faltan coordenadas 2D, no se inventan vectores.'
-      : 'All four perspectives share one decoded source frame. This browser H.264 proxy is 12 FPS; the original MOV/MP4 with source resolution/FPS remains private. Arrows and trails are experimental LOCAL motion candidates, NOT SAM 3.1 or calibrated physical measurements. Missing 2D data is never invented.'}}
+    {{samTrack()
+      ? (es
+        ? 'Se recuperó una respuesta auténtica del proveedor SAM 3.1 desde la caché privada. Centros y máscaras son observaciones de imagen; los vectores y el rastro se calculan localmente con tiempos originales. El video reproducido es un proxy a 12 FPS: la superposición puede diferir de los 60 FPS de origen. Sin revisión humana, incertidumbre ni unidades métricas certificadas.'
+        : 'A genuine SAM 3.1 provider response was recovered from the private cache. Image-mask centroids drive locally computed vectors and trails using source timestamps. The displayed browser proxy is 12 FPS, not the 60 FPS source, so overlay timing has display limits. No independent bob review, uncertainty or calibrated physical units yet.')
+      : (es
+        ? 'No hay evidencia SAM 3.1 de este video. Las vistas locales anteriores se conservan solo como referencia provisional, nunca como resultados de Meta. El original permanece privado y el proxy H.264 reproduce a 12 FPS.'
+        : 'This video has no SAM 3.1 evidence. Earlier local views remain only as provisional controls, NEVER Meta model results. Original media remains private; the H.264 browser proxy is 12 FPS.')}}
   </p>
 </section>

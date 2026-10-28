@@ -18,6 +18,13 @@ const track:CandidatePixelPoint[]=Array.from({length:60},(_,i)=>({
 
 const study='d'.repeat(32);
 const sha='a'.repeat(64);
+function flushNoSamCache(http:HttpTestingController):void {
+  const pending=http.match(req=>req.method==='GET' &&
+    req.url.includes('/sam/') && req.url.endsWith('/evidence'));
+  for(const request of pending)
+    request.flush({error:'No provider response cached'},
+      {status:404,statusText:'Not Found'});
+}
 const revision:KinematicRevision={
   studyId:study,role:'baseline',videoId:'e'.repeat(32),
   videoSha256:sha,revisionId:'QA_REVISION',calculatedAtUtc:'2026-10-28T05:10:00Z',
@@ -79,7 +86,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(root.querySelectorAll('.view-panel').length).toBe(4);
     expect(root.textContent).toContain('Cuatro perspectivas, un solo reloj');
     expect(root.textContent).toContain('H.264');
-    expect(root.textContent).toContain('NO de SAM');
+    expect(root.textContent).toContain('No hay evidencia SAM 3.1');
     expect(component.proxyFps()).toBe(12);
     fixture.destroy();
   });
@@ -225,6 +232,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     const req=http.expectOne(r=>r.method==='GET' &&
       r.url.endsWith('/'+study+'/kinematics/baseline'));
     req.flush(revision);
+    flushNoSamCache(http);
     await fixture.whenStable();
     source.currentTime=1;
     const combined=root.querySelector('canvas.synchronized-canvas') as HTMLCanvasElement;
@@ -253,6 +261,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     fixture.detectChanges();
     http.expectOne(r=>r.method==='GET'&&r.url.endsWith('/kinematics/baseline'))
       .flush({error:'not yet registered'},{status:404,statusText:'Not Found'});
+    flushNoSamCache(http);
     await fixture.whenStable();
     component.selectView('combined');
     component.toggleZoom();
@@ -298,6 +307,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     const latest=http.expectOne(r=>r.method==='GET'&&r.url.endsWith('/kinematics/followup'));
     old.flush(revision);
     latest.flush({error:'No pivot'},{status:404,statusText:'Not Found'});
+    flushNoSamCache(http);
     await fixture.whenStable();
     expect(component.pivotRevision()).toBeNull();
     expect(component.pivotMode()).toBeFalse();

@@ -89,6 +89,102 @@ public sealed class VideoMediaDecoder
         }
     }
 
+    /// <summary>
+    /// Actual decoded presentation timestamps of the ORIGINAL source stream.
+    /// These are not guessed from nominal FPS or the 12FPS browser proxy.
+    /// A SAM video frame index can only be time-aligned after the uploaded
+    /// source is verified to contain the identical decoded frame sequence.
+    /// </summary>
+    public async Task<double[]> ReadVideoFramePtsAsync(string localFile, CancellationToken ct)
+    {
+        if (ffprobe is null) throw new InvalidOperationException("FFprobe unavailable.");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(60));
+        using var proc = NewProcess(ffprobe,
+            "-v", "error", "-protocol_whitelist", "file,pipe",
+            "-select_streams", "v:0",
+            "-show_entries", "frame=best_effort_timestamp_time",
+            "-of", "json", "-i", localFile);
+        proc.Start();
+        try
+        {
+            var stdout = proc.StandardOutput.ReadToEndAsync(timeout.Token);
+            var stderr = proc.StandardError.ReadToEndAsync(timeout.Token);
+            await proc.WaitForExitAsync(timeout.Token);
+            _ = await stderr;
+            var output = await stdout;
+            if (proc.ExitCode != 0 || output.Length > 1_500_000)
+                throw new ArgumentException("Video PTS probe failed or exceeded limits.");
+            using var json = JsonDocument.Parse(output);
+            var frames = json.RootElement.GetProperty("frames").EnumerateArray();
+            var absolute = new List<double>(2400);
+            foreach (var frame in frames)
+            {
+                if (absolute.Count >= 15_000 ||
+                    !frame.TryGetProperty("best_effort_timestamp_time", out var time) ||
+                    time.ValueKind != JsonValueKind.String ||
+                    !double.TryParse(time.GetString(), NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out var value) ||
+                    !double.IsFinite(value))
+                    throw new ArgumentException("Source has missing or unsafe frame timestamps.");
+                if (absolute.Count > 0 && value <= absolute[^1])
+                    throw new ArgumentException("Source frame presentation times are non-monotonic.");
+                absolute.Add(value);
+            }
+            if (absolute.Count < 50)
+                throw new ArgumentException("SAM video requires at least 50 source frames.");
+            var first = absolute[0];
+            return absolute.Select(x => x - first).ToArray();
+        }
+        catch (JsonException)
+        {
+            throw new ArgumentException("FFprobe returned invalid frame timestamps.");
+        }
+        finally
+        {
+            if (!proc.HasExited)
+                try { proc.Kill(entireProcessTree: true); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Creates a private MP4 for SAM Files API by copying, NOT re-encoding,
+    /// the original H.264/H.265/MPEG4 video bitstream. Source PTS alignment
+    /// MUST be verified by the caller before uploading it to a provider.
+    /// No local media is modified and the output is never the 12FPS proxy.
+    /// </summary>
+    public async Task CreateSamCompatibleMp4Async(
+        string originalFile, string mp4File, CancellationToken ct)
+    {
+        if (ffmpeg is null) throw new InvalidOperationException("FFmpeg unavailable.");
+        if (File.Exists(mp4File))
+            throw new InvalidOperationException(
+                "A private SAM submission copy already exists; inspect it before retrying.");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(95));
+        var metadata=await ProbeAsync(originalFile,timeout.Token);
+        if(metadata.Codec is not ("h264" or "hevc" or "mpeg4"))
+            throw new ArgumentException("Source codec is not compatible with SAM MP4.");
+        var args=new List<string>{
+            "-hide_banner","-loglevel","error","-nostdin",
+            "-protocol_whitelist","file,pipe","-threads","2",
+            "-i",originalFile,"-map","0:v:0",
+            "-an","-sn","-dn","-c:v","copy"
+        };
+        if(metadata.Codec=="hevc")
+        {
+            args.Add("-tag:v");
+            args.Add("hvc1");
+        }
+        args.AddRange(new[]{"-movflags","+faststart",
+            "-n","-f","mp4",mp4File});
+        var proc=NewProcess(ffmpeg,args.ToArray());
+        await RunTextAsync(proc,timeout.Token);
+        var file=new FileInfo(mp4File);
+        if(!file.Exists || file.Length is < 10_000 or > 240_000_000)
+            throw new InvalidDataException("Invalid private SAM MP4 copy.");
+    }
+
     public async Task<LocalMotionTrack> TrackAsync(string localFile, CancellationToken ct)
     {
         if (ffmpeg is null) throw new InvalidOperationException("Local FFmpeg/FFprobe is not installed.");
