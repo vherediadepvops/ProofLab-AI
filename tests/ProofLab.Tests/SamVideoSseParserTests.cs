@@ -93,6 +93,27 @@ public sealed class SamVideoSseParserTests
     }
 
     [Fact]
+    public async Task ContentPartDoneSuppliesFinalTextWhenProviderHasNoOutputTextDone()
+    {
+        const string sample="<12f>0<|box;x1=1;y1=2;x2=3;y2=4;w=5;h=6|>";
+        var events=Event(new {type="response.content_part.done",
+            part=new {type="output_text",text=sample}})+Completion;
+        var parsed=await ParseAsync(events);
+        Assert.Equal(sample,parsed.OutputText);
+        Assert.Equal(1828,parsed.BilledFrames);
+    }
+
+    [Fact]
+    public async Task FinalTextMismatchIsRejectedRatherThanMisrepresentingMasks()
+    {
+        var events=Event(new {type="response.output_text.delta",delta="correct"})+
+            Event(new {type="response.content_part.done",
+                part=new {type="output_text",text="incorrect"}})+Completion;
+        var error=await Assert.ThrowsAsync<SamVideoSseException>(()=>ParseAsync(events));
+        Assert.Equal("SAM_SSE_FINAL_TEXT_MISMATCH",error.Code);
+    }
+
+    [Fact]
     public async Task IncompleteStreamAndDoneWithoutCompleted_AreRejected()
     {
         var stream = Event(new { type = "response.output_text.delta",

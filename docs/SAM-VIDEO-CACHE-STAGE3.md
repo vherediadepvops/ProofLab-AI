@@ -44,3 +44,16 @@ Verify actual Meta Usage and privacy terms; only consider another provider reque
 **References:** [SAM overview](https://dev.meta.ai/docs/sam/overview), [video prompts](https://dev.meta.ai/docs/sam/segmenting), [file expiry](https://dev.meta.ai/docs/file-handling), [pricing](https://dev.meta.ai/docs/pricing-rate-limits).
 
 **Español:** [SAM-VIDEO-CACHE-STAGE3.es.md](SAM-VIDEO-CACHE-STAGE3.es.md).
+
+
+## One expressly approved manual second attempt, with retained history (Oct 28, 2026)
+
+After the first attempt returned HTTP502 and the owner supplied Billing screenshots showing an approximate **USD 0.37 free-credit decrease** (the exact per-call Usage is not independently confirmed), the owner explicitly authorized **one additional experiment**. A bounded, auditable reconciliation mechanism was added:
+
+- `POST .../sam/{role}/analyze` never auto-retries. Only a loopback operator request with `ownerApprovesOneReconciledRetry=true` and `previousAttemptBillingEvidence` matching the documented `ManualRetryReconciliationPolicy.OwnerAuthorization` may admit one manual retry, if all paid-access gates and request-budget checks pass.
+- Previous `attempt-started.json` is **never deleted or moved**. Before a second provider transfer, exclusive creation of `manual-retry-started.json` occurs. Any existing manual-retry marker prohibits a third attempt, including across process restarts.
+- Original `sam-upload.mp4` is reused **without new encoding**, after comparing every PTS and checking its SHA against the initial attempt record. No private videos are published.
+- Second-attempt sanitized telemetry uses `manual-retry-telemetry.jsonl`; it neither overwrites nor fabricates the previous run's events. A successful provider response would be saved with a private hash-linked receipt.
+- A payment-disabled local smoke test verified HTTP409 both for incorrect reconciliation and for correct owner acknowledgment without billing permission; no second marker or provider call was created.
+
+New owner approval **does not prove the precise billing of the first attempt** and does not authorize further calls.

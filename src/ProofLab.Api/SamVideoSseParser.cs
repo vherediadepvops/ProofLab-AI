@@ -58,6 +58,14 @@ public static class SamVideoSseParser
             output.Append(value);
         }
 
+        bool MatchesAccumulated(string value)
+        {
+            if (value.Length != output.Length) return false;
+            for (var i=0; i<value.Length; i++)
+                if(value[i] != output[i]) return false;
+            return true;
+        }
+
         async ValueTask<bool> ConsumeEvent()
         {
             if (dataLines.Length == 0)
@@ -103,11 +111,39 @@ public static class SamVideoSseParser
                     case "response.output_text.done":
                         // Fallback only: some providers return all output in the
                         // done event and no deltas. NEVER duplicate prior deltas.
-                        if (output.Length == 0 &&
-                            message.TryGetProperty("text", out var doneText) &&
+                        if (message.TryGetProperty("text", out var doneText) &&
                             doneText.ValueKind == JsonValueKind.String)
-                            AppendSafe(doneText.GetString() ?? "");
+                        {
+                            var full=doneText.GetString() ?? "";
+                            if (output.Length == 0) AppendSafe(full);
+                            else if (!MatchesAccumulated(full))
+                                throw new SamVideoSseException("SAM_SSE_FINAL_TEXT_MISMATCH");
+                        }
                         await Report("SSE_TEXT_DONE");
+                        break;
+
+                    case "response.content_part.done":
+                        // Official Meta cookbook: providers may finalize the
+                        // output_text lane with content_part.done and never
+                        // emit response.output_text.done.
+                        if (message.TryGetProperty("part", out var donePart) &&
+                            donePart.ValueKind == JsonValueKind.Object &&
+                            donePart.TryGetProperty("type",out var donePartType) &&
+                            donePartType.ValueKind == JsonValueKind.String)
+                        {
+                            if (donePartType.GetString()=="refusal")
+                                throw new SamVideoSseException("SAM_SSE_PROVIDER_REFUSAL");
+                            if (donePartType.GetString()=="output_text" &&
+                                donePart.TryGetProperty("text",out var donePartText) &&
+                                donePartText.ValueKind == JsonValueKind.String)
+                            {
+                                var finalText=donePartText.GetString() ?? "";
+                                if (output.Length == 0) AppendSafe(finalText);
+                                else if (!MatchesAccumulated(finalText))
+                                    throw new SamVideoSseException("SAM_SSE_FINAL_TEXT_MISMATCH");
+                            }
+                        }
+                        await Report("SSE_CONTENT_PART_DONE");
                         break;
 
                     case "response.completed":

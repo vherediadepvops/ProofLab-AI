@@ -40,10 +40,17 @@ public sealed record SamVideoArtifact(
 
 public sealed record SamVideoRunRequest(
     string VideoSha256, bool ConfirmPrivateVideoTransfer,
-    bool ConfirmOneBillableSamCall, double MaximumEstimatedCostUsd);
+    bool ConfirmOneBillableSamCall, double MaximumEstimatedCostUsd,
+    bool OwnerApprovesOneReconciledRetry = false,
+    string? PreviousAttemptBillingEvidence = null);
 
 public sealed record SamApiCompletedResult(
     string FullResponseJson, string ProviderResponseId, int? BilledFrames);
+
+public sealed record SamOriginalAttempt(
+    string Protocol,string SourceSha256,string SubmittedMp4Sha256,
+    int FrameCount,double EstimatedUsd,DateTimeOffset RequestedAtUtc,
+    string Status);
 
 public sealed class PendulumSamCache(
     IWebHostEnvironment environment, PendulumDirectorWorkflow director,
@@ -139,13 +146,15 @@ public sealed class PendulumSamCache(
             var cached = await ReadArchiveAsync(studyId,role,ct);
             return cached.State;
         }
+        var secondAttempt = File.Exists(Path.Combine(folder,"manual-retry-started.json"));
         var attempted = File.Exists(Path.Combine(folder,"attempt-started.json"));
         var snapshot = meta.Status();
         return new SamVideoState(
+            secondAttempt ? "SECOND_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION" :
             attempted ? "PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION" :
                         "NOT_ANALYZED_WITH_SAM",
             SamModel,Prompt,video.Sha256,key,0,0,null,null,
-            !attempted && snapshot.LiveCallsPermitted,
+            !attempted && !secondAttempt && snapshot.LiveCallsPermitted,
             "NO_SAM_PROVIDER_EVIDENCE; LOCAL_FFMPEG_RESULTS_ARE_SEPARATE");
     }
 
@@ -218,9 +227,35 @@ public sealed class PendulumSamCache(
                 !request.ConfirmOneBillableSamCall)
                 throw new ArgumentException(
                     "Explicit third-party video transfer and billable-call confirmation required.");
-            if (File.Exists(Path.Combine(folder,"attempt-started.json")))
+            var previousAttemptPath=Path.Combine(folder,"attempt-started.json");
+            var manualRetryPath=Path.Combine(folder,"manual-retry-started.json");
+            var previousAttempt=File.Exists(previousAttemptPath);
+            // Preserve the old attempt permanently. One extra paid run
+            // requires a new explicit owner approval AND a recorded
+            // reconciliation note; a further retry is forbidden even after
+            // restarting the backend process. No old marker is deleted.
+            if (File.Exists(manualRetryPath))
                 throw new InvalidOperationException(
-                    "A prior SAM attempt may have been billed; reconcile it before manual retry.");
+                    "A manual retry already exists. Do not request another SAM charge.");
+            if (previousAttempt)
+            {
+                if (!ManualRetryReconciliationPolicy.CanStartOneManualRetry(
+                        previousAttempt,File.Exists(manualRetryPath),
+                        request.OwnerApprovesOneReconciledRetry,
+                        request.PreviousAttemptBillingEvidence))
+                    throw new InvalidOperationException(
+                        "Prior paid attempt requires explicit owner-approved reconciliation.");
+                var prior=await ReadJsonAsync<SamOriginalAttempt>(previousAttemptPath,ct);
+                if (prior.Protocol!=Protocol ||
+                    !string.Equals(prior.SourceSha256,video.Sha256,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    prior.FrameCount is < 50 or > 2500 ||
+                    prior.Status!="MAY_BE_BILLABLE_NO_AUTOMATIC_RETRY")
+                    throw new InvalidDataException("Prior attempt provenance mismatch.");
+            }
+            else if (request.OwnerApprovesOneReconciledRetry)
+                throw new ArgumentException(
+                    "Do not use manual reconciliation on an initial SAM request.");
             if (!meta.Status().LiveCallsPermitted)
                 throw new InvalidOperationException(
                     "Meta billing/key/owner consent gates have not been verified for this process.");
@@ -240,7 +275,11 @@ public sealed class PendulumSamCache(
             var submittedPath=Path.Combine(folder,"sam-upload.mp4");
             // Files API expects video/mp4. Remux MOV/HEVC without re-encoding:
             // identical 1828 decoded source frames must be accounted for.
-            await decoder.CreateSamCompatibleMp4Async(path,submittedPath,ct);
+            if (!previousAttempt)
+                await decoder.CreateSamCompatibleMp4Async(path,submittedPath,ct);
+            // The previous authorized attempt already created this MP4.
+            // It is reused ONLY if every decoded timestamp and SHA match;
+            // no replacement/transcoding of earlier evidence is allowed.
             var submittedPts=await decoder.ReadVideoFramePtsAsync(submittedPath,ct);
             if(submittedPts.Length!=timeline.Length)
                 throw new InvalidDataException(
@@ -254,19 +293,40 @@ public sealed class PendulumSamCache(
                 submittedSha=Convert.ToHexString(
                     await SHA256.HashDataAsync(submittedStream,ct)).ToLowerInvariant();
 
-            // Must reserve BEFORE upload; not an exact monetary cap.
+            if(previousAttempt)
+            {
+                var prior=await ReadJsonAsync<SamOriginalAttempt>(
+                    previousAttemptPath,ct);
+                if(!string.Equals(submittedSha,prior.SubmittedMp4Sha256,
+                        StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Previous submitted MP4 SHA mismatch.");
+            }
+            // Reserve the NEW paid-request budget once, BEFORE uploading.
             meta.ReserveOrThrow();
-            await WriteExclusiveAsync(Path.Combine(folder,"attempt-started.json"),
-                new {protocol=Protocol,sourceSha256=video.Sha256,
+            if(previousAttempt)
+                await WriteExclusiveAsync(manualRetryPath,new {
+                    protocol=Protocol,sourceSha256=video.Sha256,
+                    submittedMp4Sha256=submittedSha,frameCount=timeline.Length,
+                    estimatedUsd=estimate,requestedAtUtc=DateTimeOffset.UtcNow,
+                    reconciliation=request.PreviousAttemptBillingEvidence,
+                    ownerApprovedOneRetry=true,
+                    status="SECOND_ATTEMPT_MAY_BE_BILLABLE_NO_AUTOMATIC_RETRY"
+                },CancellationToken.None);
+            else
+                await WriteExclusiveAsync(previousAttemptPath,new {
+                    protocol=Protocol,sourceSha256=video.Sha256,
                     submittedMp4Sha256=submittedSha,
                     frameCount=timeline.Length,estimatedUsd=estimate,
                     requestedAtUtc=DateTimeOffset.UtcNow,
-                    status="MAY_BE_BILLABLE_NO_AUTOMATIC_RETRY"},ct);
+                    status="MAY_BE_BILLABLE_NO_AUTOMATIC_RETRY"
+                },CancellationToken.None);
             // Sanitized, durable per-attempt diagnostics. NO response text,
             // prompt, file ID, API token, video, mask bytes or identifiers.
             // The existing attempt lock is NEVER removed on failure.
             var stopwatch=Stopwatch.StartNew();
-            var auditFile=Path.Combine(folder,"attempt-telemetry.jsonl");
+            var auditFile=Path.Combine(folder,previousAttempt
+                ? "manual-retry-telemetry.jsonl"
+                : "attempt-telemetry.jsonl");
             async ValueTask RecordProgress(SamVideoSseProgress progress)
             {
                 var line=JsonSerializer.Serialize(new {

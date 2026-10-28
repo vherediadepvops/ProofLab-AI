@@ -44,3 +44,16 @@ Se necesita (1) verificar uso real Meta/privacidad, (2) **solo con una nueva aut
 **Fuentes:** [SAM oficial](https://dev.meta.ai/docs/sam/overview), [segmentación de video](https://dev.meta.ai/docs/sam/segmenting), [archivos y expiración](https://dev.meta.ai/docs/file-handling), [tarifas](https://dev.meta.ai/docs/pricing-rate-limits).
 
 **English:** [SAM-VIDEO-CACHE-STAGE3.md](SAM-VIDEO-CACHE-STAGE3.md).
+
+
+## Segundo intento manual autorizado, sin borrar el historial (28/10/2026)
+
+Después del HTTP502 del intento inicial y de las capturas de Billing con disminución aproximada de **US$0,37 en créditos gratuitos** (el detalle exacto en Usage continúa sin comprobar), el titular autorizó expresamente **una sola prueba adicional**. Se añadió una política de reconciliación limitada:
+
+- La ruta `POST .../sam/{role}/analyze` no repite automáticamente. Solo el operador local, con la nueva confirmación `ownerApprovesOneReconciledRetry=true` y `previousAttemptBillingEvidence` igual al reconocimiento documentado en `ManualRetryReconciliationPolicy.OwnerAuthorization`, puede atravesar el bloqueo **una vez** si las cuatro puertas de facturación están activas.
+- El marcador previo `attempt-started.json` **no se mueve ni borra**; antes del segundo envío se escribe de forma exclusiva `manual-retry-started.json`. Si este segundo marcador ya existe, se rechaza un tercer intento, incluso tras reiniciar el servidor.
+- Se reutiliza la copia `sam-upload.mp4` original **sin recodificar** y se verifican otra vez todos los tiempos PTS y el SHA registrado en el primer marcador. Ningún vídeo privado se publica.
+- La telemetría del segundo intento va exclusivamente a `manual-retry-telemetry.jsonl`, sin sobreescribir ni inventar logs del primero. El resultado, si completa, se guardará con recibo privado y hash.
+- Un ensayo en una API temporal con pagos desactivados verificó HTTP409 tanto para una reconciliación incorrecta como para un reconocimiento válido sin créditos habilitados; ningún marcador nuevo ni llamada Meta se produjo.
+
+La nueva autorización **no certifica el cobro exacto del primer intento** ni permite pruebas adicionales sin autorización.
