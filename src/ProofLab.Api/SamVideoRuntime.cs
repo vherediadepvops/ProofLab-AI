@@ -20,6 +20,7 @@ public sealed class SamVideoRuntime(
     public Task CreateMp4Async(string source, string destination, CancellationToken ct) =>
         decoder.CreateSamCompatibleMp4Async(source, destination, ct);
 
+    public bool ManualTokenCallsPermitted => meta.ManualTokenCallsPermitted;
     public bool LiveCallsPermitted => meta.Status().LiveCallsPermitted;
     public void ReserveOrThrow() => meta.ReserveOrThrow();
     public bool CanRunWithToken(string? oneShotMetaToken) =>

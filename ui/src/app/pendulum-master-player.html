@@ -203,6 +203,11 @@
     </div>
   </div>
 
+  @if(studyId() && videoSha256() && !playbackLocked()) {
+    <app-knot-review [studyId]="studyId()" [role]="videoRole()" [sha]="videoSha256()"
+      [port]="samApiPort()" [language]="language()" (confirmed)="acceptMetaPivot($event)"
+      (manual)="beginPivotSelection()"/>
+  }
   @if(droppedFrames()>0) {
     <p class="playback-performance" role="status">{{es?'Fotogramas omitidos por el navegador':'Frames dropped by the browser'}}: {{droppedFrames()}}.
       {{es?'El archivo mantiene su resolución y FPS originales.':'The file retains its original resolution and FPS.'}}</p>

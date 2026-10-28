@@ -54,6 +54,7 @@ public interface ISamVideoRuntime
     Task<double[]> ReadFramePtsAsync(string path, CancellationToken ct);
     Task CreateMp4Async(string source, string destination, CancellationToken ct);
     bool LiveCallsPermitted { get; }
+    bool ManualTokenCallsPermitted => LiveCallsPermitted;
     void ReserveOrThrow();
     bool CanRunWithToken(string? oneShotMetaToken) => LiveCallsPermitted;
     void ReserveOrThrow(string? oneShotMetaToken) => ReserveOrThrow();

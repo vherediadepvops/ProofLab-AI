@@ -37,6 +37,10 @@
     <Compile Include="..\..\src\ProofLab.Api\SamVideoArchive.cs" Link="SamVideoArchive.cs" />
     <Compile Include="..\..\src\ProofLab.Api\PendulumSamCache.cs" Link="PendulumSamCache.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamManualOneShotRequest.cs" Link="SamManualOneShotRequest.cs" />
+    <!-- Knot transport tests inject a fake HTTP handler; never a live credential. -->
+    <Compile Include="..\..\src\ProofLab.Api\KnotContracts.cs" Link="KnotContracts.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\KnotMetaTransport.cs" Link="KnotMetaTransport.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\PendulumKnotLocator.cs" Link="PendulumKnotLocator.cs" />
   </ItemGroup>
 
 </Project>

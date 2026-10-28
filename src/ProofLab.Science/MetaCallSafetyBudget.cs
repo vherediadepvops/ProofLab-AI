@@ -16,6 +16,13 @@ public sealed class MetaCallSafetyBudget
     public const int MaximumRequestsPerProcess = 2;
     private int used;
 
+    public MetaCallSafetyBudget(int alreadyUsedRequests = 0)
+    {
+        if(alreadyUsedRequests is <0 or >MaximumRequestsPerProcess)
+            throw new ArgumentOutOfRangeException(nameof(alreadyUsedRequests));
+        used=alreadyUsedRequests;
+    }
+
     public int Used => Volatile.Read(ref used);
 
     public MetaCallSafetySnapshot Snapshot(

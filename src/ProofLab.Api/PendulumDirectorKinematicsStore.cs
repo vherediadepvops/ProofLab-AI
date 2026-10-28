@@ -28,6 +28,20 @@ public sealed class PendulumDirectorKinematicsStore(
 
     public async Task<DirectorKinematicsRecord> AnalyzeAsync(
         string studyId, string role, DirectorPivotRequest input, CancellationToken ct)
+        => await AnalyzeCoreAsync(studyId,role,input,
+            "MANUALLY_SELECTED_PIXEL_PIVOT_NOT_INDEPENDENTLY_VERIFIED",ct);
+
+    public Task<DirectorKinematicsRecord> ConfirmMetaAsync(string studyId,string role,
+        DirectorPivotRequest input,string evidenceKey,bool adjusted,CancellationToken ct)
+    {
+        if(evidenceKey.Length!=64 || evidenceKey.Any(c=>!Uri.IsHexDigit(c)))
+            throw new ArgumentException("Invalid knot evidence key.");
+        return AnalyzeCoreAsync(studyId,role,input,
+            (adjusted?"META_MUSE_ROPE_EXIT_HUMAN_ADJUSTED:":"META_MUSE_ROPE_EXIT_HUMAN_CONFIRMED:")+evidenceKey,ct);
+    }
+
+    private async Task<DirectorKinematicsRecord> AnalyzeCoreAsync(string studyId,string role,
+        DirectorPivotRequest input,string provenance,CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(input);
         var session = await director.ReadAsync(studyId, ct);
@@ -55,8 +69,7 @@ public sealed class PendulumDirectorKinematicsStore(
         var record = new DirectorKinematicsRecord(
             session.Id, role, video.VideoId, video.Sha256.ToLowerInvariant(),
             revisionId, when,
-            "MANUALLY_SELECTED_PIXEL_PIVOT_NOT_INDEPENDENTLY_VERIFIED",
-            analysis);
+            provenance, analysis);
         await gate.WaitAsync(ct);
         try
         {

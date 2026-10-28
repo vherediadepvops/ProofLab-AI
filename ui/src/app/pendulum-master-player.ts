@@ -4,6 +4,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { LabActivity } from './lab-activity';
+import { KnotReview } from './knot-review';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import {
@@ -28,13 +29,12 @@ import {
 @Component({
   selector: 'app-pendulum-master-player',
   standalone: true,
-  imports: [LabActivity,CommonModule],
+  imports: [LabActivity,CommonModule,KnotReview],
   templateUrl: './pendulum-master-player.html',
   styleUrl: './pendulum-master-player.scss'
 })
 export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy {
   private readonly http=inject(HttpClient,{optional:true});
-  private readonly api='http://127.0.0.1:5391/api/science/director/pendulum/sessions';
   private revisionSerial=0;
   private revisionKey='';
   private samSerial=0;
@@ -223,7 +223,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private pivotUrl():string{
-    return this.api+'/'+this.studyId()+'/kinematics/'+this.videoRole();
+    return 'http://127.0.0.1:'+this.samApiPort()+'/api/science/director/pendulum/sessions/'+this.studyId()+'/kinematics/'+this.videoRole();
   }
 
   private matchingRevision(value:KinematicRevision):boolean {
@@ -345,6 +345,14 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
           ? 'No se pudo recuperar el pivote guardado.'
           : 'Could not restore the saved pivot.');
     }
+  }
+
+  acceptMetaPivot(revision:KinematicRevision):void {
+    if(!this.matchingRevision(revision))return;
+    ++this.revisionSerial; // a prior GET cannot overwrite the confirmed point
+    this.masterVideo?.nativeElement.pause();
+    this.pivotRevision.set(revision);this.pivotMode.set(false);this.pivotError.set('');
+    this.paintFrame(this.frameTime());
   }
 
   beginPivotSelection():void{

@@ -11,7 +11,8 @@ builder.Services.AddHttpClient("meta", client =>
     client.Timeout = TimeSpan.FromMinutes(3));
 builder.Services.AddHttpClient("sam-video", client =>
     client.Timeout = TimeSpan.FromMinutes(30));
-builder.Services.AddSingleton<MetaCallSafetyBudget>();
+builder.Services.AddSingleton(sp => new MetaCallSafetyBudget(
+    sp.GetRequiredService<IConfiguration>().GetValue<int>("Meta:AlreadyUsedRequests")));
 builder.Services.AddSingleton<MetaLiveAccess>();
 builder.Services.AddScoped<MetaModelClient>();
 builder.Services.AddSingleton<LeanProofVerifier>();
@@ -33,6 +34,9 @@ builder.Services.AddSingleton<ISamVideoRuntime, SamVideoRuntime>();
 builder.Services.AddSingleton(sp => new SamVideoEvidenceIndex(
     sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
 builder.Services.AddSingleton<PendulumSamCache>();
+builder.Services.AddSingleton<IKnotFrames>(sp => sp.GetRequiredService<VideoMediaDecoder>());
+builder.Services.AddSingleton<IKnotTransport, KnotMetaTransport>();
+builder.Services.AddSingleton<PendulumKnotLocator>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
@@ -41,6 +45,7 @@ builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =
 var app = builder.Build();
 
 app.UseCors("HackathonLocal");
+app.MapKnotEndpoints();
 app.MapGet("/api/health", (MetaModelClient meta) =>
     Results.Ok(new {
         project = "ProofLab AI — competition edition",
