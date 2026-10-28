@@ -32,12 +32,15 @@
 .secondary-button{background:#fff;color:#205e8f;border:1px solid #a8cbe2}
 .primary-button:disabled,.secondary-button:disabled{opacity:.42;cursor:not-allowed}
 .study-state{color:#51758b;font-size:11px;display:flex;gap:7px;align-items:center}
+.study-hint{color:#5e7890;font-size:12px;font-weight:650;text-align:right;line-height:1.45}
 .state-dot{width:7px;height:7px;background:#2b9f71;border-radius:50%}
 .video-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:15px}
 .trial-tabs{display:flex;gap:3px;padding:3px;background:#edf3f8;border:1px solid #d4e3ef;border-radius:8px}
 .trial-tabs button{border:0;border-radius:5px;background:transparent;color:#496980;font-size:11px;font-weight:700;padding:8px 13px;cursor:pointer}
 .trial-tabs button.current{background:#fff;color:#18598c;box-shadow:0 1px 4px #b6cadb80}
 .upload-strip,.next-trial-strip,.verification-strip{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;padding:12px 16px;border:1px solid #d5e4ed;border-radius:10px;background:#fff;margin:14px 0}
+.upload-strip-ready{border:1px solid #9ec9e4;background:#eef8ff}
+.upload-strip-ready .file-action{background:#13629c;box-shadow:0 2px 6px rgba(20,92,142,.15)}
 .upload-strip strong{color:#1d4669;font-size:14px}
 .upload-strip p{font-size:11px;color:#71869a;margin:5px 0 0}
 .file-action{display:inline-flex;align-items:center;justify-content:center;position:relative;background:#1e669d;color:#fff;padding:11px 18px;border-radius:8px;font-size:12px;font-weight:750;cursor:pointer;overflow:hidden}

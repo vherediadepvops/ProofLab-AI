@@ -82,14 +82,13 @@
             <span class="state-dot"></span>
           </span>
           <button class="secondary-button" type="button"
-            (click)="newFocusedStudy()" [disabled]="busy() || !!stageBusy()">
+            (click)="newFocusedStudy()" [disabled]="registeringAndUploading() || busy() || !!stageBusy()">
             {{es ? 'Nueva investigación' : 'New study'}}
           </button>
         } @else {
-          <button class="primary-button" type="button"
-            (click)="start()" [disabled]="busy() || !model() || modelLoading()">
-            {{es ? 'Iniciar investigación' : 'Start study'}}
-          </button>
+          <span class="study-hint">{{es
+            ? 'Elige el video abajo para empezar automáticamente.'
+            : 'Choose a video below to start automatically.'}}</span>
         }
       </div>
     </div>
@@ -130,7 +129,7 @@
           <label class="file-action">
             {{es ? 'Seleccionar video' : 'Select video'}}
             <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
-              [disabled]="!!stageBusy() || busy()" (change)="uploadFocused($event,'baseline')"/>
+              [disabled]="registeringAndUploading() || !!stageBusy() || busy()" (change)="uploadFocused($event,'baseline')"/>
           </label>
         </div>
       } @else {
@@ -223,6 +222,20 @@
         </div>
       }
     } @else {
+      <div class="upload-strip upload-strip-ready">
+        <div>
+          <strong>{{es ? 'Sube tu primera grabación' : 'Upload your first recording'}}</strong>
+          <p>{{es
+            ? 'Selecciona MOV, MP4 u otro video de teléfono. Los parámetros se registrarán antes de cargarlo.'
+            : 'Select MOV, MP4 or another phone video. Experiment settings will be recorded before upload.'}}</p>
+        </div>
+        <label class="file-action">
+          {{es ? 'Seleccionar video' : 'Select video'}}
+          <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
+            [disabled]="registeringAndUploading() || !!stageBusy() || busy()"
+            (change)="uploadFocused($event,'baseline')"/>
+        </label>
+      </div>
       <div class="placeholder-grid" aria-label="Tres vistas del video pendientes">
         <div class="placeholder-panel"><span>01 · {{es ? 'VIDEO ORIGINAL' : 'SOURCE VIDEO'}}</span>
           <div class="placeholder-screen">▶</div></div>
@@ -231,12 +244,19 @@
         <div class="placeholder-panel"><span>03 · {{es ? 'RASTRO FANTASMA' : 'GHOST TRAIL'}}</span>
           <div class="placeholder-screen">⌁</div></div>
       </div>
-      <p class="focus-note">{{es ? 'Inicia la investigación para cargar un video y activar las tres vistas.' :
-        'Start a study to upload one video and enable all three views.'}}</p>
+      <p class="focus-note">{{es
+        ? 'Carga el video para registrar el experimento y activar las tres vistas.'
+        : 'Upload a video to register the experiment and enable the three views.'}}</p>
     }
 
-    @if(stageBusy()) {
-      <p class="loading-video">{{es ? 'Procesando el video localmente…' : 'Processing the video locally…'}}</p>
+    @if(registeringAndUploading()) {
+      <p class="loading-video" role="status">{{es
+        ? 'Registrando parámetros y procesando el video. Conservamos el original.'
+        : 'Registering parameters and processing the video. Original preserved.'}}</p>
+    } @else if(stageBusy()) {
+      <p class="loading-video" role="status">{{es
+        ? 'Procesando el video localmente…'
+        : 'Processing the video locally…'}}</p>
     }
     @if(error()) {<p class="focus-error" role="alert">{{error()}}</p>}
   </section>

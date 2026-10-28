@@ -27,4 +27,17 @@ Source iPhone HEVC/MOV bytes are preserved privately, but browser playback curre
 4. Optional second trial uses tabs to avoid six simultaneous views. ES/EN remain available and Meta billing stays blocked.
 5. All prior scientific code/evidence is preserved.
 
+## Upload UX regression fix: file picker available immediately
+
+**Owner-reported bug:** after clicking **New study**, the three placeholder panels and physical setup were visible, but **Select video was missing**. Previously, the UI gated the file input behind an additional **Start study** action because `@if(session())` rendered upload only after creating the server session. This required two separate clicks and made the new-study state appear stuck.
+
+**Corrected behavior:**
+1. On initial entry or **New study**, **Upload your first recording / Select video** is immediately available even without an existing session.
+2. User sets string length, initial angle and bob mass and chooses a real file. Client validates extension and 10 KB–240 MB size **before** creating any study.
+3. Theory is recalculated from current user inputs, a new research record is persisted with a local `modelSha256` **before** video bytes are sent. Automatic sequence: mathematical-model request → `POST .../sessions` → `POST .../video/baseline`.
+4. Failure to create a study leaves the file picker visible with a retryable error; video upload failure retains the already recorded study so the user can retry without overwriting original evidence.
+5. Once uploaded, the same one-clock three-view player renders the video. **New study** removes only the currently selected UI session; it does not delete historical scientific records. The optional second video still follows the preregistered local follow-up prediction.
+
+**Regression tests:** initial picker rendered, actual file handled in the required model/session/upload order, invalid extension rejected before registration, failed registration preserving retry control, reset restoring picker, one video and two canvases after upload. Zero Meta inference calls.
+
 **Player documentation:** [PENDULUM-ZONE1-MASTER-PLAYER.md](PENDULUM-ZONE1-MASTER-PLAYER.md). **Español:** [PENDULUM-FOCUSED-UI.es.md](PENDULUM-FOCUSED-UI.es.md).
