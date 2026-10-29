@@ -1,5 +1,7 @@
 # SAM 3.1 — análisis dinámico real, integración experimental
 
+> **Permisos vigentes (29/10/2026):** las referencias a pagos apagados en este documento describen el ensayo o estado histórico de esa instancia. No son instrucciones para desactivar la API del propietario ni las ramas nuevas. Aplicar la [política actual de autorización y pruebas](META-API-CONNECTION.es.md).
+
 **Rama:** `feature/sam-adaptive-live` (derivada del `main` público `ced3849`). No se ha fusionado a `main`; los servicios del propietario siguen intactos. Solo ejecución y pruebas en `DESKTOP-ESGSLJH`, `C:\PROOFLAB-AI-HACKATHON`.
 
 ## Objetivo

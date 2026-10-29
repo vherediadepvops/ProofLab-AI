@@ -1,76 +1,49 @@
-# ProofLab AI — Secure Meta Model API preparation (Muse Spark 1.3 and SAM 3.1)
+# ProofLab AI — Meta permissions and authorized tests
 
-**Status:** code path prepared and validated WITHOUT live API calls; **Meta stays off** until owner-verified credit balance and explicit paid-call authorization. Date: 2026-10-27.
+**Effective: 2026-10-29.** The owner authorized keeping Meta enabled for this project. This applies to `main`, feature branches and worktrees, and supersedes older instructions to keep the owner's main service disabled.
 
-## 1. Obtain a Meta Model API key
+## Project configuration
 
-1. Sign in personally at **https://dev.meta.ai/** with the Meta Model API account used for the hackathon.
-2. Open **API keys** in the dashboard. Reuse an existing valid key, or select **Create API key** and name it `ProofLab-AI-Hackathon`.
-3. **Copy the secret once**, storing it safely. Never share it in ChatGPT, screenshots, Angular, code, GitHub, logs or project memory.
-4. One key authenticates **both** Muse Spark and SAM 3.1. The backend expects `MODEL_API_KEY`, passed in an `Authorization: Bearer` header.
+`src/ProofLab.Api/appsettings.json` retains:
 
-Official references: https://dev.meta.ai/docs/authentication · https://dev.meta.ai/docs/quickstart · https://dev.meta.ai/help/api-keys/create-api-key .
-
-## 2. Where to put the key
-
-**Only authorized PC:** `DESKTOP-ESGSLJH` · project `C:\PROOFLAB-AI-HACKATHON` · API `http://127.0.0.1:5391`.
-
-**Preferred temporary option (in your own PowerShell console):** use a hidden prompt to set `MODEL_API_KEY` only in the current shell and child processes. Do not put the secret in typed commands or PowerShell history.
-
-```powershell
-$secureKey = Read-Host 'Paste MODEL_API_KEY' -AsSecureString
-$pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
-try {
-    $env:MODEL_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+```json
+{
+  "Meta": {
+    "UnlimitedManualRequests": true,
+    "AllowPaidRequests": true,
+    "CreditsConfirmedByOwner": true,
+    "OwnerApprovedPaidRequests": true
+  }
 }
-finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
-    Remove-Variable secureKey, pointer -ErrorAction SilentlyContinue
-}
-# Presence only; never print the secret:
-[bool]$env:MODEL_API_KEY
 ```
 
-The existing ProofLab API already listens on 5391. Its process must be **safely restarted from this same terminal** after verifying PID and executable to inherit the environment key. Setting a variable in another terminal does **not** update an already-running backend. Do not launch a competing instance.
+These are owner-declared permissions, not an automatic Meta balance check. They contain no credentials and initiate no calls on their own. Valid credentials and explicit admission of each operation remain required.
 
-**Persistent alternative, less private:** Windows → “Edit environment variables for your account” → “User variables” → “New”: name `MODEL_API_KEY`, value the secret. Restart the backend using a new session. Windows user environment variables are persisted in user profile settings and are not an encrypted secrets vault. Never store the key in system-wide variables or messages.
+## Rule for every agent and branch
 
-## 3. Verify credits and consent BEFORE billable calls
+- Creating a feature, building, running offline tests, publishing or completing work does not revoke these permissions. Do not routinely set the three flags to `false` or add environment overrides disabling the owner's service.
+- Before agent-initiated live tests, ask the owner **how many tests are authorized**, explain how many calls each test may include (Spark, SAM and batches), and give estimated cost when available. Do not ask again for each call within an existing authorization's scope.
+- Track tests and calls used. When authorization is exhausted, stop the agent's tests and request an extension. Do not switch off the owner's API or reduce their manual allowance.
+- The owner's manual clicks follow the UI cost/confirmation flow with `UnlimitedManualRequests=true`. The shared counter must not limit those manual submissions.
+- Use test doubles or simulated transports for offline tests. If a test requires disabled permissions, confine that setting to isolated test configuration; do not overwrite `appsettings.json`, global environment variables or shared services.
+- Project enablement does not change OpenAI policies or remove actual provider limits. Report the exact action and reason for a tool rejection; do not claim without evidence that it requires disabling Meta, and do not bypass it.
 
-Open **https://dev.meta.ai/billing**, complete personal identity confirmation if requested, and check the **actual promotional balance** assigned to the correct team, expiration and terms for charges after credits run out. The rumored $150 hackathon credit is **not confirmed**. Inspect Usage/spend controls as available; emailed spending alerts are **not hard limits**.
+## Token and readiness
 
-Four required backend gates must all be true:
-- `MODEL_API_KEY` present in the backend process.
-- `Meta:CreditsConfirmedByOwner=true` only after the owner genuinely checks Billing.
-- `Meta:OwnerApprovedPaidRequests=true` only after explicit owner authorization.
-- `Meta:AllowPaidRequests=true` as the final paid-request switch.
+Register the token in **Settings**; it remains in that browser session's memory. Manual submissions can use it without a server environment key. Backend operations may alternatively use a process-scoped `MODEL_API_KEY`. Never store or publish secrets in Git, SQLite, logs or documentation.
 
-All three flags default **false**. Later authorized activation can use `Meta__CreditsConfirmedByOwner`, `Meta__OwnerApprovedPaidRequests` and `Meta__AllowPaidRequests` environment variables; **do not set them until credit verification and paid-call approval**. The app cannot independently verify the balance: these are owner attestations, not a Billing API integration.
-
-The process also imposes **two maximum live calls per startup**, shared by Muse and SAM. This is a request count limit, **not a guaranteed monetary cap**. It resets on restart; check Meta Usage for actual billed costs.
-
-## 4. Check readiness without spending
+Local inspection without inference:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:5391/api/meta/readiness
 ```
 
-This endpoint reveals only booleans and remaining request allowance, never the key. The Goldbach UI at `http://127.0.0.1:4300/` also shows it. After all gates are satisfied, “Draft with Muse Spark (may spend Meta credits)” is enabled; each click requires confirmation.
+Inspect `creditsConfirmedByOwner`, `ownerApprovedPaidRequests`, `paidRequestsSwitchEnabled`, `manualTokenCallsPermitted` and `manualRequestsUnlimited`. `liveCallsPermitted=false` can mean a missing server key or exhausted non-manual allowance; alone it does not mean manual submissions using a token are disabled.
 
-## 5. Model responsibilities
+The environment variables `Meta__AllowPaidRequests`, `Meta__CreditsConfirmedByOwner` and `Meta__OwnerApprovedPaidRequests` can override JSON settings. Check precedence when a runtime differs from the repository. Do not restart other services or reset their counters to fix a test instance.
 
-- **Muse Spark 1.3:** `POST https://api.meta.ai/v1/chat/completions`. ProofLab asks for JSON-schema-constrained proposals for the five reports; it **does not autoapprove**. Stages 4–5 retain authentic server evidence IDs/hashes. Muse output is **UNVERIFIED** until humans review it.
-- **SAM 3.1:** `POST https://api.meta.ai/v1/responses` for images/video. The current adapter returns raw segmentation output only; **validated mask decoding and tracking for Mission 2 are not yet implemented**. Do not send personal/sensitive media without permission.
-- Both endpoints use the backend-only `MODEL_API_KEY`, never Angular.
+## Verification scope
 
-Current sources: https://dev.meta.ai/docs/protocols/chat-completions · https://dev.meta.ai/docs/sam/overview · https://dev.meta.ai/docs/pricing-rate-limits .
+Local readiness does not prove Meta authentication, available balance or scientific validity. This permissions update is verified without provider calls. Earlier inference records retain their scope and provenance.
 
-## 6. What is and isn't verified
-
-- **Offline validated:** compilation, four-switch gate unit tests, concurrency-safe two-call budget, read-only readiness and HTTP 409 when disabled. No `MODEL_API_KEY` in CI.
-- **Not yet validated:** real token authentication, team credit balance, live Muse or SAM inference, actual charges or autonomous scientific discovery. Do not market the integration as working until checked in an explicitly authorized live experiment.
-- **Scientific safeguards:** Muse prose never equals a Lean proof; Lean runs curated known benchmarks only until a sandbox is fully validated.
-
-**User-operated temporary test session for Muse/SAM in the frontend:** [META-MANUAL-TESTS.md](META-MANUAL-TESTS.md).
-
-**Español:** [META-API-CONNECTION.es.md](META-API-CONNECTION.es.md).
+[Agent rules](../AGENTS.md) · [Español](META-API-CONNECTION.es.md)

@@ -1,5 +1,7 @@
 # SAM 3.1 — adaptive live processing, experimental branch
 
+> **Current permissions (2026-10-29):** disabled-payment references below describe that instance's historical state or isolated rehearsal. They do not instruct agents to disable the owner's API or new branches. Follow the [current authorization and testing policy](META-API-CONNECTION.md).
+
 **Branch:** `feature/sam-adaptive-live`, based on `main@ced3849`; not merged to main. The authorized execution host remains DESKTOP-ESGSLJH only.
 
 ## Scientifically conservative segmentation

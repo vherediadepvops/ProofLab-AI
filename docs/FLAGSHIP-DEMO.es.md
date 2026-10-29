@@ -24,7 +24,7 @@ El momento principal no será una curva bonita: será observar cómo un agente u
 
 En `DESKTOP-ESGSLJH`, carpeta `C:\PROOFLAB-AI-HACKATHON`, utilizar la API de competencia habitual en `127.0.0.1:5391` y Angular en `127.0.0.1:4300`. Abrir la pestaña **Demo estrella · Péndulo**, registrar 0,5 → 0,8 m, guardar ID y SHA y luego cargar dos series CSV. Si se hace una prueba con datos artificiales, etiquetarla `Simulated` desde API; la UI solo envía `ManuallyEntered` (por diseño conservador).
 
-Ni esta pantalla ni el endpoint realizan peticiones a Meta ni cambian la bandera `Meta:AllowPaidRequests=false`. El proceso temporal de pruebas 5393 es independiente.
+Ni esta pantalla ni el endpoint realizan peticiones a Meta ni cambian los permisos Meta configurados por el propietario. El proceso temporal de pruebas 5393 es independiente.
 
 ## Pendientes obligatorios para la demo final
 

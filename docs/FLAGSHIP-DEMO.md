@@ -24,7 +24,7 @@ The key moment is not a graph: an agent must request a new, falsifiable experime
 
 Use the authorized `DESKTOP-ESGSLJH` machine at `C:\PROOFLAB-AI-HACKATHON`, existing competition API `127.0.0.1:5391` and Angular UI `127.0.0.1:4300`. Open **Flagship Demo · Pendulum**, preregister 0.5→0.8 m, preserve its ID/hash, then supply both CSV files. For artificial input via API, explicitly use `origin="Simulated"`; the current UI conservatively sends `ManuallyEntered`.
 
-These endpoints and UI make NO paid Meta requests and do not change `Meta:AllowPaidRequests=false`. The owner's optional 5393 temporary testing session is separate.
+These endpoints and UI make NO paid Meta requests and do not change the owner's configured Meta permissions. The owner's optional 5393 temporary testing session is separate.
 
 ## Required before the real flagship demo
 

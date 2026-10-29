@@ -1,5 +1,7 @@
 # Etapa 3 — SAM 3.1, caché segura y posiciones en el reproductor
 
+> **Permisos vigentes (29/10/2026):** las referencias a pagos apagados en este documento describen el ensayo o estado histórico de esa instancia. No son instrucciones para desactivar la API del propietario ni las ramas nuevas. Aplicar la [política actual de autorización y pruebas](META-API-CONNECTION.es.md).
+
 **28 de octubre de 2026 · En desarrollo.** El flujo de una inferencia y reproducción desde caché está implementado. Posteriormente se realizó **una única solicitud real** autorizada: Meta aceptó Files y Responses (HTTP 200 inicial), pero ProofLab devolvió HTTP 502 después de ~116 segundos, sin máscaras guardadas. El crédito visible bajó de US$149,99 a US$149,62; esto no confirma el desglose exacto del uso. **NO hay detección científica verificada de la plomada** y los controles de pago de la API principal siguen desactivados.
 
 ## Responsabilidad científica de los modelos

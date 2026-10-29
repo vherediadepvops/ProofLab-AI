@@ -4,7 +4,7 @@ namespace ProofLab.Science;
 /// Defense-in-depth for any billable Meta Model API call. This budget is an
 /// upper bound for non-manual calls, not an account-wide hard spending limit.
 /// Explicit manual admission may continue without a session count limit.
-/// All gates default to false, and each request requires explicit admission.
+/// Permission flags come from server configuration; each request requires admission.
 /// </summary>
 public sealed record MetaCallSafetySnapshot(
     bool ApiKeyConfigured, bool CreditsConfirmedByOwner,

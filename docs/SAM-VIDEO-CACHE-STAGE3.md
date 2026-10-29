@@ -1,5 +1,7 @@
 # Stage 3 — SAM 3.1, safe caching and scientific playback
 
+> **Current permissions (2026-10-29):** disabled-payment references below describe that instance's historical state or isolated rehearsal. They do not instruct agents to disable the owner's API or new branches. Follow the [current authorization and testing policy](META-API-CONNECTION.md).
+
 **October 28, 2026 · In progress.** The one-shot inference and replay cache workflow is implemented. One explicitly approved real attempt was subsequently made: Meta Files and Responses returned initial HTTP 200, but ProofLab returned HTTP 502 after approximately 116 seconds, without saved masks. Visible free credits changed from USD 149.99 to USD 149.62, not proof of exact per-request usage. **There is NO scientifically verified pendulum segmentation**; paid access in the main API remains disabled.
 
 ## Model responsibility and provenance

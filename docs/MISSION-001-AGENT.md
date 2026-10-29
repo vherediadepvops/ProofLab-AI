@@ -30,7 +30,7 @@ Fixed theorems with `rfl`, `omega`, or `simp` only; arbitrary `leanSource` is re
 
 ## Outstanding gates
 
-- Confirm Meta credits and obtain approval **before** enabling billable traffic; keep `Meta:AllowPaidRequests=false`.
+- Respect the current Meta permissions and obtain approval for a number of live tests before using the provider. Do not disable the owner's API; see the [current policy](META-API-CONNECTION.md).
 - Implement the coordinator using live Muse Spark decisions, with spending/iteration limits and model/prompt provenance.
 - Validate a disposable sandbox before any free-form Lean execution.
 - Independently review a correct Lean formalization of Goldbach; distinguish finite checks, known lemmas and the universal claim.

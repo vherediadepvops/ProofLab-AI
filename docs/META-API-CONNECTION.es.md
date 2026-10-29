@@ -1,78 +1,49 @@
-# ProofLab AI — Preparación segura de Meta Model API (Muse Spark 1.3 y SAM 3.1)
+# ProofLab AI — permisos de Meta y pruebas autorizadas
 
-**Estado:** integración de código preparada y probada SIN solicitudes reales; **Meta continúa inactivo** hasta verificar créditos y autorización explícita. Fecha: 27/10/2026.
+**Vigente: 29/10/2026.** El propietario autorizó mantener Meta habilitado en este proyecto. Esta regla aplica a `main`, ramas feature y worktrees; sustituye las instrucciones antiguas de mantener el servicio principal apagado.
 
-## 1. Conseguir el token de Meta
+## Configuración del proyecto
 
-1. Entra tú mismo en **https://dev.meta.ai/** e inicia sesión con la cuenta de Meta Model API del hackathon.
-2. Abre **API keys** desde el panel de Model API. Si ya creaste una clave válida, puedes reutilizarla; de lo contrario pulsa **Create API key**, escribe por ejemplo `ProofLab-AI-Hackathon` y créala.
-3. **Copia el valor secreto una sola vez** y guárdalo de forma segura. No lo pongas en ChatGPT, capturas de pantalla, código, Angular, GitHub, logs, README, Slack ni memoria compartida.
-4. **La misma clave** autentica Muse Spark y SAM 3.1. Variable esperada por el backend: `MODEL_API_KEY`. Meta utiliza el encabezado `Authorization: Bearer ...`.
+`src/ProofLab.Api/appsettings.json` conserva:
 
-Guías oficiales: https://dev.meta.ai/docs/authentication · https://dev.meta.ai/docs/quickstart · https://dev.meta.ai/help/api-keys/create-api-key .
-
-## 2. Dónde poner el token en el único equipo autorizado
-
-**Equipo:** `DESKTOP-ESGSLJH` · **Código:** `C:\PROOFLAB-AI-HACKATHON` · **API:** `http://127.0.0.1:5391`.
-
-**Opción temporal recomendada (solo en una consola PowerShell TUYA):** el siguiente código pide el token con entrada oculta y lo deja en `MODEL_API_KEY` **solo en esa terminal y sus procesos hijos**. No hay que sustituir ningún literal por el secreto en el comando (evita historial de PowerShell).
-
-```powershell
-$claveSegura = Read-Host 'Pega MODEL_API_KEY' -AsSecureString
-$puntero = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($claveSegura)
-try {
-    $env:MODEL_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($puntero)
+```json
+{
+  "Meta": {
+    "UnlimitedManualRequests": true,
+    "AllowPaidRequests": true,
+    "CreditsConfirmedByOwner": true,
+    "OwnerApprovedPaidRequests": true
+  }
 }
-finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($puntero)
-    Remove-Variable claveSegura, puntero -ErrorAction SilentlyContinue
-}
-# SOLO confirma presencia, no muestra el valor:
-[bool]$env:MODEL_API_KEY
 ```
 
-**Importante:** la API ya se ejecuta en puerto 5391. Para que **ese proceso** herede la clave, se debe reiniciar **solo el backend de ProofLab AI** desde esa misma terminal, después de verificar su PID y ejecutable. No arranques otra instancia que compita por el puerto. Configurar la clave en una terminal **no cambia** un backend que ya está arrancado.
+Son permisos declarados por el propietario, no una consulta automática al saldo de Meta. No incluyen credenciales ni generan llamadas por sí solos. Una credencial válida y la admisión explícita de cada operación siguen siendo necesarias.
 
-**Alternativa persistente (menos privada):** Windows → «Editar variables de entorno de tu cuenta» → «Variables de usuario» → «Nueva»: nombre `MODEL_API_KEY`, valor el secreto. Se aplicará a los **procesos nuevos** del mismo usuario tras reiniciar el backend. Esta alternativa guarda el valor en la configuración de usuario de Windows; no es un almacén cifrado de secretos. Evita variables de sistema y nunca envíes el valor por el chat.
+## Regla para todos los agentes y ramas
 
-## 3. Comprobar créditos y permiso ANTES de llamar
+- Crear una feature, compilar, probar sin red, publicar o terminar una tarea no revoca estos permisos. No cambiar los tres valores a `false`, ni añadir variables de entorno que los deshabiliten en el servicio del propietario, por rutina.
+- Antes de pruebas reales iniciadas por el agente, solicitar al propietario **cuántas pruebas autoriza**, explicar cuántas llamadas puede incluir cada prueba (Spark, SAM y lotes) y el costo estimado si está disponible. Una autorización vigente no se vuelve a pedir para cada llamada dentro del mismo alcance.
+- Registrar pruebas y llamadas usadas; al consumir lo autorizado, detener las pruebas del agente y solicitar una ampliación. No apagar la API del propietario ni reducir su cupo manual.
+- Los clics manuales del propietario siguen el flujo de costo y confirmación de la interfaz, con `UnlimitedManualRequests=true`. El contador compartido no debe limitar esos envíos manuales.
+- Usar dobles de prueba/transporte simulado para pruebas sin proveedor. Si una prueba necesita permisos apagados, limitar ese valor a su configuración de prueba aislada; no sobrescribir `appsettings.json`, variables globales ni servicios compartidos.
+- La habilitación de este proyecto no modifica políticas de OpenAI ni elimina límites reales del proveedor. Ante un rechazo de herramienta, informar la acción y el motivo exactos; no atribuirlo sin evidencia a una obligación de desactivar Meta y no intentar eludirlo.
 
-Abre **https://dev.meta.ai/billing** con la sesión Meta, completa personalmente la confirmación de identidad si aparece y verifica el **saldo promocional realmente aplicado a tu equipo**, su vencimiento y si hay cargos al superar el crédito. La promoción de US$150 mencionada durante el hackathon **no está verificada en ProofLab**. Visita también Usage/Spend limits si están disponibles; las alertas de gasto por correo **no son límites duros**.
+## Token y estado
 
-La API exige **cuatro controles simultáneos**:
-- `MODEL_API_KEY` presente en el proceso del backend.
-- `Meta:CreditsConfirmedByOwner=true` únicamente tras tu verificación real de Billing.
-- `Meta:OwnerApprovedPaidRequests=true` únicamente tras tu autorización explícita.
-- `Meta:AllowPaidRequests=true` como último interruptor.
+En la interfaz actual, registrar el token en **Configuración**; permanece en memoria de esa sesión. Los envíos manuales pueden usarlo sin una clave cargada en el entorno del servidor. La alternativa para operaciones de backend es `MODEL_API_KEY` en su proceso. Nunca guardar ni publicar secretos en Git, SQLite, logs o documentación.
 
-**Por defecto los tres interruptores son `false`.** La activación se haría mediante variables de entorno del backend `Meta__CreditsConfirmedByOwner`, `Meta__OwnerApprovedPaidRequests`, `Meta__AllowPaidRequests`; **no modifiques Git ni enciendas nada hasta verificar saldo y autorizar los cargos**. El código no puede comprobar automáticamente tu crédito en Meta: son confirmaciones declaradas por el propietario, no una conexión con Billing.
-
-Además, cada proceso de la API tiene **un máximo inicial de dos solicitudes reales**, compartido por Muse y SAM. Es un límite de peticiones, **no un límite monetario de la cuenta**. Reiniciar el proceso lo reinicia; consulta el Usage de Meta para el costo real.
-
-## 4. Consultar el estado SIN gastar créditos
-
-En PowerShell, sin introducir una clave en la URL:
+Comprobación local sin inferencia:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:5391/api/meta/readiness
 ```
 
-Muestra **booleanos**, modelo y cupo restante, nunca el token. También aparecerá el estado en la vista de Goldbach de la web `http://127.0.0.1:4300/`. Cuando todos los requisitos estén completos, se habilitará «Preparar con Muse Spark (puede gastar créditos Meta)» y cada solicitud requerirá confirmación.
+Comprobar `creditsConfirmedByOwner`, `ownerApprovedPaidRequests`, `paidRequestsSwitchEnabled`, `manualTokenCallsPermitted` y `manualRequestsUnlimited`. `liveCallsPermitted=false` puede indicar ausencia de clave de servidor o cupo no manual agotado; por sí solo no significa que los envíos manuales con token estén deshabilitados.
 
-## 5. Qué hace cada modelo
+Las variables `Meta__AllowPaidRequests`, `Meta__CreditsConfirmedByOwner` y `Meta__OwnerApprovedPaidRequests` pueden prevalecer sobre el archivo JSON. Revisar esa precedencia si una instancia no coincide con el repositorio. No reiniciar servicios ajenos ni sus contadores para arreglar una instancia de prueba.
 
-- **Muse Spark 1.3:** `POST https://api.meta.ai/v1/chat/completions`. ProofLab prepara propuestas de borradores de las cinco etapas, con esquema JSON; **los informes siguen sin aprobarse automáticamente**. Las etapas 4–5 conservan los IDs/hashes de evidencia del servidor. El texto de Muse permanece **NO VERIFICADO** hasta revisión.
-- **SAM 3.1:** `POST https://api.meta.ai/v1/responses` para imágenes/video. El adaptador actual sólo devuelve la respuesta bruta; **aún no existe decodificación validada de máscaras ni seguimiento para la Misión 2**. No usar datos personales ni videos sensibles sin decisión expresa.
-- Ambos endpoints leen el mismo `MODEL_API_KEY`, exclusivamente en C# del backend. El frontend **jamás** recibe ni guarda el secreto.
+## Alcance de las verificaciones
 
-Documentación actual: https://dev.meta.ai/docs/protocols/chat-completions · https://dev.meta.ai/docs/sam/overview · https://dev.meta.ai/docs/pricing-rate-limits .
+El estado local no certifica autenticación con Meta, saldo disponible ni resultado científico. Esta actualización de permisos se verifica sin llamar al proveedor. Los registros de inferencias anteriores conservan su alcance e historial.
 
-## 6. Qué fue verificado y qué NO
-
-- **Verificado sin Meta:** compilación, pruebas unitarias de los cuatro interruptores, límite de dos solicitudes concurrentes, estado local de solo lectura y rechazo HTTP 409 de peticiones pagadas con interruptores apagados. CI no debe llevar `MODEL_API_KEY`.
-- **No verificado:** autenticación real con token, permisos reales de tu equipo, crédito promocional disponible, respuestas Muse Spark/SAM de pago, costo por uso y generación científica autónoma. No declarar integración Meta operativa antes de esas pruebas.
-- **Regla científica:** ninguna inferencia Muse es una prueba Lean. Lean sólo verifica objetivos conocidos y tácticas curadas hasta que se valide un sandbox independiente.
-
-**Pruebas de conexión desde el frontend, con sesión temporal operada por el usuario:** [META-MANUAL-TESTS.es.md](META-MANUAL-TESTS.es.md).
-
-**English:** [META-API-CONNECTION.md](META-API-CONNECTION.md).
+[Reglas para agentes](../AGENTS.md) · [English](META-API-CONNECTION.md)

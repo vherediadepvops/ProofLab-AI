@@ -1,5 +1,7 @@
 # Misión 1 — Validación del flujo científico SIN Muse Spark
 
+> **Permisos vigentes (29/10/2026):** las referencias a pagos apagados en este documento describen el ensayo o estado histórico de esa instancia. No son instrucciones para desactivar la API del propietario ni las ramas nuevas. Aplicar la [política actual de autorización y pruebas](META-API-CONNECTION.es.md).
+
 **Fecha:** 27/10/2026. **Estado:** ensayo determinista con herramientas reales, no agente de IA.
 **No se habilitan modelos Meta ni llamadas facturables.** Conservar `Meta:AllowPaidRequests=false`.
 

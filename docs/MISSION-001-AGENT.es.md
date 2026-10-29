@@ -30,7 +30,7 @@ Limita a pares 4–2000; cálculo C# determinista, no prueba Lean.
 
 ## Pendiente / puertas
 
-- Confirmar el crédito Meta y obtener autorización **antes** de habilitar peticiones facturables; mantener `Meta:AllowPaidRequests=false`.
+- Respetar los permisos Meta vigentes y solicitar la cantidad de pruebas reales antes de consumir el proveedor. No desactivar la API del propietario; ver [política vigente](META-API-CONNECTION.es.md).
 - Construir orquestador de decisiones e integrar salida real de Muse Spark, con coste máximo, límite de intentos y trazabilidad del prompt/versionado.
 - Validar un entorno desechable para Lean libre; mientras no exista, no permitirlo.
 - Revisar una formalización fiel de Goldbach, distinguir prueba finita, lemmas conocidos y conjetura universal.

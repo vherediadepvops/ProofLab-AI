@@ -1,5 +1,7 @@
 # Mission 1 — Scientific flow rehearsal WITHOUT Muse Spark
 
+> **Current permissions (2026-10-29):** disabled-payment references below describe that instance's historical state or isolated rehearsal. They do not instruct agents to disable the owner's API or new branches. Follow the [current authorization and testing policy](META-API-CONNECTION.md).
+
 **Date:** 2026-10-27. **State:** deterministic scripted harness with real bounded tools, not an AI agent.
 **Meta models and billable requests stay off**, `Meta:AllowPaidRequests=false`.
 
