@@ -25,6 +25,18 @@
          Avoids enabling any Meta API test credentials or paid calls. -->
     <Compile Include="..\..\src\ProofLab.Api\SamVideoSseParser.cs"
              Link="SamVideoSseParser.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamFourWayPlan.cs"
+             Link="SamFourWayPlan.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamFourWayStreaming.cs"
+             Link="SamFourWayStreaming.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamFourWayMaskAssembler.cs"
+             Link="SamFourWayMaskAssembler.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamFourWayOfflineSseReplay.cs"
+             Link="SamFourWayOfflineSseReplay.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveSegmentPlan.cs"
+             Link="SamAdaptiveSegmentPlan.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveOfflineScheduler.cs"
+             Link="SamAdaptiveOfflineScheduler.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamManualApiTokenPolicy.cs"
              Link="SamManualApiTokenPolicy.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamVideoEvidenceIndex.cs"
