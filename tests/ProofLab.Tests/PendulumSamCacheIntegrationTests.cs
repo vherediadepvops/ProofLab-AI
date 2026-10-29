@@ -546,4 +546,93 @@ public sealed class PendulumSamCacheIntegrationTests
             service.RunOnceAsync("study","primary",f.Request(),Ct));
         Assert.Equal(calls,f.Transport.Calls);
     }
+
+    private sealed class SceneHistory : IAssemblyScenes
+    {
+        public required SamSceneDefinition Current { get; set; }
+        public required SamSceneDefinition[] History { get; set; }
+        public Task<SamSceneDefinition?> ApprovedAsync(string id,string role,CancellationToken ct) =>
+            Task.FromResult<SamSceneDefinition?>(Current);
+        public Task<SamSceneDefinition[]> TrackingHistoryAsync(string id,string role,CancellationToken ct,bool quote=false) =>
+            Task.FromResult(History);
+    }
+    private static SamSceneDefinition HistoricalScene(string sha,char identity,int offset)
+    {
+        var scene=new SamSceneDefinition("",sha,new string(identity,64),new string('b',64),
+            640,480,"simple_pendulum",[new("1","object")],
+            [new(6,"object",100+offset,100,160+offset,180),new(30,"object",110+offset,110,170+offset,190)],
+            null,null,AssemblyPolicy.GroundingOrigin);
+        return scene with {Key=AssemblyPolicy.DefinitionKey(scene)};
+    }
+
+    [Fact]
+    public async Task SceneRefreshKeepsOlderUsableMasksAndTheirExactReceipt()
+    {
+        using var f=new Fixture();
+        var a=HistoricalScene(f.Runtime.Source.Sha256,'c',0);
+        var b=HistoricalScene(f.Runtime.Source.Sha256,'d',20);
+        var scenes=new SceneHistory {Current=a,History=[a]};
+        var api=f.Open(scenes);
+        f.Transport.ResultRaw=MaskResponse;
+        var first=await api.RunOnceAsync("study","primary",f.Request() with {SceneKey=a.Key},Ct);
+        scenes.Current=b;scenes.History=[a,b];
+        f.Transport.ResultRaw=Raw;
+        var empty=await api.RunOnceAsync("study","primary",f.Request() with {SceneKey=b.Key},Ct);
+        Assert.NotEqual(first.State.AnalysisId,empty.State.AnalysisId);
+        var before=f.Runtime.Reservations;
+        var status=await api.StatusAsync("study","primary",Ct);
+        Assert.True(status.CacheHit);
+        Assert.Equal(first.State.AnalysisId,status.AnalysisId);
+        var hit=await api.RunOnceAsync("study","primary",f.Request("api-meta-cache"),Ct);
+        Assert.Equal(JsonSerializer.Serialize(first.Receipt,Json),JsonSerializer.Serialize(hit.Receipt,Json));
+        Assert.Equal(first.State.AnalysisId,(await api.ReadArchiveAsync("study","primary",Ct)).State.AnalysisId);
+        Assert.Equal(before,f.Runtime.Reservations);
+    }
+
+    [Fact]
+    public async Task NewSparkSceneCannotBypassAnUnresolvedSamAttempt()
+    {
+        using var f=new Fixture();
+        var a=HistoricalScene(f.Runtime.Source.Sha256,'c',0);
+        var b=HistoricalScene(f.Runtime.Source.Sha256,'d',20);
+        var scenes=new SceneHistory {Current=a,History=[a]};
+        var api=f.Open(scenes);
+        f.Transport.OnCall=_=>throw new HttpRequestException("Synthetic interrupted inference");
+        await Assert.ThrowsAsync<HttpRequestException>(()=>
+            api.RunOnceAsync("study","primary",f.Request() with {SceneKey=a.Key},Ct));
+        scenes.Current=b;scenes.History=[a,b];
+        f.Transport.OnCall=null;
+        var status=await api.StatusAsync("study","primary",Ct,"api-meta");
+        Assert.Contains("RECONCILIATION",status.Status);
+        Assert.False(status.CanRunLive);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>
+            api.RunOnceAsync("study","primary",f.Request() with {SceneKey=b.Key},Ct));
+        Assert.Equal(1,f.Runtime.Reservations);Assert.Equal(1,f.Transport.Calls);
+    }
+
+    [Fact]
+    public async Task FullVideoSceneWithoutSamMasksIsNotAUsefulCacheHit()
+    {
+        using var f=new Fixture();
+        var a=HistoricalScene(f.Runtime.Source.Sha256,'c',0);
+        var scenes=new SceneHistory {Current=a,History=[a]};
+        var api=f.Open(scenes);
+        await api.RunOnceAsync("study","primary",f.Request() with {SceneKey=a.Key},Ct);
+        var status=await api.StatusAsync("study","primary",Ct);
+        Assert.False(status.CacheHit);Assert.False(status.RecognitionRequired);
+        Assert.Equal("NOT_ANALYZED_WITH_SAM",status.Status);
+        Assert.NotNull((await api.ReadArchiveAsync("study","primary",Ct)).Receipt);
+    }
+
+    [Fact]
+    public async Task NewSceneCannotReplaceTheExplicitSceneAuthorizedForSam()
+    {
+        using var f=new Fixture();
+        var a=HistoricalScene(f.Runtime.Source.Sha256,'c',0);
+        var b=HistoricalScene(f.Runtime.Source.Sha256,'d',20);
+        var scenes=new SceneHistory {Current=b,History=[a,b]};
+        await Assert.ThrowsAsync<ArgumentException>(()=>
+            f.Open(scenes).RunOnceAsync("study","primary",f.Request() with {SceneKey=a.Key},Ct));
+        Assert.Equal(0,f.Runtime.Reservations);Assert.Equal(0,f.Transport.Calls);
+    }
 }

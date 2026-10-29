@@ -18,6 +18,7 @@ public static class AssemblyEndpoints
         catch(FileNotFoundException){return Results.NotFound(new {error="ASSEMBLY_SOURCE_OR_EVIDENCE_MISSING"});}
         catch(ArgumentException){return Results.BadRequest(new {error="ASSEMBLY_INPUT_INVALID"});}
         catch(InvalidDataException){return Results.Conflict(new {error="ASSEMBLY_EVIDENCE_INTEGRITY_FAILED"});}
+        catch(AssemblyNoInferenceSentException){return Results.Conflict(new {error="GROUNDING_NO_INFERENCE_SENT_REVIEW_COST"});}
         catch(InvalidOperationException){return Results.Conflict(new {error="ASSEMBLY_GATES_OR_PREVIOUS_ATTEMPT_BLOCKED"});}
         catch(IOException){return Results.Conflict(new {error="ASSEMBLY_BUSY_OR_STORAGE_FAILURE"});}
         catch(HttpRequestException){return Results.Problem("Meta request failed; inspect status before retrying.",statusCode:502);}
@@ -29,13 +30,13 @@ public static class AssemblyEndpoints
     public static void MapAssemblyEndpoints(this WebApplication app)
     {
         const string path="/api/science/director/pendulum/sessions/{id}/assembly/{role}";
-        app.MapGet(path+"/grounding/preflight",(string id,string role,AssemblyLocator locator,
+        app.MapGet(path+"/grounding/preflight",(string id,string role,string? mode,AssemblyLocator locator,
             HttpContext c,CancellationToken ct)=> {
             c.Response.Headers.CacheControl="no-store";
-            return Local(c)?Safe(async()=>Results.Ok(await locator.GroundingQuoteAsync(id,role,ct))):
+            return Local(c)?Safe(async()=>Results.Ok(await locator.GroundingQuoteAsync(id,role,ct,mode))):
                 Task.FromResult(Results.StatusCode(403));
         });
-        app.MapPost(path+"/grounding",(string id,string role,KnotRunRequest input,
+        app.MapPost(path+"/grounding",(string id,string role,AssemblyGroundingRunRequest input,
             AssemblyLocator locator,HttpContext c,CancellationToken ct)=> {
             c.Response.Headers.CacheControl="no-store";
             if(!Local(c,true))return Task.FromResult(Results.StatusCode(403));

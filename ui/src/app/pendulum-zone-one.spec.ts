@@ -1,4 +1,7 @@
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { SamVideoReplay } from './sam-video-replay';
+import { PendulumMasterPlayer } from './pendulum-master-player';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { PendulumZoneOne } from './pendulum-zone-one';
@@ -256,7 +259,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       durationSeconds:30.5,codec:'hevc',supportsSingleCall:true
     });
     http.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush({manualTokenCallsPermitted:false,remainingRequests:0});
-    http.expectOne(studyUrl+'/'+session.id+'/assembly/baseline/grounding/preflight')
+    http.expectOne(studyUrl+'/'+session.id+'/assembly/baseline/grounding/preflight?mode=api-meta-cache')
       .flush({}, {status:503,statusText:'Unavailable'});
     http.expectNone(req=>req.method==='POST' && req.url.includes('/assembly/'));
     expect(root.querySelector('app-assembly-review')).toBeNull();
@@ -489,4 +492,57 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.querySelector('.demo-video')).not.toBeNull();
     http.expectNone(()=>true);http.verify();fixture.destroy();
   });
+  for(const failure of ['HTTP_ERROR','NO_INFERENCE','AMBIGUOUS','NOT_VISIBLE']) {
+    it('closes the video overlay and preserves the error when Spark returns '+failure,async()=>{
+      const {root,component,fixture,http}=await init();
+      component.session.set({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});
+      fixture.detectChanges();await Promise.resolve();
+      const samUrl=studyUrl+'/'+session.id+'/sam/baseline';
+      const groundUrl=studyUrl+'/'+session.id+'/assembly/baseline/grounding';
+      const source={sourceSha256:video.sha256,sourceFrames:1828,estimatedCostUsd:.3656,
+        durationSeconds:30.5,codec:'hevc',supportsSingleCall:true};
+      http.expectOne(samUrl+'/status?mode=api-meta-cache').flush({
+        status:'NOT_ANALYZED_WITH_SAM',sourceSha256:video.sha256,cacheKey:'c'.repeat(64),
+        cacheHit:false,analysisId:null,mode:'api-meta-cache',canRunLive:false});
+      http.expectOne(samUrl+'/preflight').flush(source);
+      http.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush({
+        apiKeyConfigured:false,liveCallsPermitted:false,manualTokenCallsPermitted:true,
+        paidRequestsSwitchEnabled:true,creditsConfirmedByOwner:true,ownerApprovedPaidRequests:true,
+        usedRequests:0,remainingRequests:0,manualRequestsUnlimited:true});
+      const ground={cacheKey:'e'.repeat(64),videoSha256:video.sha256,
+        maximumEstimatedCostUsd:.25,mode:'api-meta-cache',freshRequired:false,
+        protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2',cacheHit:false,priorAttempt:false,canRun:true,
+        status:'NEEDS_LOCALIZATION',scene:null};
+      http.expectOne(groundUrl+'/preflight?mode=api-meta-cache').flush(ground);
+      await fixture.whenStable();
+      const replay=fixture.debugElement.query(By.directive(SamVideoReplay)).componentInstance as SamVideoReplay;
+      const player=fixture.debugElement.query(By.directive(PendulumMasterPlayer)).componentInstance as PendulumMasterPlayer;
+      // Browser preview readiness is independent of the network requests under test.
+      player.previewLoading.set(false);component.onPreviewState('ready');
+      const field=document.createElement('input');field.type='password';
+      component.connection.register(field);field.value='LLM_SYNTHETIC_INTEGRATION_TEST_NEVER_SENT_123456';
+      component.connection.confirmToken();fixture.detectChanges();
+      expect(root.querySelector('.viewer-loading')).toBeNull();expect(replay.canProcess()).toBeTrue();
+      const failureEvents=spyOn(replay.processingFailed,'emit').and.callThrough();
+      const pending=replay.process();fixture.detectChanges();
+      expect(component.resultState()).toBe('loading');
+      expect(root.querySelector('.viewer-loading')?.textContent).toContain('Procesando video');
+      const request=http.expectOne(groundUrl);
+      if(failure==='HTTP_ERROR')request.flush({}, {status:502,statusText:'Synthetic failure'});
+      else if(failure==='NO_INFERENCE')request.flush({error:'GROUNDING_NO_INFERENCE_SENT_REVIEW_COST'},
+        {status:409,statusText:'Conflict'});
+      else request.flush({...ground,status:failure,cacheHit:true,canRun:false});
+      await pending;fixture.detectChanges();
+      expect(failureEvents).toHaveBeenCalledTimes(1);
+      expect(component.resultState()).toBe('error');expect(component.playbackReady()).toBeFalse();
+      expect(root.querySelector('.viewer-loading')).toBeNull();
+      expect(component.videoActionsBusy()).toBeFalse();expect(component.connection.busy()).toBeFalse();
+      expect(root.querySelector('.sam-message')?.textContent).toContain('SAM no se envió');
+      if(failure==='NO_INFERENCE')expect(root.querySelector('.sam-message')?.textContent).not.toContain('facturada');
+      expect((root.querySelector('.play-main') as HTMLButtonElement).disabled).toBeTrue();
+      http.expectNone(r=>r.method==='POST'||r.url.endsWith('/evidence'));
+      await verifyHttp(http);fixture.destroy();
+    });
+  }
+
 });

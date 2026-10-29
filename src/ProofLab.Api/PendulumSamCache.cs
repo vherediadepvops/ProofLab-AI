@@ -62,7 +62,8 @@ public sealed class PendulumSamCache(
 
     private sealed record PriorArchive(string Key, SamVideoArchive Archive, List<SamVideoArchive.Stored> All);
 
-    private async Task<List<PriorArchive>> PriorDirectArchives(SamVideoSource video, string currentKey, CancellationToken ct)
+    private async Task<List<PriorArchive>> PriorArchives(string studyId, string role,
+        SamVideoSource video, string currentKey, CancellationToken ct, bool quote = false)
     {
         var result = new List<PriorArchive>();
         foreach (var legacy in new[] { false, true })
@@ -71,6 +72,21 @@ public sealed class PendulumSamCache(
             if (key == currentKey) continue;
             var archive = new SamVideoArchive(environment.ContentRootPath, index, legacyDirect: legacy);
             result.Add(new(key, archive, await archive.LoadAsync(video, key, ct)));
+        }
+        // A new Spark evaluation changes the scene identity. Retain each older
+        // SAM receipt under its own authenticated scene, including pending runs.
+        if (scenes is not null)
+        {
+            var history = await scenes.TrackingHistoryAsync(studyId, role, ct, quote);
+            foreach (var priorScene in history.DistinctBy(s => s.Key))
+            {
+                AssemblyPolicy.Validate(priorScene, video.Sha256);
+                var key = SamVideoArchive.Hash(AssemblyPolicy.SamProtocol + "\n" +
+                    SamModel + "\n" + priorScene.Key + "\n" + video.Sha256);
+                if (key == currentKey || result.Any(p => p.Key == key)) continue;
+                var priorArchive = new SamVideoArchive(environment.ContentRootPath, index, priorScene);
+                result.Add(new(key, priorArchive, await priorArchive.LoadAsync(video, key, ct)));
+            }
         }
         return result;
     }
@@ -119,9 +135,9 @@ public sealed class PendulumSamCache(
     // grounding flow. Historical usable masks still replay without another call.
     private SamVideoArchive.Stored? Reusable(IEnumerable<SamVideoArchive.Stored> all,
         IEnumerable<PriorArchive> prior, SamSceneDefinition? scene) =>
-        scene is not null ? Latest(all) :
-        (scenes is null ? Latest(all) : Latest(all.Where(a => ContainsMaskRecords(a.Raw)))) ??
-            LegacyHit(prior);
+        scenes is null ? Latest(all) ?? LegacyHit(prior) :
+            Latest(all.Concat(prior.SelectMany(p => p.All))
+                .Where(a => ContainsMaskRecords(a.Raw)));
 
     // Lock all direct generations plus any scene key, in a stable order.
     // A still-running V2 process uses the same V2 lock and cannot be bypassed.
@@ -173,7 +189,7 @@ public sealed class PendulumSamCache(
         mode = NormalizeMode(mode);
         var (video, key, archive, scene) = await Source(studyId, role, ct, quote:true);
         var all = await archive.LoadAsync(video, key, ct);
-        var prior = await PriorDirectArchives(video, key, ct);
+        var prior = await PriorArchives(studyId, role, video, key, ct, quote: true);
         var latest = Latest(all);
         var hit = Reusable(all, prior, scene);
         if (mode == CacheMode && hit is not null) return Artifact(hit).State;
@@ -212,7 +228,7 @@ public sealed class PendulumSamCache(
     {
         var (video, key, archive, scene) = await Source(studyId, role, ct);
         var all = await archive.LoadAsync(video, key, ct);
-        var prior = await PriorDirectArchives(video, key, ct);
+        var prior = await PriorArchives(studyId, role, video, key, ct);
         return Artifact(Reusable(all, prior, scene) ?? Latest(all) ??
             throw new FileNotFoundException("SAM provider evidence not cached."));
     }
@@ -233,7 +249,7 @@ public sealed class PendulumSamCache(
             Directory.CreateDirectory(root);
             using var heldLocks = new SourceLocks(archive, video.Sha256, key);
             var all = await archive.LoadAsync(video, key, ct);
-            var prior = await PriorDirectArchives(video, key, ct);
+            var prior = await PriorArchives(studyId, role, video, key, ct);
             var latest = Reusable(all, prior, scene);
             if (!string.Equals(request.VideoSha256, video.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Video SHA-256 confirmation mismatch.");

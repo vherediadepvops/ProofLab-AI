@@ -32,6 +32,7 @@ interface GroundingScene {key:string;videoSha256:string}
 interface GroundingQuote {
   cacheKey:string;videoSha256:string;maximumEstimatedCostUsd:number;
   cacheHit:boolean;priorAttempt:boolean;canRun:boolean;
+  mode:SamMode;freshRequired:boolean;protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2';
   status:'NEEDS_LOCALIZATION'|'READY'|'AMBIGUOUS'|'NOT_VISIBLE'|'PRIOR_ATTEMPT';
   scene:GroundingScene|null;
 }
@@ -72,11 +73,11 @@ interface SamReadiness {
             <div class="sam-price">
               @if(preflight(); as pf) {
                 <div class="sam-price-line">
-                  <strong [class.paid-cost]="!cachedResultAvailable()" [class.free-cost]="cachedResultAvailable()">{{cachedResultAvailable()?'US$ 0.00':'US$ '+costLabel(displayedCost())}}</strong>
-                  <small>{{cachedResultAvailable()?(es?'desde caché · sin cobro':'from cache · no charge'):(es?'Usará créditos · estimado':'Uses credits · estimate')}}</small>
+                  <strong [class.paid-cost]="!cachedResultAvailable()" [class.free-cost]="cachedResultAvailable()">{{cachedResultAvailable()?'US$ 0.00':(groundingRequired()?(es?'Hasta US$ ':'Up to US$ '):'US$ ')+costLabel(displayedCost())}}</strong>
+                  <small>{{cachedResultAvailable()?(es?'desde caché · sin cobro':'from cache · no charge'):(groundingRequired()?(es?'Máximo autorizado · no es una factura':'Authorized maximum · not an invoice'):(es?'Usará créditos · estimado':'Uses credits · estimate'))}}</small>
                 </div>
                 @if(!cachedResultAvailable() && groundingRequired()) {
-                  <small class="sam-meta-estimate">{{es?'SAM':'SAM'}} US$ {{costLabel(pf.estimatedCostUsd)}} + Spark {{es?'hasta':'up to'}} US$ {{groundingQuote()!.maximumEstimatedCostUsd.toFixed(2)}}</small>
+                  <small class="sam-meta-estimate">SAM {{es?'estimado':'estimate'}} US$ {{costLabel(pf.estimatedCostUsd)}} + Spark {{es?'hasta':'up to'}} US$ {{groundingQuote()!.maximumEstimatedCostUsd.toFixed(2)}}</small>
                 }
                 @if(cachedResultAvailable()) {
                   <small class="sam-meta-estimate">{{es?'Enviar a Meta':'Send to Meta'}}: US$ {{pf.estimatedCostUsd.toFixed(2)}} {{es?'estimados':'estimated'}}</small>
@@ -287,6 +288,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly mediaReady=input(true);
   readonly validationState=input<'idle'|'loading'|'ready'|'error'>('idle');
   readonly processingStarted=output<void>();
+  readonly processingFailed=output<void>();
   readonly processing=signal(false);
   readonly processingPhase=signal<'grounding'|'sam'|'validating'|null>(null);
   private beginProcessing():void {
@@ -294,6 +296,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   private finishProcessing():void {
     this.processing.set(false);this.processingPhase.set(null);this.connection.busy.set(false);
+  }
+  private failProcessing():void {
+    // Clear local activity first so the parent's error state keeps the specific failure message.
+    this.finishProcessing();this.processingFailed.emit();
   }
   readonly mode=signal<SamMode>('api-meta-cache');
   private get base():string {
@@ -433,9 +439,11 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     return !!quote && quote.videoSha256===this.videoSha256() &&
       /^[a-f0-9]{64}$/i.test(quote.cacheKey) &&
       Number.isFinite(quote.maximumEstimatedCostUsd) && quote.maximumEstimatedCostUsd>0 &&
-      quote.maximumEstimatedCostUsd<=.05 &&
+      quote.maximumEstimatedCostUsd>=.025 && quote.maximumEstimatedCostUsd<=1 &&
+      quote.mode===this.mode() && quote.protocol==='ASSEMBLY_FULL_VIDEO_GROUNDING_V2' &&
+      typeof quote.freshRequired==='boolean' &&
       ['NEEDS_LOCALIZATION','READY','AMBIGUOUS','NOT_VISIBLE','PRIOR_ATTEMPT'].includes(quote.status) &&
-      (quote.status!=='READY' || (quote.cacheHit===true && !!quote.scene &&
+      (quote.status!=='READY' || (!quote.freshRequired && !!quote.scene &&
         /^[a-f0-9]{64}$/i.test(quote.scene.key) && quote.scene.videoSha256===this.videoSha256()));
   }
   groundingRequired():boolean {
@@ -444,18 +452,20 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   private groundingPermitted():boolean {
     const g=this.groundingQuote();
-    return this.validGrounding(g) && (g.status==='READY' ||
-      (this.groundingRequired() && !g.priorAttempt && g.canRun));
+    return this.validGrounding(g) && (
+      (this.mode()==='api-meta-cache' && g.status==='READY' && g.cacheHit && !g.freshRequired) ||
+      (this.groundingRequired() && !g.priorAttempt && g.canRun &&
+        (this.mode()==='api-meta-cache' || g.freshRequired)));
   }
   processingLabel():string {
-    if(this.processingPhase()==='grounding')return this.es?'Spark localizando el objeto…':'Spark is locating the object…';
+    if(this.processingPhase()==='grounding')return this.es?'Spark analizando el video…':'Spark is analyzing the video…';
     if(this.processingPhase()==='sam')return this.es?'SAM siguiendo el objeto…':'SAM is tracking the object…';
     return this.es?'Preparando resultados…':'Preparing results…';
   }
   processingDetail():string {
     if(this.processingPhase()==='grounding')return this.es?
-      'Revisando tres fotogramas originales. SAM solo se enviará si el objeto queda localizado.':
-      'Reviewing three original frames. SAM will run only if the object is located.';
+      'Localizando el objeto con el video completo. SAM solo se enviará si la localización es válida.':
+      'Locating the object using the complete video. SAM will run only if localization is valid.';
     if(this.processingPhase()==='sam')return this.es?
       'Siguiendo las posiciones indicadas por Spark. Sin reintentos automáticos.':
       'Tracking the positions provided by Spark. No automatic retries.';
@@ -489,8 +499,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   costLabel(value:number):string {return (Math.ceil(value*100-1e-8)/100).toFixed(2);}
   nextActionDescription():string {
     if(this.groundingRequired())return this.es?
-      'Al pulsar Procesar autorizas enviar tres fotogramas a Spark y luego el video a SAM, hasta el costo combinado mostrado. Si Spark no localiza el objeto, SAM no se envía.':
-      'Pressing Process authorizes three frames to Spark, then the video to SAM, up to the displayed combined cost. If Spark cannot locate the object, SAM is not sent.';
+      'Al pulsar Procesar autorizas enviar el video completo y sus imágenes de referencia a Spark; después, el video a SAM, hasta el máximo combinado mostrado. Si Spark no localiza el objeto, SAM no se envía.':
+      'Pressing Process authorizes the complete video and its reference images to Spark, then the video to SAM, up to the displayed combined maximum. If Spark cannot locate the object, SAM is not sent.';
     return this.es?'Al pulsar Procesar autorizas enviar este video a Meta y usar los créditos del costo mostrado.':
       'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.';
   }
@@ -546,7 +556,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         firstValueFrom(this.http.get<SamCacheStatus>(this.url()+'/status?mode='+this.mode()).pipe(timeout(15000))),
         firstValueFrom(this.http.get<SamPreflight>(this.url()+'/preflight').pipe(timeout(90000))),
         firstValueFrom(this.http.get<SamReadiness>(root+'/api/meta/readiness').pipe(timeout(10000))).catch(()=>null),
-        firstValueFrom(this.http.get<GroundingQuote>(this.groundingUrl()+'/preflight').pipe(timeout(15000))).catch(()=>null)
+        firstValueFrom(this.http.get<GroundingQuote>(this.groundingUrl()+'/preflight?mode='+this.mode()).pipe(timeout(15000))).catch(()=>null)
       ]);
       if(serial!==this.serial || this.disposed)return;
       if(status.sourceSha256!==this.videoSha256() || pf.sourceSha256!==this.videoSha256() ||
@@ -586,8 +596,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       if(this.groundingRequired()) {
         this.processingPhase.set('grounding');
         const located=await firstValueFrom(this.http.post<GroundingQuote>(groundUrl,{
-          videoSha256:sha,cacheKey:ground.cacheKey,modelApiToken:oneTimeToken,
-          confirmImageTransfer:true,confirmPaidCall:true,
+          mode,videoSha256:sha,cacheKey:ground.cacheKey,modelApiToken:oneTimeToken,
+          confirmImageTransfer:true,confirmVideoTransfer:true,confirmPaidCall:true,
           maximumEstimatedCostUsd:ground.maximumEstimatedCostUsd
         },{headers:{'X-ProofLab-Manual-Action':'assembly'}}));
         if(!current())return;
@@ -598,7 +608,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           this.error.set(this.es?
             'Spark no pudo localizar el objeto con suficiente claridad. SAM no se envió. Revisa la grabación antes de otra prueba.':
             'Spark could not locate the object clearly enough. SAM was not sent. Review the recording before another test.');
-          this.finishProcessing();return;
+          this.failProcessing();return;
         }
         scene=located.scene;
         // Scene identity and source timing may have changed while Spark was running.
@@ -635,7 +645,13 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     }catch(e){
       if(current()){
         const changed=e instanceof Error && e.message.startsWith('POST_GROUNDING_');
-        this.error.set(changed?(this.es?
+        const response=e as {status?:number;error?:{error?:unknown}};
+        const noInference=this.processingPhase()==='grounding' && response?.status===409 &&
+          response.error?.error==='GROUNDING_NO_INFERENCE_SENT_REVIEW_COST';
+        this.error.set(noInference?(this.es?
+          'Spark no llegó a ejecutar la inferencia. Revisa el presupuesto o la conexión y actualiza el costo; SAM no se envió.':
+          'Spark did not execute inference. Review the budget or connection and refresh the cost; SAM was not sent.'):
+          changed?(this.es?
           'Spark terminó, pero cambió la cotización o la evidencia. SAM no se envió. Actualiza el costo antes de continuar.':
           'Spark completed, but the quote or evidence changed. SAM was not sent. Refresh the cost before continuing.'):
           this.processingPhase()==='grounding'?(this.es?
@@ -643,7 +659,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           'Spark localization did not complete. A request might have been billed. SAM was not sent; check status before another attempt.'):
           (this.es?'SAM no se completó. Puede existir una solicitud facturada. Revisa el estado; no reintentes automáticamente.':
           'SAM did not complete. A request might have been billed. Check status; never auto-retry.'));
-        this.cacheStatus.set(null);this.groundingQuote.set(null);this.processing.set(false);
+        this.cacheStatus.set(null);this.groundingQuote.set(null);this.failProcessing();
       }
     }finally{
       if(!this.processing() || this.disposed || !current())this.finishProcessing();

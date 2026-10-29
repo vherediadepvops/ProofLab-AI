@@ -1,23 +1,25 @@
-# Spark localiza; SAM sigue; Muse interpreta
+# Péndulos de distintas formas: Spark + SAM
 
-Al pulsar **Procesar**, el flujo de un video nuevo comienza con Muse Spark: examina tres fotogramas originales y localiza el mismo objeto suspendido, sea una pelota, moneda, arandela, pesa u otra forma/material. Devuelve cajas sobre la imagen completa orientada y una decisión: objeto claro, ambiguo o no visible. No basta la frase `pendulum bob`.
+## Flujo y modos
+El botón **Procesar** conserva la tarjeta y los controles existentes. **API Meta** ejecuta una evaluación nueva de Muse Spark sobre el video completo y después un análisis SAM nuevo. **API Meta + caché** reutiliza máscaras auténticas compatibles; si faltan, puede reutilizar una localización válida o iniciar el flujo completo. Una respuesta SAM vacía se conserva en el historial, pero no es un HIT útil.
 
-Con al menos dos observaciones claras, ProofLab convierte las coordenadas a píxeles originales y envía a SAM cajas con el mismo ID de objeto y sus índices de fotograma reales. SAM propaga el seguimiento por el video. No se mezclan las cajas con una descripción textual del objeto.
+Spark recibe un MP4 privado de toda la grabación, sin recodificar ni quitar fotogramas, junto con tres imágenes originales etiquetadas como referencias espaciales. El remux MOV→MP4 verifica índices y tiempos originales. El contexto completo ayuda a identificar el objeto y las limitaciones visibles; los anclajes precisan sus cajas para SAM. Esto no garantiza que el proveedor examine cada fotograma nativo.
 
-## Interfaz y costo
+El objetivo no depende de material, color o forma: pelota, moneda, pesa u otro cuerpo suspendido. Spark declara CLEAR_SINGLE_OBJECT, AMBIGUOUS o NOT_VISIBLE. Sin un objeto inequívoco no se envía SAM. Las cajas emplean dimensiones orientadas e índices originales; SAM conserva el mismo ID de objeto y recibe el video completo.
 
-Se conserva el botón Procesar y la tarjeta de costo actuales. Las consultas de costo/caché son GET locales en paralelo, sin llamadas de pago ni envío de tokens. El precio mostrado incluye SAM y, cuando falta localización guardada, hasta US$0,05 de Spark. La estimación SAM conserva su límite de US$0,50; el total puede llegar a US$0,55 y se muestra antes del clic. Un HIT SAM utilizable cuesta US$0.
+## Costo y consentimiento
+Antes del clic se muestra **Hasta US$…**, desglosando SAM y el presupuesto máximo Spark que cotiza el servidor (predeterminado US$0,25). Es un techo estimado, no una factura. SAM conserva su límite de US$0,50 por operación. La carga del video y las cotizaciones locales no ejecutan inferencia.
+Solo al pulsar Procesar se autoriza transferir el video completo y las referencias. Se cuenta el contexto real del payload antes de la inferencia Spark y se comprueba el presupuesto. No hay reintentos automáticos. Una caché SAM válida cuesta US$0,00.
 
-Durante el mismo clic se muestra primero la localización de Spark y luego el seguimiento SAM. Una localización ambigua, un error o un cambio de video/presupuesto detiene la continuación; no hay reintentos automáticos. La evidencia de Spark guardada para el mismo video puede reutilizarse. No se añade una sección ni se exige confirmar Reconocer montaje.
+## Medición y procedencia
+SAM entrega máscaras; ProofLab calcula centroides, ángulo, derivadas y rastro con tiempos originales. El centro visual no certifica el centro de masa. La localización automática usa origen SPARK_GROUNDING y no confirma un pivote humano.
+La consulta científica a Muse en la bitácora existente interpreta las mediciones, la incertidumbre y las limitaciones. Es una llamada independiente: no se presume que comparta memoria con la localización ni se añade una tercera inferencia automática.
 
-## Procedencia y límites
+Cada ejecución Spark y cada recibo SAM preservan su identidad y respuesta original. El protocolo de video completo se distingue del histórico de tres imágenes; reutilizar una respuesta antigua no la convierte en un análisis del video completo.
+Una observación ausente con caja cero puede expresar confianza en la ausencia. No debe invalidar la detección de otro objeto. La recuperación local conserva respuesta original y hashes; no inventa cajas ni hace otra llamada Meta.
+Un fallo de Spark/SAM o una localización ambigua cierra el indicador de carga y conserva el mensaje de error.
 
-El protocolo de localización es `ASSEMBLY_OBJECT_GROUNDING_3_NATIVE_FRAMES_V1`. La escena queda como `SPARK_GROUNDING`, distinta de una revisión humana. Solo se sigue el rol object; no se exige identificar cuerda/nudo/polea para localizarlo. El pivote no se confirma automáticamente: las mediciones angulares conservan su requisito de un punto de suspensión definido.
+## Límites
+Las oclusiones, un objeto pequeño, la perspectiva y el movimiento de cámara pueden impedir una medición válida. El modelo no garantiza detección universal ni precisión científica. Los límites locales de formato, fotogramas y presupuesto siguen vigentes; no se promete admitir cualquier video 4K/240 FPS.
 
-Las respuestas, cuadros y hashes de Spark se conservan; SAM mantiene su propio recibo y máscaras. La caché histórica válida sigue disponible; una búsqueda textual vacía no bloquea la nueva localización visual y no se presenta como un HIT con trayectoria.
-
-Localizar un objeto en tres imágenes no prueba que su movimiento sea pendular. Después del seguimiento, ProofLab calcula medidas, cobertura e incertidumbre. **Muse Spark investigador**, mediante Consultar Muse, interpreta esa evidencia temporal y devuelve compatible con péndulo, otro movimiento o inconcluso con justificación ES/EN. Las predicciones históricas no cambian.
-
-La detección puede fallar por ambigüedad u oclusiones. No se inventan máscaras, centros de masa ni revisión humana.
-
-[Formato oficial de prompts de video SAM](https://dev.meta.ai/docs/sam/segmenting#prompt-several-video-frames). [English](SAM-PENDULUM-GENERIC.en.md).
+[Video en Muse](https://dev.meta.ai/docs/video-understanding) · [Prompts SAM](https://dev.meta.ai/docs/sam/segmenting#prompt-several-video-frames) · [English](SAM-PENDULUM-GENERIC.en.md).

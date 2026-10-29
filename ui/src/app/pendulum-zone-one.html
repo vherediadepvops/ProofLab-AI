@@ -127,6 +127,7 @@
     [videoSha256]="(activeTrial()==='followup' && session()?.followup?.sha256
       ? session()?.followup?.sha256 : session()?.baseline?.sha256) ?? ''"
     (processingReset)="clearProcessed()" (processingStarted)="onProcessingStarted()"
+    (processingFailed)="onProcessingFinished(false)"
     (cacheUpdated)="acceptProcessed($event)"/>
 
   <section class="focus-video" [attr.aria-busy]="videoLoading() || resultState()==='loading'">

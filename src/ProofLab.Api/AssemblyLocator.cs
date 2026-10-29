@@ -1,10 +1,11 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 namespace ProofLab.Api;
 
-public sealed class AssemblyLocator(IWebHostEnvironment environment,
-    ISamVideoRuntime runtime, IKnotFrames frames, IAssemblyTransport transport) : IAssemblyScenes
+public sealed partial class AssemblyLocator(IWebHostEnvironment environment,
+    ISamVideoRuntime runtime, IKnotFrames frames, IAssemblyTransport transport,IConfiguration? configuration=null) : IAssemblyScenes
 {
     private static readonly JsonSerializerOptions Json=new(JsonSerializerDefaults.Web);
     private readonly SemaphoreSlim gate=new(1,1);
@@ -32,7 +33,9 @@ public sealed class AssemblyLocator(IWebHostEnvironment environment,
     private async Task<AssemblyEvidence?> Existing(string root,string sha,string key,CancellationToken ct,bool grounding=false)
     {
         var path=Path.Combine(root,"evidence.json");
-        if(!File.Exists(path))return null;
+        if(grounding && !File.Exists(path) && File.Exists(Path.Combine(root,"recovered-evidence.v2.json")))
+            path=Path.Combine(root,"recovered-evidence.v2.json");
+        if(!File.Exists(path))return grounding?await RecoverLegacyGrounding(root,sha,key,ct):null;
         var record=await Read<AssemblyEvidence>(path,ct);
         var rawPath=Path.Combine(root,"response.json");
         if(new FileInfo(rawPath).Length>300000)throw new InvalidDataException("Oversized provider record.");
@@ -149,41 +152,6 @@ public sealed class AssemblyLocator(IWebHostEnvironment environment,
     {
         var root=Folder(AssemblyPolicy.Key(sha));
         return File.Exists(Path.Combine(root,"attempt.json")) && !File.Exists(Path.Combine(root,"evidence.json"));
-    }
-    public Task<AssemblyGroundingQuote> GroundingQuoteAsync(string id,string role,CancellationToken ct)=>
-        GroundingQuoteCore(id,role,ct,true);
-    private async Task<AssemblyGroundingQuote> GroundingQuoteCore(string id,string role,CancellationToken ct,bool quote)
-    {
-        var (video,key,root)=await Source(id,role,ct,quote,true);
-        var approved=await ApprovedCore(id,role,ct,quote);
-        var evidence=await Existing(root,video.Sha256,key,ct,true);
-        var scene=approved ?? (evidence is null?null:AssemblyPolicy.Ground(evidence));
-        var attempted=scene is null && evidence is null && (File.Exists(Path.Combine(root,"attempt.json")) || HistoricalAttemptPending(video.Sha256));
-        var status=scene is not null?"READY":evidence is not null?AssemblyPolicy.GroundingStatus(evidence):
-            attempted?"PRIOR_ATTEMPT":"NEEDS_LOCALIZATION";
-        return new(key,video.Sha256,AssemblyPolicy.MaximumEstimatedCostUsd,
-            scene is not null || evidence is not null,attempted,
-            scene is not null || (status=="NEEDS_LOCALIZATION" && runtime.ManualTokenCallsPermitted),
-            status,scene,evidence);
-    }
-    public async Task<AssemblyGroundingQuote> GroundAsync(string id,string role,KnotRunRequest input,CancellationToken ct)
-    {
-        var initial=await GroundingQuoteCore(id,role,ct,false);
-        if(input.VideoSha256!=initial.VideoSha256 || input.CacheKey!=initial.CacheKey)
-            throw new ArgumentException("Video or grounding quote changed.");
-        if(initial.Scene is not null)return initial;
-        await RunCore(id,role,input,ct,true);
-        return await GroundingQuoteCore(id,role,ct,false);
-    }
-    public Task<SamSceneDefinition?> TrackingAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,false);
-    public Task<SamSceneDefinition?> TrackingForQuoteAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,true);
-    private async Task<SamSceneDefinition?> TrackingCore(string id,string role,CancellationToken ct,bool quote)
-    {
-        var approved=await ApprovedCore(id,role,ct,quote);
-        if(approved is not null)return approved;
-        var (video,key,root)=await Source(id,role,ct,quote,true);
-        var evidence=await Existing(root,video.Sha256,key,ct,true);
-        return evidence is null?null:AssemblyPolicy.Ground(evidence);
     }
     public Task<SamSceneDefinition?> ApprovedAsync(string id,string role,CancellationToken ct)=>ApprovedCore(id,role,ct,false);
     public Task<SamSceneDefinition?> ApprovedForQuoteAsync(string id,string role,CancellationToken ct)=>ApprovedCore(id,role,ct,true);

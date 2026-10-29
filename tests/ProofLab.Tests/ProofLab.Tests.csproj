@@ -45,6 +45,7 @@
     <Compile Include="..\..\src\ProofLab.Api\AssemblyContracts.cs" Link="AssemblyContracts.cs" />
     <Compile Include="..\..\src\ProofLab.Api\AssemblyMetaTransport.cs" Link="AssemblyMetaTransport.cs" />
     <Compile Include="..\..\src\ProofLab.Api\AssemblyLocator.cs" Link="AssemblyLocator.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\AssemblyVideoGrounding.cs" Link="AssemblyVideoGrounding.cs" />
   </ItemGroup>
 
   <ItemGroup>

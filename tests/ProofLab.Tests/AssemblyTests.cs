@@ -87,10 +87,11 @@ public sealed class AssemblyTests
     private sealed class Runtime:ISamVideoRuntime {
         public bool LiveCallsPermitted {get;set;}=true;
         public int Reservations;
+        public bool ShiftRemuxPts;
         public Task<SamVideoSource> GetVerifiedSourceAsync(string s,string r,CancellationToken ct)=>
             Task.FromResult(new SamVideoSource(Sha,"video","synthetic.mp4","h264",1920,1080,10));
         public Task<double[]> ReadFramePtsAsync(string p,CancellationToken ct)=>
-            Task.FromResult(Enumerable.Range(0,600).Select(i=>i/60d).ToArray());
+            Task.FromResult(Enumerable.Range(0,600).Select(i=>i/60d+(ShiftRemuxPts&&p.EndsWith("full-video.mp4")?.01:0)).ToArray());
         public Task CreateMp4Async(string a,string b,CancellationToken ct)=>File.WriteAllTextAsync(b,"SYNTHETIC_REMUX_NOT_VIDEO",ct);
         public void ReserveOrThrow(){if(!LiveCallsPermitted)throw new InvalidOperationException();Reservations++;}
     }
@@ -105,7 +106,17 @@ public sealed class AssemblyTests
     private sealed class Transport:IAssemblyTransport {
         public int Calls;public bool Fail;public Func<Task>? Wait;
         public string GroundingStatus="CLEAR_SINGLE_OBJECT";
+        public bool NoInference;public int VideoCalls;
         public double GroundingConfidence=.95;
+        public async Task<AssemblyVideoProviderResult> LocateVideoGroundingAsync(string path,AssemblyVideoInput input,
+            KnotFrame[] anchors,byte[][] images,string token,double cost,Func<AssemblyVideoInput,Task> uploaded,CancellationToken ct) {
+            VideoCalls++;
+            if(NoInference)throw new AssemblyNoInferenceSentException(new InvalidOperationException("Synthetic admission failure"));
+            var receipt=input with {ProviderFileId="file-synthetic-"+VideoCalls};
+            await uploaded(receipt);
+            var result=await LocateGroundingAsync(images,token,ct);
+            return new(result,receipt);
+        }
         public async Task<KnotProviderResult> LocateGroundingAsync(byte[][] images,string key,CancellationToken ct) {
             var response=await LocateAsync(images,key,ct);
             return response with {Raw=Envelope(GroundingPoints(GroundingStatus,GroundingConfidence))};
@@ -123,8 +134,10 @@ public sealed class AssemblyTests
         public string Folder=>Path.Combine(Root,".private","physics","assembly",AssemblyPolicy.Key(Sha));
         public AssemblyLocator Open()=>new(new Env(Root),Runtime,Frames,Transport);
         public KnotRunRequest Request()=>new(Sha,AssemblyPolicy.Key(Sha),Token,true,true,.05);
-        public KnotRunRequest GroundRequest()=>new(Sha,AssemblyPolicy.GroundingKey(Sha),Token,true,true,.05);
-        public string GroundFolder=>Path.Combine(Root,".private","physics","assembly",AssemblyPolicy.GroundingKey(Sha));
+        public AssemblyGroundingRunRequest GroundRequest()=>new(Sha,AssemblyPolicy.VideoGroundingKey(Sha),Token,true,true,.25,ConfirmVideoTransfer:true);
+        public string GroundFolder=>Directory.GetDirectories(Path.Combine(Root,".private","physics","assembly",
+            AssemblyPolicy.VideoGroundingKey(Sha),"runs")).OrderBy(Directory.GetCreationTimeUtc).Last();
+        public string LegacyGroundFolder=>Path.Combine(Root,".private","physics","assembly",AssemblyPolicy.GroundingKey(Sha));
         public void Dispose(){if(Directory.Exists(Root))Directory.Delete(Root,true);}
     }
     [Fact] public async Task QuoteNeverDecodesUploadsOrReserves() {
@@ -209,7 +222,10 @@ public sealed class AssemblyTests
         public Task<SamApiCompletedResult> UploadAndSegmentAsync(string path,string concept,
             Func<SamVideoSseProgress,ValueTask>? progress,CancellationToken ct,string? oneShotMetaToken=null) {
             Calls++;Prompt=concept;
-            return Task.FromResult(new SamApiCompletedResult("{\"model\":\"sam-3.1\",\"status\":\"completed\"}","synthetic-sam",600));
+            return Task.FromResult(new SamApiCompletedResult(JsonSerializer.Serialize(new {
+                model="sam-3.1",status="completed",output=new[]{new {type="message",
+                    content=new[]{new {type="output_text",text="<0f>1<|box;x1=211;y1=228;x2=270;y2=254;w=320;h=334|><|mask;x=0;y=0;data=27,60,~!!!!M!0c[0o91w?q1!pIH4pPRVp2B3'7`e.ioeAf6-k/#Xd8%dX9x(|>"}}}}
+            }),"synthetic-sam",600));
         }
     }
     [Fact] public async Task DirectSamRequiresSparkTargetBeforeProviderCall() {
@@ -292,7 +308,7 @@ public sealed class AssemblyTests
         Assert.Equal("NEEDS_LOCALIZATION",q.Status);Assert.True(q.CanRun);Assert.False(q.CacheHit);
         Assert.Equal(0,f.Frames.Calls);Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reservations);
         var result=await locator.GroundAsync("s","baseline",f.GroundRequest(),Ct);
-        Assert.Equal("READY",result.Status);Assert.True(result.CacheHit);Assert.NotNull(result.Scene);
+        Assert.Equal("READY",result.Status);Assert.False(result.CacheHit);Assert.NotNull(result.Scene);
         Assert.False(File.Exists(Path.Combine(f.GroundFolder,"approved.json")));
         f.Runtime.LiveCallsPermitted=false;
         var cached=await f.Open().GroundAsync("s","baseline",f.GroundRequest() with {ModelApiToken="",ConfirmPaidCall=false},Ct);
@@ -306,7 +322,7 @@ public sealed class AssemblyTests
     [Fact] public async Task AmbiguousGroundingIsPersistedAndNeverTriggersRetry() {
         using var f=new Fixture();f.Transport.GroundingStatus="AMBIGUOUS";
         var q=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
-        Assert.Equal("AMBIGUOUS",q.Status);Assert.True(q.CacheHit);Assert.False(q.CanRun);Assert.Null(q.Scene);
+        Assert.Equal("AMBIGUOUS",q.Status);Assert.False(q.CacheHit);Assert.False(q.CanRun);Assert.Null(q.Scene);
         var cached=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
         Assert.Equal("AMBIGUOUS",cached.Status);Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
         Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reservations);
@@ -373,6 +389,85 @@ public sealed class AssemblyTests
             Enumerable.Range(0,3).Select(_=>new byte[200]).ToArray(),Token,Ct);
         AssemblyMetaTransport.ValidateReceipt(result.Raw,result.ProviderResponseId,result.InputTokens,result.OutputTokens);
         Assert.Equal(2,http.Calls);
+    }
+
+    [Fact] public void ConfidenceInAnAbsentEntityNeverCreatesOrRejectsAnObjectBox() {
+        var text=System.Text.Json.Nodes.JsonNode.Parse(GroundingPoints())!;
+        foreach(var observation in text["observations"]!.AsArray())
+            if(observation!["role"]!.GetValue<string>()=="pulley")observation["confidence"]=.98;
+        var e=GroundingEvidence();
+        e=e with {Proposal=AssemblyPolicy.ParseGrounding(text.ToJsonString(),e.Frames)};
+        var scene=AssemblyPolicy.Ground(e)!;
+        Assert.Single(scene.Roles);Assert.Equal("object",scene.Roles[0].Role);
+        Assert.All(e.Proposal.Observations.Where(o=>o.Role=="pulley"),o=>{
+            Assert.False(o.Visible);Assert.Equal(.98,o.Confidence);Assert.Equal(0,o.X1);});
+    }
+    [Fact] public async Task ApiModeCreatesNewImmutableSparkRunsAndTracksNewestScene() {
+        using var f=new Fixture();var locator=f.Open();var request=f.GroundRequest() with {Mode="api-meta"};
+        var first=await locator.GroundAsync("s","baseline",request,Ct);
+        var q=await locator.GroundingQuoteAsync("s","baseline",Ct,"api-meta");
+        Assert.Equal("NEEDS_LOCALIZATION",q.Status);Assert.True(q.FreshRequired);Assert.False(q.CacheHit);Assert.Null(q.Scene);
+        var second=await locator.GroundAsync("s","baseline",request,Ct);
+        Assert.False(first.CacheHit);Assert.False(second.CacheHit);Assert.False(second.FreshRequired);
+        Assert.NotEqual(first.Scene!.Key,second.Scene!.Key);Assert.NotEqual(first.Evidence!.RunId,second.Evidence!.RunId);
+        Assert.Equal(AssemblyPolicy.VideoGroundingProtocol,second.Evidence.Protocol);
+        Assert.NotNull(second.Evidence.VideoInput);Assert.Equal(Sha,second.Evidence.VideoInput.SourceSha256);
+        Assert.Equal(second.Scene.Key,(await locator.TrackingAsync("s","baseline",Ct))!.Key);
+        var history=await locator.TrackingHistoryAsync("s","baseline",Ct);
+        Assert.Equal(2,history.Length);Assert.Contains(history,s=>s.Key==first.Scene.Key);
+        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(2,f.Runtime.Reservations);
+        var cached=await locator.GroundAsync("s","baseline",f.GroundRequest() with {ModelApiToken="",ConfirmPaidCall=false},Ct);
+        Assert.True(cached.CacheHit);Assert.Equal(second.Scene.Key,cached.Scene!.Key);
+        Assert.Equal(2,f.Transport.VideoCalls);
+    }
+    [Fact] public async Task FullVideoMustHaveSeparateConsentAndPreserveAllFrameTimes() {
+        using var f=new Fixture();
+        await Assert.ThrowsAsync<ArgumentException>(()=>f.Open().GroundAsync("s","baseline",
+            f.GroundRequest() with {ConfirmVideoTransfer=false},Ct));
+        Assert.Equal(0,f.Runtime.Reservations);Assert.Equal(0,f.Transport.VideoCalls);
+        f.Runtime.ShiftRemuxPts=true;
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
+        Assert.Equal(0,f.Runtime.Reservations);Assert.Equal(0,f.Transport.VideoCalls);
+    }
+    [Fact] public async Task KnownNoInferenceOutcomeAllowsOnlyANewManualAttempt() {
+        using var f=new Fixture();f.Transport.NoInference=true;
+        await Assert.ThrowsAsync<AssemblyNoInferenceSentException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
+        Assert.Contains("NO_INFERENCE_SENT",await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"outcome.json")));
+        Assert.Equal(1,f.Runtime.Reservations);Assert.Equal(1,f.Transport.VideoCalls);
+        var q=await f.Open().GroundingQuoteAsync("s","baseline",Ct);
+        Assert.Equal("NEEDS_LOCALIZATION",q.Status);Assert.False(q.PriorAttempt);
+        f.Transport.NoInference=false;
+        await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        Assert.Equal(2,f.Runtime.Reservations);Assert.Equal(2,f.Transport.VideoCalls);
+    }
+    [Fact] public async Task PreservedHistoricalResponseRecoversWithoutAnotherInference() {
+        using var f=new Fixture();Directory.CreateDirectory(f.LegacyGroundFolder);
+        var anchors=new List<KnotFrame>();
+        foreach(var (index,time) in new[]{(6,.1),(30,.5),(54,.9)})
+            anchors.Add(await f.Frames.ExtractAsync("unused",Path.Combine(f.LegacyGroundFolder,$"frame-{anchors.Count}.jpg"),index,time,Ct));
+        var payload=System.Text.Json.Nodes.JsonNode.Parse(GroundingPoints())!;
+        foreach(var observation in payload["observations"]!.AsArray())
+            if(observation!["role"]!.GetValue<string>()=="pulley")observation["confidence"]=.98;
+        var raw=Envelope(payload.ToJsonString());
+        var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        await File.WriteAllTextAsync(Path.Combine(f.LegacyGroundFolder,"attempt.json"),JsonSerializer.Serialize(new {
+            sha256=Sha,key=AssemblyPolicy.GroundingKey(Sha),model=AssemblyPolicy.Model,
+            protocol=AssemblyPolicy.GroundingProtocol,createdAtUtc=DateTimeOffset.UtcNow,frames=anchors
+        },options));
+        await File.WriteAllTextAsync(Path.Combine(f.LegacyGroundFolder,"response.json"),raw);
+        var q=await f.Open().GroundingQuoteAsync("s","baseline",Ct);
+        Assert.Equal("READY",q.Status);Assert.True(q.CacheHit);Assert.False(q.PriorAttempt);
+        Assert.Equal(AssemblyPolicy.GroundingProtocol,q.EvidenceProtocol);
+        Assert.Equal(AssemblyPolicy.VideoGroundingProtocol,q.Protocol);
+        Assert.NotNull(q.Evidence!.Derivation);
+        Assert.False(File.Exists(Path.Combine(f.LegacyGroundFolder,"recovered-evidence.v2.json")));
+        var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest() with {ModelApiToken="",ConfirmPaidCall=false},Ct);
+        Assert.Equal(q.Scene!.Key,result.Scene!.Key);
+        Assert.True(File.Exists(Path.Combine(f.LegacyGroundFolder,"recovered-evidence.v2.json")));
+        Assert.Equal(raw,await File.ReadAllTextAsync(Path.Combine(f.LegacyGroundFolder,"response.json")));
+        Assert.Equal(0,f.Transport.VideoCalls);Assert.Equal(0,f.Runtime.Reservations);
+        var freshQuote=await f.Open().GroundingQuoteAsync("s","baseline",Ct,"api-meta");
+        Assert.Equal("NEEDS_LOCALIZATION",freshQuote.Status);Assert.True(freshQuote.FreshRequired);
     }
 
 }
