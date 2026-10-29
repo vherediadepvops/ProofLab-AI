@@ -23,6 +23,7 @@ interface SamCacheStatus {
   sourceFrames:number; estimatedCostUsd:number; canRunLive:boolean;
   provenance:string; mode?:SamMode; cacheHit?:boolean;
   analysisId?:string|null; storage?:string; sceneKey?:string|null; recognitionRequired?:boolean;
+  previousAttemptStatus?:string|null;
 }
 interface SamPreflight {
   sourceSha256:string;sourceFrames:number;durationSeconds:number;
@@ -524,6 +525,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.validationState()==='ready')return this.es?'Procesado':'Processed';
     if(this.checking())return this.es?'Comprobando':'Checking';
     if(this.cachedResultAvailable())return this.es?'Caché disponible':'Cache available';
+    if(this.canProcess() && this.cacheStatus()?.previousAttemptStatus)return this.es?'Nuevo análisis disponible':'New analysis available';
     if(this.cacheStatus()?.status.includes('RECONCILIATION'))return this.es?'Revisar intento':'Review attempt';
     if(this.cacheStatus()?.status.startsWith('CACHED_META_'))return this.es?'Resultado guardado':'Result saved';
     return this.es?'Sin analizar':'Not analyzed';
@@ -649,11 +651,13 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.reviewOnlyRequired())return this.es?
       'SAM está guardado. Procesar autoriza una revisión de Spark del video y la suspensión, hasta el máximo mostrado; no repite SAM.':
       'SAM is saved. Process authorizes one Spark review of the video and suspension up to the displayed maximum; SAM is not repeated.';
-    if(this.groundingRequired())return this.es?
+    const previous=this.mode()==='api-meta' && this.cacheStatus()?.previousAttemptStatus
+      ? (this.es?'Hay un intento anterior registrado. Este clic inicia un análisis nuevo y puede generar otro cobro. ':'A previous attempt is recorded. This click starts a new analysis and may incur another charge. '):'';
+    if(this.groundingRequired())return previous+(this.es?
       'Al pulsar Procesar autorizas enviar el video completo y sus imágenes de referencia a Spark; después, el video a SAM, hasta el máximo combinado mostrado, incluida una revisión de suspensión si hace falta. Si Spark no localiza el objeto, SAM no se envía.':
-      'Pressing Process authorizes the complete video and its reference images to Spark, then the video to SAM, up to the displayed combined maximum, including a suspension review if needed. If Spark cannot locate the object, SAM is not sent.';
-    return this.es?'Al pulsar Procesar autorizas enviar este video a Meta y usar los créditos del costo mostrado.':
-      'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.';
+      'Pressing Process authorizes the complete video and its reference images to Spark, then the video to SAM, up to the displayed combined maximum, including a suspension review if needed. If Spark cannot locate the object, SAM is not sent.');
+    return previous+(this.es?'Al pulsar Procesar autorizas enviar este video a Meta y usar los créditos del costo mostrado.':
+      'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.');
   }
   processBlockedReason():string {
     if(this.mode()==='api-meta-adaptive'){

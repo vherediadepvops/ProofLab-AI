@@ -15,7 +15,8 @@ public sealed record SamVideoState(
     string CacheKey, int SourceFrames, double EstimatedCostUsd,
     string? ResponseSha256, int? BilledFrames, bool CanRunLive,
     string Provenance, string? AnalysisId = null,
-    string Mode = "api-meta-cache", bool CacheHit = false, string Storage = "sqlite", string? SceneKey = null, bool RecognitionRequired = false);
+    string Mode = "api-meta-cache", bool CacheHit = false, string Storage = "sqlite", string? SceneKey = null, bool RecognitionRequired = false,
+    string? PreviousAttemptStatus = null);
 
 public sealed record SamVideoPreflight(
     string SourceSha256, string VideoId, string Codec,
@@ -44,7 +45,7 @@ public sealed record SamApiCompletedResult(
 public sealed record SamOriginalAttempt(
     string Protocol, string SourceSha256, string SubmittedMp4Sha256,
     int FrameCount, double EstimatedUsd, DateTimeOffset RequestedAtUtc,
-    string Status, string? AnalysisId = null);
+    string Status, string? AnalysisId = null, string? PreviousAttemptStatus = null);
 
 public sealed record SamVideoSource(
     string Sha256, string VideoId, string Path, string Codec,

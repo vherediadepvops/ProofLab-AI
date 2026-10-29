@@ -201,12 +201,14 @@ public sealed class PendulumSamCache(
                 "NO_SAM_PROVIDER_EVIDENCE; LOCAL_FFMPEG_RESULTS_ARE_SEPARATE")
             : Artifact(latest).State;
         return state with {
-            Status = pending.Any ? pending.Status :
+            // Fresh mode offers a separate owner-initiated analysis, retaining prior evidence.
+            // CanRunLive stays false for unresolved history: no automatic retry admission.
+            Status = pending.Any ? (mode == FreshMode ? "READY_FOR_FRESH_META_ANALYSIS" : pending.Status) :
                 latest is not null && (mode == FreshMode || hit is not null)
                     ? "READY_FOR_FRESH_META_ANALYSIS" : "NOT_ANALYZED_WITH_SAM",
             CanRunLive = !pending.Any && runtime.LiveCallsPermitted,
             RecognitionRequired = scenes is not null && scene is null, SceneKey=scene?.Key,
-            Mode = mode, CacheHit = false
+            Mode = mode, CacheHit = false, PreviousAttemptStatus = pending.Any ? pending.Status : null
         };
     }
 
@@ -266,12 +268,18 @@ public sealed class PendulumSamCache(
             if (!request.ConfirmPrivateVideoTransfer || !request.ConfirmOneBillableSamCall)
                 throw new ArgumentException("Explicit third-party video transfer and billable-call confirmation required.");
 
-            if (await PriorPending(video, prior, ct) is not null)
-                throw new InvalidOperationException("Prior target attempt requires reconciliation before changing the SAM prompt.");
+            var priorPending = await PriorPending(video, prior, ct);
             var pending = await archive.OutstandingAsync(video, key, all, ct);
-            if (pending.NewRun || pending.LegacyRetry)
+            // The manual token and explicit transfer/cost confirmations authorize one NEW
+            // analysis. Older attempts stay untouched; this is not their automatic retry.
+            var manualNewAnalysis = mode == FreshMode && oneShotMetaToken is not null &&
+                !request.OwnerApprovesOneReconciledRetry;
+            var previousAttemptStatus = priorPending?.Status ?? (pending.Any ? pending.Status : null);
+            if (!manualNewAnalysis && priorPending is not null)
+                throw new InvalidOperationException("Prior target attempt requires reconciliation before changing the SAM prompt.");
+            if (!manualNewAnalysis && (pending.NewRun || pending.LegacyRetry))
                 throw new InvalidOperationException("Prior paid attempt requires manual reconciliation; no additional charge allowed.");
-            var reconciledRetry = pending.LegacyOriginal;
+            var reconciledRetry = pending.LegacyOriginal && !manualNewAnalysis;
             if (reconciledRetry)
             {
                 if (!ManualRetryReconciliationPolicy.CanStartOneManualRetry(true, false,
@@ -319,7 +327,8 @@ public sealed class PendulumSamCache(
             runtime.ReserveOrThrow(oneShotMetaToken);
             var attempt = new SamOriginalAttempt(scene is null?Protocol:AssemblyPolicy.SamProtocol, video.Sha256, submittedSha,
                 timeline.Length, estimate, DateTimeOffset.UtcNow,
-                "MAY_BE_BILLABLE_NO_AUTOMATIC_RETRY", id);
+                "MAY_BE_BILLABLE_NO_AUTOMATIC_RETRY", id,
+                PreviousAttemptStatus: manualNewAnalysis ? previousAttemptStatus : null);
             await SamVideoArchive.WriteExclusiveAsync(Path.Combine(folder, "attempt-started.json"),
                 attempt, CancellationToken.None);
             if (reconciledRetry)

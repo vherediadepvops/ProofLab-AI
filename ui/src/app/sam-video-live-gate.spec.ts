@@ -329,6 +329,30 @@ describe('SAM guided manual processing and parallel quotes',()=>{
     expect(ctx.c.canProcess()).toBeFalse();expect(ctx.con.busy()).toBeFalse();
     await ctx.c.process();ctx.h.expectNone(()=>true);
   });
+  for(const history of ['PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION',
+    'SECOND_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION','NEW_ANALYSIS_REQUIRES_MANUAL_RECONCILIATION']) {
+    it('offers a new explicit API Meta analysis while retaining '+history,async()=>{
+      const ctx=setup();ctx.c.mode.set('api-meta');
+      const current=state({status:'READY_FOR_FRESH_META_ANALYSIS',mode:'api-meta',previousAttemptStatus:history});
+      await quote(ctx,{status:current,readiness:{...ready,...unlimited}});
+      expect(ctx.c.canProcess()).toBeFalse();token(ctx);ctx.f.detectChanges();
+      expect(ctx.c.canProcess()).toBeTrue();
+      expect(ctx.c.nextActionDescription()).toContain('análisis nuevo');
+      expect(ctx.f.nativeElement.querySelector('.sam-consent')).toBeNull();
+      ctx.h.expectNone(r=>r.method==='POST');
+      const p=ctx.c.process(),ground=ctx.h.expectOne(groundUrl);
+      await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
+      ground.flush({...grounded,mode:'api-meta',cacheHit:false});
+      await afterGrounding(ctx,{status:current});
+      const sam=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
+      expect(sam.request.body.ownerApprovesOneReconciledRetry).toBeFalse();
+      expect(sam.request.body.confirmOneBillableSamCall).toBeTrue();
+      expect(sam.request.body.mode).toBe('api-meta');
+      expect(sam.request.body.maximumEstimatedCostUsd).toBe(pf.estimatedCostUsd);
+      sam.flush({...cached(),mode:'api-meta',cacheHit:false});await p;
+      ctx.h.expectNone(r=>r.method==='POST');
+    });
+  }
   it('blocks any new Spark request when a previous SAM attempt requires reconciliation',async()=>{
     const ctx=setup();token(ctx);await quote(ctx,{grounding:needsGrounding,
       status:state({status:'PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION'}),readiness:{...ready,...unlimited}});

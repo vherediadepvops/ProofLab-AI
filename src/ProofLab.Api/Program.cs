@@ -541,8 +541,8 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/sam/{role}/manual-one-
         return Results.BadRequest(new{error="One-shot request exceeded limit."});
     if(!SamManualApiTokenPolicy.Accepts(input.ModelApiToken))
         return Results.BadRequest(new{error="Invalid Meta key format. Key not stored."});
-    // All original credit/consent, process budget and previous-attempt
-    // locks remain mandatory; never set config switches here.
+    // Credit/consent, token, cost, integrity and active-operation locks remain.
+    // Fresh manual analyses retain older attempt history; never change config here.
     if(!meta.Status(input.ModelApiToken).LiveCallsPermitted)
         return Results.Conflict(new{error="Backend paid-access gates remain disabled."});
     try {

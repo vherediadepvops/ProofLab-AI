@@ -117,6 +117,73 @@ public sealed class PendulumSamCacheIntegrationTests
     }
 
     [Fact]
+    public async Task ManualFreshAnalyses_AfterLegacySecondAttempt_KeepHistoryAndDoNotAuthorizeAutomation()
+    {
+        using var f = new Fixture();
+        await f.LegacyMarker();
+        await f.LegacyMarker(retry: true);
+        var markerPath = Path.Combine(f.CacheRoot, "manual-retry-started.json");
+        var marker = await File.ReadAllTextAsync(markerPath);
+        var api = f.Open();
+        var status = await api.StatusAsync("study", "primary", Ct, "api-meta");
+        Assert.Equal("READY_FOR_FRESH_META_ANALYSIS", status.Status);
+        Assert.Equal("SECOND_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION", status.PreviousAttemptStatus);
+        Assert.False(status.CanRunLive);
+        Assert.Equal(0, f.Transport.Calls);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            api.RunOnceAsync("study", "primary", f.Request(), Ct));
+        const string token = "LLM_FAKE_OFFLINE_TEST_ONLY_1234567890123456";
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            api.RunOnceAsync("study", "primary", f.Request() with {ConfirmOneBillableSamCall=false}, Ct, token));
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            api.RunOnceAsync("study", "primary", f.Request() with {MaximumEstimatedCostUsd=0.001}, Ct, token));
+        f.Runtime.LiveCallsPermitted = false;
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            api.RunOnceAsync("study", "primary", f.Request(), Ct, token));
+        Assert.Equal(0, f.Transport.Calls);
+        f.Runtime.ManualTokenAllowed = true;
+        var first = await api.RunOnceAsync("study", "primary", f.Request(), Ct, token);
+        var second = await api.RunOnceAsync("study", "primary", f.Request(), Ct, token);
+        Assert.NotEqual(first.State.AnalysisId, second.State.AnalysisId);
+        Assert.Equal(marker, await File.ReadAllTextAsync(markerPath));
+        var attempt = await SamVideoArchive.ReadJsonAsync<SamOriginalAttempt>(
+            Path.Combine(f.Run(second), "attempt-started.json"), Ct);
+        Assert.Equal(status.PreviousAttemptStatus, attempt.PreviousAttemptStatus);
+        Assert.Equal(2, f.Transport.Calls);
+        Assert.Equal(2, f.Runtime.Reservations);
+    }
+
+    [Fact]
+    public async Task ManualFreshAnalysis_AfterDifferentSceneFailure_RecordsSeparateRunWithoutRetrying()
+    {
+        using var f = new Fixture();
+        var a = HistoricalScene(f.Runtime.Source.Sha256, 'c', 0);
+        var b = HistoricalScene(f.Runtime.Source.Sha256, 'd', 20);
+        var scenes = new SceneHistory {Current=a, History=[a]};
+        var api = f.Open(scenes);
+        f.Transport.OnCall = _ => throw new HttpRequestException("Synthetic interrupted inference");
+        const string token = "LLM_FAKE_OFFLINE_TEST_ONLY_1234567890123456";
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            api.RunOnceAsync("study", "primary", f.Request() with {SceneKey=a.Key}, Ct, token));
+        Assert.Equal(1, f.Transport.Calls);
+        var oldMarker = Directory.GetFiles(Path.Combine(f.Root, ".private", "physics", "sam-cache"),
+            "attempt-started.json", SearchOption.AllDirectories).Single();
+        var oldBytes = await File.ReadAllTextAsync(oldMarker);
+        scenes.Current=b; scenes.History=[a,b]; f.Transport.OnCall=null;
+        var status = await api.StatusAsync("study", "primary", Ct, "api-meta");
+        Assert.Equal("READY_FOR_FRESH_META_ANALYSIS", status.Status);
+        Assert.False(status.CanRunLive);
+        var result = await api.RunOnceAsync("study", "primary", f.Request() with {SceneKey=b.Key}, Ct, token);
+        Assert.Equal(b.Key, result.Receipt.Scene!.Key);
+        Assert.Equal(oldBytes, await File.ReadAllTextAsync(oldMarker));
+        var newMarker = Path.Combine(f.Root, ".private", "physics", "sam-cache",
+            result.State.CacheKey, "runs", result.State.AnalysisId!, "attempt-started.json");
+        var attempt = await SamVideoArchive.ReadJsonAsync<SamOriginalAttempt>(newMarker, Ct);
+        Assert.Equal("NEW_ANALYSIS_REQUIRES_MANUAL_RECONCILIATION", attempt.PreviousAttemptStatus);
+        Assert.Equal(2, f.Transport.Calls);
+    }
+
+    [Fact]
     public async Task DefaultCacheHit_ReopensSQLite_WithoutTransportOrBudgetOrConsent()
     {
         using var f = new Fixture();
@@ -259,7 +326,8 @@ public sealed class PendulumSamCacheIntegrationTests
         await Assert.ThrowsAsync<HttpRequestException>(() => api.RunOnceAsync("study", "primary", f.Request(), Ct));
         var restarted = f.Open();
         var status = await restarted.StatusAsync("study", "primary", Ct, "api-meta");
-        Assert.Equal("NEW_ANALYSIS_REQUIRES_MANUAL_RECONCILIATION", status.Status);
+        Assert.Equal("READY_FOR_FRESH_META_ANALYSIS", status.Status);
+        Assert.Equal("NEW_ANALYSIS_REQUIRES_MANUAL_RECONCILIATION", status.PreviousAttemptStatus);
         Assert.False(status.CanRunLive);
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             restarted.RunOnceAsync("study", "primary", f.Request(), Ct));
@@ -603,7 +671,8 @@ public sealed class PendulumSamCacheIntegrationTests
         scenes.Current=b;scenes.History=[a,b];
         f.Transport.OnCall=null;
         var status=await api.StatusAsync("study","primary",Ct,"api-meta");
-        Assert.Contains("RECONCILIATION",status.Status);
+        Assert.Equal("READY_FOR_FRESH_META_ANALYSIS",status.Status);
+        Assert.Contains("RECONCILIATION",status.PreviousAttemptStatus);
         Assert.False(status.CanRunLive);
         await Assert.ThrowsAsync<InvalidOperationException>(()=>
             api.RunOnceAsync("study","primary",f.Request() with {SceneKey=b.Key},Ct));
