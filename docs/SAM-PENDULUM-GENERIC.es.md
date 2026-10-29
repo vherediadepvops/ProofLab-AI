@@ -1,17 +1,23 @@
-# SAM, mediciones locales y dictamen de Muse Spark
+# Spark localiza; SAM sigue; Muse interpreta
 
-La inferencia directa de SAM usa **`pendulum bob`**, sin filtrar material, color o forma. SAM aporta máscaras y seguimiento; ProofLab calcula centroides, ángulos, período, cobertura y residuos geométricos con tiempos originales. Estos cálculos son datos de entrada, **no un dictamen sobre el fenómeno**.
+Al pulsar **Procesar**, el flujo de un video nuevo comienza con Muse Spark: examina tres fotogramas originales y localiza el mismo objeto suspendido, sea una pelota, moneda, arandela, pesa u otra forma/material. Devuelve cajas sobre la imagen completa orientada y una decisión: objeto claro, ambiguo o no visible. No basta la frase `pendulum bob`.
 
-**Muse Spark interpreta la evidencia de SAM** en la bitácora existente y devuelve `PENDULUM_COMPATIBLE`, `OTHER_MOTION` o `INCONCLUSIVE`, con justificación ES/EN. Su respuesta real, identificador y procedencia quedan registrados. No se deduce una clasificación del nombre del prompt, de una máscara aislada ni de una evaluación histórica que no contenga ese campo.
+Con al menos dos observaciones claras, ProofLab convierte las coordenadas a píxeles originales y envía a SAM cajas con el mismo ID de objeto y sus índices de fotograma reales. SAM propaga el seguimiento por el video. No se mezclan las cajas con una descripción textual del objeto.
 
-Muse recibe un resumen acotado de medidas y centroides con índices y tiempos originales, dimensiones, pivote y limitaciones. Las muestras se seleccionan de observaciones reales; no se interpolan huecos. La muestra reducida no sustituye los ciclos medidos. Muse no ha visto las imágenes del video y debe expresar su conclusión como una inferencia desde esos datos, sin inventar material, nudos o fuerzas observadas. Una respuesta SAM vacía solo acredita que no se detectó el objeto y permite un informe inconcluso.
+## Interfaz y costo
 
-## Flujo y preservación
+Se conserva el botón Procesar y la tarjeta de costo actuales. Las consultas de costo/caché son GET locales en paralelo, sin llamadas de pago ni envío de tokens. El precio mostrado incluye SAM y, cuando falta localización guardada, hasta US$0,05 de Spark. La estimación SAM conserva su límite de US$0,50; el total puede llegar a US$0,55 y se muestra antes del clic. Un HIT SAM utilizable cuesta US$0.
 
-Se reutiliza **Preparar evidencia → Consultar Muse** con su costo visible; no hay una nueva sección ni otra inferencia automática al procesar SAM. La clasificación se registra en esa misma consulta de Muse, antes de proponer otro experimento. Solo una clasificación compatible junto con medidas suficientes puede sustentar una predicción condicional; la app comprueba los datos y la aritmética.
+Durante el mismo clic se muestra primero la localización de Spark y luego el seguimiento SAM. Una localización ambigua, un error o un cambio de video/presupuesto detiene la continuación; no hay reintentos automáticos. La evidencia de Spark guardada para el mismo video puede reutilizarse. No se añade una sección ni se exige confirmar Reconocer montaje.
 
-El protocolo de SAM `PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V3_GENERIC_BOB` distingue el objetivo genérico del antiguo `metal pendulum bob`. La caché histórica con máscaras conserva su procedencia; una respuesta antigua vacía no reemplaza un análisis genérico. El protocolo de investigación `MUSE_SAM_INVESTIGATOR_V3` exige la clasificación explícita de Spark. Las respuestas y predicciones históricas conservan su JSON y hash, sin atribuirles una clasificación nueva.
+## Procedencia y límites
 
-La identificación de cada montaje depende de la evidencia real disponible. Perspectiva, cámara móvil, oclusiones, objetos múltiples y pivote impreciso pueden limitarla. Un centroide de máscara no certifica el centro de masa.
+El protocolo de localización es `ASSEMBLY_OBJECT_GROUNDING_3_NATIVE_FRAMES_V1`. La escena queda como `SPARK_GROUNDING`, distinta de una revisión humana. Solo se sigue el rol object; no se exige identificar cuerda/nudo/polea para localizarlo. El pivote no se confirma automáticamente: las mediciones angulares conservan su requisito de un punto de suspensión definido.
 
-[Documentación oficial de segmentación de Meta](https://dev.meta.ai/docs/sam/segmenting). [English](SAM-PENDULUM-GENERIC.en.md).
+Las respuestas, cuadros y hashes de Spark se conservan; SAM mantiene su propio recibo y máscaras. La caché histórica válida sigue disponible; una búsqueda textual vacía no bloquea la nueva localización visual y no se presenta como un HIT con trayectoria.
+
+Localizar un objeto en tres imágenes no prueba que su movimiento sea pendular. Después del seguimiento, ProofLab calcula medidas, cobertura e incertidumbre. **Muse Spark investigador**, mediante Consultar Muse, interpreta esa evidencia temporal y devuelve compatible con péndulo, otro movimiento o inconcluso con justificación ES/EN. Las predicciones históricas no cambian.
+
+La detección puede fallar por ambigüedad u oclusiones. No se inventan máscaras, centros de masa ni revisión humana.
+
+[Formato oficial de prompts de video SAM](https://dev.meta.ai/docs/sam/segmenting#prompt-several-video-frames). [English](SAM-PENDULUM-GENERIC.en.md).

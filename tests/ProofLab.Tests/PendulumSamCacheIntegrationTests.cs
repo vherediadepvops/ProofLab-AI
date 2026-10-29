@@ -43,6 +43,7 @@ public sealed class PendulumSamCacheIntegrationTests
     private sealed class Transport : ISamVideoTransport
     {
         public int Calls { get; private set; }
+        public string ResultRaw { get; set; } = Raw;
         public string? LastConcept { get; private set; }
         public Func<CancellationToken, Task>? OnCall { get; set; }
         public async Task<SamApiCompletedResult> UploadAndSegmentAsync(string originalPath, string concept,
@@ -50,7 +51,7 @@ public sealed class PendulumSamCacheIntegrationTests
         {
             Calls++; LastConcept = concept;
             if (OnCall is not null) await OnCall(ct);
-            return new(Raw, "SYNTHETIC-NOT-A-PROVIDER-RECEIPT", 60);
+            return new(ResultRaw, "SYNTHETIC-NOT-A-PROVIDER-RECEIPT", 60);
         }
     }
     private sealed class Environment(string root) : IWebHostEnvironment
@@ -76,8 +77,8 @@ public sealed class PendulumSamCacheIntegrationTests
             Runtime = new() { Source = new(new string('a',64), "fixture-video",
                 Path.Combine(Root,"original.mp4"), "h264", 640, 480, 2) };
         }
-        public PendulumSamCache Open() => new(new Environment(Root), Runtime, Transport,
-            new SamVideoEvidenceIndex(Root), NullLogger<PendulumSamCache>.Instance);
+        public PendulumSamCache Open(IAssemblyScenes? scenes=null) => new(new Environment(Root), Runtime, Transport,
+            new SamVideoEvidenceIndex(Root), NullLogger<PendulumSamCache>.Instance, scenes);
         public SamVideoRunRequest Request(string? mode = "api-meta") =>
             new(Runtime.Source.Sha256, true, true, 0.50, Mode: mode);
         public string Run(SamVideoArtifact artifact) => Path.Combine(CacheRoot, "runs", artifact.State.AnalysisId!);
@@ -493,5 +494,56 @@ public sealed class PendulumSamCacheIntegrationTests
             f.Runtime.Source,old.Receipt.CacheKey,old.Raw,old.Entry.AnalysisId));
         Assert.Throws<InvalidDataException>(()=>SamVideoArchive.Validate(old.Receipt with {Concept=PendulumSamCache.Prompt},
             f.Runtime.Source,old.Receipt.CacheKey,old.Raw,old.Entry.AnalysisId,legacyDirect:true));
+    }
+
+    private sealed class MissingGrounding : IAssemblyScenes
+    {
+        public Task<SamSceneDefinition?> ApprovedAsync(string id,string role,CancellationToken ct) =>
+            Task.FromResult<SamSceneDefinition?>(null);
+    }
+
+    [Fact]
+    public async Task CompletedEmptyTextSearchRequiresGroundingInsteadOfAFreeEmptyHit()
+    {
+        using var f=new Fixture();
+        var old=await f.Open().RunOnceAsync("study","primary",f.Request(),Ct);
+        var before=await File.ReadAllTextAsync(Path.Combine(f.Run(old),"receipt.json"));
+        var service=f.Open(new MissingGrounding());
+        var status=await service.StatusAsync("study","primary",Ct);
+        Assert.False(status.CacheHit);Assert.True(status.RecognitionRequired);
+        Assert.Equal("NOT_ANALYZED_WITH_SAM",status.Status);
+        var error=await Assert.ThrowsAsync<InvalidOperationException>(()=>
+            service.RunOnceAsync("study","primary",f.Request("api-meta-cache"),Ct));
+        Assert.Equal("SPARK_TARGET_REQUIRED",error.Message);
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reservations);
+        Assert.Equal(before,await File.ReadAllTextAsync(Path.Combine(f.Run(old),"receipt.json")));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExistingDirectMasksRemainFreeWithoutSparkAndStillBlockFreshUngroundedCalls(bool legacy)
+    {
+        using var f=new Fixture();
+        string analysis;
+        if(legacy)analysis=(await WriteOldTarget(f,MaskResponse)).Entry.AnalysisId;
+        else {
+            f.Transport.ResultRaw=MaskResponse;
+            analysis=(await f.Open().RunOnceAsync("study","primary",f.Request(),Ct)).State.AnalysisId!;
+        }
+        var calls=f.Transport.Calls;var reservations=f.Runtime.Reservations;
+        f.Runtime.LiveCallsPermitted=false;
+        var service=f.Open(new MissingGrounding());
+        var status=await service.StatusAsync("study","primary",Ct);
+        Assert.True(status.CacheHit);Assert.False(status.RecognitionRequired);
+        var hit=await service.RunOnceAsync("study","primary",new(f.Runtime.Source.Sha256,false,false,0),Ct);
+        Assert.Equal(analysis,hit.State.AnalysisId);
+        Assert.Equal(analysis,(await service.ReadArchiveAsync("study","primary",Ct)).State.AnalysisId);
+        Assert.Equal(calls,f.Transport.Calls);Assert.Equal(reservations,f.Runtime.Reservations);
+        var fresh=await service.StatusAsync("study","primary",Ct,"api-meta");
+        Assert.False(fresh.CacheHit);Assert.True(fresh.RecognitionRequired);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>
+            service.RunOnceAsync("study","primary",f.Request(),Ct));
+        Assert.Equal(calls,f.Transport.Calls);
     }
 }

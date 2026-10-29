@@ -29,6 +29,19 @@ public static class AssemblyEndpoints
     public static void MapAssemblyEndpoints(this WebApplication app)
     {
         const string path="/api/science/director/pendulum/sessions/{id}/assembly/{role}";
+        app.MapGet(path+"/grounding/preflight",(string id,string role,AssemblyLocator locator,
+            HttpContext c,CancellationToken ct)=> {
+            c.Response.Headers.CacheControl="no-store";
+            return Local(c)?Safe(async()=>Results.Ok(await locator.GroundingQuoteAsync(id,role,ct))):
+                Task.FromResult(Results.StatusCode(403));
+        });
+        app.MapPost(path+"/grounding",(string id,string role,KnotRunRequest input,
+            AssemblyLocator locator,HttpContext c,CancellationToken ct)=> {
+            c.Response.Headers.CacheControl="no-store";
+            if(!Local(c,true))return Task.FromResult(Results.StatusCode(403));
+            if(c.Request.ContentLength is >4096)return Task.FromResult(Results.BadRequest());
+            return Safe(async()=>Results.Ok(await locator.GroundAsync(id,role,input,ct)));
+        });
         app.MapGet(path+"/preflight",(string id,string role,AssemblyLocator knots,
             HttpContext c,CancellationToken ct)=> {
             c.Response.Headers.CacheControl="no-store";

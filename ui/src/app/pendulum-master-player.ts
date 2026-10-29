@@ -52,7 +52,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const scene=this.scene();
     if(scene && scene.arrangement!=='simple_pendulum')return null;
     const manual=this.pivotRevision()?.analysis;
-    if(this.manualPivotOverride() && manual)return manual;
+    if((this.manualPivotOverride() || scene?.origin==='SPARK_GROUNDING') && manual)return manual;
     if(scene)return scene.pivotX!==null && scene.pivotY!==null
       ? {pivotXpx:scene.pivotX*480/1000,pivotYpx:scene.pivotY*270/1000}:null;
     return manual??null;
@@ -91,13 +91,15 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const receipt=this.periodReceipt();
     if(!this.samVerified() || !receipt || !/^[a-f0-9]{32}$/i.test(receipt.analysisId??'') ||
        !/^[a-f0-9]{64}$/i.test(receipt.responseJsonSha256??''))return null;
-    const manual=this.manualPivotOverride() || !this.scene(),revision=this.pivotRevision();
+    const scene=this.scene(),manual=this.manualPivotOverride() || !scene ||
+      (scene.origin==='SPARK_GROUNDING' && scene.arrangement==='simple_pendulum'),revision=this.pivotRevision();
     return {
       studyId:this.studyId(),role:this.videoRole(),originalVideoSha256:receipt.originalVideoSha256,
       analysisId:receipt.analysisId!,providerResponseSha256:receipt.responseJsonSha256!,
       providerModel:'sam-3.1',objectId:this.samTrack()?.objectId??'NO_MATCH',
       pivotRevisionId:manual?revision?.revisionId??null:null,
-      pivotProvenance:manual?revision?.pivotProvenance??'PIVOT_MISSING':'HUMAN_CONFIRMED_SCENE_PIVOT'
+      pivotProvenance:manual?revision?.pivotProvenance??'PIVOT_MISSING':
+        scene?.origin==='SPARK_GROUNDING'?'PIVOT_MISSING':'HUMAN_CONFIRMED_SCENE_PIVOT'
     };
   });
   readonly samStatus=signal('CHECKING_SAM_CACHE');

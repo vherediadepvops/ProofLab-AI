@@ -7,11 +7,13 @@ namespace ProofLab.Api;
 /// Token preflight is a conservative admission check, NOT an invoice estimate.</summary>
 public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssemblyTransport
 {
-    public async Task<KnotProviderResult> LocateAsync(byte[][] images,string token,CancellationToken ct)
+    public Task<KnotProviderResult> LocateAsync(byte[][] images,string token,CancellationToken ct)=>LocateCore(images,token,ct,false);
+    public Task<KnotProviderResult> LocateGroundingAsync(byte[][] images,string token,CancellationToken ct)=>LocateCore(images,token,ct,true);
+    private async Task<KnotProviderResult> LocateCore(byte[][] images,string token,CancellationToken ct,bool grounding)
     {
         if(images.Length!=3 || images.Any(i=>i.Length is <100 or >8_000_000) ||
             !SamManualApiTokenPolicy.Accepts(token)) throw new ArgumentException("Invalid knot input.");
-        var content=new List<object>{new {type="input_text",text=AssemblyPolicy.Prompt}};
+        var content=new List<object>{new {type="input_text",text=grounding?AssemblyPolicy.GroundingPrompt:AssemblyPolicy.Prompt}};
         content.AddRange(images.Select(i=>(object)new {type="input_image",
             image_url="data:image/jpeg;base64,"+Convert.ToBase64String(i)}));
         var input=new[]{new {type="message",role="user",content}};
@@ -24,12 +26,20 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssembl
                 frame=new {type="integer"},role=new {type="string",@enum=AssemblyPolicy.RoleNames},
                 visible=new {type="boolean"},x1=new {type="number"},y1=new {type="number"},
                 x2=new {type="number"},y2=new {type="number"},confidence=new {type="number"}}};
-        var format=new {type="json_schema",name="hanging_assembly",strict=true,
+        var properties=new Dictionary<string,object> {
+            ["arrangement"]=new {type="string",@enum=new[]{"simple_pendulum","pulley_system","unclear"}},
+            ["observations"]=new {type="array",items=observation},
+            ["points"]=new {type="array",items=point}
+        };
+        if(grounding)properties["target"]=new {type="object",additionalProperties=false,
+            required=new[]{"status","justification"},properties=new {
+                status=new {type="string",@enum=new[]{"CLEAR_SINGLE_OBJECT","AMBIGUOUS","NOT_VISIBLE"}},
+                justification=new {type="object",additionalProperties=false,required=new[]{"es","en"},
+                    properties=new {es=new {type="string"},en=new {type="string"}}}
+            }};
+        var format=new {type="json_schema",name=grounding?"hanging_object_grounding":"hanging_assembly",strict=true,
             schema=new {type="object",additionalProperties=false,
-                required=new[]{"arrangement","observations","points"},properties=new {
-                    arrangement=new {type="string",@enum=new[]{"simple_pendulum","pulley_system","unclear"}},
-                    observations=new {type="array",items=observation},
-                    points=new {type="array",items=point}}}};
+                required=properties.Keys.ToArray(),properties}};
         var payload=new {model=AssemblyPolicy.Model,input,stream=false,
             max_output_tokens=AssemblyPolicy.MaximumOutputTokens,
             reasoning=new {effort="low"},text=new {format}};
@@ -75,6 +85,19 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssembl
         return new(raw,id,usedInput,usedOutput);
     }
 
+    public static void ValidateReceipt(string raw,string providerId,int inputTokens,int outputTokens)
+    {
+        using var doc=JsonDocument.Parse(raw);
+        var root=doc.RootElement;
+        var usage=root.GetProperty("usage");
+        if(root.GetProperty("status").GetString()!="completed" ||
+            root.GetProperty("model").GetString()!=AssemblyPolicy.Model ||
+            string.IsNullOrWhiteSpace(providerId) || providerId.Length>200 ||
+            root.GetProperty("id").GetString()!=providerId || inputTokens<0 || outputTokens<0 ||
+            usage.GetProperty("input_tokens").GetInt32()!=inputTokens ||
+            usage.GetProperty("output_tokens").GetInt32()!=outputTokens)
+            throw new InvalidDataException("Automatic grounding provider receipt mismatch.");
+    }
     public static string OutputText(string raw)
     {
         using var doc=JsonDocument.Parse(raw);

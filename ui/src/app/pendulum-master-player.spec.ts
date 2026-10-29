@@ -757,8 +757,18 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(measured.centroids).toEqual([{frameIndex:1,x:530,y:1150}]);
     expect(measured.framePtsSeconds).toEqual(receipt.framePtsSeconds);
     expect(component.periodSource()?.providerResponseSha256).toBe('b'.repeat(64));
+
     component.currentTime.set(3);
     expect(component.periodMeasurement()).toBe(measured);
+    component.scene.set({key:'c'.repeat(64),videoSha256:sha,width:1080,height:1920,
+      arrangement:'simple_pendulum',origin:'SPARK_GROUNDING',
+      roles:[{id:'1',role:'object'}],pivotX:null,pivotY:null});
+    expect(component.periodSource()?.pivotProvenance).toBe(revision.pivotProvenance);
+    expect(component.periodSource()?.pivotRevisionId).toBe(revision.revisionId);
+    component.pivotRevision.set(null);
+    expect(component.periodMeasurement()?.pivot).toBeNull();
+    expect(component.periodSource()?.pivotProvenance).toBe('PIVOT_MISSING');
+    component.scene.set(null);component.pivotRevision.set(revision);
     component.pivotRevision.set({...revision,revisionId:'new-pivot',
       analysis:{...revision.analysis,pivotXpx:250}});
     expect(component.periodMeasurement()!.pivot!.x).toBeCloseTo(250/480,8);

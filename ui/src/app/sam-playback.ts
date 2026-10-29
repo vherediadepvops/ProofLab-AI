@@ -125,6 +125,9 @@ export function validSamTarget(archive:AuthenticatedSamVideoArchive,sha:string):
   const roles=['object','cord','knot','pulley','support'];
   return r.requestProtocol==='PROOFLAB_SAM_MULTIOBJECT_SOURCE_PTS_V1' &&
     scene.videoSha256===sha && validSha(scene.key) &&
+    (scene.origin==null || scene.origin==='SPARK_GROUNDING') &&
+    (scene.origin!=='SPARK_GROUNDING' || (scene.roles.length===1 &&
+      scene.roles[0].role==='object' && scene.pivotX===null && scene.pivotY===null)) &&
     scene.width>0 && scene.height>0 && scene.roles.length>0 && scene.roles.length<=5 &&
     new Set(scene.roles.map(r=>r.role)).size===scene.roles.length &&
     scene.roles.some(r=>r.role==='object'&&r.id==='1') &&

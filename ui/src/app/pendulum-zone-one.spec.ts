@@ -10,7 +10,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
   async function verifyHttp(http:HttpTestingController):Promise<void>{
     await Promise.resolve();
     const pending=http.match(req=>req.method==='GET' &&
-      (req.url.includes('/kinematics/') || req.url.includes('/sam/') || req.url.endsWith('/readiness')));
+      (req.url.includes('/kinematics/') || req.url.includes('/sam/') || req.url.includes('/grounding/') || req.url.endsWith('/readiness')));
     for(const request of pending)
       request.flush({error:'Synthetic unavailable result'},
         {status:404,statusText:'Not Found'});
@@ -256,7 +256,9 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       durationSeconds:30.5,codec:'hevc',supportsSingleCall:true
     });
     http.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush({manualTokenCallsPermitted:false,remainingRequests:0});
-    http.expectNone(req=>req.url.includes('/assembly/'));
+    http.expectOne(studyUrl+'/'+session.id+'/assembly/baseline/grounding/preflight')
+      .flush({}, {status:503,statusText:'Unavailable'});
+    http.expectNone(req=>req.method==='POST' && req.url.includes('/assembly/'));
     expect(root.querySelector('app-assembly-review')).toBeNull();
     await fixture.whenStable();fixture.detectChanges();
     const play=root.querySelector('.play-main') as HTMLButtonElement;

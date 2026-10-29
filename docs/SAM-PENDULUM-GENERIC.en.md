@@ -1,17 +1,23 @@
-# SAM, local measurements and the Muse Spark assessment
+# Spark locates; SAM tracks; Muse interprets
 
-Direct SAM inference uses **`pendulum bob`**, without material, color or shape filters. SAM provides masks and tracking; ProofLab calculates centroids, angles, period, coverage and geometric residuals using original timestamps. These calculations are input data, **not a phenomenon verdict**.
+Pressing **Process** for a new video first asks Muse Spark to examine three original frames and locate the same suspended object: ball, coin, washer, weight or another shape/material. It returns full oriented-image boxes and a clear/ambiguous/not-visible decision. Tracking no longer depends only on the phrase `pendulum bob`.
 
-**Muse Spark interprets the SAM evidence** in the existing lab log and returns `PENDULUM_COMPATIBLE`, `OTHER_MOTION` or `INCONCLUSIVE`, with ES/EN reasoning. Its actual response, identifier and provenance are recorded. Classification is not inferred from the prompt name, an isolated mask or a historical evaluation lacking this field.
+With at least two clear observations, ProofLab converts normalized coordinates to native pixels and sends SAM visual boxes using one stable object ID and actual source frame indices. SAM propagates tracking throughout the clip. Visual grammar is not mixed with a text target phrase.
 
-Muse receives a bounded summary of measurements and centroids with original frame indices and timestamps, dimensions, pivot and limitations. Samples are selected from actual observations without bridging gaps. The reduced sample does not replace measured cycles. Muse has not viewed the video images and must frame its conclusion as an inference from those data, without inventing observed materials, knots or forces. An empty SAM response only establishes detection failure and supports an inconclusive report.
+## Interface and cost
 
-## Flow and preservation
+The existing Process button and cost card are retained. Parallel local GET checks do not call Meta or send tokens. The displayed cost includes SAM and, when localization is not cached, up to US$0.05 for Spark. SAM retains its US$0.50 limit; the combined estimate may reach US$0.55, shown before the click. A usable SAM cache HIT costs US$0.
 
-The existing **Prepare evidence → Ask Muse** flow retains its visible cost. There is no new section or automatic inference after SAM processing. Classification is recorded in the same Muse evaluation before proposing another experiment. Only a compatible classification with sufficient measurements can support a conditional prediction; the app verifies the data and arithmetic.
+The same explicit click shows Spark localization followed by SAM tracking. Ambiguity, errors or changed source/budget stop the sequence; no automatic retries occur. Saved Spark localization for the exact video can be reused. No section or extra assembly confirmation is added.
 
-SAM protocol `PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V3_GENERIC_BOB` distinguishes the generic target from the former `metal pendulum bob`. Historical mask archives retain their provenance; old empty responses do not replace generic analyses. Research protocol `MUSE_SAM_INVESTIGATOR_V3` requires Spark's explicit classification. Historical responses and predictions retain their JSON and hash without acquiring a new classification.
+## Provenance and limits
 
-Identification of each setup depends on actual evidence. Perspective, camera motion, occlusion, multiple objects and an inaccurate pivot can limit it. A mask centroid does not certify the center of mass.
+Localization uses `ASSEMBLY_OBJECT_GROUNDING_3_NATIVE_FRAMES_V1`. Its scene is marked `SPARK_GROUNDING`, not human-reviewed. Only the object role is seeded; cord/knot/pulley identification is not required. The suspension point is not automatically confirmed: angular measurements still require a defined pivot.
 
-[Official Meta segmentation documentation](https://dev.meta.ai/docs/sam/segmenting). [Español](SAM-PENDULUM-GENERIC.es.md).
+Spark responses, images and hashes are retained independently of SAM receipts and masks. Usable historical masks remain replayable; empty text searches no longer block visual grounding or masquerade as a cached trajectory.
+
+Three images locate an object but do not establish pendular motion. After tracking, local code computes measurements, coverage and uncertainty. The existing **Ask Muse** research step lets Spark interpret temporal evidence as pendulum-compatible, other motion or inconclusive, with bilingual justification. Historical frozen predictions remain unchanged.
+
+Ambiguity and occlusion can prevent detection. Masks, centers of mass and human review are never fabricated.
+
+[Official SAM video prompt format](https://dev.meta.ai/docs/sam/segmenting#prompt-several-video-frames). [Español](SAM-PENDULUM-GENERIC.es.md).

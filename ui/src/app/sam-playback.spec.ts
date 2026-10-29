@@ -187,6 +187,16 @@ describe('multi-object assembly identity',()=>{
     }
     return {a,p};
   }
+  it('accepts a Spark-grounded object without inventing a human-reviewed pivot',()=>{
+    const {a,p}=assembly();
+    a.receipt.scene={...a.receipt.scene!,origin:'SPARK_GROUNDING',
+      roles:[{id:'1',role:'object'}],pivotX:null,pivotY:null};
+    p.objectIds=['1'];
+    for(const f of p.frames)f.detections=f.detections.filter(d=>d.objectId==='1');
+    expect(verifiedSamSceneTracks(a,p,sha)['object'].masks.length).toBe(8);
+    a.receipt.scene.pivotX=500;a.receipt.scene.pivotY=100;
+    expect(()=>verifiedSamSceneTracks(a,p,sha)).toThrow();
+  });
   it('keeps the moving object centroid separate from cord and knot',()=>{
     const {a,p}=assembly(),tracks=verifiedSamSceneTracks(a,p,sha);
     expect(Object.keys(tracks)).toEqual(['object','cord','knot']);

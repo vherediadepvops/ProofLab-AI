@@ -28,6 +28,13 @@ interface SamPreflight {
   codec:string;estimatedCostUsd:number;supportsSingleCall:boolean;
   timingSource:string;framePtsSha256:string;
 }
+interface GroundingScene {key:string;videoSha256:string}
+interface GroundingQuote {
+  cacheKey:string;videoSha256:string;maximumEstimatedCostUsd:number;
+  cacheHit:boolean;priorAttempt:boolean;canRun:boolean;
+  status:'NEEDS_LOCALIZATION'|'READY'|'AMBIGUOUS'|'NOT_VISIBLE'|'PRIOR_ATTEMPT';
+  scene:GroundingScene|null;
+}
 interface SamReadiness {
   apiKeyConfigured:boolean; creditsConfirmedByOwner:boolean;
   ownerApprovedPaidRequests:boolean; liveCallsPermitted:boolean;
@@ -65,9 +72,12 @@ interface SamReadiness {
             <div class="sam-price">
               @if(preflight(); as pf) {
                 <div class="sam-price-line">
-                  <strong [class.paid-cost]="!cachedResultAvailable()" [class.free-cost]="cachedResultAvailable()">{{cachedResultAvailable()?'US$ 0.00':'US$ '+displayedCost().toFixed(2)}}</strong>
+                  <strong [class.paid-cost]="!cachedResultAvailable()" [class.free-cost]="cachedResultAvailable()">{{cachedResultAvailable()?'US$ 0.00':'US$ '+costLabel(displayedCost())}}</strong>
                   <small>{{cachedResultAvailable()?(es?'desde caché · sin cobro':'from cache · no charge'):(es?'Usará créditos · estimado':'Uses credits · estimate')}}</small>
                 </div>
+                @if(!cachedResultAvailable() && groundingRequired()) {
+                  <small class="sam-meta-estimate">{{es?'SAM':'SAM'}} US$ {{costLabel(pf.estimatedCostUsd)}} + Spark {{es?'hasta':'up to'}} US$ {{groundingQuote()!.maximumEstimatedCostUsd.toFixed(2)}}</small>
+                }
                 @if(cachedResultAvailable()) {
                   <small class="sam-meta-estimate">{{es?'Enviar a Meta':'Send to Meta'}}: US$ {{pf.estimatedCostUsd.toFixed(2)}} {{es?'estimados':'estimated'}}</small>
                 }
@@ -88,8 +98,7 @@ interface SamReadiness {
             <app-lab-activity class="sam-progress" [label]="es?'Calculando costo…':'Estimating cost…'"
               [detail]="es?'Comprobando fotogramas y caché. No se consumen créditos.':'Checking frames and cache. No credits are used.'"/>
           } @else if(processing()) {
-            <app-lab-activity class="sam-progress" [label]="sending()?(es?'Procesando con Meta…':'Processing with Meta…'):(es?'Preparando resultados…':'Preparing results…')"
-              [detail]="sending()?(es?'Esperando la respuesta de SAM. Sin reintentos automáticos.':'Waiting for SAM. No automatic retries.'):(es?'Cargando y validando la evidencia para generar los gráficos.':'Loading and validating evidence to generate overlays.')"/>
+            <app-lab-activity class="sam-progress" [label]="processingLabel()" [detail]="processingDetail()"/>
           }
           @if(!checking() && !processing() && !connection.busy()) {
           <div class="sam-message" [class.warning]="!cachedResultAvailable() && !canProcess() && !checking() && !sending()" role="status">
@@ -111,7 +120,7 @@ interface SamReadiness {
             }
           </div>
           }
-          @if(cacheStatus()?.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION') {
+          @if(cacheStatus()?.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION' && !groundingRequired()) {
             <div class="sam-consent"><label><input type="checkbox" [checked]="retryConsent()"
               (change)="retryConsent.set($any($event.target).checked)"/>
               {{es?'Revisé el intento anterior posiblemente facturado y autorizo UN reintento manual.':'I reviewed the previous potentially billed attempt and authorize ONE manual retry.'}}
@@ -126,7 +135,7 @@ interface SamReadiness {
               ? (es?'Se verifica el mismo video en SQLite. Si hay caché válida se reutiliza; si no, se requiere una solicitud autorizada a Meta.':'SQLite is checked for this exact video. Valid cache is reused; otherwise an authorized Meta request is required.')
               : (es?'Solicita un análisis nuevo a Meta, sujeto a créditos y permisos del servidor.':'Requests a new Meta analysis, subject to credits and server permission.')}}</p>
             @if(preflight(); as pf) {
-              <p>{{es?'Estimación completa para enviar a Meta':'Full estimate for sending to Meta'}}: US$ {{pf.estimatedCostUsd.toFixed(4)}} · {{pf.codec}}</p>
+              <p>{{es?'Estimación completa para enviar a Meta':'Full estimate for sending to Meta'}}: US$ {{displayedCost().toFixed(4)}} · {{pf.codec}}</p>
             }
             @if(cacheStatus(); as s) {
               <p>{{es?'Estado':'Status'}}: <strong>{{s.status}}</strong></p>
@@ -146,8 +155,8 @@ interface SamReadiness {
               <button type="button" class="sam-settings-link" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
             </p>
             <p class="sam-disclaimer">{{es
-              ? 'SAM detecta; ProofLab calcula los vectores y el rastro. Pendientes revisión de plomada, calibración e incertidumbre. Esta pantalla no certifica una conclusión científica.'
-              : 'SAM detects; ProofLab computes vectors and trails. Bob review, calibration and uncertainty remain pending. This screen does not certify a scientific conclusion.'}}</p>
+              ? 'Spark localiza el objeto y SAM lo sigue; ProofLab calcula los vectores y el rastro. Pendientes revisión del objeto, calibración e incertidumbre. Esta pantalla no certifica una conclusión científica.'
+              : 'Spark locates the object and SAM tracks it; ProofLab computes vectors and trails. Object review, calibration and uncertainty remain pending. This screen does not certify a scientific conclusion.'}}</p>
           </div>
         </details>
       } @else {
@@ -279,11 +288,12 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly validationState=input<'idle'|'loading'|'ready'|'error'>('idle');
   readonly processingStarted=output<void>();
   readonly processing=signal(false);
+  readonly processingPhase=signal<'grounding'|'sam'|'validating'|null>(null);
   private beginProcessing():void {
-    this.processing.set(true);this.connection.busy.set(true);this.processingStarted.emit();
+    this.processing.set(true);this.processingPhase.set('validating');this.connection.busy.set(true);this.processingStarted.emit();
   }
   private finishProcessing():void {
-    this.processing.set(false);this.connection.busy.set(false);
+    this.processing.set(false);this.processingPhase.set(null);this.connection.busy.set(false);
   }
   readonly mode=signal<SamMode>('api-meta-cache');
   private get base():string {
@@ -311,6 +321,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.error.set('');
     this.cacheStatus.set(null);
     this.preflight.set(null);
+    this.groundingQuote.set(null);
     this.readiness.set(null);
     this.transferConsent.set(false);
     this.paidConsent.set(false);
@@ -372,6 +383,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   readonly cacheStatus=signal<SamCacheStatus|null>(null);
   readonly preflight=signal<SamPreflight|null>(null);
+  readonly groundingQuote=signal<GroundingQuote|null>(null);
   readonly readiness=signal<SamReadiness|null>(null);
   readonly transferConsent=signal(false);
   readonly paidConsent=signal(false);
@@ -414,9 +426,46 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private url():string {
     return this.base+'/'+this.studyId()+'/sam/'+this.videoRole();
   }
+  private groundingUrl():string {
+    return this.base+'/'+this.studyId()+'/assembly/'+this.videoRole()+'/grounding';
+  }
+  private validGrounding(quote:GroundingQuote|null):quote is GroundingQuote {
+    return !!quote && quote.videoSha256===this.videoSha256() &&
+      /^[a-f0-9]{64}$/i.test(quote.cacheKey) &&
+      Number.isFinite(quote.maximumEstimatedCostUsd) && quote.maximumEstimatedCostUsd>0 &&
+      quote.maximumEstimatedCostUsd<=.05 &&
+      ['NEEDS_LOCALIZATION','READY','AMBIGUOUS','NOT_VISIBLE','PRIOR_ATTEMPT'].includes(quote.status) &&
+      (quote.status!=='READY' || (quote.cacheHit===true && !!quote.scene &&
+        /^[a-f0-9]{64}$/i.test(quote.scene.key) && quote.scene.videoSha256===this.videoSha256()));
+  }
+  groundingRequired():boolean {
+    const g=this.groundingQuote();
+    return !!g && g.status==='NEEDS_LOCALIZATION' && !g.cacheHit;
+  }
+  private groundingPermitted():boolean {
+    const g=this.groundingQuote();
+    return this.validGrounding(g) && (g.status==='READY' ||
+      (this.groundingRequired() && !g.priorAttempt && g.canRun));
+  }
+  processingLabel():string {
+    if(this.processingPhase()==='grounding')return this.es?'Spark localizando el objeto…':'Spark is locating the object…';
+    if(this.processingPhase()==='sam')return this.es?'SAM siguiendo el objeto…':'SAM is tracking the object…';
+    return this.es?'Preparando resultados…':'Preparing results…';
+  }
+  processingDetail():string {
+    if(this.processingPhase()==='grounding')return this.es?
+      'Revisando tres fotogramas originales. SAM solo se enviará si el objeto queda localizado.':
+      'Reviewing three original frames. SAM will run only if the object is located.';
+    if(this.processingPhase()==='sam')return this.es?
+      'Siguiendo las posiciones indicadas por Spark. Sin reintentos automáticos.':
+      'Tracking the positions provided by Spark. No automatic retries.';
+    return this.es?'Cargando y validando la evidencia para generar los gráficos.':
+      'Loading and validating evidence to generate overlays.';
+  }
   canOfferPaidRun():boolean {
     const pf=this.preflight(),ready=this.readiness(),s=this.cacheStatus();
-    if(!pf || !ready || !s || s.recognitionRequired)return false;
+    if(!pf || !ready || !s || !this.groundingPermitted() ||
+      (this.groundingRequired() && s.status.includes('RECONCILIATION')))return false;
     // A genuine prior attempt can be reconciled ONCE by the owner.
     // Do NOT use canRunLive for this case: the status endpoint correctly
     // keeps this false to prohibit unapproved automatic retries.
@@ -431,10 +480,17 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       pf.estimatedCostUsd>0 && pf.estimatedCostUsd<=0.50 &&
       (ready.manualTokenCallsPermitted===true || (ready.apiKeyConfigured && ready.liveCallsPermitted)) &&
       ready.creditsConfirmedByOwner && ready.ownerApprovedPaidRequests &&
-      (ready.manualRequestsUnlimited===true || ready.remainingRequests>0);
+      (ready.manualRequestsUnlimited===true || ready.remainingRequests>=(this.groundingRequired()?2:1));
   }
-  displayedCost():number {return this.preflight()?.estimatedCostUsd ?? 0;}
+  displayedCost():number {
+    return (this.preflight()?.estimatedCostUsd ?? 0)+
+      (this.groundingRequired()?this.groundingQuote()!.maximumEstimatedCostUsd:0);
+  }
+  costLabel(value:number):string {return (Math.ceil(value*100-1e-8)/100).toFixed(2);}
   nextActionDescription():string {
+    if(this.groundingRequired())return this.es?
+      'Al pulsar Procesar autorizas enviar tres fotogramas a Spark y luego el video a SAM, hasta el costo combinado mostrado. Si Spark no localiza el objeto, SAM no se envía.':
+      'Pressing Process authorizes three frames to Spark, then the video to SAM, up to the displayed combined cost. If Spark cannot locate the object, SAM is not sent.';
     return this.es?'Al pulsar Procesar autorizas enviar este video a Meta y usar los créditos del costo mostrado.':
       'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.';
   }
@@ -443,14 +499,27 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(!pf)return this.es?'No se pudo calcular el costo. Pulsa Actualizar costo.':'Cost unavailable. Press Refresh cost.';
     if(!pf.supportsSingleCall || pf.estimatedCostUsd>.50)return this.es?
       'Este video supera el límite de una solicitud (US$0,50 estimados).':'This video exceeds the single-request limit (US$0.50 estimated).';
-    if(s?.status.includes('RECONCILIATION') && s.status!=='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION')
+    if(s?.status.includes('RECONCILIATION') &&
+      (s.status!=='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION' || this.groundingRequired()))
       return this.es?'Un intento anterior requiere revisión manual antes de otro envío.':'A previous attempt requires manual review before another upload.';
+    const g=this.groundingQuote();
+    if(!this.validGrounding(g))return this.es?'No se pudo comprobar el costo de localización. Pulsa Actualizar costo.':
+      'Could not check localization cost. Press Refresh cost.';
+    if(g.status==='AMBIGUOUS' || g.status==='NOT_VISIBLE')return this.es?
+      'Spark no pudo localizar un único objeto visible. Repite la grabación con el objeto y su suspensión claramente visibles; no se enviará a SAM.':
+      'Spark could not locate one visible object. Record again with the object and suspension clearly visible; SAM will not be sent.';
+    if(g.status==='PRIOR_ATTEMPT' || g.priorAttempt)return this.es?
+      'La localización anterior requiere revisar el intento guardado. No se hará otro envío automático.':
+      'The earlier localization requires review of the saved attempt. No automatic request will be made.';
     if(!ready)return this.es?'No se pudo verificar el permiso del servidor. Actualiza el costo.':'Could not verify server permission. Refresh the cost.';
     if(ready.paidRequestsSwitchEnabled===false || !ready.creditsConfirmedByOwner || !ready.ownerApprovedPaidRequests)
       return this.es?(this.tokenEntered()?'Token registrado. ':'')+
         'Procesar está bloqueado: falta habilitar créditos y autorización de esta sesión en el servidor.':
         (this.tokenEntered()?'Key registered. ':'')+'Process is blocked: server credit and spending authorization for this session is missing.';
     if(!ready.manualRequestsUnlimited && ready.remainingRequests<=0)return this.es?'Se agotó el cupo de solicitudes autorizadas de esta sesión.':'This session has no authorized requests remaining.';
+    if(!ready.manualRequestsUnlimited && ready.remainingRequests<(this.groundingRequired()?2:1))
+      return this.es?'El servidor necesita habilitar los envíos de Spark y SAM para este proceso.':
+        'The server must permit the Spark and SAM requests for this process.';
     if(!this.tokenEntered())return this.es?'Configura y confirma tu token en Configuración.':'Configure and confirm your key in Settings.';
     if(!this.canOfferPaidRun())return this.es?'El servidor no permite esta solicitud. Actualiza el costo o revisa el estado.':'The server does not allow this request. Refresh the cost or inspect status.';
     return this.es?'Confirma la revisión del intento anterior antes de procesar.':'Confirm review of the previous attempt before processing.';
@@ -464,6 +533,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.error.set('');
     this.cacheStatus.set(null);
     this.preflight.set(null);
+    this.groundingQuote.set(null);
     this.readiness.set(null);
     this.transferConsent.set(false);
     this.paidConsent.set(false);
@@ -472,16 +542,21 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     try {
       // Independent read-only requests start together; none sends the token or calls Meta.
       const root='http://127.0.0.1:'+this.localApiPort();
-      const [status,pf,access]=await Promise.all([
+      const [status,pf,access,ground]=await Promise.all([
         firstValueFrom(this.http.get<SamCacheStatus>(this.url()+'/status?mode='+this.mode()).pipe(timeout(15000))),
         firstValueFrom(this.http.get<SamPreflight>(this.url()+'/preflight').pipe(timeout(90000))),
-        firstValueFrom(this.http.get<SamReadiness>(root+'/api/meta/readiness').pipe(timeout(10000))).catch(()=>null)
+        firstValueFrom(this.http.get<SamReadiness>(root+'/api/meta/readiness').pipe(timeout(10000))).catch(()=>null),
+        firstValueFrom(this.http.get<GroundingQuote>(this.groundingUrl()+'/preflight').pipe(timeout(15000))).catch(()=>null)
       ]);
       if(serial!==this.serial || this.disposed)return;
       if(status.sourceSha256!==this.videoSha256() || pf.sourceSha256!==this.videoSha256() ||
         !Number.isFinite(pf.estimatedCostUsd) || pf.estimatedCostUsd<=0 ||
         !Number.isSafeInteger(pf.sourceFrames) || pf.sourceFrames<=0)throw new Error('INVALID_VIDEO_QUOTE');
+      const samHit=this.mode()==='api-meta-cache' && status.cacheHit===true &&
+        status.status==='CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW' && !!status.analysisId;
+      if(!samHit && !this.validGrounding(ground))throw new Error('INVALID_GROUNDING_QUOTE');
       this.cacheStatus.set(status);this.preflight.set(pf);this.readiness.set(access);
+      this.groundingQuote.set(this.validGrounding(ground)?ground:null);
     } catch(e) {
       if(serial===this.serial)
         this.error.set(this.es?'No se pudo comprobar la evidencia SAM local.':
@@ -492,52 +567,89 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   voidAnalyze():void {void this.analyze();}
   async analyze():Promise<void> {
-    const isRetry=this.cacheStatus()?.status===
-      'PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION';
+    const isRetry=this.cacheStatus()?.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION';
     if(!this.http || !this.canProcess() || !this.canOfferPaidRun() ||
-       !this.tokenEntered() || this.connection.busy() ||
-       !this.transferConsent() || !this.paidConsent() ||
-       (isRetry && !this.retryConsent()))return;
-    // Read the session key only for this explicitly authorized manual request.
+       !this.tokenEntered() || this.connection.busy() || !this.transferConsent() ||
+       !this.paidConsent() || (isRetry && !this.retryConsent()))return;
+    // Snapshot the same session credential and consented quote for the whole explicit click.
     const oneTimeToken=this.connection.tokenForManualRequest();
     if(!oneTimeToken)return;
-    this.processingReset.emit();
-    this.beginProcessing();
+    const samUrl=this.url(),groundUrl=this.groundingUrl(),mode=this.mode(),
+      sha=this.videoSha256(),quote=this.preflight()!,ground=this.groundingQuote()!;
+    this.processingReset.emit();this.beginProcessing();
     const serial=++this.serial;
-    this.sending.set(true);
-    this.error.set('');
+    const current=()=>serial===this.serial && !this.disposed && sha===this.videoSha256() &&
+      samUrl===this.url() && mode===this.mode();
+    this.sending.set(true);this.error.set('');
     try {
-      const state=await firstValueFrom(this.http.post<SamCacheStatus>(
-        this.url()+'/manual-one-shot',{
-          mode:this.mode(),
-          sceneKey:this.cacheStatus()?.sceneKey ?? null,
-          modelApiToken:oneTimeToken,
-          videoSha256:this.videoSha256(),
-          confirmPrivateVideoTransfer:true,
-          confirmOneBillableSamCall:true,
-          maximumEstimatedCostUsd:this.preflight()!.estimatedCostUsd,
-          ownerApprovesOneReconciledRetry:isRetry,
-          previousAttemptBillingEvidence:isRetry
-            ? SamVideoReplay.reconciledOnce : null
-        },{headers:{'X-ProofLab-Manual-Action':'sam-one-shot'}}));
-      if(serial!==this.serial)return;
-      this.openResult(state); // player verifies this exact analysis before unlocking
-      this.cacheStatus.set(state);
+      let scene=ground.scene;
+      if(this.groundingRequired()) {
+        this.processingPhase.set('grounding');
+        const located=await firstValueFrom(this.http.post<GroundingQuote>(groundUrl,{
+          videoSha256:sha,cacheKey:ground.cacheKey,modelApiToken:oneTimeToken,
+          confirmImageTransfer:true,confirmPaidCall:true,
+          maximumEstimatedCostUsd:ground.maximumEstimatedCostUsd
+        },{headers:{'X-ProofLab-Manual-Action':'assembly'}}));
+        if(!current())return;
+        if(!this.validGrounding(located) || located.cacheKey!==ground.cacheKey)
+          throw new Error('GROUNDING_RESULT_MISMATCH');
+        this.groundingQuote.set(located);
+        if(located.status!=='READY' || !located.scene) {
+          this.error.set(this.es?
+            'Spark no pudo localizar el objeto con suficiente claridad. SAM no se envió. Revisa la grabación antes de otra prueba.':
+            'Spark could not locate the object clearly enough. SAM was not sent. Review the recording before another test.');
+          this.finishProcessing();return;
+        }
+        scene=located.scene;
+        // Scene identity and source timing may have changed while Spark was running.
+        const [nextStatus,nextQuote]=await Promise.all([
+          firstValueFrom(this.http.get<SamCacheStatus>(samUrl+'/status?mode='+mode).pipe(timeout(15000))),
+          firstValueFrom(this.http.get<SamPreflight>(samUrl+'/preflight').pipe(timeout(90000)))
+        ]);
+        if(!current())return;
+        if(nextStatus.sourceSha256!==sha || nextQuote.sourceSha256!==sha ||
+          !nextQuote.supportsSingleCall || !Number.isFinite(nextQuote.estimatedCostUsd) ||
+          nextQuote.estimatedCostUsd<=0 || nextQuote.estimatedCostUsd>quote.estimatedCostUsd+1e-9)
+          throw new Error('POST_GROUNDING_QUOTE_CHANGED');
+        if(mode==='api-meta-cache' && nextStatus.cacheHit===true) {
+          this.openResult(nextStatus);this.cacheStatus.set(nextStatus);
+          this.preflight.set(nextQuote);this.processingPhase.set('validating');return;
+        }
+        if(nextStatus.sceneKey!==scene.key ||
+          (nextStatus.status.includes('RECONCILIATION') &&
+            !(isRetry && nextStatus.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION')))
+          throw new Error('POST_GROUNDING_STATE_CHANGED');
+        this.cacheStatus.set(nextStatus);this.preflight.set(nextQuote);
+      }
+      if(!current() || !scene || scene.videoSha256!==sha)throw new Error('GROUNDING_RESULT_MISMATCH');
+      this.processingPhase.set('sam');
+      const state=await firstValueFrom(this.http.post<SamCacheStatus>(samUrl+'/manual-one-shot',{
+        mode,sceneKey:scene.key,modelApiToken:oneTimeToken,videoSha256:sha,
+        confirmPrivateVideoTransfer:true,confirmOneBillableSamCall:true,
+        maximumEstimatedCostUsd:quote.estimatedCostUsd,
+        ownerApprovesOneReconciledRetry:isRetry,
+        previousAttemptBillingEvidence:isRetry?SamVideoReplay.reconciledOnce:null
+      },{headers:{'X-ProofLab-Manual-Action':'sam-one-shot'}}));
+      if(!current())return;
+      this.openResult(state);this.cacheStatus.set(state);this.processingPhase.set('validating');
     }catch(e){
-      if(serial===this.serial){
-        this.error.set(this.es?
-          'SAM no se completó. Puede existir una solicitud facturada. Revisa el estado; no reintentes automáticamente.':
-          'SAM did not complete. A request might have been billed. Check status; never auto-retry.');
-        this.cacheStatus.set(null);
-        this.processing.set(false);
+      if(current()){
+        const changed=e instanceof Error && e.message.startsWith('POST_GROUNDING_');
+        this.error.set(changed?(this.es?
+          'Spark terminó, pero cambió la cotización o la evidencia. SAM no se envió. Actualiza el costo antes de continuar.':
+          'Spark completed, but the quote or evidence changed. SAM was not sent. Refresh the cost before continuing.'):
+          this.processingPhase()==='grounding'?(this.es?
+          'La localización con Spark no se completó. Puede existir una solicitud facturada. SAM no se envió; revisa el estado antes de otro intento.':
+          'Spark localization did not complete. A request might have been billed. SAM was not sent; check status before another attempt.'):
+          (this.es?'SAM no se completó. Puede existir una solicitud facturada. Revisa el estado; no reintentes automáticamente.':
+          'SAM did not complete. A request might have been billed. Check status; never auto-retry.'));
+        this.cacheStatus.set(null);this.groundingQuote.set(null);this.processing.set(false);
       }
     }finally{
-      if(!this.processing() || this.disposed)this.finishProcessing();
+      if(!this.processing() || this.disposed || !current())this.finishProcessing();
+      this.sending.set(false);
       if(serial===this.serial){
-        this.sending.set(false);
-        this.transferConsent.set(false);
-        this.paidConsent.set(false);
-        this.retryConsent.set(false);
+        this.transferConsent.set(false);this.paidConsent.set(false);this.retryConsent.set(false);
       }
     }
   }
@@ -556,6 +668,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.result.set(null);
     this.cacheStatus.set(null);
     this.preflight.set(null);
+    this.groundingQuote.set(null);
     this.readiness.set(null);
     this.transferConsent.set(false);
     this.paidConsent.set(false);

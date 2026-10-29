@@ -21,6 +21,17 @@ public sealed class AssemblyTests
             })),
             points=Enumerable.Range(0,3).Select(i=>new {frame=i,visible=true,x=500,y=133.3,confidence=.95})
         });
+    private static string GroundingPoints(string status="CLEAR_SINGLE_OBJECT",double confidence=.95) {
+        var root=System.Text.Json.Nodes.JsonNode.Parse(Points(confidence:confidence))!;
+        root["target"]=System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new {
+            status,justification=new {es="Un objeto suspendido visible en las imágenes.",en="One suspended object is visible in the images."}}));
+        return root.ToJsonString();
+    }
+    private static AssemblyEvidence GroundingEvidence(string status="CLEAR_SINGLE_OBJECT",double confidence=.95) {
+        var old=Evidence();var output=GroundingPoints(status,confidence);
+        return old with {CacheKey=AssemblyPolicy.GroundingKey(Sha),Protocol=AssemblyPolicy.GroundingProtocol,
+            Proposal=AssemblyPolicy.ParseGrounding(output,old.Frames)};
+    }
     private static string Envelope(string output)=>JsonSerializer.Serialize(new {
         id="synthetic-not-provider",model=AssemblyPolicy.Model,status="completed",
         output=new[]{new {type="message",content=new[]{new {type="output_text",text=output}}}},
@@ -93,6 +104,12 @@ public sealed class AssemblyTests
     }
     private sealed class Transport:IAssemblyTransport {
         public int Calls;public bool Fail;public Func<Task>? Wait;
+        public string GroundingStatus="CLEAR_SINGLE_OBJECT";
+        public double GroundingConfidence=.95;
+        public async Task<KnotProviderResult> LocateGroundingAsync(byte[][] images,string key,CancellationToken ct) {
+            var response=await LocateAsync(images,key,ct);
+            return response with {Raw=Envelope(GroundingPoints(GroundingStatus,GroundingConfidence))};
+        }
         public async Task<KnotProviderResult> LocateAsync(byte[][] images,string key,CancellationToken ct) {
             Calls++;if(Wait is not null)await Wait();
             if(Fail)throw new HttpRequestException("Synthetic failure");
@@ -106,6 +123,8 @@ public sealed class AssemblyTests
         public string Folder=>Path.Combine(Root,".private","physics","assembly",AssemblyPolicy.Key(Sha));
         public AssemblyLocator Open()=>new(new Env(Root),Runtime,Frames,Transport);
         public KnotRunRequest Request()=>new(Sha,AssemblyPolicy.Key(Sha),Token,true,true,.05);
+        public KnotRunRequest GroundRequest()=>new(Sha,AssemblyPolicy.GroundingKey(Sha),Token,true,true,.05);
+        public string GroundFolder=>Path.Combine(Root,".private","physics","assembly",AssemblyPolicy.GroundingKey(Sha));
         public void Dispose(){if(Directory.Exists(Root))Directory.Delete(Root,true);}
     }
     [Fact] public async Task QuoteNeverDecodesUploadsOrReserves() {
@@ -193,23 +212,14 @@ public sealed class AssemblyTests
             return Task.FromResult(new SamApiCompletedResult("{\"model\":\"sam-3.1\",\"status\":\"completed\"}","synthetic-sam",600));
         }
     }
-    [Fact] public async Task DirectSamRequiresNoRecognitionAndReservesOnlyOneCall() {
+    [Fact] public async Task DirectSamRequiresSparkTargetBeforeProviderCall() {
         using var f=new Fixture();var locator=f.Open();var transport=new SamTransport();
         var sam=new PendulumSamCache(new Env(f.Root),f.Runtime,transport,new SamVideoEvidenceIndex(f.Root),
             NullLogger<PendulumSamCache>.Instance,locator);
-        var status=await sam.StatusAsync("s","baseline",Ct);
-        Assert.False(status.RecognitionRequired);Assert.True(status.CanRunLive);
         var quote=await sam.PreflightAsync("s","baseline",Ct);
-        var result=await sam.RunOnceAsync("s","baseline",new(Sha,true,true,quote.EstimatedCostUsd),Ct,Token);
-        Assert.Null(result.Receipt.Scene);Assert.Equal(PendulumSamCache.Prompt,transport.Prompt);
-        Assert.Equal(PendulumSamCache.Protocol,result.Receipt.RequestProtocol);
-        Assert.Equal(1,transport.Calls);Assert.Equal(1,f.Runtime.Reservations);Assert.Equal(0,f.Transport.Calls);
-        f.Runtime.LiveCallsPermitted=false;
-        var hit=await sam.RunOnceAsync("s","baseline",new(Sha,false,false,0),Ct);
-        Assert.True(hit.State.CacheHit);Assert.Equal(1,transport.Calls);Assert.Equal(1,f.Runtime.Reservations);
         await Assert.ThrowsAsync<InvalidOperationException>(()=>sam.RunOnceAsync("s","baseline",
-            new(Sha,true,true,.12,Mode: "api-meta"),Ct,Token));
-        Assert.Equal(1,transport.Calls);
+            new(Sha,true,true,quote.EstimatedCostUsd),Ct,Token));
+        Assert.Equal(0,transport.Calls);Assert.Equal(0,f.Runtime.Reservations);Assert.Equal(0,f.Transport.Calls);
     }
     [Fact] public async Task ReviewedAssemblyFlowsIntoSamAndSqliteWithoutAnotherRecognition() {
         using var f=new Fixture();var locator=f.Open();var samTransport=new SamTransport();
@@ -237,6 +247,132 @@ public sealed class AssemblyTests
         Assert.Equal(scene.Key,(await f.Open().ApprovedAsync("s","baseline",Ct))!.Key);
         await Assert.ThrowsAsync<InvalidOperationException>(()=>locator.ConfirmAsync("s","baseline",new(Sha,e.CacheKey,true,["object","cord"]),Ct));
         Assert.Equal(1,f.Transport.Calls);
+    }
+
+    [Fact] public void AutomaticGroundingOnlyUsesClearObjectBoxesAndNeverApprovesPivot() {
+        var evidence=GroundingEvidence();
+        var scene=AssemblyPolicy.Ground(evidence)!;
+        AssemblyPolicy.Validate(scene,Sha,60);
+        Assert.Equal(AssemblyPolicy.GroundingOrigin,scene.Origin);
+        Assert.Null(scene.PivotX);Assert.Null(scene.PivotY);
+        Assert.Single(scene.Roles);Assert.Equal("object",scene.Roles[0].Role);
+        Assert.Equal(new[]{6,30,54},scene.Seeds.Select(s=>s.Frame).ToArray());
+        Assert.Contains("w=1080;h=1920",scene.Prompt);
+        Assert.Contains("x1=432;y1=384",scene.Prompt);
+        Assert.NotEqual(AssemblyPolicy.Key(Sha),evidence.CacheKey);
+        var withPivot=scene with {Key="",PivotX=500,PivotY=133.3};
+        withPivot=withPivot with {Key=AssemblyPolicy.DefinitionKey(withPivot)};
+        Assert.Throws<InvalidDataException>(()=>AssemblyPolicy.Validate(withPivot,Sha));
+    }
+    [Theory]
+    [InlineData("AMBIGUOUS",.95)]
+    [InlineData("NOT_VISIBLE",.95)]
+    [InlineData("CLEAR_SINGLE_OBJECT",.4)]
+    public void AmbiguousInvisibleOrWeakTargetCannotBecomeSamScene(string status,double confidence) {
+        Assert.Null(AssemblyPolicy.Ground(GroundingEvidence(status,confidence)));
+    }
+    [Fact] public void OneClearFrameDoesNotMeetAutomaticGroundingRequirement() {
+        var e=GroundingEvidence();
+        e=e with {Proposal=e.Proposal with {Observations=e.Proposal.Observations.Select(o=>
+            o.Role=="object"&&o.Frame>0?o with {Confidence=.2}:o).ToArray()}};
+        Assert.Null(AssemblyPolicy.Ground(e));
+        Assert.Throws<KeyNotFoundException>(()=>AssemblyPolicy.ParseGrounding(Points(),e.Frames));
+    }
+    [Fact] public void HistoricalDefinitionHashRemainsByteCompatibleWhenOriginIsAbsent() {
+        var d=AssemblyPolicy.Approve(Evidence(),["object"]);
+        var legacy=JsonSerializer.Serialize(new {Key="",d.VideoSha256,d.EvidenceKey,d.ResponseSha256,
+            d.Width,d.Height,d.Arrangement,d.Roles,d.Seeds,d.PivotX,d.PivotY,d.Prompt});
+        Assert.Equal(KnotPolicy.Hash(legacy),d.Key);
+        Assert.DoesNotContain("Origin",JsonSerializer.Serialize(d));
+        Assert.DoesNotContain("Target",JsonSerializer.Serialize(Evidence().Proposal));
+    }
+    [Fact] public async Task GroundingQuoteIsReadOnlyAndCachedSceneNeedsNoToken() {
+        using var f=new Fixture();var locator=f.Open();
+        var q=await locator.GroundingQuoteAsync("s","baseline",Ct);
+        Assert.Equal("NEEDS_LOCALIZATION",q.Status);Assert.True(q.CanRun);Assert.False(q.CacheHit);
+        Assert.Equal(0,f.Frames.Calls);Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reservations);
+        var result=await locator.GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        Assert.Equal("READY",result.Status);Assert.True(result.CacheHit);Assert.NotNull(result.Scene);
+        Assert.False(File.Exists(Path.Combine(f.GroundFolder,"approved.json")));
+        f.Runtime.LiveCallsPermitted=false;
+        var cached=await f.Open().GroundAsync("s","baseline",f.GroundRequest() with {ModelApiToken="",ConfirmPaidCall=false},Ct);
+        Assert.Equal(result.Scene!.Key,cached.Scene!.Key);
+        Assert.Equal(result.Scene.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
+        Assert.Null(await f.Open().ApprovedAsync("s","baseline",Ct));
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reservations);Assert.Equal(3,f.Frames.Calls);
+        foreach(var file in Directory.GetFiles(f.GroundFolder,"*.json"))
+            Assert.DoesNotContain(Token,await File.ReadAllTextAsync(file));
+    }
+    [Fact] public async Task AmbiguousGroundingIsPersistedAndNeverTriggersRetry() {
+        using var f=new Fixture();f.Transport.GroundingStatus="AMBIGUOUS";
+        var q=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        Assert.Equal("AMBIGUOUS",q.Status);Assert.True(q.CacheHit);Assert.False(q.CanRun);Assert.Null(q.Scene);
+        var cached=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        Assert.Equal("AMBIGUOUS",cached.Status);Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reservations);
+    }
+    [Fact] public async Task GroundingCannotBypassUncertainHistoricalAttempt() {
+        using var f=new Fixture();f.Transport.Fail=true;
+        await Assert.ThrowsAsync<HttpRequestException>(()=>f.Open().RunAsync("s","baseline",f.Request(),Ct));
+        var q=await f.Open().GroundingQuoteAsync("s","baseline",Ct);
+        Assert.Equal("PRIOR_ATTEMPT",q.Status);Assert.False(q.CanRun);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reservations);
+    }
+    [Fact] public async Task GroundingFailureLocksOutRetryAcrossInstances() {
+        using var f=new Fixture();f.Transport.Fail=true;
+        await Assert.ThrowsAsync<HttpRequestException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
+        Assert.Equal("PRIOR_ATTEMPT",(await f.Open().GroundingQuoteAsync("s","baseline",Ct)).Status);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
+        Assert.Equal(1,f.Runtime.Reservations);Assert.Equal(1,f.Transport.Calls);
+    }
+    [Fact] public async Task GroundingFrameAndProviderReceiptAreAuthenticated() {
+        using var f=new Fixture();await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var path=Path.Combine(f.GroundFolder,"evidence.json");
+        var original=await File.ReadAllTextAsync(path);
+        await File.WriteAllTextAsync(path,original.Replace("synthetic-not-provider","tampered-provider-id"));
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().GroundingQuoteAsync("s","baseline",Ct));
+        await File.WriteAllTextAsync(path,original);
+        await File.WriteAllTextAsync(Path.Combine(f.GroundFolder,"frame-0.jpg"),"tampered");
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().TrackingAsync("s","baseline",Ct));
+        Assert.Equal(1,f.Transport.Calls);
+    }
+    [Fact] public async Task HumanApprovedHistoricalSceneIsReusedWithoutAutomaticGrounding() {
+        using var f=new Fixture();var locator=f.Open();
+        var e=await locator.RunAsync("s","baseline",f.Request(),Ct);
+        var reviewed=await locator.ConfirmAsync("s","baseline",new(Sha,e.CacheKey,true,["object","cord"]),Ct);
+        var q=await locator.GroundingQuoteAsync("s","baseline",Ct);
+        Assert.Equal("READY",q.Status);Assert.True(q.CacheHit);Assert.Equal(reviewed.Key,q.Scene!.Key);
+        Assert.Null(q.Scene.Origin);Assert.NotNull(q.Scene.PivotX);
+        var cached=await locator.GroundAsync("s","baseline",f.GroundRequest() with {ModelApiToken="",ConfirmPaidCall=false},Ct);
+        Assert.Equal(reviewed.Key,cached.Scene!.Key);Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reservations);
+    }
+    [Fact] public async Task AutomaticBoxesFlowIntoSamWithoutHumanConfirmation() {
+        using var f=new Fixture();var locator=f.Open();var samTransport=new SamTransport();
+        var q=await locator.GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var sam=new PendulumSamCache(new Env(f.Root),f.Runtime,samTransport,new SamVideoEvidenceIndex(f.Root),
+            NullLogger<PendulumSamCache>.Instance,locator);
+        var quote=await sam.PreflightAsync("s","baseline",Ct);
+        var result=await sam.RunOnceAsync("s","baseline",new(Sha,true,true,quote.EstimatedCostUsd,SceneKey:q.Scene!.Key),Ct,Token);
+        Assert.Equal(q.Scene.Prompt,samTransport.Prompt);Assert.Equal(q.Scene.Key,result.Receipt.Scene!.Key);
+        Assert.Equal(AssemblyPolicy.GroundingOrigin,result.Receipt.Scene.Origin);Assert.Null(result.Receipt.Scene.PivotX);
+        Assert.Equal(1,samTransport.Calls);Assert.Equal(1,f.Transport.Calls);Assert.Equal(2,f.Runtime.Reservations);
+    }
+    [Fact] public async Task AutomaticTransportRequiresAmbiguityDecisionInStrictSchema() {
+        using var http=new HttpStub(r=>{
+            using var doc=JsonDocument.Parse(r.Content!.ReadAsStringAsync().Result);var root=doc.RootElement;
+            var format=root.GetProperty("text").GetProperty("format");
+            Assert.True(format.GetProperty("strict").GetBoolean());
+            Assert.Contains(format.GetProperty("schema").GetProperty("required").EnumerateArray(),p=>p.GetString()=="target");
+            Assert.Equal(AssemblyPolicy.GroundingPrompt,root.GetProperty("input")[0].GetProperty("content")[0].GetProperty("text").GetString());
+            Assert.False(root.TryGetProperty("tools",out _));
+            return new(System.Net.HttpStatusCode.OK){Content=new StringContent(
+                r.RequestUri!.AbsolutePath.EndsWith("input_tokens")?"{\"input_tokens\":1200}":Envelope(GroundingPoints()))};
+        });
+        var result=await new AssemblyMetaTransport(http).LocateGroundingAsync(
+            Enumerable.Range(0,3).Select(_=>new byte[200]).ToArray(),Token,Ct);
+        AssemblyMetaTransport.ValidateReceipt(result.Raw,result.ProviderResponseId,result.InputTokens,result.OutputTokens);
+        Assert.Equal(2,http.Calls);
     }
 
 }

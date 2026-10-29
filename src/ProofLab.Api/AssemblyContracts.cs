@@ -1,21 +1,28 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 namespace ProofLab.Api;
 
 public sealed record AssemblyObservation(int Frame,string Role,bool Visible,double X1,double Y1,
     double X2,double Y2,double Confidence);
-public sealed record AssemblyProposal(string Arrangement,AssemblyObservation[] Observations,KnotProposal Suspension);
+public sealed record AssemblyGroundingReason(string Es,string En);
+public sealed record AssemblyGroundingTarget(string Status,AssemblyGroundingReason Justification);
+public sealed record AssemblyProposal(string Arrangement,AssemblyObservation[] Observations,KnotProposal Suspension,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] AssemblyGroundingTarget? Target=null);
 public sealed record AssemblyEvidence(string CacheKey,string VideoSha256,string Model,string Protocol,
     KnotFrame[] Frames,string ResponseSha256,string ProviderResponseId,DateTimeOffset CreatedAtUtc,
     AssemblyProposal Proposal,int InputTokens,int OutputTokens);
 public sealed record AssemblyQuote(string CacheKey,string VideoSha256,double MaximumEstimatedCostUsd,
     bool CacheHit,bool PriorAttempt,bool CanRun,AssemblyEvidence? Evidence,SamSceneDefinition? Approved);
+public sealed record AssemblyGroundingQuote(string CacheKey,string VideoSha256,double MaximumEstimatedCostUsd,
+    bool CacheHit,bool PriorAttempt,bool CanRun,string Status,SamSceneDefinition? Scene,AssemblyEvidence? Evidence);
 public sealed record AssemblyConfirmRequest(string VideoSha256,string CacheKey,bool ConfirmReviewed,string[] Roles);
 public sealed record SamSceneRole(string Id,string Role);
 public sealed record SamSceneSeed(int Frame,string Role,int X1,int Y1,int X2,int Y2);
 public sealed record SamSceneDefinition(string Key,string VideoSha256,string EvidenceKey,string ResponseSha256,
     int Width,int Height,string Arrangement,SamSceneRole[] Roles,SamSceneSeed[] Seeds,
-    double? PivotX,double? PivotY)
+    double? PivotX,double? PivotY,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? Origin=null)
 {
     public string Prompt => string.Join(" ",Seeds.GroupBy(s=>s.Frame).OrderBy(g=>g.Key).Select(g=>
         "<"+g.Key.ToString(CultureInfo.InvariantCulture)+"f>"+string.Join(",",g.OrderBy(s=>s.Role).Select(s=>
@@ -23,16 +30,22 @@ public sealed record SamSceneDefinition(string Key,string VideoSha256,string Evi
             ";y2="+s.Y2+";w="+Width+";h="+Height+"|>"))));
 }
 public interface IAssemblyScenes {
+    Task<SamSceneDefinition?> TrackingAsync(string studyId,string role,CancellationToken ct)=>ApprovedAsync(studyId,role,ct);
+    Task<SamSceneDefinition?> TrackingForQuoteAsync(string studyId,string role,CancellationToken ct)=>ApprovedForQuoteAsync(studyId,role,ct);
     Task<SamSceneDefinition?> ApprovedAsync(string studyId,string role,CancellationToken ct);
     Task<SamSceneDefinition?> ApprovedForQuoteAsync(string studyId,string role,CancellationToken ct)=>ApprovedAsync(studyId,role,ct);
 }
 public interface IAssemblyTransport {
     Task<KnotProviderResult> LocateAsync(byte[][] images,string token,CancellationToken ct);
+    Task<KnotProviderResult> LocateGroundingAsync(byte[][] images,string token,CancellationToken ct)=>
+        throw new NotSupportedException("Automatic object grounding transport is unavailable.");
 }
 public static class AssemblyPolicy
 {
     public const string Model="muse-spark-1.3";
     public const string Protocol="ASSEMBLY_3_NATIVE_FRAMES_V1";
+    public const string GroundingProtocol="ASSEMBLY_OBJECT_GROUNDING_3_NATIVE_FRAMES_V1";
+    public const string GroundingOrigin="SPARK_GROUNDING";
     public const string SamProtocol="PROOFLAB_SAM_MULTIOBJECT_SOURCE_PTS_V1";
     public const double MaximumEstimatedCostUsd=0.05;
     public const int MaximumInputTokens=24000,MaximumOutputTokens=4096;
@@ -63,6 +76,20 @@ public static class AssemblyPolicy
         Return only the supplied JSON schema. No physical center of mass can
         be certified from a silhouette; do not estimate it.
         """;
+    public const string GroundingPrompt=Prompt+"""
+
+        This is automatic visual grounding for subsequent SAM tracking, NOT human review
+        and NOT a scientific classification of the motion. Do not assume it is a pendulum.
+        Identify one consistent suspended object to track across the ordered images.
+        Its material, color and shape are unrestricted. The same object must keep role
+        object in every image, even as its location changes. Never select a shadow,
+        ruler, support, hand, an entire scene, or switch between separate objects.
+        Add target.status: CLEAR_SINGLE_OBJECT only if ONE suspended experimental
+        object is unambiguous in at least two images. Otherwise use AMBIGUOUS or
+        NOT_VISIBLE. If multiple objects could be the target, use AMBIGUOUS rather
+        than choosing one. Include a concise visual justification in Spanish and English.
+        A clear target does not certify a pendulum, its mass center, or its pivot.
+        """;
     public static bool IsSamPrompt(string value)
     {
         if(value==PendulumSamCache.Prompt)return true;
@@ -73,6 +100,46 @@ public static class AssemblyPolicy
             System.Text.RegularExpressions.RegexOptions.CultureInvariant,TimeSpan.FromMilliseconds(100));
     }
     public static string Key(string sha)=>KnotPolicy.Hash(Protocol+"\n"+Model+"\n"+Prompt+"\n"+sha.ToLowerInvariant());
+    public static string GroundingKey(string sha)=>KnotPolicy.Hash(GroundingProtocol+"\n"+Model+"\n"+GroundingPrompt+"\n"+sha.ToLowerInvariant());
+    public static AssemblyProposal ParseGrounding(string text,KnotFrame[] frames)
+    {
+        var proposal=Parse(text,frames);
+        using var doc=JsonDocument.Parse(text);
+        var target=doc.RootElement.GetProperty("target");
+        var status=target.GetProperty("status").GetString();
+        var reason=target.GetProperty("justification");
+        var es=reason.GetProperty("es").GetString();
+        var en=reason.GetProperty("en").GetString();
+        if(status is not ("CLEAR_SINGLE_OBJECT" or "AMBIGUOUS" or "NOT_VISIBLE") ||
+            string.IsNullOrWhiteSpace(es) || string.IsNullOrWhiteSpace(en) || es.Length>2000 || en.Length>2000)
+            throw new FormatException("Invalid object grounding decision.");
+        return proposal with {Target=new(status!,new(es,en))};
+    }
+    public static string GroundingStatus(AssemblyEvidence evidence)
+    {
+        var target=evidence.Proposal.Target ?? throw new InvalidDataException("Missing object grounding decision.");
+        if(target.Status=="NOT_VISIBLE")return "NOT_VISIBLE";
+        return target.Status=="CLEAR_SINGLE_OBJECT" &&
+            evidence.Proposal.Observations.Count(o=>o.Role=="object" && o.Visible && o.Confidence>=0.8)>=2
+            ? "READY" : "AMBIGUOUS";
+    }
+    public static SamSceneDefinition? Ground(AssemblyEvidence evidence)
+    {
+        if(evidence.Protocol!=GroundingProtocol || evidence.Model!=Model ||
+            evidence.CacheKey!=GroundingKey(evidence.VideoSha256))
+            throw new InvalidDataException("Wrong automatic grounding provenance.");
+        if(GroundingStatus(evidence)!="READY")return null;
+        var frames=evidence.Frames;
+        if(frames.Length!=3 || frames.Select(f=>f.Index).Distinct().Count()!=3 ||
+            frames.Any(f=>f.Width!=frames[0].Width || f.Height!=frames[0].Height ||
+                f.Width is <2 or >8192 || f.Height is <2 or >8192))
+            throw new InvalidDataException("Inconsistent native grounding frames.");
+        // Reuse box conversion only; no human review or automatic pivot approval.
+        var draft=Approve(evidence,["object"]) with {Key="",PivotX=null,PivotY=null,Origin=GroundingOrigin};
+        var scene=draft with {Key=DefinitionKey(draft)};
+        Validate(scene,evidence.VideoSha256);
+        return scene;
+    }
     public static AssemblyProposal Parse(string text,KnotFrame[] frames)
     {
         if(text.Length>40000)throw new FormatException("Assembly output too large.");
@@ -136,6 +203,9 @@ public static class AssemblyPolicy
         if(d is null || d.VideoSha256!=sha || !Sha(d.Key) || !Sha(d.EvidenceKey) ||
             !Sha(d.ResponseSha256) || d.Key!=DefinitionKey(d) || d.Width is <2 or >8192 || d.Height is <2 or >8192 ||
             d.Arrangement is not ("simple_pendulum" or "pulley_system" or "unclear") ||
+            (d.Origin is not null && d.Origin!=GroundingOrigin) ||
+            (d.Origin==GroundingOrigin && (d.PivotX is not null || d.PivotY is not null ||
+                d.Roles.Length!=1 || d.Roles[0].Role!="object" || d.Seeds.Length<2)) ||
             d.Roles.Length is <1 or >5 || d.Roles.Select(r=>r.Role).Distinct().Count()!=d.Roles.Length ||
             !d.Roles.Any(r=>r.Role=="object" && r.Id=="1") ||
             d.Roles.Any(r=>!RoleNames.Contains(r.Role) || r.Id!=(Array.IndexOf(RoleNames,r.Role)+1).ToString(CultureInfo.InvariantCulture)) ||

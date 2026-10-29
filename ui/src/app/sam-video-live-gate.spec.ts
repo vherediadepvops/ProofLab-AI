@@ -5,6 +5,12 @@ import {SamVideoReplay} from './sam-video-replay';
 import {LabConnection} from './lab-connection';
 const sha='a'.repeat(64),id='b'.repeat(32),key='c'.repeat(64);
 const base='http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+id;
+const sceneKey='d'.repeat(64),groundKey='e'.repeat(64);
+const grounded={cacheKey:groundKey,videoSha256:sha,maximumEstimatedCostUsd:.05,
+  cacheHit:true,priorAttempt:false,canRun:false,status:'READY',scene:{key:sceneKey,videoSha256:sha}};
+const needsGrounding={...grounded,cacheHit:false,canRun:true,status:'NEEDS_LOCALIZATION',scene:null};
+const groundUrl=base+'/assembly/baseline/grounding';
+const unlimited={manualRequestsUnlimited:true};
 const fake='LLM_SYNTHETIC_LOCAL_TEST_KEY_1234567890';
 const pf={sourceSha256:sha,sourceFrames:1875,durationSeconds:31.28,estimatedCostUsd:.375,
   supportsSingleCall:true,codec:'hevc',timingSource:'CONTAINER_DECLARED_FRAME_COUNT_ESTIMATE',framePtsSha256:''};
@@ -12,7 +18,7 @@ const ready={apiKeyConfigured:false,liveCallsPermitted:false,manualTokenCallsPer
   paidRequestsSwitchEnabled:true,creditsConfirmedByOwner:true,ownerApprovedPaidRequests:true,usedRequests:1,remainingRequests:1};
 function state(extra:any={}) {return {status:'NOT_ANALYZED_WITH_SAM',sourceSha256:sha,
   cacheKey:key,sourceFrames:0,estimatedCostUsd:0,canRunLive:false,provenance:'test',
-  mode:'api-meta-cache',cacheHit:false,analysisId:null,...extra};}
+  mode:'api-meta-cache',cacheHit:false,analysisId:null,sceneKey,...extra};}
 const cached=()=>state({status:'CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW',cacheHit:true,analysisId:'synthetic-analysis'});
 
 describe('SAM guided manual processing and parallel quotes',()=>{
@@ -30,22 +36,23 @@ describe('SAM guided manual processing and parallel quotes',()=>{
   type Context=ReturnType<typeof setup>;
   function token(ctx:Context){ctx.field.value=fake;ctx.con.confirmToken();}
   function requests(ctx:Context):TestRequest[] {
-    const all=ctx.h.match(()=>true);expect(all.length).toBe(3);
+    const all=ctx.h.match(()=>true);expect(all.length).toBe(4);
     all.forEach(r=>{expect(r.request.method).toBe('GET');expect(r.request.body).toBeNull();
       expect(r.request.headers.has('Authorization')).toBeFalse();});
     return all;
   }
-  function flush(all:TestRequest[],options:{status?:any;quote?:any;readiness?:any}={}) {
+  function flush(all:TestRequest[],options:{status?:any;quote?:any;readiness?:any;grounding?:any}={}) {
     for(const r of all) {
       if(r.request.url.includes('/status?'))r.flush(options.status??state());
       else if(r.request.url.endsWith('/readiness'))r.flush(options.readiness??ready);
+      else if(r.request.url.includes('/grounding/'))r.flush(options.grounding??grounded);
       else r.flush(options.quote??pf);
     }
   }
   async function quote(ctx:Context,options:Parameters<typeof flush>[1]={}) {
     const p=ctx.c.check();flush(requests(ctx),options);await p;ctx.f.detectChanges();
   }
-  it('starts three independent GETs together and keeps Process disabled until the cost arrives',async()=>{
+  it('starts four independent GETs together and keeps Process disabled until the cost arrives',async()=>{
     const ctx=setup();token(ctx);const p=ctx.c.check();const all=requests(ctx);
     const cost=all.find(r=>r.request.url.includes('/sam/')&&r.request.url.endsWith('/preflight'))!;
     flush(all.filter(r=>r!==cost));await Promise.resolve();
@@ -75,8 +82,9 @@ describe('SAM guided manual processing and parallel quotes',()=>{
   it('opens a verified cache for free without a token or billing readiness',async()=>{
     const ctx=setup();const p=ctx.c.check();const all=requests(ctx);
     const access=all.find(r=>r.request.url.endsWith('/readiness'))!;
-    access.flush({}, {status:503,statusText:'Offline'});
-    flush(all.filter(r=>r!==access),{status:cached()});await p;ctx.f.detectChanges();
+    const ground=all.find(r=>r.request.url.includes('/grounding/'))!;
+    access.flush({}, {status:503,statusText:'Offline'});ground.flush({}, {status:503,statusText:'Offline'});
+    flush(all.filter(r=>r!==access && r!==ground),{status:cached()});await p;ctx.f.detectChanges();
     expect(ctx.c.canProcess()).toBeTrue();expect(ctx.f.nativeElement.querySelector('.free-cost').textContent).toContain('0.00');
     const emit=spyOn(ctx.c.cacheUpdated,'emit');await ctx.c.process();
     expect(emit).toHaveBeenCalledTimes(1);ctx.h.expectNone(r=>r.method==='POST');
@@ -90,13 +98,13 @@ describe('SAM guided manual processing and parallel quotes',()=>{
     const p=ctx.c.process(),req=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
     expect(req.request.body.mode).toBe('api-meta');req.flush({...cached(),cacheHit:false,analysisId:'new'});await p;
   });
-  it('processes a new video directly with one remaining request and only the SAM cost',async()=>{
+  it('reuses authenticated Spark localization with one remaining request and only the SAM cost',async()=>{
     const ctx=setup();token(ctx);await quote(ctx,{status:state({recognitionRequired:false})});
     expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBe(.375);
     expect(ctx.f.nativeElement.textContent).not.toContain('Reconocer montaje');
     expect(ctx.f.nativeElement.textContent).not.toContain('2 envíos');
     const p=ctx.c.process(),req=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
-    expect(req.request.body.sceneKey).toBeNull();expect(req.request.body.maximumEstimatedCostUsd).toBe(.375);
+    expect(req.request.body.sceneKey).toBe(sceneKey);expect(req.request.body.maximumEstimatedCostUsd).toBe(.375);
     ctx.h.expectNone(r=>r.url.includes('/assembly/'));req.flush(cached());await p;
   });
   it('still blocks spending when no requests remain',async()=>{
@@ -200,4 +208,108 @@ describe('SAM guided manual processing and parallel quotes',()=>{
     ctx.c.selectMode({target:{value:'api-meta'}} as unknown as Event);expect(ctx.c.mode()).toBe('api-meta-cache');
     r.flush(cached());await p;
   });
+  async function afterGrounding(ctx:Context,options:{quote?:any;status?:any}={}) {
+    await Promise.resolve();
+    ctx.h.expectOne(base+'/sam/baseline/status?mode='+ctx.c.mode()).flush(options.status??state());
+    ctx.h.expectOne(base+'/sam/baseline/preflight').flush(options.quote??pf);
+    await Promise.resolve();
+  }
+  it('shows the combined maximum and runs Spark then SAM only after one explicit click',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{grounding:needsGrounding,readiness:{...ready,...unlimited}});
+    expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBeCloseTo(.425,6);
+    expect(ctx.f.nativeElement.querySelector('.paid-cost').textContent).toContain('0.43');
+    expect(ctx.f.nativeElement.textContent).toContain('Spark hasta US$ 0.05');
+    expect(ctx.f.nativeElement.querySelector('app-assembly-review')).toBeNull();
+    ctx.h.expectNone(r=>r.method==='POST');
+    const p=ctx.c.process(),g=ctx.h.expectOne(groundUrl);
+    expect(ctx.c.processingLabel()).toContain('Spark');
+    expect(g.request.headers.get('X-ProofLab-Manual-Action')).toBe('assembly');
+    expect(g.request.body).toEqual({videoSha256:sha,cacheKey:groundKey,modelApiToken:fake,
+      confirmImageTransfer:true,confirmPaidCall:true,maximumEstimatedCostUsd:.05});
+    await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
+    g.flush(grounded);await afterGrounding(ctx);
+    const sam=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
+    expect(ctx.c.processingLabel()).toContain('SAM');
+    expect(sam.request.body.modelApiToken).toBe(fake);
+    expect(sam.request.body.sceneKey).toBe(sceneKey);
+    expect(sam.request.body.maximumEstimatedCostUsd).toBe(.375);
+    sam.flush(cached());await p;expect(ctx.c.processingPhase()).toBe('validating');
+  });
+  it('shows a maximum of 0.55 when SAM costs 0.50 and Spark localization is needed',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{quote:{...pf,estimatedCostUsd:.5},
+      grounding:needsGrounding,readiness:{...ready,...unlimited}});
+    expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBe(.55);
+    expect(ctx.f.nativeElement.querySelector('.paid-cost').textContent).toContain('0.55');
+    expect(ctx.c.nextActionDescription()).toContain('costo combinado');
+    ctx.h.expectNone(r=>r.method==='POST');
+  });
+  it('requires available allowance for both requests on legacy bounded sessions',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{grounding:needsGrounding});
+    expect(ctx.c.canProcess()).toBeFalse();expect(ctx.c.processBlockedReason()).toContain('Spark y SAM');
+    await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
+  });
+  for(const status of ['AMBIGUOUS','NOT_VISIBLE']) {
+    it('stops before SAM when Spark returns '+status,async()=>{
+      const ctx=setup();token(ctx);await quote(ctx,{grounding:needsGrounding,readiness:{...ready,...unlimited}});
+      const p=ctx.c.process();ctx.h.expectOne(groundUrl).flush({...grounded,status,scene:null});
+      await p;expect(ctx.c.error()).toContain('SAM no se envió');expect(ctx.con.busy()).toBeFalse();
+      expect(ctx.c.canProcess()).toBeFalse();await ctx.c.process();ctx.h.expectNone(()=>true);
+    });
+    it('does not repeat a saved '+status+' localization',async()=>{
+      const ctx=setup();token(ctx);await quote(ctx,{grounding:{...grounded,status,scene:null},readiness:{...ready,...unlimited}});
+      expect(ctx.c.canProcess()).toBeFalse();await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
+    });
+  }
+  it('does not automatically retry a failed Spark request or continue to SAM',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{grounding:needsGrounding,readiness:{...ready,...unlimited}});
+    const p=ctx.c.process();ctx.h.expectOne(groundUrl).flush({}, {status:502,statusText:'Synthetic failure'});
+    await p;expect(ctx.c.error()).toContain('SAM no se envió');expect(ctx.c.error()).toContain('facturada');
+    expect(ctx.c.canProcess()).toBeFalse();expect(ctx.con.busy()).toBeFalse();
+    await ctx.c.process();ctx.h.expectNone(()=>true);
+  });
+  it('blocks any new Spark request when a previous SAM attempt requires reconciliation',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{grounding:needsGrounding,
+      status:state({status:'PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION'}),readiness:{...ready,...unlimited}});
+    ctx.c.retryConsent.set(true);expect(ctx.c.canProcess()).toBeFalse();
+    expect(ctx.c.processBlockedReason()).toContain('revisión manual');
+    expect(ctx.f.nativeElement.querySelector('.sam-consent')).toBeNull();
+    await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
+  });
+  it('rejects a localization quote belonging to another video',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{grounding:{...grounded,videoSha256:'f'.repeat(64)}});
+    expect(ctx.c.canProcess()).toBeFalse();expect(ctx.c.cacheStatus()).toBeNull();
+    await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
+  });
+  it('discards Spark completion after the selected video changed',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{grounding:needsGrounding,readiness:{...ready,...unlimited}});
+    const emit=spyOn(ctx.c.cacheUpdated,'emit'),p=ctx.c.process(),g=ctx.h.expectOne(groundUrl);
+    ctx.f.componentRef.setInput('videoSha256','f'.repeat(64));ctx.f.detectChanges();
+    g.flush(grounded);await p;
+    expect(emit).not.toHaveBeenCalled();expect(ctx.con.busy()).toBeFalse();ctx.h.expectNone(()=>true);
+  });
+  it('rejects a mismatched Spark cache key before any SAM work',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{grounding:needsGrounding,readiness:{...ready,...unlimited}});
+    const p=ctx.c.process();ctx.h.expectOne(groundUrl).flush({...grounded,cacheKey:'f'.repeat(64)});
+    await p;expect(ctx.c.error()).toContain('SAM no se envió');ctx.h.expectNone(()=>true);
+  });
+  it('requires a new explicit consent if the SAM estimate increases while Spark runs',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{grounding:needsGrounding,readiness:{...ready,...unlimited}});
+    const p=ctx.c.process();ctx.h.expectOne(groundUrl).flush(grounded);
+    await afterGrounding(ctx,{quote:{...pf,estimatedCostUsd:.4}});
+    await p;expect(ctx.c.error()).toContain('SAM no se envió');expect(ctx.c.canProcess()).toBeFalse();
+    ctx.h.expectNone(r=>r.method==='POST');
+  });
+  it('does not send SAM when localization or quote identities diverge',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{grounding:needsGrounding,readiness:{...ready,...unlimited}});
+    const p=ctx.c.process();ctx.h.expectOne(groundUrl).flush(grounded);
+    await afterGrounding(ctx,{status:state({sceneKey:'f'.repeat(64)})});
+    await p;expect(ctx.c.error()).toContain('SAM no se envió');ctx.h.expectNone(r=>r.method==='POST');
+  });
+  it('reuses a verified SAM result created during Spark without a second paid request',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{grounding:needsGrounding,readiness:{...ready,...unlimited}});
+    const emit=spyOn(ctx.c.cacheUpdated,'emit'),p=ctx.c.process();ctx.h.expectOne(groundUrl).flush(grounded);
+    await afterGrounding(ctx,{status:cached()});await p;
+    expect(emit).toHaveBeenCalledTimes(1);ctx.h.expectNone(r=>r.method==='POST');
+  });
+
 });

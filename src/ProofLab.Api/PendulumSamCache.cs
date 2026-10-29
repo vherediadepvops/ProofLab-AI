@@ -51,8 +51,8 @@ public sealed class PendulumSamCache(
         if (video.Codec is not ("h264" or "hevc" or "mpeg4") ||
             Path.GetExtension(video.Path).ToLowerInvariant() is not (".mov" or ".mp4"))
             throw new ArgumentException("SAM requires a source MOV/MP4 H.264/H.265/MPEG4.");
-        var scene=scenes is null?null:quote?await scenes.ApprovedForQuoteAsync(studyId,role,ct):
-            await scenes.ApprovedAsync(studyId,role,ct);
+        var scene=scenes is null?null:quote?await scenes.TrackingForQuoteAsync(studyId,role,ct):
+            await scenes.TrackingAsync(studyId,role,ct);
         if(scene is not null)AssemblyPolicy.Validate(scene,video.Sha256);
         var key=scene is null?CacheKey(video.Sha256):
             SamVideoArchive.Hash(AssemblyPolicy.SamProtocol+"\n"+SamModel+"\n"+scene.Key+"\n"+video.Sha256);
@@ -112,7 +112,16 @@ public sealed class PendulumSamCache(
 
     private static SamVideoArchive.Stored? LegacyHit(IEnumerable<PriorArchive> prior) =>
         Latest(prior.SelectMany(p => p.All).Where(a => a.Receipt.Scene is null &&
-            a.Receipt.RequestProtocol == LegacyProtocol && ContainsMaskRecords(a.Raw)));
+            (a.Receipt.RequestProtocol == LegacyProtocol || a.Receipt.RequestProtocol == Protocol) &&
+            ContainsMaskRecords(a.Raw)));
+
+    // A completed text search without masks must not prevent the new visual
+    // grounding flow. Historical usable masks still replay without another call.
+    private SamVideoArchive.Stored? Reusable(IEnumerable<SamVideoArchive.Stored> all,
+        IEnumerable<PriorArchive> prior, SamSceneDefinition? scene) =>
+        scene is not null ? Latest(all) :
+        (scenes is null ? Latest(all) : Latest(all.Where(a => ContainsMaskRecords(a.Raw)))) ??
+            LegacyHit(prior);
 
     // Lock all direct generations plus any scene key, in a stable order.
     // A still-running V2 process uses the same V2 lock and cannot be bypassed.
@@ -166,7 +175,7 @@ public sealed class PendulumSamCache(
         var all = await archive.LoadAsync(video, key, ct);
         var prior = await PriorDirectArchives(video, key, ct);
         var latest = Latest(all);
-        var hit = latest ?? (scene is null ? LegacyHit(prior) : null);
+        var hit = Reusable(all, prior, scene);
         if (mode == CacheMode && hit is not null) return Artifact(hit).State;
         var pending = await PriorPending(video, prior, ct) ??
             await archive.OutstandingAsync(video, key, all, ct);
@@ -177,9 +186,10 @@ public sealed class PendulumSamCache(
             : Artifact(latest).State;
         return state with {
             Status = pending.Any ? pending.Status :
-                latest is not null ? "READY_FOR_FRESH_META_ANALYSIS" : "NOT_ANALYZED_WITH_SAM",
+                latest is not null && (mode == FreshMode || hit is not null)
+                    ? "READY_FOR_FRESH_META_ANALYSIS" : "NOT_ANALYZED_WITH_SAM",
             CanRunLive = !pending.Any && runtime.LiveCallsPermitted,
-            RecognitionRequired = false, SceneKey=scene?.Key,
+            RecognitionRequired = scenes is not null && scene is null, SceneKey=scene?.Key,
             Mode = mode, CacheHit = false
         };
     }
@@ -203,7 +213,7 @@ public sealed class PendulumSamCache(
         var (video, key, archive, scene) = await Source(studyId, role, ct);
         var all = await archive.LoadAsync(video, key, ct);
         var prior = await PriorDirectArchives(video, key, ct);
-        return Artifact(Latest(all) ?? (scene is null ? LegacyHit(prior) : null) ??
+        return Artifact(Reusable(all, prior, scene) ?? Latest(all) ??
             throw new FileNotFoundException("SAM provider evidence not cached."));
     }
 
@@ -224,11 +234,14 @@ public sealed class PendulumSamCache(
             using var heldLocks = new SourceLocks(archive, video.Sha256, key);
             var all = await archive.LoadAsync(video, key, ct);
             var prior = await PriorDirectArchives(video, key, ct);
-            var latest = Latest(all) ?? (scene is null ? LegacyHit(prior) : null);
+            var latest = Reusable(all, prior, scene);
             if (!string.Equals(request.VideoSha256, video.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Video SHA-256 confirmation mismatch.");
             if (mode == CacheMode && latest is not null) return Artifact(latest);
-            // Reviewed scenes remain usable; a new video can use direct single-object SAM.
+            // Production requires an authenticated visual target before a new SAM call.
+            // A real cache hit above remains free and requires no new grounding.
+            if(scenes is not null && scene is null)
+                throw new InvalidOperationException("SPARK_TARGET_REQUIRED");
             if(request.SceneKey!=scene?.Key)
                 throw new ArgumentException("Assembly changed; refresh the quote.");
             if (!request.ConfirmPrivateVideoTransfer || !request.ConfirmOneBillableSamCall)
