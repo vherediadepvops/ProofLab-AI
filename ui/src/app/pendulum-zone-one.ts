@@ -1,6 +1,6 @@
 import type {FrozenMusePrediction} from './muse-investigator';
 import { CommonModule } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -25,6 +25,52 @@ import { SamVideoReplay, type SamProcessingSelection } from './sam-video-replay'
 export class PendulumZoneOne extends PendulumDirector {
   private readonly demoHttp=inject(HttpClient);
   readonly musePrediction=signal<FrozenMusePrediction|null>(null);
+
+  // An independent ideal-model illustration. Never writes to, fits or replaces
+  // SAM measurements, the source video, or the registered research inputs.
+  readonly theoryPositionPercent=signal(0);
+  updateTheoryPosition(event:Event):void {
+    const value=Number((event.target as HTMLInputElement).value);
+    if(Number.isFinite(value))
+      this.theoryPositionPercent.set(Math.max(-100,Math.min(100,value)));
+  }
+  readonly theoreticalPreview=computed(()=>{
+    const model=this.model(),trial=model?.baseline;
+    if(!trial || this.modelLoading() || this.modelError() ||
+       model?.source!=='DETERMINISTIC_NONLINEAR_RK4_THEORY_NOT_META_NOT_SAM' ||
+       Math.abs(trial.lengthMeters-this.baselineLength())>1e-6 ||
+       Math.abs(trial.initialAngleDegrees-this.initialAngleDegrees())>1e-6 ||
+       Math.abs(trial.massGrams-this.massGrams())>1e-6)return null;
+    const length=trial.lengthMeters,amplitude=trial.initialAngleDegrees;
+    const gravity=9.80665; // Matches ScientificModels.StandardGravity in the .NET ideal model.
+    if(!Number.isFinite(length) || length<=0 || !Number.isFinite(amplitude) ||
+       amplitude<=0 || amplitude>85 || !Number.isFinite(trial.nonlinearPeriodSeconds) ||
+       trial.nonlinearPeriodSeconds<=0)return null;
+    const radians=amplitude*Math.PI/180;
+    const position=Math.max(-100,Math.min(100,this.theoryPositionPercent()));
+    const angleDegrees=amplitude*position/100,angleRadians=angleDegrees*Math.PI/180;
+    const maximumAngularSpeed=Math.sqrt(2*gravity/length*(1-Math.cos(radians)));
+    const angularSpeed=Math.sqrt(Math.max(0,2*gravity/length*
+      (Math.cos(angleRadians)-Math.cos(radians))));
+    const radius=124,pivotX=160,pivotY=24;
+    const x=pivotX+radius*Math.sin(angleRadians);
+    const y=pivotY+radius*Math.cos(angleRadians);
+    const leftX=pivotX-radius*Math.sin(radians);
+    const rightX=pivotX+radius*Math.sin(radians);
+    const extremeY=pivotY+radius*Math.cos(radians);
+    // Cyan tangent illustrates motion from right to left, not the slider direction.
+    const arrowLength=maximumAngularSpeed>0?42*angularSpeed/maximumAngularSpeed:0;
+    return {
+      amplitude,angleDegrees,angularSpeed,maximumAngularSpeed,
+      maximumTangentialSpeed:length*maximumAngularSpeed,
+      periodSeconds:trial.nonlinearPeriodSeconds,
+      x,y,leftX,rightX,extremeY,pivotX,pivotY,
+      arrowLength,arrowX:x-arrowLength*Math.cos(angleRadians),
+      arrowY:y+arrowLength*Math.sin(angleRadians),
+      positionKind:Math.abs(position)===100?'extreme':position===0?'bottom':'between'
+    };
+  });
+
   onResearchFrozen(prediction:FrozenMusePrediction|null):void {
     if(!prediction || prediction.studyId===this.session()?.id)this.musePrediction.set(prediction);
   }

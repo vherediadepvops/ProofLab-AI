@@ -17,6 +17,34 @@
 .parameter-grid input,.followup-label input{width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;border:1px solid #c6d9e8;border-radius:8px;color:#243b50;background:#fff;font-size:15px}
 .parameter-grid input:focus,.followup-label input:focus,.second-inline select:focus{border-color:#337eaf;outline:2px solid #d4e9f9}
 .parameter-grid input:disabled,.followup-label input:disabled{background:#eaf0f6;color:#718598}
+/* Predicción ideal independiente en la tarjeta existente. */
+.theory-preview{margin-top:16px;border:1px solid #44566e;border-radius:10px;background:#1c2633;color:#e6edf8}
+.theory-preview summary{display:flex;justify-content:space-between;gap:12px;padding:11px 15px;cursor:pointer;font-size:13px}
+.theory-preview summary span{font-size:9px;color:#8eb3d5}
+.theory-content{display:grid;grid-template-columns:270px minmax(0,1fr);gap:18px;padding:12px 16px}
+.theory-diagram{width:100%;height:150px}
+.theory-vertical,.theory-arc{stroke:#738ca8;stroke-dasharray:4 6}
+.theory-arc,.theory-ghost{fill:none}
+.theory-ghost{stroke:#b4a075}
+.theory-support{stroke:#b2bcca;stroke-width:4}
+.theory-cord{stroke:#c3d2e3;stroke-width:2}
+.theory-pivot{fill:#d9e4f2}
+.theory-bob{fill:#d3a45c;stroke:#ffdc9b;stroke-width:2}
+.theory-speed-arrow{stroke:#2fd7c5;stroke-width:4}
+.theory-speed-tip{fill:#2fd7c5}
+.theory-explorer label,.theory-extremes,.theory-disclaimer{font-size:10px;color:#a9bfd6}
+.theory-explorer input{width:100%;accent-color:#2fd7c5}
+.theory-extremes{display:flex;justify-content:space-between}
+.theory-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.theory-metric{background:#242f3d;border-radius:8px;padding:9px;min-width:0}
+.theory-metric small{display:block;min-height:30px;font-size:10px;color:#afc3db}
+.theory-metric strong{display:block;color:#f5f9ff;font-size:20px;white-space:nowrap}
+.theory-metric strong span{font-size:10px;color:#a9cbe7}
+.theory-explanation{font-size:11px;line-height:1.5;color:#c8d7e7}
+.theory-explanation strong{display:block;color:#f2c879}
+.theory-disclaimer{line-height:1.45}
+@media(max-width:1250px){.theory-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:750px){.theory-content{grid-template-columns:1fr}.theory-preview summary{flex-wrap:wrap}}
 .config-bottom{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;margin-top:16px;padding-top:15px;border-top:1px solid #dee9f1}
 .second-config{display:flex;align-items:center;gap:15px;flex-wrap:wrap;min-width:0}
 .check-label{display:flex;align-items:center;gap:9px;color:#2e526c;font-size:12px;font-weight:700;cursor:pointer}

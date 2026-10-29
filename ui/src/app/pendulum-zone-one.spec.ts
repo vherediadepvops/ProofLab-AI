@@ -85,6 +85,52 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       root:fixture.nativeElement as HTMLElement};
   }
 
+  it('illustrates the ideal maximum at the vertical and zero speed at both extremes without touching SAM',async()=>{
+    const {fixture,root,component,http}=await init(false);
+    const figure=root.querySelector('.theory-preview') as HTMLDetailsElement;
+    const slider=root.querySelector('#theory-position-slider') as HTMLInputElement;
+    expect(figure?.open).toBeTrue();
+    expect(root.textContent).toContain('Predicción teórica del péndulo');
+    expect(component.theoreticalPreview()?.angleDegrees).toBe(0);
+    expect(component.theoreticalPreview()?.maximumAngularSpeed).toBeCloseTo(1.156,2);
+    expect(component.theoreticalPreview()?.angularSpeed).toBeCloseTo(
+      component.theoreticalPreview()!.maximumAngularSpeed,8);
+    expect(component.theoreticalPreview()?.periodSeconds).toBeCloseTo(1.425,3);
+    expect(component.theoreticalPreview()?.maximumTangentialSpeed).toBeCloseTo(.578,2);
+    expect(root.textContent).toContain('Rapidez máxima en θ = 0°');
+
+    slider.value='100';slider.dispatchEvent(new Event('input'));fixture.detectChanges();
+    expect(component.theoreticalPreview()?.angleDegrees).toBe(15);
+    expect(component.theoreticalPreview()?.angularSpeed).toBeCloseTo(0,8);
+    expect(root.textContent).toContain('Rapidez cero en el extremo');
+    slider.value='-100';slider.dispatchEvent(new Event('input'));fixture.detectChanges();
+    expect(component.theoreticalPreview()?.angleDegrees).toBe(-15);
+    expect(component.theoreticalPreview()?.angularSpeed).toBeCloseTo(0,8);
+    expect(component.session()).toBeNull();
+    expect(component.theoryPositionPercent()).toBe(-100);
+    http.expectNone(theoryUrl); // A position-only interaction has no requests.
+    await verifyHttp(http);
+  });
+
+  it('recomputes the ideal preview for entered parameters without reusing stale theory',async()=>{
+    const {fixture,root,component,http}=await init(false);
+    const at50=component.theoreticalPreview()!.maximumAngularSpeed;
+    component.baselineLength.set(.8);
+    const pending=component.refreshTheory();
+    fixture.detectChanges();
+    expect(component.theoreticalPreview()).toBeNull();
+    const request=http.expectOne(theoryUrl);
+    expect(request.request.body.lengthMeters).toBe(.8);
+    request.flush({...theory(),baseline:{
+      ...theory().baseline,lengthMeters:.8,nonlinearPeriodSeconds:1.802
+    }});
+    await pending;fixture.detectChanges();
+    expect(component.theoreticalPreview()!.maximumAngularSpeed).toBeLessThan(at50);
+    expect(component.theoreticalPreview()!.periodSeconds).toBeCloseTo(1.802,3);
+    expect(root.textContent).toContain('Predicción teórica del péndulo');
+    await verifyHttp(http);
+  });
+
   it('shows only the requested configuration and three video view placeholders',async()=>{
     const {root,component,http}=await init(false);
     expect(root.textContent).toContain('Configura el péndulo');

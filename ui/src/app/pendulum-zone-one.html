@@ -44,6 +44,82 @@
       </label>
     </div>
 
+    <details class="theory-preview" open>
+      <summary>
+        <strong>{{es ? 'Predicción teórica del péndulo' : 'Theoretical pendulum prediction'}}</strong>
+        <span>{{es ? 'MODELO IDEAL · SIN SAM NI META' : 'IDEAL MODEL · NO SAM OR META'}}</span>
+      </summary>
+      @if(theoreticalPreview(); as t) {
+        <div class="theory-content">
+          <div class="theory-explorer">
+            <svg class="theory-diagram" viewBox="0 0 320 163" role="img"
+              [attr.aria-label]="es ? 'Péndulo ideal con posición ajustable; la línea turquesa indica la rapidez hacia la izquierda.' :
+                'Ideal pendulum with adjustable position; the turquoise line shows speed towards the left.'">
+              <line class="theory-vertical" x1="160" y1="24" x2="160" y2="157"/>
+              <path class="theory-arc"
+                [attr.d]="'M '+t.leftX+' '+t.extremeY+' A 124 124 0 0 1 '+t.rightX+' '+t.extremeY"/>
+              <circle class="theory-ghost" [attr.cx]="t.leftX" [attr.cy]="t.extremeY" r="6"/>
+              <circle class="theory-ghost" [attr.cx]="t.rightX" [attr.cy]="t.extremeY" r="6"/>
+              <line class="theory-support" x1="125" y1="24" x2="195" y2="24"/>
+              <line class="theory-cord" x1="160" y1="24" [attr.x2]="t.x" [attr.y2]="t.y"/>
+              <circle class="theory-pivot" cx="160" cy="24" r="4"/>
+              <circle class="theory-bob" [attr.cx]="t.x" [attr.cy]="t.y" r="9"/>
+              @if(t.arrowLength>0.3) {
+                <line class="theory-speed-arrow" [attr.x1]="t.x" [attr.y1]="t.y"
+                  [attr.x2]="t.arrowX" [attr.y2]="t.arrowY"/>
+                <circle class="theory-speed-tip" [attr.cx]="t.arrowX" [attr.cy]="t.arrowY" r="3"/>
+              }
+            </svg>
+            <label for="theory-position-slider">{{es ? 'Mover el péndulo ideal' : 'Move the ideal pendulum'}}</label>
+            <input id="theory-position-slider" type="range" min="-100" max="100" step="1"
+              [value]="theoryPositionPercent()" (input)="updateTheoryPosition($event)"
+              [attr.aria-valuetext]="(t.angleDegrees | number:'1.1-1')+'°'"/>
+            <div class="theory-extremes">
+              <span>−{{t.amplitude | number:'1.0-1'}}°</span>
+              <span>0°</span>
+              <span>+{{t.amplitude | number:'1.0-1'}}°</span>
+            </div>
+          </div>
+          <div class="theory-information">
+            <div class="theory-metrics">
+              <div class="theory-metric">
+                <small>{{es ? 'Ángulo θ teórico' : 'Theoretical angle θ'}}</small>
+                <strong>{{t.angleDegrees | number:'1.1-1'}}<span>°</span></strong>
+              </div>
+              <div class="theory-metric">
+                <small>{{es ? 'Rapidez angular |ω| aquí' : 'Angular speed |ω| here'}}</small>
+                <strong>{{t.angularSpeed | number:'1.3-3'}}<span> rad/s</span></strong>
+              </div>
+              <div class="theory-metric">
+                <small>{{es ? 'Rapidez angular máxima' : 'Maximum angular speed'}}</small>
+                <strong>{{t.maximumAngularSpeed | number:'1.3-3'}}<span> rad/s</span></strong>
+              </div>
+              <div class="theory-metric">
+                <small>{{es ? 'Período teórico T' : 'Theoretical period T'}}</small>
+                <strong>{{t.periodSeconds | number:'1.3-3'}}<span> s</span></strong>
+              </div>
+            </div>
+            <p class="theory-explanation">
+              <strong>{{t.positionKind==='bottom'
+                ? (es ? 'Rapidez máxima en θ = 0°' : 'Maximum speed at θ = 0°')
+                : t.positionKind==='extreme'
+                  ? (es ? 'Rapidez cero en el extremo' : 'Zero speed at the extreme')
+                  : (es ? 'Rapidez intermedia' : 'Intermediate speed')}}</strong>
+              {{es
+                ? 'El péndulo pasa más rápido por la vertical y se detiene un instante en ±'+(t.amplitude | number:'1.0-1')+'°. La rapidez tangencial máxima ideal es '
+                : 'The pendulum is fastest at the vertical and briefly stops at ±'+(t.amplitude | number:'1.0-1')+'°. Its ideal maximum tangential speed is '}}
+              {{t.maximumTangentialSpeed | number:'1.3-3'}} m/s.
+            </p>
+            <p class="theory-disclaimer">{{es
+              ? 'Simulación matemática sin rozamiento. La masa afecta a la energía, no a esta rapidez ideal. El control no cambia el video, las máscaras ni las medidas observadas de SAM.'
+              : 'Frictionless mathematical simulation. Mass affects energy, not this ideal speed. The control does not change the video, masks or observed SAM measurements.'}}</p>
+          </div>
+        </div>
+      } @else {
+        <p class="theory-pending">{{es ? 'Calculando la predicción matemática local…' : 'Calculating the local mathematical prediction…'}}</p>
+      }
+    </details>
+
     <div class="config-bottom">
       <div class="second-config">
         <label class="check-label">
