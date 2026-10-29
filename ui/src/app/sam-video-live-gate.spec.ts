@@ -104,6 +104,30 @@ describe('SAM guided manual processing and parallel quotes',()=>{
     expect(ctx.c.canProcess()).toBeFalse();expect(ctx.c.processBlockedReason()).toContain('cupo');
     await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
   });
+  it('allows repeated explicit manual clicks with zero remaining session allowance',async()=>{
+    const ctx=setup();token(ctx);ctx.c.selectMode({target:{value:'api-meta'}} as unknown as Event);
+    await quote(ctx,{status:state({status:'READY_FOR_FRESH_META_ANALYSIS',mode:'api-meta'}),
+      readiness:{...ready,usedRequests:40,remainingRequests:0,manualRequestsUnlimited:true}});
+    expect(ctx.c.canProcess()).toBeTrue();expect(ctx.f.nativeElement.textContent).not.toContain('Se agotó el cupo');
+    ctx.h.expectNone(r=>r.method==='POST');
+    for(let i=0;i<3;i++){
+      const p=ctx.c.process(),r=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
+      expect(r.request.body.maximumEstimatedCostUsd).toBe(.375);
+      await ctx.c.process();ctx.h.expectNone(req=>req.method==='POST');
+      r.flush({...cached(),cacheHit:false,mode:'api-meta',analysisId:'result-'+i});await p;
+      ctx.f.componentRef.setInput('validationState','ready');ctx.f.detectChanges();
+      await quote(ctx,{status:state({status:'READY_FOR_FRESH_META_ANALYSIS',mode:'api-meta'}),
+        readiness:{...ready,usedRequests:41+i,remainingRequests:0,manualRequestsUnlimited:true}});
+      ctx.f.componentRef.setInput('validationState','idle');ctx.f.detectChanges();
+      expect(ctx.c.canProcess()).toBeTrue();ctx.h.expectNone(req=>req.method==='POST');
+    }
+  });
+  it('unlimited count does not start work without a token or server permission',async()=>{
+    const ctx=setup();await quote(ctx,{readiness:{...ready,remainingRequests:0,manualRequestsUnlimited:true}});
+    expect(ctx.c.canProcess()).toBeFalse();token(ctx);expect(ctx.c.canProcess()).toBeTrue();
+    await quote(ctx,{readiness:{...ready,remainingRequests:0,manualRequestsUnlimited:true,manualTokenCallsPermitted:false,paidRequestsSwitchEnabled:false}});
+    expect(ctx.c.canProcess()).toBeFalse();await ctx.c.process();ctx.h.expectNone(req=>req.method==='POST');
+  });
   it('explains server permission even with a registered token',async()=>{
     const ctx=setup();token(ctx);await quote(ctx,{readiness:{...ready,paidRequestsSwitchEnabled:false,
       creditsConfirmedByOwner:false,manualTokenCallsPermitted:false}});

@@ -31,7 +31,7 @@ interface SamPreflight {
 interface SamReadiness {
   apiKeyConfigured:boolean; creditsConfirmedByOwner:boolean;
   ownerApprovedPaidRequests:boolean; liveCallsPermitted:boolean;
-  usedRequests:number; remainingRequests:number;
+  usedRequests:number; remainingRequests:number; manualRequestsUnlimited?:boolean;
   manualTokenCallsPermitted?:boolean; paidRequestsSwitchEnabled?:boolean;
 }
 
@@ -431,7 +431,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       pf.estimatedCostUsd>0 && pf.estimatedCostUsd<=0.50 &&
       (ready.manualTokenCallsPermitted===true || (ready.apiKeyConfigured && ready.liveCallsPermitted)) &&
       ready.creditsConfirmedByOwner && ready.ownerApprovedPaidRequests &&
-      ready.remainingRequests>0;
+      (ready.manualRequestsUnlimited===true || ready.remainingRequests>0);
   }
   displayedCost():number {return this.preflight()?.estimatedCostUsd ?? 0;}
   nextActionDescription():string {
@@ -450,7 +450,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       return this.es?(this.tokenEntered()?'Token registrado. ':'')+
         'Procesar está bloqueado: falta habilitar créditos y autorización de esta sesión en el servidor.':
         (this.tokenEntered()?'Key registered. ':'')+'Process is blocked: server credit and spending authorization for this session is missing.';
-    if(ready.remainingRequests<=0)return this.es?'Se agotó el cupo de solicitudes autorizadas de esta sesión.':'This session has no authorized requests remaining.';
+    if(!ready.manualRequestsUnlimited && ready.remainingRequests<=0)return this.es?'Se agotó el cupo de solicitudes autorizadas de esta sesión.':'This session has no authorized requests remaining.';
     if(!this.tokenEntered())return this.es?'Configura y confirma tu token en Configuración.':'Configure and confirm your key in Settings.';
     if(!this.canOfferPaidRun())return this.es?'El servidor no permite esta solicitud. Actualiza el costo o revisa el estado.':'The server does not allow this request. Refresh the cost or inspect status.';
     return this.es?'Confirma la revisión del intento anterior antes de procesar.':'Confirm review of the previous attempt before processing.';

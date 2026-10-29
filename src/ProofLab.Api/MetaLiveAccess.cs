@@ -17,24 +17,27 @@ public sealed class MetaLiveAccess(
     public bool KeyConfigured =>
         !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MODEL_API_KEY"));
 
-    // Capability only: a real, valid per-request token is still required at admission.
+    public bool ManualRequestsUnlimited => Flag("UnlimitedManualRequests");
+
+    // Capability only: admission still requires a valid token in the manual request.
     public bool ManualTokenCallsPermitted => budget.Snapshot(true,
         Flag("CreditsConfirmedByOwner"), Flag("OwnerApprovedPaidRequests"),
-        Flag("AllowPaidRequests")).LiveCallsPermitted;
+        Flag("AllowPaidRequests"), manualRequest:ManualRequestsUnlimited).LiveCallsPermitted;
 
-    public MetaCallSafetySnapshot Status(string? oneShotMetaToken = null) => budget.Snapshot(
-        KeyConfigured || (oneShotMetaToken is not null && SamManualApiTokenPolicy.Accepts(oneShotMetaToken)),
-        Flag("CreditsConfirmedByOwner"),
-        Flag("OwnerApprovedPaidRequests"),
-        Flag("AllowPaidRequests"));
+    public MetaCallSafetySnapshot Status(string? oneShotMetaToken = null)
+    {
+        var manual = oneShotMetaToken is not null && SamManualApiTokenPolicy.Accepts(oneShotMetaToken);
+        return budget.Snapshot(oneShotMetaToken is null ? KeyConfigured : manual,
+            Flag("CreditsConfirmedByOwner"), Flag("OwnerApprovedPaidRequests"),
+            Flag("AllowPaidRequests"), manualRequest:ManualRequestsUnlimited && manual);
+    }
 
     public void ReserveOrThrow(string? oneShotMetaToken = null)
     {
-        if (!budget.TryReserve(
-                KeyConfigured || (oneShotMetaToken is not null && SamManualApiTokenPolicy.Accepts(oneShotMetaToken)),
-                Flag("CreditsConfirmedByOwner"),
-                Flag("OwnerApprovedPaidRequests"),
-                Flag("AllowPaidRequests")))
+        var manual = oneShotMetaToken is not null && SamManualApiTokenPolicy.Accepts(oneShotMetaToken);
+        if (!budget.TryReserve(oneShotMetaToken is null ? KeyConfigured : manual,
+                Flag("CreditsConfirmedByOwner"), Flag("OwnerApprovedPaidRequests"),
+                Flag("AllowPaidRequests"), manualRequest:ManualRequestsUnlimited && manual))
             throw new InvalidOperationException(
                 "Meta live request is blocked by credential, credit, consent or request-budget gate.");
     }

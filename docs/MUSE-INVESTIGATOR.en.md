@@ -2,7 +2,7 @@
 
 The lab log below the observed-period panel prepares evidence locally. The server verifies the saved original and authentic SAM response, then runs the same TypeScript estimator used by the UI. Building the API requires Node and UI dependencies installed with `npm ci`; MSBuild generates the worker. No model-generated code or credentials enter the worker.
 
-**Ask Muse** sends measured summaries, coverage, gaps, statistical uncertainty, declared physical parameters and limitations, without uploading the video again. It uses `muse-spark-1.3` with strict JSON Schema. One token-count request precedes at most one inference; both HTTP calls count toward the owner's authorized allowance. Estimated ceiling: US$0.05. No automatic retries; server credit, credential and request-budget checks remain active.
+**Ask Muse** sends measured summaries, coverage, gaps, statistical uncertainty, declared physical parameters and limitations, without uploading the video again. It uses `muse-spark-1.3` with strict JSON Schema. One token-count request precedes at most one inference; both HTTP calls are included in the execution record. Estimated ceiling: US$0.05. No automatic retries; server credit, credential and per-request cost checks remain active.
 
 Protocol V2 supplies experiment options computed by ProofLab. Muse selects and justifies one; JSON Schema limits numeric fields to those values and the server checks the matching length/period pair. Protocol version is part of observation identity, preserving earlier attempts.
 
@@ -18,7 +18,7 @@ Hashes verify local integrity, not independent timestamps or filming chronology.
 
 ## Server allowance
 
-The default remains two admitted requests. An explicitly authorized extension can set `Meta:MaximumRequestsPerProcess` from 1 to 5 while preserving `Meta:AlreadyUsedRequests`. Restarting must not erase spent requests. This counter tracks admitted inferences, not HTTP requests or account billing; token-count calls also count against the user-authorized API-call allowance.
+At the user’s request, `Meta:UnlimitedManualRequests=true` allows manual submissions without a session quota. Each click requires a valid key and authorizes the displayed cost; it never starts automatic retries. Admitted inferences remain counted beyond the process limit and are restored through `Meta:AlreadyUsedRequests`. Calls without a manual token retain `Meta:MaximumRequestsPerProcess` (default 2). This counter is neither an invoice nor an individual HTTP-request count.
 
 ## Local API
 

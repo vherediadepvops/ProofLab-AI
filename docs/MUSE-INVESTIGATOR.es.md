@@ -2,7 +2,7 @@
 
 El Laboratorio ofrece una bitácora bajo el período observado. **Preparar evidencia** es local: el servidor verifica el archivo y la respuesta SAM guardada y ejecuta el mismo estimador TypeScript que usa la pantalla. Requiere Node, `ui/node_modules` instalado con `npm ci` y el worker generado automáticamente al compilar la API. El worker no recibe credenciales ni ejecuta código del modelo.
 
-**Consultar Muse** envía únicamente un resumen de mediciones, cobertura, huecos, incertidumbre estadística, parámetros declarados y límites. No vuelve a subir el video. Usa `muse-spark-1.3`, JSON Schema estricto, una consulta de tokens y como máximo una inferencia. Ambas solicitudes HTTP cuentan contra el cupo de llamadas autorizado. Sin reintentos automáticos; el presupuesto estimado es US$0,05. Conserva los controles de crédito, token y cupo del servidor.
+**Consultar Muse** envía únicamente un resumen de mediciones, cobertura, huecos, incertidumbre estadística, parámetros declarados y límites. No vuelve a subir el video. Usa `muse-spark-1.3`, JSON Schema estricto, una consulta de tokens y como máximo una inferencia. Ambas solicitudes HTTP se incluyen en el registro de ejecución. Sin reintentos automáticos; el presupuesto estimado es US$0,05. Conserva los controles de crédito, token y costo por solicitud.
 
 El protocolo V2 envía opciones numéricas calculadas por ProofLab; Muse elige y justifica una, y el esquema restringe los valores a esas opciones. El servidor vuelve a comprobar que longitud y período correspondan entre sí. La versión del protocolo forma parte de la identidad de la observación; los intentos anteriores se conservan.
 
@@ -23,7 +23,7 @@ El hash comprueba integridad local. No es firma de terceros ni prueba de cuándo
 
 ## Cupo del servidor
 
-El límite predeterminado sigue en dos solicitudes admitidas. Una ampliación explícita y autorizada puede configurar `Meta:MaximumRequestsPerProcess` entre 1 y 5, conservando `Meta:AlreadyUsedRequests`. Reiniciar no autoriza borrar consumo previo. El contador es por inferencia admitida, no por llamada HTTP ni por cuenta de facturación; el conteo de tokens también se contabiliza en el límite de llamadas autorizado por el usuario.
+Por petición del usuario, `Meta:UnlimitedManualRequests=true` permite envíos manuales sin cupo por sesión. Cada clic requiere token válido y autoriza el costo mostrado; no inicia reintentos automáticos. El contador conserva las inferencias admitidas, incluso por encima del límite de procesos, y se restaura con `Meta:AlreadyUsedRequests`. Las rutas sin token manual conservan `Meta:MaximumRequestsPerProcess` (predeterminado 2). El contador no es una factura ni cuenta solicitudes HTTP individuales.
 
 ## API local
 

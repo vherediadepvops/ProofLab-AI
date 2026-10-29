@@ -44,7 +44,7 @@ public sealed class MuseExperimentTests
         Parallel.For(0,20,_=>{if(budget.TryReserve(true,true,true,true))Interlocked.Increment(ref allowed);});
         Assert.Equal(2,allowed);Assert.Equal(4,budget.Used);
         Assert.Equal(0,budget.Snapshot(true,true,true,true).RequestsRemaining);
-        Assert.Throws<ArgumentOutOfRangeException>(()=>new MetaCallSafetyBudget(2,1));
+        Assert.Equal(0,new MetaCallSafetyBudget(2,1).Snapshot(true,true,true,true).RequestsRemaining);
         Assert.Throws<ArgumentOutOfRangeException>(()=>new MetaCallSafetyBudget(0,6));
         Assert.Equal(2,new MetaCallSafetyBudget().Snapshot(true,true,true,true).MaxRequestsPerProcess);
     }

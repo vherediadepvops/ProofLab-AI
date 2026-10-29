@@ -82,6 +82,7 @@ app.MapGet("/api/meta/readiness", (MetaLiveAccess meta) =>
         paidRequestsSwitchEnabled = x.PaidRequestsSwitchEnabled,
         liveCallsPermitted = x.LiveCallsPermitted,
         manualTokenCallsPermitted = meta.ManualTokenCallsPermitted,
+        manualRequestsUnlimited = meta.ManualRequestsUnlimited,
         usedRequests = x.RequestsUsed,
         remainingRequests = x.RequestsRemaining,
         maxRequestsPerProcess = x.MaxRequestsPerProcess,
