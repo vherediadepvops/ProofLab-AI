@@ -1,548 +1,193 @@
-import { TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { SamVideoReplay } from './sam-video-replay';
-import { LabConnection } from './lab-connection';
+import {TestBed} from '@angular/core/testing';
+import {provideHttpClient} from '@angular/common/http';
+import {HttpTestingController,provideHttpClientTesting,TestRequest} from '@angular/common/http/testing';
+import {SamVideoReplay} from './sam-video-replay';
+import {LabConnection} from './lab-connection';
+const sha='a'.repeat(64),id='b'.repeat(32),key='c'.repeat(64);
+const base='http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+id;
+const fake='LLM_SYNTHETIC_LOCAL_TEST_KEY_1234567890';
+const pf={sourceSha256:sha,sourceFrames:1875,durationSeconds:31.28,estimatedCostUsd:.375,
+  supportsSingleCall:true,codec:'hevc',timingSource:'CONTAINER_DECLARED_FRAME_COUNT_ESTIMATE',framePtsSha256:''};
+const ready={apiKeyConfigured:false,liveCallsPermitted:false,manualTokenCallsPermitted:true,
+  paidRequestsSwitchEnabled:true,creditsConfirmedByOwner:true,ownerApprovedPaidRequests:true,usedRequests:1,remainingRequests:1};
+function state(extra:any={}) {return {status:'NOT_ANALYZED_WITH_SAM',sourceSha256:sha,
+  cacheKey:key,sourceFrames:0,estimatedCostUsd:0,canRunLive:false,provenance:'test',
+  mode:'api-meta-cache',cacheHit:false,analysisId:null,...extra};}
+const cached=()=>state({status:'CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW',cacheHit:true,analysisId:'synthetic-analysis'});
+const aq={cacheKey:key,videoSha256:sha,maximumEstimatedCostUsd:.05,cacheHit:false,priorAttempt:false,canRun:true,evidence:null,approved:null};
 
-const sha='a'.repeat(64);
-const id='b'.repeat(32);
-const cacheMode='api-meta-cache';
-const freshMode='api-meta';
-const url='http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+id+'/sam/baseline';
-
-describe('SAM one-time paid inference gate and cached replay UI',()=>{
-  beforeEach(async()=>{
-    await TestBed.configureTestingModule({
-      imports:[SamVideoReplay],
-      providers:[provideHttpClient(),provideHttpClientTesting()]
-    }).compileComponents();
-  });
-  function setup(autoCheck=false){
-    const fixture=TestBed.createComponent(SamVideoReplay);
-    fixture.componentRef.setInput('autoCheck',autoCheck);
-    fixture.componentRef.setInput('studyId',id);
-    fixture.componentRef.setInput('videoSha256',sha);
-    fixture.detectChanges();
-    const http=TestBed.inject(HttpTestingController);
-    const field=document.createElement('input');
-    field.type='password';
-    const connection=TestBed.inject(LabConnection);
-    connection.register(field);
-    field.addEventListener('input',()=>connection.confirmToken());
-    (fixture as any).settingsTokenField=field;
-    return {fixture,component:fixture.componentInstance,http};
+describe('SAM guided manual processing and parallel quotes',()=>{
+  beforeEach(async()=>{await TestBed.configureTestingModule({imports:[SamVideoReplay],
+    providers:[provideHttpClient(),provideHttpClientTesting()]}).compileComponents();});
+  afterEach(()=>TestBed.inject(HttpTestingController).verify());
+  function setup(auto=false) {
+    const f=TestBed.createComponent(SamVideoReplay);
+    f.componentRef.setInput('autoCheck',auto);f.componentRef.setInput('studyId',id);
+    f.componentRef.setInput('videoSha256',sha);f.detectChanges();
+    const c=f.componentInstance,h=TestBed.inject(HttpTestingController),con=TestBed.inject(LabConnection);
+    const field=document.createElement('input');field.type='password';con.register(field);
+    return {f,c,h,con,field};
   }
-  const state=(status='NOT_ANALYZED_WITH_SAM',allowed=false)=>({
-    status,sourceSha256:sha,cacheKey:'c'.repeat(64),
-    sourceFrames:0,estimatedCostUsd:0,canRunLive:allowed,
-    provenance:'NO_SAM_PROVIDER_EVIDENCE',mode:cacheMode,
-    cacheHit:status.startsWith('CACHED_META_'),storage:'SQLite',
-    analysisId:status.startsWith('CACHED_META_')?'analysis-test-001':null
-  });
-  const preflight={
-    sourceSha256:sha,sourceFrames:1828,durationSeconds:30.496667,
-    estimatedCostUsd:0.3656,supportsSingleCall:true,
-    codec:'hevc',timingSource:'FFPROBE',framePtsSha256:'d'.repeat(64)
-  };
-  const readiness=(ready=false)=>({
-    apiKeyConfigured:ready,creditsConfirmedByOwner:ready,
-    ownerApprovedPaidRequests:ready,liveCallsPermitted:ready,
-    remainingRequests:ready?1:0,usedRequests:ready?0:2
-  });
-  async function resolvePreflight(http:HttpTestingController,ready=false){
-    http.expectOne(url+'/status?mode='+cacheMode).flush(state('NOT_ANALYZED_WITH_SAM',ready));
-    await Promise.resolve();
-    http.expectOne(url+'/preflight').flush(preflight);
-    await Promise.resolve();
-    http.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush(readiness(ready));
-    await Promise.resolve();
+  type Context=ReturnType<typeof setup>;
+  function token(ctx:Context){ctx.field.value=fake;ctx.con.confirmToken();}
+  function requests(ctx:Context):TestRequest[] {
+    const all=ctx.h.match(()=>true);expect(all.length).toBe(4);
+    all.forEach(r=>{expect(r.request.method).toBe('GET');expect(r.request.body).toBeNull();
+      expect(r.request.headers.has('Authorization')).toBeFalse();});
+    return all;
   }
-
-  it('uses only GET requests for preflight and refuses new SAM with Meta gates closed',async()=>{
-    const {fixture,component,http}=setup();
-    const task=component.check();
-    await resolvePreflight(http,false);
-    await task;fixture.detectChanges();
-    expect(component.preflight()?.sourceFrames).toBe(1828);
-    expect(component.canOfferPaidRun()).toBeFalse();
-    expect(fixture.nativeElement.textContent).toContain('bloqueado');
-    expect(fixture.nativeElement.textContent).toContain('0.3656');
-    component.transferConsent.set(true);
-    component.paidConsent.set(true);
-    await component.analyze(); // guard, no network
-    http.expectNone(r=>r.method==='POST');
-    http.verify();fixture.destroy();
-  });
-
-  it('automatically quotes a cached video but waits for Process before opening results',async()=>{
-    const {fixture,component,http}=setup(true);
-    const notification=jasmine.createSpy('cacheUpdated');
-    component.cacheUpdated.subscribe(notification);
-    await Promise.resolve();
-    http.expectOne(url+'/status?mode='+cacheMode)
-      .flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await Promise.resolve();
-    http.expectOne(url+'/preflight').flush(preflight);
-    await fixture.whenStable();fixture.detectChanges();
-    expect(notification).not.toHaveBeenCalled();
-    expect(fixture.nativeElement.textContent).toContain('0.3656');
-    expect(fixture.nativeElement.textContent).toContain('US$ 0.00');
-    expect(fixture.nativeElement.querySelector('.sam-submit').disabled).toBeFalse();
-    expect(component.preflight()?.sourceFrames).toBe(1828);
-    expect(component.readiness()).toBeNull();
-    await component.process();
-    expect(notification).toHaveBeenCalledOnceWith({studyId:id,videoRole:'baseline',
-      sourceSha256:sha,analysisId:'analysis-test-001',port:5391});
-    expect(component.tokenEntered()).toBeFalse();
-    http.expectNone(r=>r.method==='POST' || r.url.endsWith('/readiness'));
-    http.verify();fixture.destroy();
-  });
-
-  it('requires both explicit checkboxes and exactly one user-click POST when backend permits',async()=>{
-    const {fixture,component,http}=setup();
-    const task=component.check();
-    await resolvePreflight(http,true);
-    await task;
-    expect(component.canOfferPaidRun()).toBeTrue();
-    await component.analyze();
-    http.expectNone(r=>r.method==='POST'); // consent missing
-    component.transferConsent.set(true);
-    await component.analyze();
-    http.expectNone(r=>r.method==='POST'); // spending consent missing
-    component.paidConsent.set(true);
-    const input=(fixture as any).settingsTokenField as HTMLInputElement;
-    const fakeKey='LLM_1234567890123456_TEST_ABCDEF1234567890';
-    input.value=fakeKey;
-    input.dispatchEvent(new Event('input'));
-    fixture.detectChanges();
-    const notification=jasmine.createSpy('cacheUpdated');
-    component.cacheUpdated.subscribe(notification);
-    const submit=component.analyze();
-    const request=http.expectOne(url+'/manual-one-shot');
-    fixture.detectChanges();
-    expect(component.processing()).toBeTrue();
-    expect(fixture.nativeElement.querySelector('.sam-progress')?.textContent).toContain('Procesando con Meta');
-    expect(request.request.method).toBe('POST');
-    expect(request.request.headers.get('X-ProofLab-Manual-Action')).toBe('sam-one-shot');
-    expect(request.request.body.modelApiToken).toBe(fakeKey);
-    expect(input.value).toBe('');
-    expect(request.request.body.mode).toBe(cacheMode);
-    expect(request.request.body.videoSha256).toBe(sha);
-    expect(request.request.body.maximumEstimatedCostUsd).toBe(0.5);
-    expect(request.request.body.confirmPrivateVideoTransfer).toBeTrue();
-    expect(request.request.body.confirmOneBillableSamCall).toBeTrue();
-    request.flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await submit;fixture.detectChanges();
-    expect(notification).toHaveBeenCalledTimes(1);
-    expect(component.processing()).toBeTrue();
-    fixture.componentRef.setInput('validationState','ready');fixture.detectChanges();
-    expect(component.processing()).toBeFalse();
-    expect(component.connection.busy()).toBeFalse();
-    expect(component.transferConsent()).toBeFalse();
-    expect(component.paidConsent()).toBeFalse();
-    expect(component.canOfferPaidRun()).toBeFalse();
-    http.expectNone(url+'/manual-one-shot');
-    expect(component.tokenEntered()).toBeFalse();
-    expect(localStorage.getItem('sam-meta-token')).toBeNull();
-    http.verify();fixture.destroy();
-  });
-
-  it('requires an extra explicit owner confirmation for the ONE reconciled retry',async()=>{
-    const {fixture,component,http}=setup();
-    const check=component.check();
-    http.expectOne(url+'/status?mode='+cacheMode)
-      .flush(state('PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION',false));
-    await Promise.resolve();
-    http.expectOne(url+'/preflight').flush(preflight);
-    await Promise.resolve();
-    http.expectOne('http://127.0.0.1:5391/api/meta/readiness')
-      .flush(readiness(true));
-    await check;fixture.detectChanges();
-    expect(component.canOfferPaidRun()).toBeTrue();
-    const input=(fixture as any).settingsTokenField as HTMLInputElement;
-    input.value='LLM_1234567890123456_BBBBBBBBBBBBBBBBB';
-    input.dispatchEvent(new Event('input'));
-    component.transferConsent.set(true);
-    component.paidConsent.set(true);
-    await component.analyze();
-    http.expectNone(url+'/manual-one-shot');
-    component.retryConsent.set(true);
-    const pending=component.analyze();
-    const req=http.expectOne(url+'/manual-one-shot');
-    expect(req.request.body.ownerApprovesOneReconciledRetry).toBeTrue();
-    expect(req.request.body.previousAttemptBillingEvidence)
-      .toContain('OWNER_APPROVED_ONE_MORE_SAM_ATTEMPT');
-    expect(req.request.body.modelApiToken).toBe('LLM_1234567890123456_BBBBBBBBBBBBBBBBB');
-    req.flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await pending;
-    expect(input.value).toBe('');
-    http.verify();fixture.destroy();
-  });
-  function modeEvent(mode:string):Event {
-    return {target:{value:mode}} as unknown as Event;
+  function flush(all:TestRequest[],options:{status?:any;quote?:any;readiness?:any;assembly?:any}={}) {
+    for(const r of all) {
+      if(r.request.url.includes('/status?'))r.flush(options.status??state());
+      else if(r.request.url.endsWith('/readiness'))r.flush(options.readiness??ready);
+      else if(r.request.url.includes('/assembly/'))r.flush(options.assembly??aq);
+      else r.flush(options.quote??pf);
+    }
   }
-  function enterToken(fixture:ReturnType<typeof setup>['fixture']):HTMLInputElement {
-    const input=(fixture as any).settingsTokenField as HTMLInputElement;
-    input.value='LLM_SYNTHETIC_TEST_KEY_1234567890';
-    input.dispatchEvent(new Event('input'));
-    return input;
+  async function quote(ctx:Context,options:Parameters<typeof flush>[1]={}) {
+    const p=ctx.c.check();flush(requests(ctx),options);await p;ctx.f.detectChanges();
   }
-  async function resolveFresh(http:HttpTestingController,allowed=true):Promise<void> {
-    http.expectOne(url+'/status?mode='+freshMode).flush({
-      ...state('READY_FOR_FRESH_META_ANALYSIS',allowed),
-      mode:freshMode,cacheHit:false,analysisId:null
-    });
-    await Promise.resolve();
-    http.expectOne(url+'/preflight').flush(preflight);
-    await Promise.resolve();
-    http.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush(readiness(allowed));
-    await Promise.resolve();
-  }
-
-  it('offers exactly two primary modes, defaults to cache and links to centralized settings',()=>{
-    const {fixture,component,http}=setup();
-    const select=fixture.nativeElement.querySelector('select.sam-mode') as HTMLSelectElement;
-    expect(Array.from(select.options).map(o=>o.value)).toEqual([freshMode,cacheMode]);
-    expect(select.value).toBe(cacheMode);
-    expect(component.localApiPort()).toBe(5391);
-    expect(fixture.nativeElement.querySelector('details.sam-connection')).toBeNull();
-    expect(fixture.nativeElement.querySelector('input[type="password"]')).toBeNull();
-    expect(fixture.nativeElement.textContent).toContain('Abrir configuración');
-    fixture.componentRef.setInput('language','en');
-    fixture.detectChanges();
-    expect(select.options[1].textContent).toContain('API Meta + cache');
-    http.verify();fixture.destroy();
+  it('starts four independent GETs together and keeps Process disabled until the cost arrives',async()=>{
+    const ctx=setup();token(ctx);const p=ctx.c.check();const all=requests(ctx);
+    const cost=all.find(r=>r.request.url.includes('/sam/')&&r.request.url.endsWith('/preflight'))!;
+    flush(all.filter(r=>r!==cost));await Promise.resolve();
+    expect(ctx.c.canProcess()).toBeFalse();expect(ctx.c.checking()).toBeTrue();
+    cost.flush(pf);await p;ctx.f.detectChanges();
+    expect(ctx.c.canProcess()).toBeTrue();expect(ctx.field.value).toBe(fake);
+    expect(ctx.f.nativeElement.querySelector('.paid-cost').textContent).toContain('0.38');
+    ctx.h.expectNone(r=>r.method==='POST');
   });
-
-  it('clears consent and key when switching modes and does not start a request automatically',async()=>{
-    const {fixture,component,http}=setup();
-    const check=component.check();
-    await resolvePreflight(http,true);
-    await check;
-    const input=enterToken(fixture);
-    component.transferConsent.set(true);
-    component.paidConsent.set(true);
-    component.retryConsent.set(true);
-    component.selectMode(modeEvent(freshMode));
-    expect(component.mode()).toBe(freshMode);
-    expect(component.cacheStatus()).toBeNull();
-    expect(component.preflight()).toBeNull();
-    expect(component.readiness()).toBeNull();
-    expect(component.transferConsent()).toBeFalse();
-    expect(component.paidConsent()).toBeFalse();
-    expect(component.retryConsent()).toBeFalse();
-    expect(component.tokenEntered()).toBeFalse();
-    expect(input.value).toBe('');
-    await component.analyze();
-    http.expectNone(()=>true);
-    http.verify();fixture.destroy();
+  it('registration plus the visible Process click sends one request capped at the shown estimate',async()=>{
+    const ctx=setup();await quote(ctx);expect(ctx.c.canProcess()).toBeFalse();token(ctx);
+    expect(ctx.c.canProcess()).toBeTrue();
+    const emit=spyOn(ctx.c.cacheUpdated,'emit');
+    const p=ctx.c.process();const req=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
+    expect(req.request.body.maximumEstimatedCostUsd).toBe(.375);
+    expect(req.request.body.confirmPrivateVideoTransfer).toBeTrue();
+    expect(req.request.body.confirmOneBillableSamCall).toBeTrue();
+    expect(req.request.body.modelApiToken).toBe(fake);
+    expect(req.request.headers.get('X-ProofLab-Manual-Action')).toBe('sam-one-shot');
+    expect(ctx.con.busy()).toBeTrue();await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
+    req.flush(cached());await p;
+    expect(emit).toHaveBeenCalledTimes(1);expect(ctx.con.hasToken()).toBeTrue();expect(ctx.field.value).toBe(fake);
+    expect(ctx.c.processing()).toBeTrue();
+    ctx.f.componentRef.setInput('validationState','ready');ctx.f.detectChanges();
+    expect(ctx.c.processing()).toBeFalse();expect(ctx.con.busy()).toBeFalse();
   });
-
-  it('requests one fresh analysis after explicit consent, blocks changes and ignores double clicks',async()=>{
-    const {fixture,component,http}=setup();
-    component.selectMode(modeEvent(freshMode));
-    const check=component.check();
-    await resolveFresh(http);
-    await check;
-    expect(component.canOfferPaidRun()).toBeTrue();
-    enterToken(fixture);
-    component.transferConsent.set(true);
-    component.paidConsent.set(true);
-    const submit=component.analyze();
-    const req=http.expectOne(url+'/manual-one-shot');
-    expect(req.request.body.mode).toBe(freshMode);
-    component.selectMode(modeEvent(cacheMode));
-    component.selectLocalPort(modeEvent('5393'));
-    expect(component.mode()).toBe(freshMode);
-    expect(component.localApiPort()).toBe(5391);
-    await component.analyze();
-    http.expectNone(r=>r.method==='POST');
-    const offline={files:[new File([''],'empty.json')],value:'selected'};
-    await component.onFile({target:offline} as unknown as Event);
-    expect(component.sending()).toBeTrue();
-    req.flush({...state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'),
-      mode:freshMode,cacheHit:false,analysisId:'fresh-analysis-002'});
-    await submit;fixture.detectChanges();
-    expect(component.sending()).toBeFalse();
-    expect(component.tokenEntered()).toBeFalse();
-    expect(fixture.nativeElement.textContent).toContain('Nuevo análisis SAM guardado');
-    expect(fixture.nativeElement.textContent).toContain('fresh-analysis-002');
-    expect(component.canOfferPaidRun()).toBeFalse();
-    http.verify();fixture.destroy();
+  it('opens a verified cache for free without a token or billing readiness',async()=>{
+    const ctx=setup();const p=ctx.c.check();const all=requests(ctx);
+    const access=all.find(r=>r.request.url.endsWith('/readiness'))!;
+    access.flush({}, {status:503,statusText:'Offline'});
+    flush(all.filter(r=>r!==access),{status:cached()});await p;ctx.f.detectChanges();
+    expect(ctx.c.canProcess()).toBeTrue();expect(ctx.f.nativeElement.querySelector('.free-cost').textContent).toContain('0.00');
+    const emit=spyOn(ctx.c.cacheUpdated,'emit');await ctx.c.process();
+    expect(emit).toHaveBeenCalledTimes(1);ctx.h.expectNone(r=>r.method==='POST');
   });
-
-  it('does not retry a failed POST or preserve its one-time consent or token',async()=>{
-    const {fixture,component,http}=setup();
-    const check=component.check();
-    await resolvePreflight(http,true);
-    await check;
-    const input=enterToken(fixture);
-    component.transferConsent.set(true);
-    component.paidConsent.set(true);
-    const submit=component.analyze();
-    http.expectOne(url+'/manual-one-shot').flush({},{
-      status:502,statusText:'Synthetic provider failure'
-    });
-    await submit;
-    expect(component.sending()).toBeFalse();
-    expect(component.cacheStatus()).toBeNull();
-    expect(component.transferConsent()).toBeFalse();
-    expect(component.paidConsent()).toBeFalse();
-    expect(input.value).toBe('');
-    expect(component.error()).toContain('facturada');
-    await component.analyze();
-    http.expectNone(()=>true);
-    http.verify();fixture.destroy();
+  it('API-only stays red and asks for a fresh result even when the same video has cache',async()=>{
+    const ctx=setup();token(ctx);ctx.c.selectMode({target:{value:'api-meta'}} as unknown as Event);
+    expect(ctx.con.hasToken()).toBeTrue();
+    await quote(ctx,{status:state({status:'READY_FOR_FRESH_META_ANALYSIS',mode:'api-meta',analysisId:'old'})});
+    expect(ctx.c.cachedResultAvailable()).toBeFalse();expect(ctx.c.canProcess()).toBeTrue();
+    expect(ctx.f.nativeElement.querySelector('.paid-cost')).not.toBeNull();
+    const p=ctx.c.process(),req=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
+    expect(req.request.body.mode).toBe('api-meta');req.flush({...cached(),cacheHit:false,analysisId:'new'});await p;
   });
-
-  it('ignores an older check after a mode change without leaving the new check stuck',async()=>{
-    const {fixture,component,http}=setup();
-    const replay=jasmine.createSpy('replay');
-    component.cacheUpdated.subscribe(replay);
-    const oldCheck=component.check();
-    const oldReq=http.expectOne(url+'/status?mode='+cacheMode);
-    component.selectMode(modeEvent(freshMode));
-    expect(component.checking()).toBeFalse();
-    const newCheck=component.check();
-    oldReq.flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await oldCheck;
-    expect(component.checking()).toBeTrue();
-    expect(component.cacheStatus()).toBeNull();
-    expect(replay).not.toHaveBeenCalled();
-    await resolveFresh(http,false);
-    await newCheck;
-    expect(component.checking()).toBeFalse();
-    expect(component.cacheStatus()?.status).toBe('READY_FOR_FRESH_META_ANALYSIS');
-    expect(component.canOfferPaidRun()).toBeFalse();
-    http.verify();fixture.destroy();
+  it('makes recognition the next Process action with an upfront combined estimate and allowance notice',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{status:state({recognitionRequired:true})});
+    expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBe(.425);
+    expect(ctx.f.nativeElement.textContent).toContain('2 envíos');
+    expect(ctx.f.nativeElement.textContent).toContain('queda 1');
+    const next=spyOn(ctx.c.assemblyRequested,'emit');await ctx.c.process();
+    expect(next).toHaveBeenCalledOnceWith({studyId:id,role:'baseline',sha,port:5391,cacheKey:key,maximumEstimatedCostUsd:.05});
+    ctx.h.expectNone(r=>r.method==='POST');
   });
-
-  it('invalidates a check when the connection changes and can check the new port',async()=>{
-    const {fixture,component,http}=setup();
-    const oldCheck=component.check();
-    const oldReq=http.expectOne(url+'/status?mode='+cacheMode);
-    component.selectLocalPort(modeEvent('5393'));
-    expect(component.checking()).toBeFalse();
-    const newCheck=component.check();
-    oldReq.flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await oldCheck;
-    expect(component.checking()).toBeTrue();
-    http.expectOne(url.replace(':5391',':5393')+'/status?mode='+cacheMode)
-      .flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await Promise.resolve();
-    http.expectOne(url.replace(':5391',':5393')+'/preflight').flush(preflight);
-    await newCheck;
-    expect(component.checking()).toBeFalse();
-    http.verify();fixture.destroy();
+  it('opens cached recognition for review without a token or additional credits',async()=>{
+    const ctx=setup();await quote(ctx,{status:state({recognitionRequired:true}),
+      readiness:{...ready,remainingRequests:0,manualTokenCallsPermitted:false},
+      assembly:{...aq,cacheHit:true,evidence:{cacheKey:key}}});
+    expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBe(.375);
+    const emit=spyOn(ctx.c.assemblyRequested,'emit');await ctx.c.process();
+    expect(emit.calls.mostRecent().args[0].maximumEstimatedCostUsd).toBe(0);
   });
-
-  it('keeps offline JSON independent from an in-flight status check',async()=>{
-    const {fixture,component,http}=setup();
-    const check=component.check();
-    const req=http.expectOne(url+'/status?mode='+cacheMode);
-    const offline={files:[new File([''],'empty.json')],value:'selected'};
-    await component.onFile({target:offline} as unknown as Event);
-    expect(component.checking()).toBeTrue();
-    req.flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await Promise.resolve();
-    http.expectOne(url+'/preflight').flush(preflight);
-    await check;
-    expect(component.checking()).toBeFalse();
-    expect(component.cacheStatus()?.cacheHit).toBeTrue();
-    http.verify();fixture.destroy();
+  it('does not start a paid recognition without its quote, on a prior attempt or on exhausted allowance',async()=>{
+    const ctx=setup();token(ctx);
+    await quote(ctx,{status:state({recognitionRequired:true}),assembly:{...aq,priorAttempt:true}});
+    expect(ctx.c.canProcess()).toBeFalse();
+    await quote(ctx,{status:state({recognitionRequired:true}),readiness:{...ready,remainingRequests:0}});
+    expect(ctx.c.canProcess()).toBeFalse();expect(ctx.c.processBlockedReason()).toContain('cupo');
+    ctx.c.assemblyQuote.set(null);expect(ctx.c.canProcess()).toBeFalse();await ctx.c.process();
+    ctx.h.expectNone(r=>r.method==='POST');
   });
-
-  it('ignores a completed POST belonging to a previous video',async()=>{
-    const {fixture,component,http}=setup();
-    const check=component.check();
-    await resolvePreflight(http,true);
-    await check;
-    enterToken(fixture);
-    component.transferConsent.set(true);
-    component.paidConsent.set(true);
-    const replay=jasmine.createSpy('replay');
-    component.cacheUpdated.subscribe(replay);
-    const submit=component.analyze();
-    const req=http.expectOne(url+'/manual-one-shot');
-    fixture.componentRef.setInput('videoSha256','e'.repeat(64));
-    fixture.detectChanges();
-    req.flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await submit;
-    expect(component.sending()).toBeFalse();
-    expect(component.cacheStatus()).toBeNull();
-    expect(component.tokenEntered()).toBeFalse();
-    expect(replay).not.toHaveBeenCalled();
-    http.verify();fixture.destroy();
+  it('explains server permission even with a registered token',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{readiness:{...ready,paidRequestsSwitchEnabled:false,
+      creditsConfirmedByOwner:false,manualTokenCallsPermitted:false}});
+    expect(ctx.c.canProcess()).toBeFalse();expect(ctx.c.processBlockedReason()).toContain('Token registrado.');
+    await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
   });
-
-  it('requires manual review for a failed new analysis without offering the legacy retry',async()=>{
-    const {fixture,component,http}=setup();
-    component.selectMode(modeEvent(freshMode));
-    const check=component.check();
-    http.expectOne(url+'/status?mode='+freshMode).flush({
-      ...state('NEW_ANALYSIS_REQUIRES_MANUAL_RECONCILIATION',false),
-      mode:freshMode,cacheHit:false
-    });
-    await Promise.resolve();
-    http.expectOne(url+'/preflight').flush(preflight);
-    await Promise.resolve();
-    http.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush(readiness(true));
-    await check;fixture.detectChanges();
-    expect(component.canOfferPaidRun()).toBeFalse();
-    expect(fixture.nativeElement.textContent).toContain('Se requiere revisión manual');
-    expect(fixture.nativeElement.querySelector('.sam-consent')).toBeNull();
-    enterToken(fixture);
-    component.transferConsent.set(true);
-    component.paidConsent.set(true);
-    component.retryConsent.set(true);
-    await component.analyze();
-    http.expectNone(r=>r.method==='POST');
-    fixture.componentRef.setInput('language','en');
-    fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('Manual review is required');
-    http.verify();fixture.destroy();
+  it('quotes automatically but never starts paid work on load or a mode change',async()=>{
+    const ctx=setup(true);token(ctx);await Promise.resolve();flush(requests(ctx));
+    await ctx.f.whenStable();expect(ctx.c.canProcess()).toBeTrue();ctx.h.expectNone(r=>r.method==='POST');
+    ctx.c.selectMode({target:{value:'api-meta'}} as unknown as Event);
+    expect(ctx.c.preflight()).toBeNull();expect(ctx.field.value).toBe(fake);
+    await Promise.resolve();flush(requests(ctx),{status:state({mode:'api-meta'})});
+    await ctx.f.whenStable();ctx.h.expectNone(r=>r.method==='POST');
   });
-
-  it('refuses a cached status belonging to a different video',async()=>{
-    const {fixture,component,http}=setup();
-    const replay=jasmine.createSpy('replay');
-    component.cacheUpdated.subscribe(replay);
-    const check=component.check();
-    http.expectOne(url+'/status?mode='+cacheMode).flush({
-      ...state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'),
-      sourceSha256:'e'.repeat(64)
-    });
-    await check;
-    expect(component.cacheStatus()).toBeNull();
-    expect(component.checking()).toBeFalse();
-    expect(component.error()).not.toBe('');
-    expect(replay).not.toHaveBeenCalled();
-    http.expectNone(r=>r.method==='POST');
-    http.verify();fixture.destroy();
+  it('discards old parallel replies after a video or server change',async()=>{
+    const ctx=setup();token(ctx);const old=ctx.c.check(),oldRequests=requests(ctx);
+    ctx.con.setPort(5393);expect(ctx.field.value).toBe('');
+    const next=ctx.c.check(),newRequests=requests(ctx);
+    flush(oldRequests,{status:cached()});await old;
+    expect(ctx.c.cacheStatus()).toBeNull();expect(ctx.c.checking()).toBeTrue();
+    flush(newRequests);await next;expect(ctx.c.checking()).toBeFalse();
+    expect(ctx.c.localApiPort()).toBe(5393);
   });
-  it('quotes a new upload automatically with GET only and exposes disabled Process while blocked',async()=>{
-    const {fixture,component,http}=setup(true);
-    await Promise.resolve();
-    await resolvePreflight(http,false);
-    await fixture.whenStable();fixture.detectChanges();
-    expect(component.preflight()?.estimatedCostUsd).toBe(.3656);
-    expect(fixture.nativeElement.querySelector('.sam-submit').textContent).toContain('Procesar');
-    expect(fixture.nativeElement.querySelector('.sam-submit').disabled).toBeTrue();
-    expect(fixture.nativeElement.textContent).toContain('US$ 0.3656');
-    http.expectNone(r=>r.method==='POST');http.verify();fixture.destroy();
+  it('waits for both cost and original video readiness',async()=>{
+    const ctx=setup();token(ctx);ctx.f.componentRef.setInput('mediaReady',false);ctx.f.detectChanges();
+    await quote(ctx);expect(ctx.c.canProcess()).toBeFalse();
+    ctx.f.componentRef.setInput('mediaReady',true);ctx.f.detectChanges();expect(ctx.c.canProcess()).toBeTrue();
+    ctx.c.preflight.set(null);expect(ctx.c.canProcess()).toBeFalse();
   });
-
-  it('refreshes the quote after a mode change but never reuses cache for fresh Meta mode',async()=>{
-    const {fixture,component,http}=setup(true);
-    await Promise.resolve();
-    http.expectOne(url+'/status?mode='+cacheMode)
-      .flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await Promise.resolve();http.expectOne(url+'/preflight').flush(preflight);
-    await fixture.whenStable();
-    expect(component.cachedResultAvailable()).toBeTrue();
-    component.selectMode(modeEvent(freshMode));
-    await Promise.resolve();await resolveFresh(http,false);
-    await fixture.whenStable();fixture.detectChanges();
-    expect(component.cachedResultAvailable()).toBeFalse();
-    expect(component.canProcess()).toBeFalse();
-    expect(fixture.nativeElement.textContent).not.toContain('US$ 0.00');
-    http.expectNone(r=>r.method==='POST');http.verify();fixture.destroy();
+  it('fails closed on a mismatched source or failed estimate',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{status:cached(),quote:{...pf,sourceSha256:'f'.repeat(64)}});
+    expect(ctx.c.canProcess()).toBeFalse();expect(ctx.c.cacheStatus()).toBeNull();
+    const p=ctx.c.check(),all=requests(ctx);
+    const cost=all.find(r=>r.request.url.includes('/sam/')&&r.request.url.endsWith('/preflight'))!;
+    cost.flush({}, {status:503,statusText:'Unavailable'});flush(all.filter(r=>r!==cost),{status:cached()});
+    await p;expect(ctx.c.canProcess()).toBeFalse();expect(ctx.c.preflight()).toBeNull();
   });
-
-  it('rejects a paid completion for a different source without opening old results',async()=>{
-    const {fixture,component,http}=setup();
-    const check=component.check();await resolvePreflight(http,true);await check;
-    enterToken(fixture);component.transferConsent.set(true);component.paidConsent.set(true);
-    const opened=jasmine.createSpy('opened');component.cacheUpdated.subscribe(opened);
-    const process=component.process();
-    http.expectOne(url+'/manual-one-shot').flush({
-      ...state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'),
-      sourceSha256:'f'.repeat(64)});
-    await process;
-    expect(opened).not.toHaveBeenCalled();expect(component.cacheStatus()).toBeNull();
-    expect(component.error()).toContain('facturada');
-    http.verify();fixture.destroy();
+  it('never automatically retries a failed paid request and requires a fresh status check',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx);const p=ctx.c.process();
+    ctx.h.expectOne(base+'/sam/baseline/manual-one-shot').flush({}, {status:502,statusText:'Synthetic failure'});
+    await p;expect(ctx.c.error()).toContain('facturada');expect(ctx.c.cacheStatus()).toBeNull();
+    expect(ctx.con.busy()).toBeFalse();expect(ctx.field.value).toBe(fake);
+    await ctx.c.process();ctx.h.expectNone(()=>true);
   });
-
-  it('never enables cached processing when the cost check fails',async()=>{
-    const {fixture,component,http}=setup();
-    const check=component.check();
-    http.expectOne(url+'/status?mode='+cacheMode)
-      .flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await Promise.resolve();
-    expect(component.canProcess()).toBeFalse();
-    http.expectOne(url+'/preflight').flush({}, {status:503,statusText:'Unavailable'});
-    await check;fixture.detectChanges();
-    expect(component.cachedResultAvailable()).toBeTrue();
-    expect(component.preflight()).toBeNull();
-    expect(component.canProcess()).toBeFalse();
-    const opened=jasmine.createSpy();component.cacheUpdated.subscribe(opened);
-    await component.process();expect(opened).not.toHaveBeenCalled();
-    http.verify();fixture.destroy();
+  it('requires the additional owner review for the single historical reconciled retry',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{status:state({status:'PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION'})});
+    expect(ctx.c.canProcess()).toBeFalse();await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
+    ctx.c.retryConsent.set(true);const p=ctx.c.process();
+    const r=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
+    expect(r.request.body.ownerApprovesOneReconciledRetry).toBeTrue();
+    expect(r.request.body.previousAttemptBillingEvidence).toContain('OWNER_APPROVED_ONE_MORE');
+    r.flush(cached());await p;
   });
-
-  it('waits independently for video readiness and keeps cached processing busy until validation ends',async()=>{
-    const {fixture,component,http}=setup();
-    fixture.componentRef.setInput('mediaReady',false);fixture.detectChanges();
-    const check=component.check();
-    http.expectOne(url+'/status?mode='+cacheMode)
-      .flush(state('CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW'));
-    await Promise.resolve();http.expectOne(url+'/preflight').flush(preflight);await check;
-    expect(component.canProcess()).toBeFalse();
-    fixture.componentRef.setInput('mediaReady',true);fixture.detectChanges();
-    expect(component.canProcess()).toBeTrue();
-    const opened=jasmine.createSpy();component.cacheUpdated.subscribe(opened);
-    await component.process();fixture.detectChanges();
-    expect(component.processing()).toBeTrue();
-    expect(fixture.nativeElement.querySelector('.sam-progress [role=progressbar]')).not.toBeNull();
-    await component.process();await component.check();
-    expect(opened).toHaveBeenCalledTimes(1);
-    http.expectNone(()=>true);
-    fixture.componentRef.setInput('validationState','error');fixture.detectChanges();
-    expect(component.processing()).toBeFalse();
-    expect(component.connection.busy()).toBeFalse();
-    expect(component.error()).toContain('validar');
-    http.verify();fixture.destroy();
+  it('rejects a failed new analysis without offering a historical retry',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{status:state({status:'NEW_ANALYSIS_REQUIRES_MANUAL_RECONCILIATION'})});
+    expect(ctx.c.canProcess()).toBeFalse();expect(ctx.f.nativeElement.querySelector('.sam-consent')).toBeNull();
+    await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
   });
-
-  it('uses the Settings token without also requiring a server environment key',async()=>{
-    const {fixture,component,http}=setup();
-    component.mode.set(freshMode);
-    component.cacheStatus.set({...state('NOT_ANALYZED_WITH_SAM',false),mode:freshMode});
-    component.preflight.set(preflight);
-    component.readiness.set({apiKeyConfigured:false,liveCallsPermitted:false,
-      manualTokenCallsPermitted:true,paidRequestsSwitchEnabled:true,
-      creditsConfirmedByOwner:true,ownerApprovedPaidRequests:true,remainingRequests:2,usedRequests:0});
-    expect(component.canOfferPaidRun()).toBeTrue();
-    expect(component.canProcess()).toBeFalse();
-    const input=(fixture as any).settingsTokenField as HTMLInputElement;
-    input.value='LLM_FAKE_LOCAL_TEST_ONLY_1234567890123456';input.dispatchEvent(new Event('input'));
-    expect(component.processBlockedReason()).toContain('envío');
-    component.transferConsent.set(true);
-    expect(component.processBlockedReason()).toContain('créditos');
-    component.paidConsent.set(true);fixture.detectChanges();
-    expect(component.canProcess()).toBeTrue();
-    expect(fixture.nativeElement.querySelector('.sam-submit').disabled).toBeFalse();
-    const pending=component.process();
-    const request=http.expectOne(url+'/manual-one-shot');
-    expect(request.request.body.modelApiToken).toContain('FAKE_LOCAL_TEST_ONLY');
-    expect(input.value).toBe('');
-    request.flush({error:'fake stop'},{status:409,statusText:'Conflict'});
-    await pending;http.verify();fixture.destroy();
+  it('ignores a paid result belonging to an earlier video without opening playback',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx);const emit=spyOn(ctx.c.cacheUpdated,'emit');
+    const p=ctx.c.process(),r=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
+    ctx.f.componentRef.setInput('videoSha256','e'.repeat(64));ctx.f.detectChanges();
+    r.flush(cached());await p;expect(emit).not.toHaveBeenCalled();
+    expect(ctx.con.busy()).toBeFalse();expect(ctx.c.cacheStatus()).toBeNull();
   });
-
-  it('explains a closed server even with a registered token and never enables payment',async()=>{
-    const {fixture,component,http}=setup();
-    component.cacheStatus.set({...state(),mode:'api-meta-cache'});
-    component.preflight.set(preflight);
-    component.readiness.set({...readiness(false),paidRequestsSwitchEnabled:false,manualTokenCallsPermitted:false});
-    const input=(fixture as any).settingsTokenField as HTMLInputElement;
-    input.value='LLM_FAKE_LOCAL_TEST_ONLY_1234567890123456';input.dispatchEvent(new Event('input'));
-    component.transferConsent.set(true);component.paidConsent.set(true);fixture.detectChanges();
-    expect(component.canProcess()).toBeFalse();
-    expect(fixture.nativeElement.textContent).toContain('Token registrado.');
-    expect(fixture.nativeElement.textContent).toContain('servidor');
-    await component.process();http.expectNone(r=>r.method==='POST');
-    http.verify();fixture.destroy();
+  it('never changes server, token or mode during a paid request',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx);const p=ctx.c.process();
+    const r=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
+    expect(ctx.con.setPort(5393)).toBeFalse();expect(ctx.con.tokenForManualRequest()).toBe('');
+    ctx.c.selectMode({target:{value:'api-meta'}} as unknown as Event);expect(ctx.c.mode()).toBe('api-meta-cache');
+    r.flush(cached());await p;
   });
 });

@@ -4,7 +4,7 @@ namespace ProofLab.Api;
 
 public sealed class SamVideoRuntime(
     PendulumDirectorWorkflow director, VideoMediaDecoder decoder,
-    MetaLiveAccess meta) : ISamVideoRuntime
+    MetaLiveAccess meta, VideoTimingCatalog timing) : ISamVideoRuntime
 {
     public async Task<SamVideoSource> GetVerifiedSourceAsync(
         string studyId, string role, CancellationToken ct)
@@ -14,6 +14,14 @@ public sealed class SamVideoRuntime(
             video.Media.Width, video.Media.Height, video.Media.DurationSeconds);
     }
 
+    public async Task<SamVideoSource> GetQuoteSourceAsync(string studyId,string role,CancellationToken ct)
+    {
+        var (video,path)=await director.GetOriginalForQuoteAsync(studyId,role,ct);
+        return new(video.Sha256,video.VideoId,path,video.Media.Codec,
+            video.Media.Width,video.Media.Height,video.Media.DurationSeconds);
+    }
+    public Task<VideoFrameCount> GetFrameCountAsync(SamVideoSource source,CancellationToken ct)=>timing.CountAsync(source,ct);
+    public Task<double[]> ReadSourceFramePtsAsync(SamVideoSource source,CancellationToken ct)=>timing.PtsAsync(source,ct);
     public Task<double[]> ReadFramePtsAsync(string path, CancellationToken ct) =>
         decoder.ReadVideoFramePtsAsync(path, ct);
 

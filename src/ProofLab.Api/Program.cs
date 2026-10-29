@@ -26,6 +26,8 @@ builder.Services.AddSingleton<OpenConjectureEvidenceWorkflow>();
 builder.Services.AddSingleton<OfflineMathResearchFlow>();
 builder.Services.AddSingleton<PendulumResearchStore>();
 builder.Services.AddSingleton<VideoMediaDecoder>();
+builder.Services.AddSingleton<IVideoTimingReader>(sp=>sp.GetRequiredService<VideoMediaDecoder>());
+builder.Services.AddSingleton<VideoTimingCatalog>();
 builder.Services.AddSingleton<PendulumVideoWorkflow>();
 builder.Services.AddSingleton<PendulumDirectorWorkflow>();
 builder.Services.AddSingleton<PendulumDirectorKinematicsStore>();

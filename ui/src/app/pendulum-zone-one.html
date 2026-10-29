@@ -123,7 +123,7 @@
   <app-assembly-review [studyId]="session()?.id ?? ''"
     [role]="activeTrial()==='followup' && session()?.followup?.sha256 ? 'followup' : 'baseline'"
     [sha]="(activeTrial()==='followup' && session()?.followup?.sha256 ? session()?.followup?.sha256 : session()?.baseline?.sha256) ?? ''"
-    [port]="connection.port()" [language]="language()" (confirmed)="onAssemblyConfirmed()"/>
+    [port]="connection.port()" [language]="language()" (confirmed)="onAssemblyConfirmed()" (refreshed)="onAssemblyConfirmed()"/>
   <app-sam-video-replay [assemblyNonce]="assemblyNonce()" [language]="language()" [sourcePending]="sourcePending()"
     [mediaReady]="previewState()==='ready'" [validationState]="resultState()"
     [studyId]="session()?.id ?? ''"
@@ -131,7 +131,7 @@
     [videoSha256]="(activeTrial()==='followup' && session()?.followup?.sha256
       ? session()?.followup?.sha256 : session()?.baseline?.sha256) ?? ''"
     (processingReset)="clearProcessed()" (processingStarted)="onProcessingStarted()"
-    (cacheUpdated)="acceptProcessed($event)"/>
+    (cacheUpdated)="acceptProcessed($event)" (assemblyRequested)="startAssembly($event)"/>
 
   <section class="focus-video" [attr.aria-busy]="videoLoading() || resultState()==='loading'">
     <div class="video-heading">

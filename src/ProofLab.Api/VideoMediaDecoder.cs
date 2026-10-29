@@ -15,7 +15,7 @@ public sealed record VideoStreamMetadata(
 /// Only trusted binaries configured by the operator or found in local WinGet
 /// are launched. Avoid passing untrusted filenames as executable arguments.
 /// </summary>
-public sealed class VideoMediaDecoder : IKnotFrames
+public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
 {
     private readonly string? ffmpeg;
     private readonly string? ffprobe;
@@ -87,6 +87,21 @@ public sealed class VideoMediaDecoder : IKnotFrames
         {
             throw new ArgumentException("Video metadata could not be decoded.");
         }
+    }
+
+    /// <summary>Container metadata only: no decoding of video frames for the price card.</summary>
+    public async Task<int?> ReadVideoFrameCountAsync(string localFile,CancellationToken ct)
+    {
+        if(ffprobe is null)throw new InvalidOperationException("FFprobe unavailable.");
+        using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(15));
+        var process=NewProcess(ffprobe,"-v","error","-protocol_whitelist","file,pipe",
+            "-select_streams","v:0","-show_entries","stream=nb_frames","-of","json","-i",localFile);
+        var raw=await RunTextAsync(process,deadline.Token);
+        using var json=JsonDocument.Parse(raw);
+        var stream=json.RootElement.GetProperty("streams").EnumerateArray().FirstOrDefault();
+        if(stream.ValueKind!=JsonValueKind.Object || !stream.TryGetProperty("nb_frames",out var count))return null;
+        return int.TryParse(count.ToString(),NumberStyles.None,CultureInfo.InvariantCulture,out var n)&&n>0?n:null;
     }
 
     /// <summary>

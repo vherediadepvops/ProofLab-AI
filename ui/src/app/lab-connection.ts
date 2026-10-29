@@ -35,12 +35,10 @@ export class LabConnection {
     if(this.tokenField)this.tokenField.value='';
     this.hasToken.set(false);
   }
-  /** Called only after explicit per-request consent and backend preflight. */
-  takeToken():string {
+  /** Retained only in the registered password field, never persisted. */
+  tokenForManualRequest():string {
     if(!this.hasToken() || this.busy())return '';
-    const value=this.tokenField?.value.trim() ?? '';
-    this.clearToken();
-    return value;
+    return this.tokenField?.value.trim() ?? '';
   }
   setPort(value:number):boolean {
     if(this.busy() || (value!==5391 && value!==5393 && value!==5398))return false;

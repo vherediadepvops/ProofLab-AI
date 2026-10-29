@@ -4,7 +4,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { WorkspaceSettings } from './workspace-settings';
 import { LabConnection } from './lab-connection';
 
-describe('Workspace settings and one-use credentials',()=>{
+describe('Workspace settings and session credentials',()=>{
   beforeEach(async()=>{
     await TestBed.configureTestingModule({imports:[WorkspaceSettings],
       providers:[provideHttpClient(),provideHttpClientTesting()]}).compileComponents();
@@ -24,8 +24,8 @@ describe('Workspace settings and one-use credentials',()=>{
     expect(fixture.nativeElement.textContent).not.toContain(fake);
     expect(local).not.toHaveBeenCalled();expect(session).not.toHaveBeenCalled();
     http.expectNone(()=>true);
-    expect(connection.takeToken()).toBe(fake);expect(input.value).toBe('');
-    expect(connection.takeToken()).toBe('');expect(connection.hasToken()).toBeFalse();
+    expect(connection.tokenForManualRequest()).toBe(fake);expect(input.value).toBe(fake);
+    component.clearToken();expect(connection.tokenForManualRequest()).toBe('');expect(connection.hasToken()).toBeFalse();
     http.verify();fixture.destroy();
   });
   it('clears a configured key on port change and rejects unsupported ports',()=>{
@@ -59,7 +59,7 @@ describe('Workspace settings and one-use credentials',()=>{
     const {fixture,component,connection,input,http}=setup();
     input.value=fake;component.applyToken();connection.busy.set(true);fixture.detectChanges();
     expect(input.disabled).toBeTrue();expect(connection.setPort(5393)).toBeFalse();
-    expect(connection.takeToken()).toBe('');component.clearToken();expect(input.value).toBe(fake);
+    expect(connection.tokenForManualRequest()).toBe('');component.clearToken();expect(input.value).toBe(fake);
     connection.busy.set(false);fixture.destroy();expect(input.value).toBe('');
     http.verify();
   });
@@ -69,5 +69,18 @@ describe('Workspace settings and one-use credentials',()=>{
     expect(connection.hasToken()).toBeFalse();input.value=fake;component.applyToken();
     fixture.destroy();expect(input.value).toBe('');expect(connection.hasToken()).toBeFalse();
     http.verify();
+  });
+  it('retains a registered key for manual requests until cleared, without persisting it',()=>{
+    const {fixture,component,connection,http,input}=setup();
+    const local=spyOn(localStorage,'setItem'),session=spyOn(sessionStorage,'setItem');
+    input.value=fake;component.applyToken();
+    expect(connection.tokenForManualRequest()).toBe(fake);
+    expect(connection.tokenForManualRequest()).toBe(fake);
+    expect(connection.hasToken()).toBeTrue();expect(input.value).toBe(fake);
+    connection.busy.set(true);expect(connection.tokenForManualRequest()).toBe('');
+    connection.busy.set(false);component.clearToken();
+    expect(connection.hasToken()).toBeFalse();expect(input.value).toBe('');
+    expect(local).not.toHaveBeenCalled();expect(session).not.toHaveBeenCalled();
+    http.expectNone(()=>true);fixture.destroy();
   });
 });

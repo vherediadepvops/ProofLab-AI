@@ -148,7 +148,7 @@ export class KnotReview implements OnChanges,OnDestroy {
   }
   async locate():Promise<void>{
     if(!this.canLocate())return;
-    const key=this.connection.takeToken();if(!key)return;
+    const key=this.connection.tokenForManualRequest();if(!key)return;
     const serial=++this.serial;this.busy.set(true);this.running.set(true);
     this.connection.busy.set(true);this.error.set('');
     try {

@@ -3,7 +3,8 @@ import {
   inject, input, output, signal
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timeout } from 'rxjs';
+import type {AssemblyQuote, AssemblyProcessRequest} from './assembly-review';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LabConnection } from './lab-connection';
 import { LabActivity } from './lab-activity';
@@ -51,7 +52,7 @@ interface SamReadiness {
         @if(studyId() && videoSha256()) {
           <label class="sam-api-selector">
             <span>{{es?'Modo de análisis':'Analysis mode'}}</span>
-            <select class="sam-mode" [value]="mode()" (change)="selectMode($event)" [disabled]="processing() || sending()">
+            <select class="sam-mode" [value]="mode()" (change)="selectMode($event)" [disabled]="processing() || sending() || connection.busy()">
               <option value="api-meta">API Meta</option>
               <option value="api-meta-cache">{{es?'API Meta + caché':'API Meta + cache'}}</option>
             </select>
@@ -65,8 +66,8 @@ interface SamReadiness {
             <div class="sam-price">
               @if(preflight(); as pf) {
                 <div class="sam-price-line">
-                  <strong>{{cachedResultAvailable()?'US$ 0.00':'US$ '+pf.estimatedCostUsd.toFixed(2)}}</strong>
-                  <small>{{cachedResultAvailable()?(es?'desde caché · sin cobro':'from cache · no charge'):(es?'estimado · no es una factura':'estimated · not an invoice')}}</small>
+                  <strong [class.paid-cost]="!cachedResultAvailable()" [class.free-cost]="cachedResultAvailable()">{{cachedResultAvailable()?'US$ 0.00':'US$ '+displayedCost().toFixed(2)}}</strong>
+                  <small>{{cachedResultAvailable()?(es?'desde caché · sin cobro':'from cache · no charge'):(es?'Usará créditos · estimado':'Uses credits · estimate')}}</small>
                 </div>
                 @if(cachedResultAvailable()) {
                   <small class="sam-meta-estimate">{{es?'Enviar a Meta':'Send to Meta'}}: US$ {{pf.estimatedCostUsd.toFixed(2)}} {{es?'estimados':'estimated'}}</small>
@@ -81,7 +82,7 @@ interface SamReadiness {
             }
             <div class="sam-buttons">
               <button type="button" class="sam-refresh" (click)="voidCheck()" [disabled]="checking() || processing() || sending() || connection.busy()">{{es?'Actualizar costo':'Refresh cost'}}</button>
-              <button type="button" class="sam-submit" (click)="process()" [disabled]="!canProcess()">{{processing()?(es?'Procesando…':'Processing…'):(es?'Procesar':'Process')}}</button>
+              <button type="button" class="sam-submit" (click)="process()" [disabled]="!canProcess()">{{processing() || connection.busy()?(es?'Procesando…':'Processing…'):(es?'Procesar':'Process')}}</button>
             </div>
           </div>
           @if(checking()) {
@@ -91,7 +92,7 @@ interface SamReadiness {
             <app-lab-activity class="sam-progress" [label]="sending()?(es?'Procesando con Meta…':'Processing with Meta…'):(es?'Preparando resultados…':'Preparing results…')"
               [detail]="sending()?(es?'Esperando la respuesta de SAM. Sin reintentos automáticos.':'Waiting for SAM. No automatic retries.'):(es?'Cargando y validando la evidencia para generar los gráficos.':'Loading and validating evidence to generate overlays.')"/>
           }
-          @if(!checking() && !processing()) {
+          @if(!checking() && !processing() && !connection.busy()) {
           <div class="sam-message" [class.warning]="!cachedResultAvailable() && !canProcess() && !checking() && !sending()" role="status">
             @if(error()) {
               <span>{{error()}}</span>
@@ -105,33 +106,27 @@ interface SamReadiness {
             } @else if(!canProcess()) {
               <span aria-hidden="true">⚠</span>
               <span>{{processBlockedReason()}}</span>
-              <button type="button" class="sam-settings-link" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
+              @if(!tokenEntered()) {<button type="button" class="sam-settings-link" (click)="connection.openSettings()">{{es?'Configurar token':'Configure key'}}</button>}
             } @else {
-              <span>{{es?'Listo para enviar una solicitud a Meta con el costo estimado indicado.':'Ready to send one Meta request at the displayed estimated cost.'}}</span>
+              <span>{{nextActionDescription()}}</span>
             }
           </div>
           }
-          @if(canOfferPaidRun()) {
-            <div class="sam-consent">
-              <label><input type="checkbox" [checked]="transferConsent()"
-                (change)="transferConsent.set($any($event.target).checked)"/>
-                {{es?'Autorizo enviar este video privado a Meta para SAM':
-                  'I authorize transferring this private video to Meta for SAM'}}</label>
-              @if(cacheStatus()?.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION') {
-                <label><input type="checkbox" [checked]="retryConsent()"
-                  (change)="retryConsent.set($any($event.target).checked)"/>
-                  {{es?'Revisé la caída anterior (~US$0,37). Autorizo exactamente UN segundo intento, conservando el historial.':
-                    'I reviewed the previous failed attempt (~US$0.37). I authorize exactly ONE additional run, preserving the history.'}}</label>
+          @if(needsRecognition() && assemblyQuote(); as aq) {
+            <p class="sam-step-cost">
+              {{es?'Reconocer montaje':'Recognize assembly'}}: US$ {{(aq.cacheHit?0:aq.maximumEstimatedCostUsd).toFixed(2)}} ·
+              SAM: US$ {{preflight()?.estimatedCostUsd?.toFixed(2)}}.
+              {{es?'El reconocimiento se detiene para que revises los elementos antes de enviar el video a SAM.':'Recognition pauses for your review before sending the video to SAM.'}}
+              @if(!aq.cacheHit && (readiness()?.remainingRequests ?? 0)<2) {
+                <span class="sam-caution">{{es?'Este flujo necesita 2 envíos; queda '+(readiness()?.remainingRequests ?? 0)+' en la sesión.':'This workflow needs 2 requests; '+(readiness()?.remainingRequests ?? 0)+' remain in this session.'}}</span>
               }
-              <button type="button" class="sam-approve" (click)="paidConsent.set(true)"
-                [disabled]="sending() || paidConsent()">
-                {{paidConsent()
-                  ? (es?'Créditos de Meta confirmados para esta ejecución':'Meta credits approved for this attempt')
-                  : (es?'Confirmar uso de créditos Meta (hasta US$0,50 estimados)':
-                    'Confirm Meta credit usage (up to US$0.50 estimated)')}}
-              </button>
-
-            </div>
+            </p>
+          }
+          @if(cacheStatus()?.status==='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION') {
+            <div class="sam-consent"><label><input type="checkbox" [checked]="retryConsent()"
+              (change)="retryConsent.set($any($event.target).checked)"/>
+              {{es?'Revisé el intento anterior posiblemente facturado y autorizo UN reintento manual.':'I reviewed the previous potentially billed attempt and authorize ONE manual retry.'}}
+            </label></div>
           }
 
         </div>
@@ -158,7 +153,7 @@ interface SamReadiness {
                   : 'A prior attempt may have been billed. Manual review is required before another execution; no automatic retry.'}}</p>
               }
             }
-            <p>{{tokenEntered()?(es?'Token listo para un uso':'Key ready for one use'):(es?'Token en Configuración':'API key in Settings')}} · 127.0.0.1:{{localApiPort()}}
+            <p>{{tokenEntered()?(es?'Token registrado para esta sesión':'Key registered for this session'):(es?'Token en Configuración':'API key in Settings')}} · 127.0.0.1:{{localApiPort()}}
               <button type="button" class="sam-settings-link" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
             </p>
             <p class="sam-disclaimer">{{es
@@ -259,6 +254,8 @@ interface SamReadiness {
     .sam-status i{width:7px;height:7px;border-radius:50%;background:#818a97}.sam-status.available i{background:#5bc6a4}
     .sam-price{display:grid;gap:3px;min-width:0}.sam-price-line{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
     .sam-price strong{font-size:25px;font-weight:750;letter-spacing:-.5px;white-space:nowrap}
+    .sam-price .paid-cost{color:#ff8e96}.sam-price .free-cost{color:#69dbad}
+    .sam-step-cost{font-size:12px;color:#adc0d3}.sam-step-cost .sam-caution{display:block;margin-top:5px}
     .sam-price small,.sam-video-meta{font-size:11px;color:#9cb2ca}.sam-price-pending{color:#9cb2ca}
     .sam-buttons{display:flex;gap:12px;margin-left:auto}
     .sam-actions button{border:1px solid #343e4a;border-radius:6px;background:#14181f;color:#e9f1fa;padding:9px 12px;font:inherit;cursor:pointer}
@@ -294,6 +291,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly mediaReady=input(true);
   readonly validationState=input<'idle'|'loading'|'ready'|'error'>('idle');
   readonly processingStarted=output<void>();
+  readonly assemblyRequested=output<AssemblyProcessRequest>();
+  readonly assemblyQuote=signal<AssemblyQuote|null>(null);
   readonly processing=signal(false);
   private beginProcessing():void {
     this.processing.set(true);this.connection.busy.set(true);this.processingStarted.emit();
@@ -310,7 +309,6 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const mode=(event.target as HTMLSelectElement).value;
     if(this.processing() || this.sending() || (mode!=='api-meta' && mode!=='api-meta-cache'))return;
     this.mode.set(mode);
-    this.connection.clearToken();
     this.resetServerCheck();
     this.scheduleCheck();
   }
@@ -329,6 +327,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.cacheStatus.set(null);
     this.preflight.set(null);
     this.readiness.set(null);
+    this.assemblyQuote.set(null);
     this.transferConsent.set(false);
     this.paidConsent.set(false);
     this.retryConsent.set(false);
@@ -362,8 +361,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
        this.checking() || this.sending() || this.connection.busy() ||
        !quote || quote.sourceSha256!==this.videoSha256() ||
        !Number.isFinite(quote.estimatedCostUsd) || quote.estimatedCostUsd<=0)return false;
-    return this.cachedResultAvailable() || (this.canOfferPaidRun() &&
-      this.tokenEntered() && this.transferConsent() && this.paidConsent() &&
+    return this.cachedResultAvailable() || this.canStartAssembly() || (this.canOfferPaidRun() &&
+      this.tokenEntered() &&
       (this.cacheStatus()?.status!=='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION' ||
         this.retryConsent()));
   }
@@ -383,6 +382,14 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       this.openResult(this.cacheStatus()!);
       return;
     }
+    if(this.needsRecognition()) {
+      const q=this.assemblyQuote()!;
+      this.assemblyRequested.emit({studyId:this.studyId(),role:this.videoRole(),sha:this.videoSha256(),
+        port:this.localApiPort(),cacheKey:q.cacheKey,maximumEstimatedCostUsd:q.cacheHit?0:q.maximumEstimatedCostUsd});
+      return;
+    }
+    // The labeled Process click confirms the displayed cost and transfer for this request.
+    this.transferConsent.set(true);this.paidConsent.set(true);
     await this.analyze();
   }
   readonly cacheStatus=signal<SamCacheStatus|null>(null);
@@ -448,9 +455,32 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       ready.creditsConfirmedByOwner && ready.ownerApprovedPaidRequests &&
       ready.remainingRequests>0;
   }
+  needsRecognition():boolean {return this.cacheStatus()?.recognitionRequired===true && !this.cachedResultAvailable();}
+  displayedCost():number {
+    const q=this.assemblyQuote();
+    return (this.preflight()?.estimatedCostUsd ?? 0)+(this.needsRecognition() && q && !q.cacheHit?q.maximumEstimatedCostUsd:0);
+  }
+  private canStartAssembly():boolean {
+    const q=this.assemblyQuote(),r=this.readiness(),p=this.preflight(),s=this.cacheStatus();
+    if(!this.needsRecognition() || !q || q.videoSha256!==this.videoSha256() ||
+      q.maximumEstimatedCostUsd!==.05 || !p?.supportsSingleCall || s?.status!=='NOT_ANALYZED_WITH_SAM')return false;
+    if(q.cacheHit && q.evidence)return true; // opening existing review is free
+    return !q.priorAttempt && q.canRun && this.tokenEntered() && !!r &&
+      r.manualTokenCallsPermitted===true && r.creditsConfirmedByOwner &&
+      r.ownerApprovedPaidRequests && r.remainingRequests>0;
+  }
+  nextActionDescription():string {
+    const q=this.assemblyQuote();
+    if(this.needsRecognition())return q?.cacheHit
+      ? (this.es?'Pulsa Procesar para revisar los elementos ya reconocidos, sin otro cobro.':'Press Process to review the recognized elements at no extra charge.')
+      : (this.es?'Al pulsar Procesar autorizas enviar 3 imágenes a Meta para reconocer el montaje (máximo estimado US$ 0.05).':'Pressing Process authorizes sending 3 images to Meta to recognize the assembly (estimated maximum US$ 0.05).');
+    return this.es?'Al pulsar Procesar autorizas enviar este video a Meta y usar los créditos del costo mostrado.':
+      'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.';
+  }
   processBlockedReason():string {
     const pf=this.preflight(),ready=this.readiness(),s=this.cacheStatus();
-    if(s?.recognitionRequired)return this.es?'Primero reconoce y confirma el montaje en la tarjeta superior.':'First recognize and confirm the assembly in the card above.';
+    if(this.needsRecognition() && !this.assemblyQuote())return this.es?'No se pudo consultar el reconocimiento. Pulsa Actualizar costo.':'Recognition quote unavailable. Press Refresh cost.';
+    if(this.needsRecognition() && this.assemblyQuote()?.priorAttempt)return this.es?'Un reconocimiento anterior requiere revisión antes de otro envío.':'An earlier recognition attempt needs review before another request.';
     if(!pf)return this.es?'No se pudo calcular el costo. Pulsa Actualizar costo.':'Cost unavailable. Press Refresh cost.';
     if(!pf.supportsSingleCall || pf.estimatedCostUsd>.50)return this.es?
       'Este video supera el límite de una solicitud (US$0,50 estimados).':'This video exceeds the single-request limit (US$0.50 estimated).';
@@ -462,10 +492,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         'Procesar está bloqueado: falta habilitar créditos y autorización de esta sesión en el servidor.':
         (this.tokenEntered()?'Key registered. ':'')+'Process is blocked: server credit and spending authorization for this session is missing.';
     if(ready.remainingRequests<=0)return this.es?'Se agotó el cupo de solicitudes autorizadas de esta sesión.':'This session has no authorized requests remaining.';
-    if(!this.canOfferPaidRun())return this.es?'El servidor no permite una solicitud manual para este video. Actualiza el costo o revisa el estado.':'The server does not allow a manual request for this video. Refresh the cost or inspect status.';
     if(!this.tokenEntered())return this.es?'Configura y confirma tu token en Configuración.':'Configure and confirm your key in Settings.';
-    if(!this.transferConsent())return this.es?'Confirma abajo el envío de este video a Meta.':'Confirm below that this video may be sent to Meta.';
-    if(!this.paidConsent())return this.es?'Confirma abajo el uso de créditos para esta ejecución.':'Confirm credit usage for this run below.';
+    if(!this.canOfferPaidRun() && !this.canStartAssembly())return this.es?'El servidor no permite esta solicitud. Actualiza el costo o revisa el estado.':'The server does not allow this request. Refresh the cost or inspect status.';
     return this.es?'Confirma la revisión del intento anterior antes de procesar.':'Confirm review of the previous attempt before processing.';
   }
   voidCheck():void {void this.check();}
@@ -478,28 +506,27 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.cacheStatus.set(null);
     this.preflight.set(null);
     this.readiness.set(null);
+    this.assemblyQuote.set(null);
     this.transferConsent.set(false);
     this.paidConsent.set(false);
     this.retryConsent.set(false);
     // A read-only check never consumes the key configured in Settings.
     try {
-      const status=await firstValueFrom(this.http.get<SamCacheStatus>(
-        this.url()+'/status?mode='+this.mode()));
-      if(serial!==this.serial)return;
-      if(status.sourceSha256!==this.videoSha256())throw new Error('VIDEO_SHA_MISMATCH');
-      this.cacheStatus.set(status);
-      const pf=await firstValueFrom(this.http.get<SamPreflight>(this.url()+'/preflight'));
-      if(serial!==this.serial)return;
-      if(pf.sourceSha256!==this.videoSha256() || !Number.isFinite(pf.estimatedCostUsd) ||
-         pf.estimatedCostUsd<=0 || !Number.isSafeInteger(pf.sourceFrames) || pf.sourceFrames<=0)
-        throw new Error('INVALID_VIDEO_QUOTE');
-      this.preflight.set(pf);
-      if(this.cachedResultAvailable())return; // free reuse never depends on billing readiness
-      const access=await firstValueFrom(
-        this.http.get<SamReadiness>('http://127.0.0.1:'+
-          this.localApiPort()+'/api/meta/readiness'));
-      if(serial!==this.serial)return;
-      this.readiness.set(access);
+      // Independent read-only requests start together; none sends the token or calls Meta.
+      const root='http://127.0.0.1:'+this.localApiPort();
+      const [status,pf,access,assembly]=await Promise.all([
+        firstValueFrom(this.http.get<SamCacheStatus>(this.url()+'/status?mode='+this.mode()).pipe(timeout(15000))),
+        firstValueFrom(this.http.get<SamPreflight>(this.url()+'/preflight').pipe(timeout(90000))),
+        firstValueFrom(this.http.get<SamReadiness>(root+'/api/meta/readiness').pipe(timeout(10000))).catch(()=>null),
+        firstValueFrom(this.http.get<AssemblyQuote>(this.base+'/'+this.studyId()+'/assembly/'+this.videoRole()+'/preflight').pipe(timeout(15000))).catch(()=>null)
+      ]);
+      if(serial!==this.serial || this.disposed)return;
+      if(status.sourceSha256!==this.videoSha256() || pf.sourceSha256!==this.videoSha256() ||
+        !Number.isFinite(pf.estimatedCostUsd) || pf.estimatedCostUsd<=0 ||
+        !Number.isSafeInteger(pf.sourceFrames) || pf.sourceFrames<=0)throw new Error('INVALID_VIDEO_QUOTE');
+      this.cacheStatus.set(status);this.preflight.set(pf);this.readiness.set(access);
+      this.assemblyQuote.set(assembly?.videoSha256===this.videoSha256() &&
+        assembly.maximumEstimatedCostUsd===.05?assembly:null);
     } catch(e) {
       if(serial===this.serial)
         this.error.set(this.es?'No se pudo comprobar la evidencia SAM local.':
@@ -516,8 +543,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
        !this.tokenEntered() || this.connection.busy() ||
        !this.transferConsent() || !this.paidConsent() ||
        (isRetry && !this.retryConsent()))return;
-    // Take and clear the Settings password field only on this authorized click.
-    const oneTimeToken=this.connection.takeToken();
+    // Read the session key only for this explicitly authorized manual request.
+    const oneTimeToken=this.connection.tokenForManualRequest();
     if(!oneTimeToken)return;
     this.processingReset.emit();
     this.beginProcessing();
@@ -533,7 +560,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           videoSha256:this.videoSha256(),
           confirmPrivateVideoTransfer:true,
           confirmOneBillableSamCall:true,
-          maximumEstimatedCostUsd:0.50,
+          maximumEstimatedCostUsd:this.preflight()!.estimatedCostUsd,
           ownerApprovesOneReconciledRetry:isRetry,
           previousAttemptBillingEvidence:isRetry
             ? SamVideoReplay.reconciledOnce : null

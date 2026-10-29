@@ -39,13 +39,15 @@ public sealed class PendulumSamCache(
     }
 
     private async Task<(SamVideoSource Video, string Key, SamVideoArchive Archive, SamSceneDefinition? Scene)> Source(
-        string studyId, string role, CancellationToken ct)
+        string studyId, string role, CancellationToken ct, bool quote = false)
     {
-        var video = await runtime.GetVerifiedSourceAsync(studyId, role, ct);
+        var video = quote ? await runtime.GetQuoteSourceAsync(studyId,role,ct) :
+            await runtime.GetVerifiedSourceAsync(studyId, role, ct);
         if (video.Codec is not ("h264" or "hevc" or "mpeg4") ||
             Path.GetExtension(video.Path).ToLowerInvariant() is not (".mov" or ".mp4"))
             throw new ArgumentException("SAM requires a source MOV/MP4 H.264/H.265/MPEG4.");
-        var scene=scenes is null?null:await scenes.ApprovedAsync(studyId,role,ct);
+        var scene=scenes is null?null:quote?await scenes.ApprovedForQuoteAsync(studyId,role,ct):
+            await scenes.ApprovedAsync(studyId,role,ct);
         if(scene is not null)AssemblyPolicy.Validate(scene,video.Sha256);
         var key=scene is null?CacheKey(video.Sha256):
             SamVideoArchive.Hash(AssemblyPolicy.SamProtocol+"\n"+SamModel+"\n"+scene.Key+"\n"+video.Sha256);
@@ -81,7 +83,7 @@ public sealed class PendulumSamCache(
         string studyId, string role, CancellationToken ct, string? mode = null)
     {
         mode = NormalizeMode(mode);
-        var (video, key, archive, scene) = await Source(studyId, role, ct);
+        var (video, key, archive, scene) = await Source(studyId, role, ct, quote:true);
         var all = await archive.LoadAsync(video, key, ct);
         var latest = Latest(all);
         if (mode == CacheMode && latest is not null) return Artifact(latest).State;
@@ -103,15 +105,13 @@ public sealed class PendulumSamCache(
     public async Task<SamVideoPreflight> PreflightAsync(
         string studyId, string role, CancellationToken ct)
     {
-        var (video, _, _, _) = await Source(studyId, role, ct);
-        var pts = await runtime.ReadFramePtsAsync(video.Path, ct);
-        var cost = Math.Max(50, pts.Length) * 0.0002;
-        var serial = string.Join("\n", pts.Select(t =>
-            t.ToString("R", System.Globalization.CultureInfo.InvariantCulture)));
+        var video = await runtime.GetQuoteSourceAsync(studyId,role,ct);
+        var count = await runtime.GetFrameCountAsync(video,ct);
+        var cost = Math.Max(50, count.Frames) * 0.0002;
         return new(video.Sha256, video.VideoId, video.Codec, video.Width, video.Height,
-            pts.Length, video.DurationSeconds, cost, SamVideoArchive.Hash(serial),
-            pts.Length is >= 50 and <= 2500 && cost <= 0.50,
-            "FFPROBE_BEST_EFFORT_SOURCE_FRAME_PTS_NORMALIZED_TO_FIRST",
+            count.Frames, video.DurationSeconds, cost, count.PtsSha256,
+            count.Frames is >= 50 and <= 2500 && cost <= 0.50,
+            count.Source,
             "PROMOTIONAL_BALANCE_NOT_VERIFIED_BY_THIS_ENDPOINT");
     }
 
@@ -173,7 +173,7 @@ public sealed class PendulumSamCache(
             if (!runtime.CanRunWithToken(oneShotMetaToken))
                 throw new InvalidOperationException("Meta billing/key/owner consent gates have not been verified for this process.");
 
-            var timeline = await runtime.ReadFramePtsAsync(video.Path, ct);
+            var timeline = await runtime.ReadSourceFramePtsAsync(video, ct);
             if(scene is not null)AssemblyPolicy.Validate(scene,video.Sha256,timeline.Length);
             var estimate = Math.Max(50, timeline.Length) * 0.0002;
             if (timeline.Length is < 50 or > 2500 || estimate > 0.500000001 ||

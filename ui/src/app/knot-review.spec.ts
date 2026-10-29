@@ -38,11 +38,11 @@ describe('Meta knot review',()=>{
     ctx.c.consent.set(true);expect(ctx.c.canLocate()).toBeTrue();
     ctx.con.busy.set(true);expect(ctx.c.canLocate()).toBeFalse();ctx.con.busy.set(false);
   });
-  it('consumes the key exactly on the manual click and sends one bounded request',async()=>{
+  it('uses the session key on the manual click and sends one bounded request',async()=>{
     const ctx=init();await quote(ctx);
     const field=document.createElement('input');field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';
     ctx.con.register(field);ctx.con.confirmToken();ctx.c.consent.set(true);
-    const p=ctx.c.locate();expect(field.value).toBe('');expect(ctx.con.busy()).toBeTrue();
+    const p=ctx.c.locate();expect(field.value).not.toBe('');expect(ctx.con.busy()).toBeTrue();
     const req=ctx.h.expectOne(r=>r.url.endsWith('/locate'));
     expect(req.request.body.maximumEstimatedCostUsd).toBe(.05);
     expect(req.request.headers.get('X-ProofLab-Manual-Action')).toBe('knot');

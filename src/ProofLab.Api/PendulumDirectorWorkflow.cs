@@ -86,6 +86,19 @@ public sealed class PendulumDirectorWorkflow(
     public async Task<(DirectorVideoEvidence Evidence, string OriginalPath)> GetVerifiedOriginalAsync(
         string id, string role, CancellationToken ct)
     {
+        var (record,path)=await GetOriginalForQuoteAsync(id,role,ct);
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.Read, 128 * 1024, useAsync: true);
+        var digest = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();
+        if (!string.Equals(digest, record.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Source video SHA-256 mismatch.");
+        return (record, path);
+    }
+
+    /// <summary>Read-only quote resolution; full hash validation remains mandatory at submission/playback.</summary>
+    public async Task<(DirectorVideoEvidence Evidence,string OriginalPath)> GetOriginalForQuoteAsync(
+        string id,string role,CancellationToken ct)
+    {
         if (role is not ("baseline" or "followup"))
             throw new ArgumentException("Invalid video role.");
         var session = await ReadAsync(id, ct);
@@ -97,12 +110,7 @@ public sealed class PendulumDirectorWorkflow(
         var info = new FileInfo(path);
         if (!info.Exists || info.Length != record.Bytes)
             throw new InvalidDataException("Source video missing or size mismatch.");
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
-            FileShare.Read, 128 * 1024, useAsync: true);
-        var digest = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();
-        if (!string.Equals(digest, record.Sha256, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Source video SHA-256 mismatch.");
-        return (record, path);
+        return (record,path);
     }
 
     public async Task<DirectorSession> StartAsync(

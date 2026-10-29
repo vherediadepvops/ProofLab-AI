@@ -1,4 +1,4 @@
-import {Component,OnChanges,OnDestroy,SimpleChanges,inject,input,output,signal} from '@angular/core';
+import {Component,OnChanges,OnDestroy,SimpleChanges,ElementRef,inject,input,output,signal} from '@angular/core';
 import {HttpClient} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
 import {LabConnection} from './lab-connection';
@@ -14,7 +14,10 @@ export interface AssemblyEvidence {
   frames:{index:number;timeSeconds:number;width:number;height:number;sha256:string}[];
   proposal:{arrangement:string;observations:Observation[];suspension:{status:string;x:number|null;y:number|null}};
 }
-interface AssemblyQuote {
+export interface AssemblyProcessRequest {
+  studyId:string;role:string;sha:string;port:number;cacheKey:string;maximumEstimatedCostUsd:number;
+}
+export interface AssemblyQuote {
   cacheKey:string;videoSha256:string;maximumEstimatedCostUsd:number;
   cacheHit:boolean;priorAttempt:boolean;canRun:boolean;evidence:AssemblyEvidence|null;approved:SceneDefinition|null;
 }
@@ -82,7 +85,7 @@ interface AssemblyQuote {
               <p class="warning">{{es?'Salida de la cuerda no localizada con claridad. No se inventará un pivote a partir del centro del nudo o de la polea.':'The string exit is unclear. A pivot will not be invented from the knot or pulley center.'}}</p>
             }
             @if(approved()) {
-              <p class="success">{{es?'Montaje revisado. Continúa con Procesar en SAM; el seguimiento requiere su propio token y autorización.':'Assembly reviewed. Continue with Process in SAM; tracking requires its own token and authorization.'}}</p>
+              <p class="success">{{es?'Montaje revisado. Continúa con Procesar en SAM y revisa el costo. El token registrado sigue disponible en esta sesión.':'Assembly reviewed. Continue with Process in SAM and review the cost. The registered key remains available for this session.'}}</p>
             } @else {
               <label class="consent"><input type="checkbox" [checked]="reviewed()" (change)="reviewed.set($any($event.target).checked)"/>
                 {{es?'He revisado las tres imágenes: las cajas seleccionadas identifican los elementos correctos y la cruz, si aparece, marca la salida de la cuerda.':'I reviewed all three images: selected boxes identify the correct elements and the cross, if present, marks the string exit.'}}</label>
@@ -111,7 +114,8 @@ interface AssemblyQuote {
   `]
 })
 export class AssemblyReview implements OnChanges,OnDestroy {
-  private readonly http=inject(HttpClient);readonly connection=inject(LabConnection);
+  private readonly http=inject(HttpClient);private readonly host=inject(ElementRef<HTMLElement>);
+  readonly connection=inject(LabConnection);readonly refreshed=output<void>();
   readonly studyId=input.required<string>();readonly role=input.required<string>();readonly sha=input.required<string>();
   readonly port=input(5391);readonly language=input<'es'|'en'>('es');readonly confirmed=output<SceneDefinition>();
   readonly expanded=signal(false);readonly busy=signal(false);readonly running=signal(false);readonly error=signal('');
@@ -150,6 +154,22 @@ export class AssemblyReview implements OnChanges,OnDestroy {
     }catch{if(serial===this.serial)this.error.set(this.es?'No se pudo consultar el montaje.':'Could not inspect the assembly.');}
     finally{if(serial===this.serial)this.busy.set(false);}
   }
+  async startFromProcess(request:AssemblyProcessRequest):Promise<void> {
+    const matches=()=>request.studyId===this.studyId() && request.role===this.role() &&
+      request.sha===this.sha() && request.port===this.port() && !this.disposed;
+    if(!matches() || this.busy() || this.connection.busy())return;
+    await this.open();
+    if(!matches() || this.error())return;
+    this.host.nativeElement.scrollIntoView?.({behavior:'smooth',block:'start'});
+    const q=this.quote();
+    if(!q || q.cacheKey!==request.cacheKey)return;
+    if(q.approved){this.confirmed.emit(q.approved);return;}
+    if(q.cacheHit && q.evidence)return; // review without a paid call
+    // Never upgrade a previously free click or accept a changed quote.
+    if(request.maximumEstimatedCostUsd!==.05 || q.maximumEstimatedCostUsd!==.05)return;
+    this.consent.set(true);
+    await this.recognize();
+  }
   available(role:string):boolean{return !!this.evidence()?.proposal.observations.some(o=>o.role===role&&o.visible&&o.confidence>=.8);}
   boxes(i:number):Observation[]{return this.evidence()?.proposal.observations.filter(o=>o.frame===i&&o.visible&&o.confidence>=.8&&this.selected().includes(o.role))??[];}
   toggle(role:string,on:boolean):void{if(this.approved()||this.busy())return;this.selected.update(v=>on?[...new Set([...v,role])]:v.filter(r=>r!==role));this.reviewed.set(false);}
@@ -161,7 +181,7 @@ export class AssemblyReview implements OnChanges,OnDestroy {
   canRecognize():boolean{const q=this.quote();return !!q&&!q.cacheHit&&!q.priorAttempt&&q.canRun&&q.videoSha256===this.sha()&&
     this.consent()&&this.connection.hasToken()&&!this.busy()&&!this.connection.busy();}
   async recognize():Promise<void>{
-    if(!this.canRecognize())return;const key=this.connection.takeToken();if(!key)return;
+    if(!this.canRecognize())return;const key=this.connection.tokenForManualRequest();if(!key)return;
     const serial=++this.serial;this.busy.set(true);this.running.set(true);this.connection.busy.set(true);this.error.set('');
     try {
       const e=await firstValueFrom(this.http.post<AssemblyEvidence>(this.url()+'/locate',{
@@ -170,7 +190,7 @@ export class AssemblyReview implements OnChanges,OnDestroy {
       },{headers:{'X-ProofLab-Manual-Action':'assembly'}}));
       if(serial===this.serial&&!this.disposed)this.show(e);
     }catch{if(serial===this.serial){this.quote.set(null);this.error.set(this.es?'La consulta no se completó. Puede haber consumo de créditos; vuelve a abrir para revisar el estado.':'The request did not complete. Credits may have been used; reopen to inspect status.');}}
-    finally{this.connection.busy.set(false);this.running.set(false);this.busy.set(false);this.consent.set(false);}
+    finally{this.connection.busy.set(false);this.running.set(false);this.busy.set(false);this.consent.set(false);if(serial===this.serial&&!this.disposed)this.refreshed.emit();}
   }
   canConfirm():boolean{return !!this.evidence()&&!this.approved()&&this.loaded().length===3&&this.reviewed()&&
     this.selected().includes('object')&&this.selected().every(r=>this.available(r))&&!this.busy()&&!this.connection.busy();}

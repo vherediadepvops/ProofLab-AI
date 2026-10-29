@@ -10,7 +10,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
   async function verifyHttp(http:HttpTestingController):Promise<void>{
     await Promise.resolve();
     const pending=http.match(req=>req.method==='GET' &&
-      (req.url.includes('/kinematics/') || req.url.includes('/sam/')));
+      (req.url.includes('/kinematics/') || req.url.includes('/sam/') || req.url.includes('/assembly/') || req.url.endsWith('/readiness')));
     for(const request of pending)
       request.flush({error:'Synthetic unavailable result'},
         {status:404,statusText:'Not Found'});
@@ -255,6 +255,9 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       sourceSha256:video.sha256,sourceFrames:1828,estimatedCostUsd:.3656,
       durationSeconds:30.5,codec:'hevc',supportsSingleCall:true
     });
+    http.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush({manualTokenCallsPermitted:false,remainingRequests:0});
+    http.expectOne(studyUrl+'/'+session.id+'/assembly/baseline/preflight').flush({
+      videoSha256:video.sha256,maximumEstimatedCostUsd:.05,cacheHit:false,canRun:false});
     await fixture.whenStable();fixture.detectChanges();
     const play=root.querySelector('.play-main') as HTMLButtonElement;
     expect(play.disabled).toBeTrue();

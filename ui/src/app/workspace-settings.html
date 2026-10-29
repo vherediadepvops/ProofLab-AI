@@ -6,7 +6,7 @@
   <section class="preference-card" aria-labelledby="meta-key-heading">
     <div class="card-heading">
       <span class="service-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="4"/><path d="m11 11 9 9m-4-4 3-3m-6 0 3-3"/></svg></span>
-      <div><h2 id="meta-key-heading">Meta Model API</h2><p>{{es?'Token para una ejecución manual':'Key for one manual run'}}</p></div>
+      <div><h2 id="meta-key-heading">Meta Model API</h2><p>{{es?'Token para los envíos manuales de esta sesión':'Key for manual requests in this session'}}</p></div>
       <span class="token-badge" [class.ready]="connection.hasToken()">{{connection.hasToken()?(es?'Token registrado':'Key registered'):(es?'Sin token':'No key entered')}}</span>
     </div>
     <form (submit)="$event.preventDefault(); applyToken()">
@@ -16,8 +16,8 @@
         placeholder="LLM_…" [disabled]="connection.busy()" (input)="inputChanged()"
         aria-describedby="token-help" [attr.aria-invalid]="invalid()"/>
       <p id="token-help" class="help">{{es
-        ? 'Solo permanece en esta sesión. Se borra al usarlo, cambiar de modo o conexión, o recargar la página.'
-        : 'Kept only for this session. Cleared after use, a mode or connection change, or a page reload.'}}</p>
+        ? 'Permanece durante esta sesión para tus envíos manuales. Se borra al pulsar Borrar, cambiar de servidor o recargar la página.'
+        : 'Kept for manual requests during this session. Cleared with Clear, a server change, or a page reload.'}}</p>
       @if(invalid()){<p class="form-error" role="alert">{{es?'Revisa el formato del token. Debe comenzar con LLM_ y no contener espacios.':'Check the key format. It must start with LLM_ and contain no spaces.'}}</p>}
       <div class="actions">
         <button type="submit" class="primary" [disabled]="connection.busy()">{{es?'Usar este token':'Use this key'}}</button>
@@ -25,8 +25,8 @@
       </div>
     </form>
     <p class="privacy-note">{{es
-      ? 'El token se envía únicamente a la API local al ejecutar una solicitud autorizada desde Laboratorio. Configurarlo no activa el permiso de gasto del servidor.'
-      : 'The key is sent only to the local API when you run an authorized request from Laboratory. Configuring it does not enable server spending permission.'}}</p>
+      ? 'Después de registrar el token, espera el costo en Laboratorio y pulsa Procesar. Cada clic autoriza el envío y costo indicados, dentro del cupo habilitado de la sesión.'
+      : 'After registering the key, wait for the cost in Laboratory and press Process. Each click authorizes the displayed transfer and cost within this session’s enabled allowance.'}}</p>
   </section>
   <section class="preference-card" aria-labelledby="connection-heading">
     <div class="card-heading"><div><h2 id="connection-heading">{{es?'Conexión local':'Local connection'}}</h2><p>{{es?'Comprueba el servidor sin consumir créditos de Meta.':'Check the server without spending Meta credits.'}}</p></div></div>

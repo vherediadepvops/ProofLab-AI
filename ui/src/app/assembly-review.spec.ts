@@ -48,11 +48,11 @@ describe('assembly review consent and identity',()=>{
     req.flush(scene);await p;expect(emit).toHaveBeenCalledOnceWith(scene);
     ctx.h.expectNone(r=>r.url.includes('/sam/'));expect(ctx.c.canConfirm()).toBeFalse();
   });
-  it('takes a token once on a manually authorized bounded recognition',async()=>{
+  it('uses the session token on a manually authorized bounded recognition',async()=>{
     const ctx=init();await quote(ctx,false);expect(ctx.c.canRecognize()).toBeFalse();
     const field=document.createElement('input');field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';
     ctx.con.register(field);ctx.con.confirmToken();ctx.c.consent.set(true);
-    const p=ctx.c.recognize();expect(field.value).toBe('');expect(ctx.con.busy()).toBeTrue();
+    const p=ctx.c.recognize();expect(field.value).toBe('LLM_SYNTHETIC_OFFLINE_TEST_ONLY');expect(ctx.con.busy()).toBeTrue();
     const req=ctx.h.expectOne(r=>r.url.endsWith('/locate'));
     expect(req.request.body.maximumEstimatedCostUsd).toBe(.05);
     req.flush(evidence);await p;expect(ctx.con.busy()).toBeFalse();
@@ -63,5 +63,29 @@ describe('assembly review consent and identity',()=>{
     ctx.f.componentRef.setInput('sha','f'.repeat(64));ctx.f.detectChanges();
     req.flush({cacheKey:key,videoSha256:sha,maximumEstimatedCostUsd:.05,evidence});await p;
     expect(ctx.c.evidence()).toBeNull();expect(ctx.c.approved()).toBeNull();
+  });
+  it('starts recognition from the quoted Process action and stops for human review',async()=>{
+    const ctx=init(),field=document.createElement('input');field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';
+    ctx.con.register(field);ctx.con.confirmToken();
+    const request={studyId:'d'.repeat(32),role:'baseline',sha,port:5391,cacheKey:key,maximumEstimatedCostUsd:.05};
+    const p=ctx.c.startFromProcess(request);
+    await ctx.c.startFromProcess(request); // second click cannot submit a second request
+    ctx.h.expectOne(r=>r.url.endsWith('/preflight')).flush({
+      cacheKey:key,videoSha256:sha,maximumEstimatedCostUsd:.05,cacheHit:false,
+      priorAttempt:false,canRun:true,evidence:null,approved:null});
+    await Promise.resolve();await Promise.resolve();
+    const req=ctx.h.expectOne(r=>r.url.endsWith('/locate'));
+    expect(req.request.body.maximumEstimatedCostUsd).toBe(.05);
+    req.flush(evidence);await p;
+    expect(ctx.c.evidence()).not.toBeNull();expect(ctx.c.canConfirm()).toBeFalse();
+    expect(ctx.con.hasToken()).toBeTrue();ctx.h.expectNone(r=>r.url.includes('/sam/')||r.url.endsWith('/confirm'));
+  });
+  it('never upgrades an originally free Process action to a paid recognition',async()=>{
+    const ctx=init();const p=ctx.c.startFromProcess({
+      studyId:'d'.repeat(32),role:'baseline',sha,port:5391,cacheKey:key,maximumEstimatedCostUsd:0});
+    ctx.h.expectOne(r=>r.url.endsWith('/preflight')).flush({
+      cacheKey:key,videoSha256:sha,maximumEstimatedCostUsd:.05,cacheHit:false,
+      priorAttempt:false,canRun:true,evidence:null,approved:null});
+    await p;expect(ctx.c.running()).toBeFalse();ctx.h.expectNone(r=>r.method==='POST');
   });
 });

@@ -24,6 +24,7 @@ public sealed record SamSceneDefinition(string Key,string VideoSha256,string Evi
 }
 public interface IAssemblyScenes {
     Task<SamSceneDefinition?> ApprovedAsync(string studyId,string role,CancellationToken ct);
+    Task<SamSceneDefinition?> ApprovedForQuoteAsync(string studyId,string role,CancellationToken ct)=>ApprovedAsync(studyId,role,ct);
 }
 public interface IAssemblyTransport {
     Task<KnotProviderResult> LocateAsync(byte[][] images,string token,CancellationToken ct);

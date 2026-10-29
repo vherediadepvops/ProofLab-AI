@@ -52,6 +52,14 @@ public interface ISamVideoRuntime
 {
     Task<SamVideoSource> GetVerifiedSourceAsync(string studyId, string role, CancellationToken ct);
     Task<double[]> ReadFramePtsAsync(string path, CancellationToken ct);
+    Task<SamVideoSource> GetQuoteSourceAsync(string studyId,string role,CancellationToken ct)=>
+        GetVerifiedSourceAsync(studyId,role,ct);
+    Task<double[]> ReadSourceFramePtsAsync(SamVideoSource source,CancellationToken ct)=>ReadFramePtsAsync(source.Path,ct);
+    async Task<VideoFrameCount> GetFrameCountAsync(SamVideoSource source,CancellationToken ct) {
+        var pts=await ReadFramePtsAsync(source.Path,ct);
+        return new(pts.Length,"FFPROBE_BEST_EFFORT_SOURCE_FRAME_PTS_NORMALIZED_TO_FIRST",
+            SamVideoArchive.Hash(string.Join("\n",pts.Select(t=>t.ToString("R",System.Globalization.CultureInfo.InvariantCulture)))));
+    }
     Task CreateMp4Async(string source, string destination, CancellationToken ct);
     bool LiveCallsPermitted { get; }
     bool ManualTokenCallsPermitted => LiveCallsPermitted;

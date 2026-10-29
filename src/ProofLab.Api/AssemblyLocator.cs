@@ -9,9 +9,9 @@ public sealed class AssemblyLocator(IWebHostEnvironment environment,
     private static readonly JsonSerializerOptions Json=new(JsonSerializerDefaults.Web);
     private readonly SemaphoreSlim gate=new(1,1);
     private string Folder(string key)=>Path.Combine(environment.ContentRootPath,".private","physics","assembly",key);
-    private async Task<(SamVideoSource Video,string Key,string Root)> Source(string id,string role,CancellationToken ct)
+    private async Task<(SamVideoSource Video,string Key,string Root)> Source(string id,string role,CancellationToken ct,bool quote=false)
     {
-        var video=await runtime.GetVerifiedSourceAsync(id,role,ct);
+        var video=quote?await runtime.GetQuoteSourceAsync(id,role,ct):await runtime.GetVerifiedSourceAsync(id,role,ct);
         if(video.Sha256.Length!=64 || video.Sha256.Any(c=>!Uri.IsHexDigit(c)))
             throw new InvalidDataException("Invalid source SHA.");
         var key=AssemblyPolicy.Key(video.Sha256);
@@ -52,11 +52,11 @@ public sealed class AssemblyLocator(IWebHostEnvironment environment,
     }
     public async Task<AssemblyQuote> QuoteAsync(string id,string role,CancellationToken ct)
     {
-        var (video,key,root)=await Source(id,role,ct);
+        var (video,key,root)=await Source(id,role,ct,true);
         var evidence=await Existing(root,video.Sha256,key,ct);
         var attempted=File.Exists(Path.Combine(root,"attempt.json")) && evidence is null;
         return new(key,video.Sha256,AssemblyPolicy.MaximumEstimatedCostUsd,evidence is not null,
-            attempted,!attempted && runtime.ManualTokenCallsPermitted,evidence,await ApprovedAsync(id,role,ct));
+            attempted,!attempted && runtime.ManualTokenCallsPermitted,evidence,await ApprovedForQuoteAsync(id,role,ct));
     }
     public async Task<AssemblyEvidence> ReadAsync(string id,string role,string key,CancellationToken ct)
     {
@@ -92,7 +92,7 @@ public sealed class AssemblyLocator(IWebHostEnvironment environment,
                 throw new ArgumentException("Explicit image transfer, budget and valid token required.");
             if(!runtime.CanRunWithToken(input.ModelApiToken))
                 throw new InvalidOperationException("Meta session gates blocked.");
-            var pts=await runtime.ReadFramePtsAsync(video.Path,ct);
+            var pts=await runtime.ReadSourceFramePtsAsync(video,ct);
             var prepared=new List<KnotFrame>();
             var pixels=new List<byte[]>();
             foreach(var fraction in new[]{0.1,0.5,0.9}) {
@@ -124,9 +124,11 @@ public sealed class AssemblyLocator(IWebHostEnvironment environment,
         }
         finally {gate.Release();}
     }
-    public async Task<SamSceneDefinition?> ApprovedAsync(string id,string role,CancellationToken ct)
+    public Task<SamSceneDefinition?> ApprovedAsync(string id,string role,CancellationToken ct)=>ApprovedCore(id,role,ct,false);
+    public Task<SamSceneDefinition?> ApprovedForQuoteAsync(string id,string role,CancellationToken ct)=>ApprovedCore(id,role,ct,true);
+    private async Task<SamSceneDefinition?> ApprovedCore(string id,string role,CancellationToken ct,bool quote)
     {
-        var (video,key,root)=await Source(id,role,ct);
+        var (video,key,root)=await Source(id,role,ct,quote);
         var path=Path.Combine(root,"approved.json");
         if(!File.Exists(path))return null;
         var definition=await Read<SamSceneDefinition>(path,ct);
