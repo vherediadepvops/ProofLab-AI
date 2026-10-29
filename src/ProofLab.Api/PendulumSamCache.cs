@@ -18,8 +18,11 @@ public sealed class PendulumSamCache(
     ILogger<PendulumSamCache> logger, IAssemblyScenes? scenes = null)
 {
     public const string SamModel = "sam-3.1";
-    public const string Prompt = "metal pendulum bob";
-    public const string Protocol = "PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2";
+    public const string Prompt = "pendulum bob";
+    public const string Protocol = "PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V3_GENERIC_BOB";
+    // Historical provider evidence retains its exact prompt, protocol and key.
+    public const string LegacyPrompt = "metal pendulum bob";
+    public const string LegacyProtocol = "PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2";
     public const string CacheMode = "api-meta-cache";
     public const string FreshMode = "api-meta";
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -30,11 +33,13 @@ public sealed class PendulumSamCache(
         _ => throw new ArgumentException("SAM mode must be api-meta or api-meta-cache.")
     };
 
-    public static string CacheKey(string originalSha)
+    public static string CacheKey(string originalSha) => Key(originalSha, Protocol, Prompt);
+    public static string LegacyCacheKey(string originalSha) => Key(originalSha, LegacyProtocol, LegacyPrompt);
+    private static string Key(string originalSha, string protocol, string prompt)
     {
         if (originalSha.Length != 64 || originalSha.Any(c => !Uri.IsHexDigit(c)))
             throw new ArgumentException("Invalid original video SHA-256.");
-        return SamVideoArchive.Hash(Protocol + "\n" + SamModel + "\n" + Prompt +
+        return SamVideoArchive.Hash(protocol + "\n" + SamModel + "\n" + prompt +
             "\n" + originalSha.ToLowerInvariant());
     }
 
@@ -51,15 +56,89 @@ public sealed class PendulumSamCache(
         if(scene is not null)AssemblyPolicy.Validate(scene,video.Sha256);
         var key=scene is null?CacheKey(video.Sha256):
             SamVideoArchive.Hash(AssemblyPolicy.SamProtocol+"\n"+SamModel+"\n"+scene.Key+"\n"+video.Sha256);
-        if(scene is not null) {
-            var legacyArchive=new SamVideoArchive(environment.ContentRootPath,index);
-            var legacyKey=CacheKey(video.Sha256);
-            var old=await legacyArchive.LoadAsync(video,legacyKey,ct);
-            var pending=await legacyArchive.OutstandingAsync(video,legacyKey,old,ct);
-            if(pending.LegacyOriginal || pending.NewRun || (pending.LegacyRetry && old.Count==0))
-                throw new InvalidOperationException("Reconcile earlier video attempt before a new target.");
-        }
         return (video,key,new SamVideoArchive(environment.ContentRootPath,index,scene),scene);
+    }
+
+
+    private sealed record PriorArchive(string Key, SamVideoArchive Archive, List<SamVideoArchive.Stored> All);
+
+    private async Task<List<PriorArchive>> PriorDirectArchives(SamVideoSource video, string currentKey, CancellationToken ct)
+    {
+        var result = new List<PriorArchive>();
+        foreach (var legacy in new[] { false, true })
+        {
+            var key = legacy ? LegacyCacheKey(video.Sha256) : CacheKey(video.Sha256);
+            if (key == currentKey) continue;
+            var archive = new SamVideoArchive(environment.ContentRootPath, index, legacyDirect: legacy);
+            result.Add(new(key, archive, await archive.LoadAsync(video, key, ct)));
+        }
+        return result;
+    }
+
+    private static async Task<SamVideoArchive.Pending?> PriorPending(SamVideoSource video,
+        IEnumerable<PriorArchive> prior, CancellationToken ct)
+    {
+        foreach (var p in prior)
+        {
+            var pending = await p.Archive.OutstandingAsync(video, p.Key, p.All, ct);
+            if (pending.Any) return pending;
+        }
+        return null;
+    }
+
+    // Presence filter for reusing the old target only; the player still decodes
+    // every mask and rejects invalid grammar/bounds before presenting evidence.
+    private static bool ContainsMaskRecords(string raw)
+    {
+        using var doc = JsonDocument.Parse(raw);
+        if (!doc.RootElement.TryGetProperty("output", out var output) || output.ValueKind != JsonValueKind.Array) return false;
+        foreach (var item in output.EnumerateArray())
+        {
+            if (!item.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array) continue;
+            foreach (var part in content.EnumerateArray())
+            {
+                if (!part.TryGetProperty("type", out var type) || type.GetString() != "output_text" ||
+                    !part.TryGetProperty("text", out var text) || text.ValueKind != JsonValueKind.String) continue;
+                var wire = text.GetString()!;
+                if (wire.Contains("<|box;", StringComparison.Ordinal) &&
+                    System.Text.RegularExpressions.Regex.IsMatch(wire,
+                        @"<\|mask;x=\d+;y=\d+;data=\d+,\d+,[^|]+\|>",
+                        System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private static SamVideoArchive.Stored? LegacyHit(IEnumerable<PriorArchive> prior) =>
+        Latest(prior.SelectMany(p => p.All).Where(a => a.Receipt.Scene is null &&
+            a.Receipt.RequestProtocol == LegacyProtocol && ContainsMaskRecords(a.Raw)));
+
+    // Lock all direct generations plus any scene key, in a stable order.
+    // A still-running V2 process uses the same V2 lock and cannot be bypassed.
+    private sealed class SourceLocks : IDisposable
+    {
+        private readonly List<FileStream> handles = new();
+        public SourceLocks(SamVideoArchive archive, string sha, string key)
+        {
+            try
+            {
+                foreach (var value in new[] { key, CacheKey(sha), LegacyCacheKey(sha) }.Distinct().Order())
+                {
+                    var folder = archive.Folder(value);
+                    Directory.CreateDirectory(folder);
+                    handles.Add(new FileStream(Path.Combine(folder, ".run.lock"),
+                        FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None));
+                }
+            }
+            catch (IOException)
+            {
+                Dispose();
+                throw new InvalidOperationException("Another SAM operation is already active.");
+            }
+            catch { Dispose(); throw; }
+        }
+        public void Dispose() { foreach (var handle in handles) handle.Dispose(); }
     }
 
     private static SamVideoArchive.Stored? Latest(IEnumerable<SamVideoArchive.Stored> all) =>
@@ -85,9 +164,12 @@ public sealed class PendulumSamCache(
         mode = NormalizeMode(mode);
         var (video, key, archive, scene) = await Source(studyId, role, ct, quote:true);
         var all = await archive.LoadAsync(video, key, ct);
+        var prior = await PriorDirectArchives(video, key, ct);
         var latest = Latest(all);
-        if (mode == CacheMode && latest is not null) return Artifact(latest).State;
-        var pending = await archive.OutstandingAsync(video, key, all, ct);
+        var hit = latest ?? (scene is null ? LegacyHit(prior) : null);
+        if (mode == CacheMode && hit is not null) return Artifact(hit).State;
+        var pending = await PriorPending(video, prior, ct) ??
+            await archive.OutstandingAsync(video, key, all, ct);
         var state = latest is null
             ? new SamVideoState("NOT_ANALYZED_WITH_SAM", SamModel, scene?.Prompt ?? Prompt,
                 video.Sha256, key, 0, 0, null, null, false,
@@ -120,7 +202,8 @@ public sealed class PendulumSamCache(
     {
         var (video, key, archive, scene) = await Source(studyId, role, ct);
         var all = await archive.LoadAsync(video, key, ct);
-        return Artifact(Latest(all) ??
+        var prior = await PriorDirectArchives(video, key, ct);
+        return Artifact(Latest(all) ?? (scene is null ? LegacyHit(prior) : null) ??
             throw new FileNotFoundException("SAM provider evidence not cached."));
     }
 
@@ -138,16 +221,10 @@ public sealed class PendulumSamCache(
             var (video, key, archive, scene) = await Source(studyId, role, ct);
             var root = archive.Folder(key);
             Directory.CreateDirectory(root);
-            // A persistent path with an OS-exclusive handle serializes all
-            // backend processes, including a second localhost API instance.
-            // The file remains; only the handle is released (also on crash).
-            FileStream processLock;
-            try { processLock = new FileStream(Path.Combine(root, ".run.lock"),
-                FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
-            catch (IOException) { throw new InvalidOperationException("Another SAM operation is already active."); }
-            await using var heldLock = processLock;
+            using var heldLocks = new SourceLocks(archive, video.Sha256, key);
             var all = await archive.LoadAsync(video, key, ct);
-            var latest = Latest(all);
+            var prior = await PriorDirectArchives(video, key, ct);
+            var latest = Latest(all) ?? (scene is null ? LegacyHit(prior) : null);
             if (!string.Equals(request.VideoSha256, video.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Video SHA-256 confirmation mismatch.");
             if (mode == CacheMode && latest is not null) return Artifact(latest);
@@ -157,6 +234,8 @@ public sealed class PendulumSamCache(
             if (!request.ConfirmPrivateVideoTransfer || !request.ConfirmOneBillableSamCall)
                 throw new ArgumentException("Explicit third-party video transfer and billable-call confirmation required.");
 
+            if (await PriorPending(video, prior, ct) is not null)
+                throw new InvalidOperationException("Prior target attempt requires reconciliation before changing the SAM prompt.");
             var pending = await archive.OutstandingAsync(video, key, all, ct);
             if (pending.NewRun || pending.LegacyRetry)
                 throw new InvalidOperationException("Prior paid attempt requires manual reconciliation; no additional charge allowed.");
@@ -199,9 +278,9 @@ public sealed class PendulumSamCache(
                 submittedSha = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();
             if (reconciledRetry)
             {
-                var prior = await SamVideoArchive.ReadJsonAsync<SamOriginalAttempt>(
+                var previousAttempt = await SamVideoArchive.ReadJsonAsync<SamOriginalAttempt>(
                     Path.Combine(root, "attempt-started.json"), ct);
-                if (prior.SubmittedMp4Sha256 != submittedSha)
+                if (previousAttempt.SubmittedMp4Sha256 != submittedSha)
                     throw new InvalidDataException("Previous submitted MP4 SHA mismatch.");
             }
             ct.ThrowIfCancellationRequested();

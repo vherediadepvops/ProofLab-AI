@@ -6,6 +6,20 @@ export const SAM_PERIOD_POLICY=Object.freeze({
   minimumCoverage:.8,maximumCycleCv:.05,maximumRelativeDrift:.05,
   maximumRadiusMadFraction:.1
 });
+/** Geometric consistency only; these engineering thresholds do not identify an object or force law. */
+export const SAM_PENDULUM_MOTION_METHOD='SAM_PIVOT_ARC_VS_LINE_V1';
+export const SAM_PENDULUM_MOTION_POLICY=Object.freeze({
+  minimumArcSagittaSourcePixels:2,maximumRadialRmsToSagitta:.2,
+  maximumArcRmsToLineRms:.7
+});
+export type PendulumMotionIssue='PERIOD_OR_TRACKING_INCONCLUSIVE'|'ARC_TOO_SMALL_TO_RESOLVE'|
+  'RADIAL_RESIDUAL_TOO_LARGE'|'ARC_NOT_BETTER_THAN_LINE';
+export interface PendulumMotionAssessment {
+  method:typeof SAM_PENDULUM_MOTION_METHOD;
+  status:'COMPATIBLE_WITH_SIMPLE_PENDULUM'|'INCONCLUSIVE';issues:PendulumMotionIssue[];
+  radialRmsPixels:number|null;lineRmsPixels:number|null;arcSagittaPixels:number|null;
+  minimumResolvableSagittaPixels:number|null;
+}
 export interface PeriodCentroid {frameIndex:number;x:number;y:number}
 export interface SamPeriodInput {
   framePtsSeconds:number[];centroids:PeriodCentroid[];
@@ -33,6 +47,7 @@ export interface SamPeriodAssessment {
   sourceSpanSeconds:number;medianFrameIntervalSeconds:number|null;
   equilibriumAngleDegrees:number|null;amplitudeDegrees:number|null;
   radiusMadFraction:number|null;relativePeriodDrift:number|null;
+  motion:PendulumMotionAssessment;
 }
 const mean=(v:number[])=>v.reduce((a,b)=>a+b,0)/v.length;
 function quantile(v:number[],q:number):number {
@@ -56,7 +71,10 @@ export function measureSamPeriod(input:SamPeriodInput):SamPeriodAssessment {
     completeCycles:0,usedCycles:0,cycles:[],totalFrames:times.length,detectedFrames:0,usableFrames:0,
     missingFrames:times.length,detectionCoverage:0,missingFraction:1,longestMissingRunSeconds:0,
     sourceSpanSeconds:0,medianFrameIntervalSeconds:null,equilibriumAngleDegrees:null,
-    amplitudeDegrees:null,radiusMadFraction:null,relativePeriodDrift:null
+    amplitudeDegrees:null,radiusMadFraction:null,relativePeriodDrift:null,
+    motion:{method:SAM_PENDULUM_MOTION_METHOD,status:'INCONCLUSIVE',
+      issues:['PERIOD_OR_TRACKING_INCONCLUSIVE'],radialRmsPixels:null,lineRmsPixels:null,
+      arcSagittaPixels:null,minimumResolvableSagittaPixels:null}
   };
   const issue=(v:PeriodIssue)=>{if(!r.issues.includes(v))r.issues.push(v);};
   if(times.length<2 || times.length>15000 || times.some((t,i)=>!Number.isFinite(t)||t<0||(i>0&&t<=times[i-1]))) {
@@ -95,7 +113,7 @@ export function measureSamPeriod(input:SamPeriodInput):SamPeriodAssessment {
   if(!Number.isFinite(pivot.x)||!Number.isFinite(pivot.y)||pivot.x<0||pivot.x>1||pivot.y<0||pivot.y>1) {
     issue('INVALID_GEOMETRY');return r;
   }
-  const samples:{frame:number;time:number;angle:number;radius:number;segment:number}[]=[];
+  const samples:{frame:number;time:number;angle:number;radius:number;segment:number;x:number;y:number}[]=[];
   let previousFrame=-2,segment=0;
   for(let i=0;i<times.length;i++) {
     const c=byFrame.get(i);if(!c)continue;
@@ -107,7 +125,7 @@ export function measureSamPeriod(input:SamPeriodInput):SamPeriodAssessment {
     const timeGap=previousFrame>=0 && times[i]-times[previousFrame]>dt*3;
     if(timeGap && i===previousFrame+1)issue('TIME_GAPS');
     if(i!==previousFrame+1 || timeGap)segment++;
-    samples.push({frame:i,time:times[i],angle:Math.atan2(dx,dy)*180/Math.PI,radius,segment});
+    samples.push({frame:i,time:times[i],angle:Math.atan2(dx,dy)*180/Math.PI,radius,segment,x:dx,y:dy});
     previousFrame=i;
   }
   r.usableFrames=samples.length;
@@ -168,6 +186,26 @@ export function measureSamPeriod(input:SamPeriodInput):SamPeriodAssessment {
   if(r.radiusMadFraction>p.maximumRadiusMadFraction)issue('UNSTABLE_RADIUS');
   const fatal=r.issues.some(v=>!['GAPS','GEOMETRY_EXCLUSIONS','TIME_GAPS'].includes(v));
   if(!fatal&&r.statisticalStandardUncertaintySeconds!==null)r.status='CANDIDATE';
+  // Periodicity alone also occurs in straight translations. Compare the observed
+  // arc about the supplied pivot with the best unconstrained straight line.
+  // This is image-space consistency, never semantic identification by SAM.
+  const mp=SAM_PENDULUM_MOTION_POLICY,m=r.motion;
+  const radiusMean=mean(radii),mx=mean(samples.map(v=>v.x)),my=mean(samples.map(v=>v.y));
+  const vx=mean(samples.map(v=>(v.x-mx)**2)),vy=mean(samples.map(v=>(v.y-my)**2));
+  const covariance=mean(samples.map(v=>(v.x-mx)*(v.y-my)));
+  m.radialRmsPixels=Math.sqrt(mean(radii.map(v=>(v-radiusMean)**2)));
+  m.lineRmsPixels=Math.sqrt(Math.max(0,(vx+vy-Math.hypot(vx-vy,2*covariance))/2));
+  m.arcSagittaPixels=radiusMean*(1-Math.cos(amplitude*Math.PI/180));
+  // Do not claim sub-raster curvature when masks were decoded at lower resolution.
+  m.minimumResolvableSagittaPixels=mp.minimumArcSagittaSourcePixels*
+    Math.max(1,input.imageWidth/input.sourceWidth,input.imageHeight/input.sourceHeight);
+  m.issues=r.status==='CANDIDATE'?[]:['PERIOD_OR_TRACKING_INCONCLUSIVE'];
+  if(m.arcSagittaPixels<m.minimumResolvableSagittaPixels)m.issues.push('ARC_TOO_SMALL_TO_RESOLVE');
+  if(m.radialRmsPixels>mp.maximumRadialRmsToSagitta*m.arcSagittaPixels)
+    m.issues.push('RADIAL_RESIDUAL_TOO_LARGE');
+  if(m.lineRmsPixels<=1e-9 || m.radialRmsPixels>mp.maximumArcRmsToLineRms*m.lineRmsPixels)
+    m.issues.push('ARC_NOT_BETTER_THAN_LINE');
+  if(!m.issues.length)m.status='COMPATIBLE_WITH_SIMPLE_PENDULUM';
   return r;
 }
 
@@ -179,10 +217,10 @@ export interface SamPeriodSource {
 export function periodReportPayload(source:SamPeriodSource,input:SamPeriodInput,
   assessment=measureSamPeriod(input)) {
   return {schemaVersion:'PROOFLAB_PERIOD_REPORT_V1',source,method:SAM_PERIOD_METHOD,
-    policy:SAM_PERIOD_POLICY,input,assessment,
+    policy:SAM_PERIOD_POLICY,motionPolicy:SAM_PENDULUM_MOTION_POLICY,input,assessment,
     limitations:{
-      es:'Estimación local desde centroides SAM y tiempos originales. u = s/√n de ciclos alternos; supone errores aproximadamente independientes. No incluye sesgo de seguimiento, pivote, cámara ni reloj. No es incertidumbre total ni intervalo del 95%. Requiere revisión humana.',
-      en:'Local estimate from SAM centroids and original timestamps. u = s/√n of alternating cycles assumes approximately independent errors. Tracking bias, pivot, camera and clock errors are excluded. Not total uncertainty or a 95% interval. Human review required.'
+      es:'Estimación local desde centroides SAM y tiempos originales. u = s/√n de ciclos alternos; supone errores aproximadamente independientes. No incluye sesgo de seguimiento, pivote, cámara ni reloj. No es incertidumbre total ni intervalo del 95%. Compatibilidad pendular: prueba geométrica local, no identificación del material ni certificación física. Requiere revisar el objeto, el pivote y la cámara.',
+      en:'Local estimate from SAM centroids and original timestamps. u = s/√n of alternating cycles assumes approximately independent errors. Tracking bias, pivot, camera and clock errors are excluded. Not total uncertainty or a 95% interval. Pendular compatibility is a local geometric test, not material identification or physical certification. Review the object, pivot and camera.'
     }};
 }
 /** Integrity checksum of the exact UTF-8 payload; not a digital signature or certification. */

@@ -36,6 +36,31 @@ function result():SamVideoEvidence {
   };
 }
 describe('scientific SAM playback archive adapter',()=>{
+  it('accepts generic pendulum-object masks without material, color or shape attributes',()=>{
+    const a=archive();a.receipt.concept='pendulum bob';
+    a.receipt.requestProtocol='PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V3_GENERIC_BOB';
+    const track=verifiedSamPlaybackTrack(a,result(),sha);
+    expect(track.masks.length).toBe(8);
+    expect(track.points[1].timeSeconds).toBeCloseTo(4/60);
+  });
+  it('preserves historical target provenance and rejects mixed or arbitrary prompt contracts',()=>{
+    const a=archive();
+    a.receipt.requestProtocol='PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2';
+    expect(verifiedSamPlaybackTrack(a,result(),sha).masks.length).toBe(8);
+    a.receipt.concept='pendulum bob';
+    expect(()=>verifiedSamPlaybackTrack(a,result(),sha)).toThrowError(/INVALID_PROVENANCE/);
+    a.receipt.requestProtocol='PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V3_GENERIC_BOB';
+    a.receipt.concept='moving shadow';
+    expect(()=>verifiedSamPlaybackTrack(a,result(),sha)).toThrowError(/INVALID_PROVENANCE/);
+  });
+  it('does not invent motion for a generic zero-match or ambiguous response',()=>{
+    const a=archive();a.receipt.concept='pendulum bob';
+    a.receipt.requestProtocol='PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V3_GENERIC_BOB';
+    const zero=result();zero.result='NO_MATCH';zero.frames=[];zero.objectIds=[];
+    expect(()=>verifiedSamPlaybackTrack(a,zero,sha)).toThrowError(/INVALID_PROVENANCE/);
+    const multiple=result();multiple.objectIds.push('another');
+    expect(()=>verifiedSamPlaybackTrack(a,multiple,sha)).toThrowError(/INVALID_PROVENANCE/);
+  });
   it('takes positions from provider masks, matching real frame PTS not proxy FPS',()=>{
     const t=verifiedSamPlaybackTrack(archive(),result(),sha);
     expect(t.source).toBe('META_SAM_3_1_CACHED_PROVIDER_EVIDENCE');

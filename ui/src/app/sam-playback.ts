@@ -117,7 +117,11 @@ export function verifiedSamPlaybackTrack(
 /** Role bindings originate only in the backend's reviewed scene receipt. */
 export function validSamTarget(archive:AuthenticatedSamVideoArchive,sha:string):boolean {
   const r=archive.receipt,scene=r.scene;
-  if(!scene)return r.concept==='metal pendulum bob';
+  // New generic target and immutable historical receipts are distinct contracts.
+  if(!scene)return (r.concept==='pendulum bob' &&
+      r.requestProtocol==='PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V3_GENERIC_BOB') ||
+    (r.concept==='metal pendulum bob' &&
+      (!r.requestProtocol || r.requestProtocol==='PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2'));
   const roles=['object','cord','knot','pulley','support'];
   return r.requestProtocol==='PROOFLAB_SAM_MULTIOBJECT_SOURCE_PTS_V1' &&
     scene.videoSha256===sha && validSha(scene.key) &&

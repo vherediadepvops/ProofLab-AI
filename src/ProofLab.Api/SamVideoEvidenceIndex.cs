@@ -74,7 +74,7 @@ public sealed class SamVideoEvidenceIndex
             !IsSha(e.CacheKey) || !IsSha(e.PromptSha256) ||
             !IsSha(e.ResponseSha256) || !IsSha(e.ReceiptSha256) ||
             e.Model != "sam-3.1" ||
-            (e.Protocol != "PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2" && e.Protocol != AssemblyPolicy.SamProtocol) ||
+            (e.Protocol != PendulumSamCache.LegacyProtocol && e.Protocol != PendulumSamCache.Protocol && e.Protocol != AssemblyPolicy.SamProtocol) ||
             e.ProvenanceStatus != Provenance ||
             e.SourceFrames is < 50 or > 2500 ||
             !DateTimeOffset.TryParse(e.CompletedAtUtc, out _) ||
@@ -214,12 +214,15 @@ public sealed class SamVideoEvidenceIndex
                 FROM sam_video_evidence
                 WHERE video_sha256=@video AND cache_key=@key AND
                       prompt_sha256=@prompt AND model='sam-3.1' AND
-                      protocol='PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2'
+                      protocol IN (@legacyProtocol, @currentProtocol, @sceneProtocol)
                 ORDER BY completed_at_utc DESC, analysis_id DESC LIMIT 1
                 """;
             sql.Parameters.AddWithValue("@video", videoSha);
             sql.Parameters.AddWithValue("@key", cacheKey);
             sql.Parameters.AddWithValue("@prompt", promptSha);
+            sql.Parameters.AddWithValue("@legacyProtocol", PendulumSamCache.LegacyProtocol);
+            sql.Parameters.AddWithValue("@currentProtocol", PendulumSamCache.Protocol);
+            sql.Parameters.AddWithValue("@sceneProtocol", AssemblyPolicy.SamProtocol);
             await using var row = await sql.ExecuteReaderAsync(ct);
             if (!await row.ReadAsync(ct)) return null;
             var entry = new SamIndexedEvidence(

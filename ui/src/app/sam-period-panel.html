@@ -2,8 +2,8 @@
   <header>
     <div><span class="eyebrow">{{es?'MEDICIÓN DEL VIDEO':'VIDEO MEASUREMENT'}}</span>
       <h3>{{es?'Período de oscilación':'Oscillation period'}}</h3></div>
-    <span class="status" [class.inconclusive]="assessment().status==='INCONCLUSIVE'">
-      {{assessment().status==='CANDIDATE'?(es?'Estimación preliminar':'Preliminary estimate'):(es?'Inconcluso':'Inconclusive')}}
+    <span class="status" [class.inconclusive]="assessment().motion.status==='INCONCLUSIVE'">
+      {{assessment().motion.status==='COMPATIBLE_WITH_SIMPLE_PENDULUM'?(es?'Movimiento compatible con un péndulo simple':'Motion consistent with a simple pendulum'):(es?'Movimiento pendular: inconcluso':'Pendular motion: inconclusive')}}
     </span>
   </header>
   <div class="metrics">
@@ -24,9 +24,14 @@
       ? 'Los datos aún no permiten una estimación estable. Cualquier valor mostrado es diagnóstico.'
       : 'The data do not yet support a stable estimate. Any displayed value is diagnostic.'}}</p>
   }
+  @if(assessment().status==='CANDIDATE' && assessment().motion.status==='INCONCLUSIVE') {
+    <p class="warning" role="status">{{es
+      ? 'Se observa periodicidad, pero no hay evidencia suficiente de un arco pendular. El período sigue siendo una estimación preliminar.'
+      : 'Periodicity is observed, but evidence for a pendular arc is insufficient. The period remains a preliminary estimate.'}}</p>
+  }
   <details>
     <summary>{{es?'Calidad y método':'Quality and method'}}</summary>
-    <p>{{es?'Cruces por la posición central en la misma dirección, con tiempos originales. No se interpola entre detecciones ausentes. Se usan ciclos alternos para no compartir los extremos de medición.':'Same-direction center crossings with source timestamps. Missing detections are not bridged. Alternating cycles avoid shared measurement endpoints.'}}</p>
+    <p>{{es?'Cruces por la posición central en la misma dirección, con tiempos originales. No se interpola entre detecciones ausentes. Se usan ciclos alternos para no compartir extremos. La compatibilidad pendular exige además un arco resoluble alrededor del pivote que explique mejor los datos que una recta. No depende de forma, color ni material.':'Same-direction center crossings with source timestamps. Missing detections are not bridged. Alternating cycles avoid shared endpoints. Pendular consistency also requires a resolvable arc about the pivot that explains observations better than a straight line. It does not depend on shape, color or material.'}}</p>
     <div class="quality">
       <span>{{es?'Detectados':'Detected'}}: {{assessment().detectedFrames}} / {{assessment().totalFrames}}</span>
       <span>{{es?'Ausentes':'Missing'}}: {{assessment().missingFrames}}</span>
@@ -36,7 +41,10 @@
     @if(assessment().issues.length) {
       <ul>@for(issue of assessment().issues;track issue){<li>{{issueText(issue)}}</li>}</ul>
     }
-    <p>{{es?'Los umbrales de calidad son criterios de esta versión, no una certificación. La incertidumbre supone errores aproximadamente independientes; revisar visualmente el objeto y la suspensión sigue siendo necesario. Un valor cero solo indica que no se resolvió dispersión entre estos ciclos.':'Quality thresholds are versioned engineering criteria, not certification. Uncertainty assumes approximately independent errors; visual review of the object and suspension remains necessary. Zero means only that no dispersion was resolved between these cycles.'}}</p>
+    @if(assessment().motion.issues.length) {
+      <ul>@for(issue of assessment().motion.issues;track issue){<li>{{motionIssueText(issue)}}</li>}</ul>
+    }
+    <p>{{es?'Los umbrales de calidad son criterios de esta versión, no una certificación ni prueba de que sea físicamente un péndulo. La incertidumbre supone errores aproximadamente independientes; revisar visualmente el objeto y la suspensión sigue siendo necesario. Un valor cero solo indica que no se resolvió dispersión entre estos ciclos.':'Quality thresholds are versioned engineering criteria, not certification or proof of a physical pendulum. Uncertainty assumes approximately independent errors; visual review of the object and suspension remains necessary. Zero means only that no dispersion was resolved between these cycles.'}}</p>
     @if(assessment().cycles.length) {
       <div class="cycle-table"><table>
         <caption>{{es?'Ciclos observados':'Observed cycles'}}</caption>

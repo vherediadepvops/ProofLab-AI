@@ -43,11 +43,12 @@ public sealed class PendulumSamCacheIntegrationTests
     private sealed class Transport : ISamVideoTransport
     {
         public int Calls { get; private set; }
+        public string? LastConcept { get; private set; }
         public Func<CancellationToken, Task>? OnCall { get; set; }
         public async Task<SamApiCompletedResult> UploadAndSegmentAsync(string originalPath, string concept,
             Func<SamVideoSseProgress, ValueTask>? progress, CancellationToken ct, string? oneShotMetaToken = null)
         {
-            Calls++;
+            Calls++; LastConcept = concept;
             if (OnCall is not null) await OnCall(ct);
             return new(Raw, "SYNTHETIC-NOT-A-PROVIDER-RECEIPT", 60);
         }
@@ -361,5 +362,136 @@ public sealed class PendulumSamCacheIntegrationTests
         Assert.Throws<InvalidDataException>(() => SamVideoArchive.Validate(receipt with {
             ProviderEvidenceStatus = "COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW"
         }, f.Runtime.Source, f.Key, Raw, null));
+    }
+
+    private const string MaskWire = "<0f>0<|box;x1=211;y1=228;x2=270;y2=254;w=320;h=334|>" +
+        "<|mask;x=0;y=0;data=27,60,~!!!!M!0c[0o91w?q1!pIH4pPRVp2B3'7`e.ioeAf6-k/#Xd8%dX9x(|>";
+    private static string MaskResponse => JsonSerializer.Serialize(new {
+        model="sam-3.1",status="completed",
+        output=new[]{new {type="message",content=new[]{new {type="output_text",text=MaskWire}}}}
+    });
+
+    private static async Task<SamVideoArchive.Stored> WriteOldTarget(Fixture f, string raw)
+    {
+        var key=PendulumSamCache.LegacyCacheKey(f.Runtime.Source.Sha256);
+        var archive=new SamVideoArchive(f.Root,new SamVideoEvidenceIndex(f.Root),legacyDirect:true);
+        var id=Guid.NewGuid().ToString("N");
+        Directory.CreateDirectory(archive.RunFolder(key,id));
+        var receipt=new SamVideoReceipt(key,f.Runtime.Source.Sha256,"legacy-video",
+            PendulumSamCache.SamModel,PendulumSamCache.LegacyPrompt,PendulumSamCache.LegacyProtocol,
+            DateTimeOffset.UtcNow,SamVideoArchive.Hash(raw),"SYNTHETIC-LEGACY",60,60,
+            Enumerable.Range(0,60).Select(i=>i/30d).ToArray(),new string('b',64),
+            "COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW",.012,id);
+        return await archive.CommitAsync(f.Runtime.Source,key,receipt,raw);
+    }
+
+    [Fact]
+    public async Task NewTargetUsesMaterialIndependentPromptAndDistinctProtocol()
+    {
+        using var f=new Fixture();
+        var result=await f.Open().RunOnceAsync("study","primary",f.Request(),Ct);
+        Assert.Equal("pendulum bob",f.Transport.LastConcept);
+        Assert.Equal("pendulum bob",result.Receipt.Concept);
+        Assert.Equal("PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V3_GENERIC_BOB",result.Receipt.RequestProtocol);
+        Assert.NotEqual(PendulumSamCache.LegacyCacheKey(f.Runtime.Source.Sha256),result.Receipt.CacheKey);
+    }
+
+    [Fact]
+    public async Task LegacyMasksRemainAFreeHitWithTheirOriginalIdentityAndPrompt()
+    {
+        using var f=new Fixture();
+        var old=await WriteOldTarget(f,MaskResponse);
+        f.Runtime.LiveCallsPermitted=false;
+        var api=f.Open();
+        var status=await api.StatusAsync("study","primary",Ct);
+        Assert.True(status.CacheHit);
+        var hit=await api.RunOnceAsync("study","primary",new(f.Runtime.Source.Sha256,false,false,0),Ct);
+        Assert.Equal(old.Entry.AnalysisId,hit.State.AnalysisId);
+        Assert.Equal(JsonSerializer.Serialize(old.Receipt,Json),JsonSerializer.Serialize(hit.Receipt,Json));
+        Assert.Equal(old.Raw,hit.RawResponseJson);
+        Assert.Equal(PendulumSamCache.LegacyPrompt,hit.Receipt.Concept);
+        Assert.Equal(old.Entry.AnalysisId,(await api.ReadArchiveAsync("study","primary",Ct)).State.AnalysisId);
+        Assert.Equal(0,f.Transport.Calls);
+        Assert.Equal(0,f.Runtime.Reservations);
+    }
+
+    [Fact]
+    public async Task FreshAfterLegacyMasksUsesGenericTargetAndPreservesOldFiles()
+    {
+        using var f=new Fixture();
+        var old=await WriteOldTarget(f,MaskResponse);
+        var fresh=await f.Open().RunOnceAsync("study","primary",f.Request(),Ct);
+        Assert.Equal(PendulumSamCache.Prompt,fresh.Receipt.Concept);
+        Assert.NotEqual(old.Entry.AnalysisId,fresh.State.AnalysisId);
+        var oldArchive=new SamVideoArchive(f.Root,new SamVideoEvidenceIndex(f.Root),legacyDirect:true);
+        var restored=await oldArchive.LoadAsync(f.Runtime.Source,old.Receipt.CacheKey,Ct);
+        Assert.Equal(old.Raw,Assert.Single(restored).Raw);
+        Assert.Equal(fresh.State.AnalysisId,(await f.Open().StatusAsync("study","primary",Ct)).AnalysisId);
+        Assert.Equal(1,f.Transport.Calls);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("<0f>no matches")]
+    [InlineData("<0f>0<|box;x1=0;y1=0;x2=5;y2=5;w=10;h=10|>")]
+    [InlineData("<0f>0<|box;x1=0;y1=0;x2=5;y2=5;w=10;h=10|><|mask;x=0;y=0;data=6,6,|>")]
+    public async Task LegacyZeroMatchesOrNoMaskDoesNotHideTheNewTarget(string text)
+    {
+        using var f=new Fixture();
+        var raw=JsonSerializer.Serialize(new {model="sam-3.1",status="completed",
+            output=new[]{new {content=new[]{new {type="output_text",text}}}}});
+        await WriteOldTarget(f,raw);
+        var api=f.Open();
+        var status=await api.StatusAsync("study","primary",Ct);
+        Assert.False(status.CacheHit);
+        Assert.True(status.CanRunLive);
+        Assert.Equal(PendulumSamCache.Prompt,status.Concept);
+        await Assert.ThrowsAsync<FileNotFoundException>(()=>api.ReadArchiveAsync("study","primary",Ct));
+        var result=await api.RunOnceAsync("study","primary",f.Request("api-meta-cache"),Ct);
+        Assert.False(result.State.CacheHit);
+        Assert.Equal(PendulumSamCache.Prompt,result.Receipt.Concept);
+        Assert.Equal(1,f.Transport.Calls);
+    }
+
+    [Fact]
+    public async Task ChangingPromptCannotBypassAnUncertainLegacyCharge()
+    {
+        using var f=new Fixture();
+        var key=PendulumSamCache.LegacyCacheKey(f.Runtime.Source.Sha256);
+        var folder=Path.Combine(f.Root,".private","physics","sam-cache",key);
+        Directory.CreateDirectory(folder);
+        await SamVideoArchive.WriteExclusiveAsync(Path.Combine(folder,"attempt-started.json"),
+            new SamOriginalAttempt(PendulumSamCache.LegacyProtocol,f.Runtime.Source.Sha256,new string('b',64),
+                60,.012,DateTimeOffset.UtcNow,"MAY_BE_BILLABLE_NO_AUTOMATIC_RETRY"),Ct);
+        var status=await f.Open().StatusAsync("study","primary",Ct);
+        Assert.False(status.CanRunLive);
+        Assert.Contains("RECONCILIATION",status.Status);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Open().RunOnceAsync("study","primary",f.Request(),Ct));
+        Assert.Equal(0,f.Runtime.Reservations);
+    }
+
+    [Fact]
+    public async Task OldProcessLockPreventsConcurrentGenericCharge()
+    {
+        using var f=new Fixture();
+        var key=PendulumSamCache.LegacyCacheKey(f.Runtime.Source.Sha256);
+        var folder=Path.Combine(f.Root,".private","physics","sam-cache",key);
+        Directory.CreateDirectory(folder);
+        using(var held=new FileStream(Path.Combine(folder,".run.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None))
+            await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Open().RunOnceAsync("study","primary",f.Request(),Ct));
+        Assert.Equal(0,f.Transport.Calls);
+        await f.Open().RunOnceAsync("study","primary",f.Request(),Ct);
+        Assert.Equal(1,f.Transport.Calls);
+    }
+
+    [Fact]
+    public async Task LegacyReceiptCannotBeRelabeledAsGeneric()
+    {
+        using var f=new Fixture();
+        var old=await WriteOldTarget(f,MaskResponse);
+        Assert.Throws<InvalidDataException>(()=>SamVideoArchive.Validate(old.Receipt,
+            f.Runtime.Source,old.Receipt.CacheKey,old.Raw,old.Entry.AnalysisId));
+        Assert.Throws<InvalidDataException>(()=>SamVideoArchive.Validate(old.Receipt with {Concept=PendulumSamCache.Prompt},
+            f.Runtime.Source,old.Receipt.CacheKey,old.Raw,old.Entry.AnalysisId,legacyDirect:true));
     }
 }

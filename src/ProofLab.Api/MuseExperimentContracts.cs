@@ -46,7 +46,11 @@ public static class MuseExperimentPolicy
         Decide PROPOSE_EXPERIMENT, REPEAT_RECORDING or INCONCLUSIVE.
         PROPOSE_EXPERIMENT means sufficient for a preliminary conditional test,
         NOT scientific certification or a new discovery. If measurement status
-        is not CANDIDATE, do not propose. Acknowledge missing human review and
+        is not CANDIDATE, do not propose. If assessment.motion is present, propose
+        only when its status is COMPATIBLE_WITH_SIMPLE_PENDULUM. Periodicity alone
+        does not establish a pendular arc. Motion consistency is a local geometric
+        test, not semantic object identification or proof of a force law.
+        Acknowledge missing human review and
         unquantified systematic uncertainty; statistical u is repeatability only.
         For a proposed experiment vary ONLY length (0.10 to 2.00 m; at least 15%
         different), keeping the same object, small release angle, camera and
@@ -69,11 +73,24 @@ public static class MuseExperimentPolicy
         without independent evidence. No tools, code execution, or follow-up calls.
         """;
 
+    // Persisted observations created before motion assessment remain readable.
+    // New worker reports include motion and fail closed if it is inconclusive or unknown.
+    private static bool SupportsPendularProposal(JsonElement assessment)
+    {
+        if(assessment.GetProperty("status").GetString()!="CANDIDATE")return false;
+        if(!assessment.TryGetProperty("motion",out var motion))return true;
+        return motion.ValueKind==JsonValueKind.Object &&
+            motion.TryGetProperty("method",out var method) &&
+            method.ValueKind==JsonValueKind.String && method.GetString()=="SAM_PIVOT_ARC_VS_LINE_V1" &&
+            motion.TryGetProperty("status",out var status) &&
+            status.ValueKind==JsonValueKind.String && status.GetString()=="COMPATIBLE_WITH_SIMPLE_PENDULUM";
+    }
+
     public sealed record ExperimentOption(double NextLengthMeters,double PeriodSeconds);
     public static ExperimentOption[] ExperimentOptions(JsonElement observation)
     {
         var assessment=observation.GetProperty("measurement").GetProperty("assessment");
-        if(assessment.GetProperty("status").GetString()!="CANDIDATE")return [];
+        if(!SupportsPendularProposal(assessment))return [];
         var l1=observation.GetProperty("baselineLengthMeters").GetDouble();
         var t1=assessment.GetProperty("periodSeconds").GetDouble();
         if(!double.IsFinite(l1)||!double.IsFinite(t1)||l1<=0||t1<=0)
@@ -100,8 +117,8 @@ public static class MuseExperimentPolicy
             return a;
         }
         var assessment=observation.GetProperty("measurement").GetProperty("assessment");
-        if(assessment.GetProperty("status").GetString()!="CANDIDATE")
-            throw new FormatException("Unusable observations cannot support a frozen prediction.");
+        if(!SupportsPendularProposal(assessment))
+            throw new FormatException("Unusable or non-pendular observations cannot support a frozen prediction.");
         var l1=observation.GetProperty("baselineLengthMeters").GetDouble();
         var t1=assessment.GetProperty("periodSeconds").GetDouble();
         if(a.NextLengthMeters is not double l2 || !double.IsFinite(l2) || l2 is <.1 or >2 ||

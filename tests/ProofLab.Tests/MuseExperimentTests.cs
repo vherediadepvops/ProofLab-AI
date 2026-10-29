@@ -36,6 +36,49 @@ public sealed class MuseExperimentTests
         Assert.Throws<FormatException>(()=>Parse(Answer() with {NextLengthMeters=.75,PeriodSeconds=1.415}));
         Assert.Throws<FormatException>(()=>Parse(Answer() with {NextLengthMeters=.9,PeriodSeconds=1.415*Math.Sqrt(1.8)}));
     }
+
+    [Theory]
+    [InlineData("INCONCLUSIVE","SAM_PIVOT_ARC_VS_LINE_V1")]
+    [InlineData("COMPATIBLE_WITH_SIMPLE_PENDULUM","UNKNOWN")]
+    public void PeriodicityWithoutVerifiedPendularConsistencyCannotFreeze(string motionStatus,string method) {
+        using var original=JsonDocument.Parse(Observation().PayloadJson);
+        var payload=JsonSerializer.SerializeToElement(new {
+            identity=original.RootElement.GetProperty("identity"),baselineLengthMeters=.5,
+            measurement=new {assessment=new {status="CANDIDATE",periodSeconds=1.415,
+                statisticalStandardUncertaintySeconds=.001,motion=new {method,status=motionStatus}}}
+        },Json);
+        Assert.Empty(MuseExperimentPolicy.ExperimentOptions(payload));
+        Assert.Throws<FormatException>(()=>MuseExperimentPolicy.Parse(JsonSerializer.Serialize(Answer(),Json),payload));
+        Assert.Null(MuseExperimentPolicy.Parse(JsonSerializer.Serialize(Answer("REPEAT_RECORDING"),Json),payload).PeriodSeconds);
+        Assert.Null(MuseExperimentPolicy.Parse(JsonSerializer.Serialize(Answer("INCONCLUSIVE"),Json),payload).PeriodSeconds);
+    }
+    [Fact] public void CompatibleMotionSupportsOnlyTheExistingConditionalPrediction() {
+        using var original=JsonDocument.Parse(Observation().PayloadJson);
+        var payload=JsonSerializer.SerializeToElement(new {
+            identity=original.RootElement.GetProperty("identity"),baselineLengthMeters=.5,
+            measurement=new {assessment=new {status="CANDIDATE",periodSeconds=1.415,
+                statisticalStandardUncertaintySeconds=.001,
+                motion=new {method="SAM_PIVOT_ARC_VS_LINE_V1",status="COMPATIBLE_WITH_SIMPLE_PENDULUM"}}}
+        },Json);
+        Assert.Equal(3,MuseExperimentPolicy.ExperimentOptions(payload).Length);
+        Assert.Equal(Answer(),MuseExperimentPolicy.Parse(JsonSerializer.Serialize(Answer(),Json),payload));
+    }
+    [Fact] public void LegacyPredictionWithoutMotionKeepsItsExactPayloadAndHashAfterRestart() {
+        using var f=new Fixture();var store=f.Open();var o=store.SaveObservation(Observation());var a=Answer();
+        Assert.DoesNotContain("\"motion\"",o.PayloadJson);
+        store.BeginAttempt(o);store.SaveRaw(o.Id,Envelope(a));store.Complete(o,Evaluation(o,a));
+        var before=store.Prediction(Study)!;
+        var newIdentity=JsonSerializer.SerializeToElement(new {protocol=MuseExperimentPolicy.Version,
+            studyId=Study,workerHash="new-worker-with-motion"},Json);
+        var nextPayload=JsonSerializer.Serialize(new {identity=newIdentity,baselineLengthMeters=.5,
+            measurement=new {assessment=new {status="CANDIDATE",periodSeconds=1.415,
+                motion=new {method="SAM_PIVOT_ARC_VS_LINE_V1",status="INCONCLUSIVE"}}}},Json);
+        store.SaveObservation(new(KnotPolicy.Hash(newIdentity.GetRawText()),Study,o.VideoSha256,o.AnalysisId,
+            DateTimeOffset.UtcNow,nextPayload,KnotPolicy.Hash(nextPayload)));
+        var after=f.Open().Prediction(Study)!;
+        Assert.Equal(before.PayloadJson,after.PayloadJson);Assert.Equal(before.Sha256,after.Sha256);
+        Assert.Equal(o.Id,after.ObservationId);
+    }
     [Fact] public void ExplicitBudgetExtensionPreservesSpentRequestsAndConcurrencyLimit() {
         var budget=new MetaCallSafetyBudget(2,4);
         Assert.Equal(2,budget.Used);

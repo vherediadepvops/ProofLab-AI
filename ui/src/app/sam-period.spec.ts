@@ -1,5 +1,5 @@
 import {
-  measureSamPeriod, periodReportEnvelope, periodReportPayload,
+  measureSamPeriod, periodReportEnvelope, periodReportPayload, SAM_PENDULUM_MOTION_POLICY,
   type SamPeriodInput, type SamPeriodSource
 } from './sam-period';
 
@@ -33,6 +33,7 @@ describe('SAM period from native timestamps',()=>{
   for(const fps of [60,120,240])it('recovers a known period at '+fps+' FPS',()=>{
     const r=measureSamPeriod(oscillation(fps));
     expect(r.status).toBe('CANDIDATE');
+    expect(r.motion.status).toBe('COMPATIBLE_WITH_SIMPLE_PENDULUM');
     expect(r.periodSeconds!).toBeCloseTo(1.4,3);
     expect(r.usedCycles).toBeGreaterThanOrEqual(3);
     expect(r.statisticalStandardUncertaintySeconds).not.toBeNull();
@@ -161,5 +162,65 @@ describe('SAM period from native timestamps',()=>{
     expect(Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('')).toBe(envelope.payloadSha256);
     const other=await periodReportEnvelope(periodReportPayload({...source,pivotRevisionId:'revision-2'},input));
     expect(other.payloadSha256).not.toBe(envelope.payloadSha256);
+  });
+});
+
+describe('Pendular motion evidence, independent of object appearance',()=>{
+  it('accepts a resolved circular swing with realistic subpixel centroid noise',()=>{
+    const input=oscillation();
+    input.centroids.forEach((c,i)=>{c.x+=.3*Math.sin(i*1.7);c.y+=.3*Math.cos(i*1.3);});
+    const r=measureSamPeriod(input);
+    expect(r.motion.status).toBe('COMPATIBLE_WITH_SIMPLE_PENDULUM');
+    expect(r.motion.issues).toEqual([]);
+  });
+  it('does not treat periodic straight-line motion as a pendulum',()=>{
+    const input=oscillation();input.centroids.forEach(c=>c.y=input.imageHeight*.7);
+    const r=measureSamPeriod(input);
+    expect(r.status).toBe('CANDIDATE'); // A period can exist without a pendular arc.
+    expect(r.motion.status).toBe('INCONCLUSIVE');
+    expect(r.motion.issues).toContain('ARC_NOT_BETTER_THAN_LINE');
+  });
+  it('does not classify an unresolved small arc even with a stable period',()=>{
+    const input=oscillation();
+    input.centroids=input.framePtsSeconds.map((t,frameIndex)=>{
+      const a=.02*Math.sin(2*Math.PI*t/1.4-.7),radius=input.imageHeight*.55;
+      return {frameIndex,x:540+radius*Math.sin(a),y:288+radius*Math.cos(a)};
+    });
+    const r=measureSamPeriod(input);
+    expect(r.status).toBe('CANDIDATE');expect(r.motion.status).toBe('INCONCLUSIVE');
+    expect(r.motion.issues).toContain('ARC_TOO_SMALL_TO_RESOLVE');
+  });
+  it('uses mask resolution, not upscaled display pixels, to resolve curvature',()=>{
+    const input=oscillation();input.sourceWidth=120;input.sourceHeight=213;
+    input.centroids.forEach(c=>{c.x=c.x/1080*120;c.y=c.y/1920*213;});
+    const r=measureSamPeriod(input);
+    expect(r.status).toBe('CANDIDATE');expect(r.motion.status).toBe('INCONCLUSIVE');
+    expect(r.motion.issues).toContain('ARC_TOO_SMALL_TO_RESOLVE');
+    expect(r.motion.minimumResolvableSagittaPixels!).toBeGreaterThan(18);
+  });
+  it('keeps stationary, one-pass, missing-pivot and fragmented observations inconclusive',()=>{
+    const stationary=oscillation();stationary.centroids.forEach(c=>{c.x=540;c.y=1400;});
+    const onePass=oscillation();
+    onePass.centroids=onePass.framePtsSeconds.map((t,frameIndex)=>{
+      const a=-.18+.36*t/20,r=1056;
+      return {frameIndex,x:540+r*Math.sin(a),y:288+r*Math.cos(a)};
+    });
+    const missingPivot=oscillation();missingPivot.pivot=null;
+    const fragments=oscillation();fragments.centroids=fragments.centroids.filter(c=>c.frameIndex%60!==0);
+    for(const input of [stationary,onePass,missingPivot,fragments])
+      expect(measureSamPeriod(input).motion.status).toBe('INCONCLUSIVE');
+  });
+  it('does not infer pendulum identity from an arrangement label',()=>{
+    const input=oscillation();input.arrangement='legacy_pendulum';
+    input.centroids.forEach(c=>c.y=1400);
+    expect(measureSamPeriod(input).motion.status).toBe('INCONCLUSIVE');
+    const ambiguous=oscillation();ambiguous.arrangement='unclear';
+    expect(measureSamPeriod(ambiguous).motion.status).toBe('INCONCLUSIVE');
+  });
+  it('exports the recognition policy and inputs for reproduction',()=>{
+    const payload=periodReportPayload(source,oscillation());
+    expect(payload.motionPolicy).toEqual(SAM_PENDULUM_MOTION_POLICY);
+    expect(payload.assessment.motion.method).toBe('SAM_PIVOT_ARC_VS_LINE_V1');
+    expect(measureSamPeriod(payload.input).motion).toEqual(payload.assessment.motion);
   });
 });

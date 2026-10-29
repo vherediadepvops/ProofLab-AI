@@ -1,7 +1,7 @@
 import {Component, computed, input, signal} from '@angular/core';
 import {
   measureSamPeriod, periodReportPayload, periodReportEnvelope,
-  type SamPeriodInput, type SamPeriodSource, type PeriodIssue
+  type SamPeriodInput, type SamPeriodSource, type PeriodIssue, type PendulumMotionIssue
 } from './sam-period';
 
 const ISSUE_TEXT:Record<PeriodIssue,[string,string]>={
@@ -23,6 +23,12 @@ const ISSUE_TEXT:Record<PeriodIssue,[string,string]>={
   TIME_GAPS:['Hay saltos en los tiempos originales; no se conectan esos segmentos.','Source timestamps contain gaps; those segments are not connected.']
 };
 
+const MOTION_ISSUE_TEXT:Record<PendulumMotionIssue,[string,string]>={
+  PERIOD_OR_TRACKING_INCONCLUSIVE:['Faltan ciclos, geometría o seguimiento estable para evaluar el movimiento.','Cycles, geometry or stable tracking are insufficient to assess motion.'],
+  ARC_TOO_SMALL_TO_RESOLVE:['La curvatura es demasiado pequeña para distinguirla a la resolución de las máscaras.','Curvature is too small to distinguish at the mask resolution.'],
+  RADIAL_RESIDUAL_TOO_LARGE:['La trayectoria no mantiene un arco suficientemente estable alrededor de la suspensión.','The trajectory does not maintain a sufficiently stable arc around the suspension point.'],
+  ARC_NOT_BETTER_THAN_LINE:['El arco no explica mejor los datos que un movimiento en línea recta.','An arc does not explain the observations better than straight-line motion.']
+};
 @Component({
   selector:'app-sam-period-panel',
   standalone:true,
@@ -49,6 +55,7 @@ export class SamPeriodPanel {
     return this.number(u,4);
   }
   issueText(issue:PeriodIssue):string{return ISSUE_TEXT[issue][this.es?0:1];}
+  motionIssueText(issue:PendulumMotionIssue):string{return MOTION_ISSUE_TEXT[issue][this.es?0:1];}
   async download():Promise<void> {
     const source=this.source();
     if(!source || this.downloading())return;
