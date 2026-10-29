@@ -17,7 +17,14 @@ const access={manualTokenCallsPermitted:true,paidRequestsSwitchEnabled:true,cred
 const media={sourceSha256:sha,sourceFrames:667,durationSeconds:22.23,estimatedCostUsd:.1334,supportsSingleCall:true,codec:'h264'};
 const done={batchId:batch,parts:4,status:'PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW',
  derivedSeamsVerified:true,derivedFramesWithMasks:667};
-async function tick(){for(let i=0;i<6;i++)await Promise.resolve();}
+async function tick(){for(let i=0;i<12;i++)await Promise.resolve();}
+async function finalProgress(x:any,failed=false){
+ await tick();x.h.expectOne(url+'/batches/'+batch+'/progress').flush({
+  batchId:batch,parts:4,started:4,completed:4,failed:0,
+  phase:failed?'FAILED':'COMPLETED',preparationElapsedMs:1200,validationElapsedMs:300,totalElapsedMs:14300,
+  perPart:Array.from({length:4},(_,i)=>({part:i,state:'COMPLETED',events:50,deltas:45,outputChars:1000,elapsedMs:11000+i*100}))
+ });
+}
 describe('Integrated manual Meta segments',()=>{
  beforeEach(async()=>{await TestBed.configureTestingModule({imports:[SamVideoReplay],
  providers:[provideHttpClient(),provideHttpClientTesting()]}).compileComponents();});
@@ -54,17 +61,24 @@ describe('Integrated manual Meta segments',()=>{
   x.h.expectOne(url+'/preflight?targetCoreFrames=53&maxInFlight=4').flush(exact);await tick();
   const sam=x.h.expectOne(url+'/manual-batch');
   expect(sam.request.body.sceneKey).toBe(scene);expect(sam.request.body.maximumSamCostUsd).toBe(.14);
-  sam.flush(done);await p;
+  sam.flush(done);await finalProgress(x);await p;
   expect(emit).toHaveBeenCalledWith(jasmine.objectContaining({adaptiveBatchId:batch,analysisId:batch,port:5391}));
   expect(x.c.processing()).toBeTrue();
   x.f.componentRef.setInput('validationState','ready');x.f.detectChanges();
   expect(x.c.processing()).toBeFalse();expect(x.con.busy()).toBeFalse();
+  const rows=x.c.stageRows();
+  expect(rows.filter(r=>r.key.startsWith('sam-')).length).toBe(4);
+  expect(rows.find(r=>r.key==='preparation')?.ms).toBe(1200);
+  expect(rows.find(r=>r.key==='join')?.ms).toBe(300);
+  expect(rows.every(r=>r.state==='COMPLETED')).toBeTrue();
+  expect(x.c.canProcess()).toBeFalse(); // consumed batch identity requires a new read-only quote
+  expect(x.f.nativeElement.querySelectorAll('.stage-track').length).toBe(8);
  });
  it('reuses a verified scene without Spark or an independent three-trial quota',async()=>{
   const x=setup();await check(x,exact,located);
   expect(x.c.displayedCost()).toBe(.14);expect(x.c.canProcess()).toBeTrue();
   const p=x.c.process();x.h.expectNone(url+'/spark-once');
-  x.h.expectOne(url+'/manual-batch').flush(done);await p;
+  x.h.expectOne(url+'/manual-batch').flush(done);await finalProgress(x);await p;
   x.f.componentRef.setInput('validationState','ready');x.f.detectChanges();
  });
  it('stops before SAM on inconclusive Spark and does not retry',async()=>{
@@ -80,7 +94,7 @@ describe('Integrated manual Meta segments',()=>{
  });
  it('does not publish an incomplete or unverified seam result',async()=>{
   const x=setup();await check(x,exact,located);const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
-  x.h.expectOne(url+'/manual-batch').flush({...done,derivedSeamsVerified:false});await p;
+  x.h.expectOne(url+'/manual-batch').flush({...done,derivedSeamsVerified:false});await finalProgress(x,true);await p;
   expect(emit).not.toHaveBeenCalled();expect(x.c.processing()).toBeFalse();
  });
  it('discards a Spark reply after changing the selected video',async()=>{

@@ -156,6 +156,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly initialAngleDegrees = input(15);
   readonly samRefreshNonce = input(0);
   readonly processingRequired=input(false);
+  readonly processingError=input(false);
   readonly processedAnalysisId=input('');
   readonly processedAdaptiveBatchId=input('');
   readonly samApiPort=input<5391|5393|5398|5410>(5391);
@@ -174,7 +175,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     this.previewStateChanged.emit('error');
   }
   readonly samVerified=signal(false);
-  playbackLocked():boolean {return this.processingRequired() && !this.samVerified();}
+  playbackLocked():boolean {return this.processingRequired() && !this.samVerified() && !this.processingError();}
   private setVerified(value:boolean):void {
     this.samVerified.set(value);this.processingReady.emit(value);
   }

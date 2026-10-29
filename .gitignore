@@ -45,3 +45,4 @@ local-evidence/
 
 # Built from trusted TypeScript and the pinned SAM parser during .NET builds.
 /src/ProofLab.Api/Workers/sam-period-worker.cjs
+/src/ProofLab.Api/Workers/sam-seam-worker.cjs

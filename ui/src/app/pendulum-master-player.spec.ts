@@ -79,6 +79,24 @@ describe('One-clock three-view pendulum laboratory',()=>{
     return {fixture,component,source,root:fixture.nativeElement as HTMLElement};
   }
 
+  it('unlocks only the original after failure, leaving SAM evidence unavailable',()=>{
+    const {fixture,component,root}=init();
+    fixture.componentRef.setInput('processingRequired',true);
+    fixture.detectChanges();
+    expect(component.playbackLocked()).toBeTrue();
+    fixture.componentRef.setInput('processingError',true);
+    fixture.detectChanges();
+    expect(component.playbackLocked()).toBeFalse();
+    expect(component.samVerified()).toBeFalse();
+    expect(component.samTrack()).toBeNull();
+    component.onDecodedFrame();fixture.detectChanges();
+    expect(root.textContent).toContain('Puedes reproducir el video original');
+    fixture.componentRef.setInput('processingError',false);
+    fixture.detectChanges();
+    expect(component.playbackLocked()).toBeTrue();
+    fixture.destroy();
+  });
+
   it('never starts three separate media decoders',()=>{
     const {fixture,root,component}=init();
     expect(root.querySelectorAll('video').length).toBe(1);

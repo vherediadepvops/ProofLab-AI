@@ -59,11 +59,12 @@ interface SamAdaptiveQuote {
   reducedForSparseSparkSeeds:boolean;
 }
 interface SamAdaptivePartProgress {
-  part:number;state:string;events:number;deltas:number;outputChars:number;
+  part:number;state:string;events:number;deltas:number;outputChars:number;elapsedMs?:number;
 }
 interface SamAdaptiveProgress {
   batchId:string;parts:number;started:number;completed:number;failed:number;
   perPart:SamAdaptivePartProgress[];
+  phase?:string;preparationElapsedMs?:number;validationElapsedMs?:number;totalElapsedMs?:number;
 }
 interface SamAdaptiveReport {
   batchId:string;status:string;parts:number;startedParts:number;completedParts:number;
@@ -145,8 +146,23 @@ interface SamAdaptiveReport {
           @if(checking()) {
             <app-lab-activity class="sam-progress" [label]="es?'Calculando costo…':'Estimating cost…'"
               [detail]="es?'Comprobando fotogramas y caché. No se consumen créditos.':'Checking frames and cache. No credits are used.'"/>
-          } @else if(processing()) {
+          } @else if(processing() && mode()!=='api-meta-adaptive') {
             <app-lab-activity class="sam-progress" [label]="processingLabel()" [detail]="processingDetail()"/>
+          }
+          @if(mode()==='api-meta-adaptive' && stageTraceStarted()) {
+            <div class="sam-stages" aria-label="Process timing">
+              @for(row of stageRows();track row.key) {
+                <div class="sam-stage-row" [class.stage-error]="row.state==='FAILED'">
+                  <div><span>{{row.label}}</span><small>{{stageStateLabel(row.state)}} · {{(row.ms/1000).toFixed(1)}} s</small></div>
+                  <div class="stage-track" role="progressbar" [attr.aria-label]="row.label"
+                    [attr.aria-valuenow]="row.state==='COMPLETED'?100:null"
+                    [attr.aria-valuetext]="stageStateLabel(row.state)">
+                    <i [class.stage-active]="row.state==='IN_PROGRESS'" [class.stage-done]="row.state==='COMPLETED'"></i>
+                  </div>
+                </div>
+              }
+              <small class="sam-stage-help">{{es?'Los segmentos SAM se ejecutan en paralelo. Las barras animadas indican actividad; Meta no informa un porcentaje exacto.':'SAM segments run in parallel. Animated bars indicate activity; Meta does not report an exact percentage.'}}</small>
+            </div>
           }
           @if(!checking() && !processing() && !connection.busy()) {
           <div class="sam-message" [class.warning]="!freeCacheAvailable() && !canProcess() && !checking() && !sending()" role="status">
@@ -342,6 +358,16 @@ interface SamAdaptiveReport {
     .sam-file{display:block;margin:12px 0}.sam-file input{display:block;margin-top:8px;max-width:100%}
     .sam-masks{display:block;background:#101b2a;width:100%;max-width:560px;max-height:320px;margin-top:12px;border:1px solid #426277}
     .sam-objects p{margin:4px 0}.sam-frame-caption{font-size:11px;color:#9cb2ca}
+    .sam-stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:16px}
+    .sam-stage-row>div:first-child{display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:7px}
+    .sam-stage-row small,.sam-stage-help{color:#9cb2ca;font-size:11px}.sam-stage-help{grid-column:1/-1}
+    .stage-track{height:4px;background:#303b4a;border-radius:5px;overflow:hidden}
+    .stage-track i{display:block;height:100%;width:0;background:#66cbd5}
+    .stage-track i.stage-done{width:100%;background:#69dbad}
+    .stage-track i.stage-active{width:35%;animation:sam-stage-slide 1.5s ease-in-out infinite}
+    .stage-error .stage-track{background:#823e47}.stage-error small{color:#ff8e96}
+    @keyframes sam-stage-slide{from{transform:translateX(-100%)}to{transform:translateX(390%)}}
+    @media(prefers-reduced-motion:reduce){.stage-track i.stage-active{animation:none;width:50%}}
     .sam-progress{margin-top:16px}.sam-empty{display:flex;align-items:center;gap:20px}
     .sam-empty>app-lab-activity,.sam-empty-caption{flex:1;min-width:0}.sam-empty-caption{display:flex;align-items:center;gap:16px;color:#94abc4;font-size:12px}
     @media(max-width:700px){.sam-heading{align-items:flex-start;flex-wrap:wrap}.sam-stage3{padding:12px}.sam-actions{padding:14px}.sam-quote{gap:12px}.sam-buttons{width:100%;margin-left:0}.sam-buttons button{flex:1}.sam-video-meta{width:100%}.sam-price{flex:1}.sam-price strong{font-size:23px}}
@@ -364,9 +390,16 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.processing.set(true);this.processingPhase.set('validating');this.connection.busy.set(true);this.processingStarted.emit();
   }
   private finishProcessing():void {
+    if(this.stageTraceStarted()){
+      this.traceClock.set(Date.now());
+      if(this.viewStartedAt && !this.viewFinishedAt)this.viewFinishedAt=Date.now();
+      if(this.traceTicker!==null)clearInterval(this.traceTicker);
+      this.traceTicker=null;
+    }
     this.processing.set(false);this.processingPhase.set(null);this.connection.busy.set(false);
   }
   private failProcessing():void {
+    this.traceFailed=true;
     // Clear local activity first so the parent's error state keeps the specific failure message.
     this.finishProcessing();this.processingFailed.emit();
   }
@@ -375,6 +408,50 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly adaptiveProgress=signal<SamAdaptiveProgress|null>(null);
   readonly adaptiveResult=signal<SamAdaptiveReport|null>(null);
   private adaptivePollHandle:ReturnType<typeof setInterval>|null=null;
+  readonly stageTraceStarted=signal(false);
+  readonly traceClock=signal(0);
+  private traceTicker:ReturnType<typeof setInterval>|null=null;
+  private traceStartedAt=0;
+  private sparkFinishedAt=0;
+  private viewStartedAt=0;
+  private viewFinishedAt=0;
+  private traceFailed=false;
+  private sparkWasNeeded=false;
+  private startStageTrace():void {
+    if(this.traceTicker!==null)clearInterval(this.traceTicker);
+    this.traceStartedAt=Date.now();this.traceClock.set(this.traceStartedAt);
+    this.sparkFinishedAt=0;this.viewStartedAt=0;this.viewFinishedAt=0;this.traceFailed=false;
+    this.sparkWasNeeded=!!this.adaptiveQuote()?.requiresNewSparkCall;
+    this.stageTraceStarted.set(true);
+    this.traceTicker=setInterval(()=>this.traceClock.set(Date.now()),250);
+  }
+  stageStateLabel(state:string):string {
+    return state==='COMPLETED'?(this.es?'Listo':'Done'):state==='FAILED'?(this.es?'Falló':'Failed'):
+      state==='IN_PROGRESS'?(this.es?'En curso':'Running'):(this.es?'Pendiente':'Pending');
+  }
+  stageRows():{key:string;label:string;state:string;ms:number}[] {
+    const p=this.adaptiveProgress(),now=this.traceClock(),phase=p?.phase;
+    const sparkDone=!!this.sparkFinishedAt;
+    const rows=[{key:'spark',label:this.sparkWasNeeded?'Spark':(this.es?'Spark · reutilizado':'Spark · reused'),
+      state:sparkDone?'COMPLETED':this.traceFailed?'FAILED':'IN_PROGRESS',
+      ms:this.sparkWasNeeded?Math.max(0,(this.sparkFinishedAt||now)-this.traceStartedAt):0},
+      {key:'preparation',label:this.es?'Preparación del video':'Video preparation',
+       state:!sparkDone?'NOT_STARTED':phase==='PREPARING'||!p?(this.traceFailed?'FAILED':'IN_PROGRESS'):
+         phase==='FAILED'&&!p.started?'FAILED':'COMPLETED',
+       ms:p?.preparationElapsedMs??(sparkDone?Math.max(0,now-this.sparkFinishedAt):0)}];
+    for(let i=0;i<(this.adaptiveQuote()?.parts??0);i++){
+      const part=p?.perPart.find(x=>x.part===i);
+      rows.push({key:'sam-'+i,label:'SAM · '+(this.es?'segmento ':'segment ')+(i+1),
+        state:part?.state??'NOT_STARTED',ms:part?.elapsedMs??0});
+    }
+    rows.push({key:'join',label:this.es?'Unión y verificación':'Join and verification',
+      state:phase==='COMPLETED'?'COMPLETED':phase==='FAILED'?'FAILED':
+        phase==='VALIDATING'?'IN_PROGRESS':'NOT_STARTED',ms:p?.validationElapsedMs??0});
+    rows.push({key:'view',label:this.es?'Gráficos y reproducción':'Overlays and playback',
+      state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.viewStartedAt?'IN_PROGRESS':'NOT_STARTED',
+      ms:this.viewStartedAt?Math.max(0,(this.viewFinishedAt||now)-this.viewStartedAt):0});
+    return rows;
+  }
   private adaptiveUrl():string {
     return this.base+'/'+this.studyId()+'/sam-adaptive/'+this.videoRole();
   }
@@ -411,6 +488,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.adaptiveQuote.set(null);
     this.adaptiveProgress.set(null);
     this.adaptiveResult.set(null);
+    this.stageTraceStarted.set(false);
+    if(this.traceTicker!==null)clearInterval(this.traceTicker);this.traceTicker=null;
   }
   readonly studyId=input('');
   readonly videoRole=input<'baseline'|'followup'>('baseline');
@@ -431,6 +510,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   ngOnDestroy():void {
     this.disposed=true;this.serial++;this.offlineSerial++;
     if(this.adaptivePollHandle!==null)clearInterval(this.adaptivePollHandle);
+    if(this.traceTicker!==null)clearInterval(this.traceTicker);this.traceTicker=null;
     this.adaptivePollHandle=null;
     if(this.processing() && !this.sending())this.finishProcessing();
   }
@@ -443,6 +523,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   canProcess():boolean {
     if(this.mode()==='api-meta-adaptive') {
       const quote=this.adaptiveQuote(),ready=this.readiness(),spark=this.groundingQuote();
+      if(this.adaptiveResult())return false;
       return !!quote && !!ready &&
         quote.sourceSha256===this.videoSha256() &&
         (quote.existingSparkSceneVerified || (quote.requiresNewSparkCall &&
@@ -769,6 +850,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       url===this.adaptiveUrl() && port===this.localApiPort();
     this.processingReset.emit();this.beginProcessing();this.sending.set(true);
     this.error.set('');this.adaptiveProgress.set(null);this.adaptiveResult.set(null);
+    this.startStageTrace();
     let opened=false;
     try {
       if(quote.requiresNewSparkCall){
@@ -790,13 +872,17 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           throw Error('SEGMENT_QUOTE_CHANGED');
         quote=exact;this.adaptiveQuote.set(exact);this.groundingQuote.set(located);
       }
+      this.sparkFinishedAt=Date.now();this.traceClock.set(Date.now());
       this.processingPhase.set('sam');
+      let polling=false;
       const poll=async()=>{
+        if(polling)return;polling=true;
         try{
           const progress=await firstValueFrom(this.http!.get<SamAdaptiveProgress>(
             url+'/batches/'+quote.suggestedBatchId+'/progress').pipe(timeout(8000)));
           if(current())this.adaptiveProgress.set(progress);
         }catch{ /* Status reads never retry provider requests. */ }
+        finally{polling=false;}
       };
       this.adaptivePollHandle=setInterval(()=>{void poll();},2000);
       const report=await firstValueFrom(this.http.post<SamAdaptiveReport>(url+'/manual-batch',{
@@ -810,10 +896,11 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       if(report.batchId!==quote.suggestedBatchId || report.parts!==quote.parts)
         throw Error('BATCH_ID_MISMATCH');
       this.adaptiveResult.set(report);
+      await poll();
       if(report.status!=='PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW' ||
          report.derivedSeamsVerified!==true || !report.derivedFramesWithMasks)
         throw Error('SEGMENT_RESULT_INCONCLUSIVE');
-      this.processingPhase.set('validating');
+      this.processingPhase.set('validating');this.viewStartedAt=Date.now();
       opened=true;
       this.cacheUpdated.emit({studyId:this.studyId(),videoRole:this.videoRole(),
         sourceSha256:sha,analysisId:report.batchId,adaptiveBatchId:report.batchId,port});
@@ -826,8 +913,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           this.processingPhase()==='grounding'?(this.es?
           'Spark no pudo confirmar el objeto. SAM no se envió; revisa el estado antes de otro intento.':
           'Spark could not confirm the object. SAM was not sent; review the status before another attempt.'):
-          (this.es?'El lote quedó incompleto o no pudo validarse. Revisa el resultado; no habrá reintentos automáticos.':
-          'The batch was incomplete or could not be validated. Review the result; no automatic retries.'));
+          (this.es?'No se pudieron validar todos los segmentos. Puedes reproducir el original; los gráficos quedan pendientes. Consulta las etapas y actualiza el costo para un nuevo intento manual.':
+          'Not all segments could be validated. Original playback is available; overlays remain pending. Review the stages and refresh the cost for a new manual attempt.'));
         this.failProcessing();
       }
     }finally{

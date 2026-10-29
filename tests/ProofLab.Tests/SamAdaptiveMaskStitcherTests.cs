@@ -36,6 +36,36 @@ public sealed class SamAdaptiveMaskStitcherTests
     }
 
     [Fact]
+    public void SeedFirstThenBackwardStreamPreservesFramesAndCanonicalTarget()
+    {
+        var plan=SamAdaptiveSegmentPlan.Create(182,alignToTwoFrameIntraKeyframes:true);
+        var parts=Parts(plan).Select(p=>{
+            var lines=SamFourWayMaskAssembler.OutputWire(p.OriginalProviderResponseJson)
+                .Split('\n',StringSplitOptions.RemoveEmptyEntries);
+            var raw=Envelope(string.Join('\n',lines.Skip(18).Concat(lines.Take(18).Reverse()))+"\n");
+            return p with{OriginalProviderResponseJson=raw,ResponseJsonSha256=SamVideoArchive.Hash(raw)};
+        }).ToArray();
+        var result=SamAdaptiveMaskStitcher.Stitch(plan,parts);
+        Assert.Equal(182,result.FramesWithMasks);Assert.True(result.SeamsVerified);
+        var wire=SamFourWayMaskAssembler.OutputWire(result.DerivedResponseJson);
+        Assert.StartsWith("<0f>1",wire);Assert.DoesNotContain("f>0<|box;",wire);
+        var duplicate=parts[0].OriginalProviderResponseJson;
+        var repeated=SamFourWayMaskAssembler.OutputWire(duplicate);
+        var invalid=Envelope(repeated+repeated.Split('\n')[0]+"\n");
+        parts[0]=parts[0] with{OriginalProviderResponseJson=invalid,ResponseJsonSha256=SamVideoArchive.Hash(invalid)};
+        Assert.Throws<InvalidDataException>(()=>SamAdaptiveMaskStitcher.Stitch(plan,parts));
+    }
+    [Theory]
+    [InlineData(0.97,true)]
+    [InlineData(0.89,false)]
+    [InlineData(0,false)]
+    public void RasterOverlapChecksEverySharedFrame(double iou,bool expected)
+    {
+        var plan=SamAdaptiveSegmentPlan.Create(182,alignToTwoFrameIntraKeyframes:true);
+        var result=SamAdaptiveMaskStitcher.Stitch(plan,Parts(plan,mutatedPart:1),(a,b)=>iou);
+        Assert.Equal(expected,result.SeamsVerified);
+    }
+    [Fact]
     public void DynamicallySplit667MasksJoinWithoutMissingFrames()
     {
         var plan=SamAdaptiveSegmentPlan.Create(667,

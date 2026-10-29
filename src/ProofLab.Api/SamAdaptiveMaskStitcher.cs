@@ -5,7 +5,7 @@ namespace ProofLab.Api;
 
 public sealed record SamAdaptiveSeam(
     int LeftPart,int RightPart,int CommonMasks,int IdenticalMasks,
-    int ContradictoryMasks,bool Verified);
+    int ContradictoryMasks,bool Verified,double? MinimumMaskIou=null);
 
 public sealed record SamAdaptivePartOutput(
     int Part,int InputStart,int InputEndExclusive,
@@ -22,18 +22,56 @@ public sealed record SamAdaptiveMaskResult(
 }
 
 /// <summary>
-/// Only runs over separately authenticated, completed provider responses,
-/// after each part has a durable immutable HTTPS receipt. It does not make
-/// model calls or infer masks. Exact overlap equality is a CONSERVATIVE
-/// scientific criterion; differing genuine masks remain inconclusive until
-/// raster IoU / human review is implemented.
+/// Authenticated parts retain their pixels and core ownership. Stream arrival order
+/// is not frame order. Overlaps require at least two matching observations and
+/// raster IoU >= 0.90 on EVERY shared frame. This is a continuity check, not
+/// scientific or human approval.
 /// </summary>
 public static class SamAdaptiveMaskStitcher
 {
-    private sealed record WireFrame(int Global,int Local,string Payload);
+    public const double MinimumOverlapIou=0.90;
+    public sealed record MaskPair(string Left,string Right);
+    public static async Task<SamAdaptiveMaskResult> StitchAsync(
+        SamAdaptiveSegmentPlan plan,IReadOnlyList<SamAdaptivePartOutput> parts,
+        Microsoft.Extensions.Configuration.IConfiguration config,CancellationToken ct)
+    {
+        // Strict parsing/hash/window validation runs before the local worker.
+        var pairs=new List<MaskPair>();
+        _=Stitch(plan,parts,(a,b)=>{pairs.Add(new(a,b));return 0;});
+        if(pairs.Count==0)return Stitch(plan,parts);
+        var info=new System.Diagnostics.ProcessStartInfo(config["Media:NodeExecutable"]??"node"){
+            UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,
+            RedirectStandardOutput=true,RedirectStandardError=true};
+        info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory,"Workers","sam-seam-worker.cjs"));
+        using var process=new System.Diagnostics.Process{StartInfo=info};
+        using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(60));
+        process.Start();
+        try {
+            var output=process.StandardOutput.ReadToEndAsync(deadline.Token);
+            var errors=process.StandardError.ReadToEndAsync(deadline.Token);
+            await process.StandardInput.WriteAsync(JsonSerializer.Serialize(pairs).AsMemory(),deadline.Token);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(deadline.Token);
+            _=await errors;
+            var text=await output;
+            if(process.ExitCode!=0 || text.Length>100_000)
+                throw new InvalidDataException("Segment raster verification failed.");
+            var values=JsonSerializer.Deserialize<double[]>(text);
+            if(values is null || values.Length!=pairs.Count ||
+               values.Any(x=>!double.IsFinite(x)||x<0||x>1))
+                throw new InvalidDataException("Invalid segment overlap metrics.");
+            var index=0;
+            return Stitch(plan,parts,(a,b)=>{
+                if(pairs[index]!=new MaskPair(a,b))throw new InvalidDataException("Overlap order changed.");
+                return values[index++];
+            });
+        } finally {if(!process.HasExited)try{process.Kill(entireProcessTree:true);}catch{}}
+    }
 
     public static SamAdaptiveMaskResult Stitch(
-        SamAdaptiveSegmentPlan plan,IReadOnlyList<SamAdaptivePartOutput> parts)
+        SamAdaptiveSegmentPlan plan,IReadOnlyList<SamAdaptivePartOutput> parts,
+        Func<string,string,double>? overlapIou=null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(parts);
@@ -61,7 +99,7 @@ public static class SamAdaptiveMaskStitcher
             {
                 if(frame<window.CoreStart || frame>=window.CoreEndExclusive)
                     continue;
-                if(!output.TryAdd(frame,"<"+frame+"f>0"+payload+"\n"))
+                if(!output.TryAdd(frame,"<"+frame+"f>1"+payload+"\n"))
                     throw new InvalidDataException("Duplicate rebased core frame.");
             }
         }
@@ -72,8 +110,12 @@ public static class SamAdaptiveMaskStitcher
             var common=a.Keys.Intersect(b.Keys).ToArray();
             var equal=common.Count(frame=>
                 string.Equals(a[frame],b[frame],StringComparison.Ordinal));
-            seams.Add(new(i,i+1,common.Length,equal,common.Length-equal,
-                common.Length>=2 && common.Length==equal));
+            var metrics=common.Select(frame=>a[frame]==b[frame]?1:
+                overlapIou?.Invoke(a[frame],b[frame])??0).ToArray();
+            var contradictory=metrics.Count(x=>!double.IsFinite(x)||x<MinimumOverlapIou||x>1);
+            seams.Add(new(i,i+1,common.Length,equal,contradictory,
+                common.Length>=2 && contradictory==0,
+                metrics.Length>0?metrics.Min():null));
         }
         var allVerified=seams.All(s=>s.Verified);
         var wireCombined=string.Concat(output.Values);
@@ -95,7 +137,7 @@ public static class SamAdaptiveMaskStitcher
     private static Dictionary<int,string> Parse(string wire,SamAdaptiveWindow window)
     {
         var result=new Dictionary<int,string>();
-        var previous=-1;
+        string? objectId=null;
         foreach(var lineText in wire.Split('\n'))
         {
             var line=lineText.TrimEnd('\r');
@@ -105,9 +147,9 @@ public static class SamAdaptiveMaskStitcher
             var end=line.IndexOf("f>",StringComparison.Ordinal);
             if(end is <2 or >8 ||
                !int.TryParse(line.AsSpan(1,end-1),out var localFrame) ||
-               localFrame<=previous || localFrame<0 ||
+               localFrame<0 ||
                localFrame>=window.InputFrames)
-                throw new InvalidDataException("SAM local frame order/index mismatch.");
+                throw new InvalidDataException("SAM local frame index outside the submitted segment.");
             var box=line.IndexOf("<|box;",end+2,StringComparison.Ordinal);
             var mask=line.IndexOf("<|mask;",end+2,StringComparison.Ordinal);
             if(box<=end+2 || mask<=box || mask>=line.Length-3 ||
@@ -119,10 +161,12 @@ public static class SamAdaptiveMaskStitcher
                line.IndexOf("<|box;",box+1,StringComparison.Ordinal)>=0 ||
                line.IndexOf("<|mask;",mask+1,StringComparison.Ordinal)>=0)
                 throw new InvalidDataException("Ambiguous SAM target in fragment.");
+            if(objectId is not null && objectId!=id)
+                throw new InvalidDataException("SAM object identity changed within a fragment.");
+            objectId=id;
             var global=window.GlobalFrame(localFrame);
             if(!result.TryAdd(global,line[box..]))
                 throw new InvalidDataException("SAM duplicate mask in global frame.");
-            previous=localFrame;
         }
         return result;
     }

@@ -1,7 +1,10 @@
 <section class="master-studio">
   @if(processingRequired() && !previewLoading() && !processingPending()) {
     <p class="processing-notice" role="status">
-      @if(playbackLocked()) {
+      @if(processingError() && !samVerified()) {
+        {{es?'Resultado pendiente de validación. Puedes reproducir el video original; no se muestran gráficos sin verificar.':
+          'Result pending validation. You can play the original video; unverified overlays are not displayed.'}}
+      } @else if(playbackLocked()) {
         {{samStatus()==='AWAITING_PROCESS'
           ? (es?'Video cargado. Revisa el costo y pulsa Procesar. La reproducción y los gráficos se habilitarán al validar el resultado.':
             'Video uploaded. Review the cost and press Process. Playback and overlays unlock after result validation.')

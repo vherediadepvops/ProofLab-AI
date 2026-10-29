@@ -21,4 +21,12 @@
           Outputs="Workers/sam-period-worker.cjs">
     <Exec Command="node &quot;../../scripts/build-sam-period-worker.cjs&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
+  <ItemGroup>
+    <Content Include="Workers\sam-seam-worker.cjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildSamSeamWorker" BeforeTargets="BeforeBuild"
+          Inputs="../../scripts/sam-seam-worker.ts;../../scripts/build-sam-seam-worker.cjs;../../ui/package-lock.json"
+          Outputs="Workers/sam-seam-worker.cjs">
+    <Exec Command="node &quot;../../scripts/build-sam-seam-worker.cjs&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
 </Project>

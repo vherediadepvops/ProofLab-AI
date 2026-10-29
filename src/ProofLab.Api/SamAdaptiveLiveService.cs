@@ -162,9 +162,23 @@ public sealed class SamAdaptiveLiveService(
                 throw new InvalidOperationException(
                     "Batch ID was used before; no automatic or duplicate retry.");
             Directory.CreateDirectory(folder);
+            var created=DateTimeOffset.UtcNow;
+            await WriteJson(Path.Combine(folder,"batch-preparing.json"),new{
+                batchId,createdAtUtc=created,expectedParts=plan.PartCount
+            },CancellationToken.None);
             var clipDir=Path.Combine(folder,"clips");
-            var manifests=await clipBuilder.PrepareAsync(
-                source,pts,plan,clipDir,ct);
+            SamAdaptiveClipManifest manifests;
+            try {
+                manifests=await clipBuilder.PrepareAsync(source,pts,plan,clipDir,ct);
+            } catch {
+                await WriteJson(Path.Combine(folder,"preparation-failed.json"),
+                    new{finishedAtUtc=DateTimeOffset.UtcNow},CancellationToken.None);
+                throw;
+            }
+            await WriteJson(Path.Combine(folder,"preparation-completed.json"),new{
+                finishedAtUtc=DateTimeOffset.UtcNow,
+                elapsedMs=(long)(DateTimeOffset.UtcNow-created).TotalMilliseconds
+            },CancellationToken.None);
             if(manifests.BilledFrames!=plan.BilledFrames ||
                manifests.OriginalPtsSha256!=plan.VerifySourcePts(pts) ||
                manifests.Clips.Count!=plan.PartCount)
@@ -178,7 +192,6 @@ public sealed class SamAdaptiveLiveService(
             await WriteJson(Path.Combine(folder,"batch-context.json"),
                 new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,request.MaxInFlight),
                 CancellationToken.None);
-            var created=DateTimeOffset.UtcNow;
             await WriteJson(Path.Combine(folder,"batch-started.json"),new{
                 batchId,createdAtUtc=created,sourceSha256=source.Sha256,
                 sceneKey=scene.Key,planSha256=key,
@@ -307,6 +320,8 @@ public sealed class SamAdaptiveLiveService(
                     "provider-dispatch.json")));
             var status="PARTIAL_PROVIDER_ATTEMPTS_REQUIRE_MANUAL_RECONCILIATION";
             SamAdaptiveMaskResult? derived=null;
+            await WriteJson(Path.Combine(folder,"validation-started.json"),
+                new{startedAtUtc=DateTimeOffset.UtcNow},CancellationToken.None);
             if(completed==plan.PartCount)
             {
                 try
@@ -315,7 +330,7 @@ public sealed class SamAdaptiveLiveService(
                         i,plan.Windows[i].InputStart,plan.Windows[i].InputEndExclusive,
                         plan.Windows[i].CoreStart,plan.Windows[i].CoreEndExclusive,
                         r!.Receipt!.ResponseSha256,r.Provider!.FullResponseJson)).ToArray();
-                    derived=SamAdaptiveMaskStitcher.Stitch(plan,parts);
+                    derived=await SamAdaptiveMaskStitcher.StitchAsync(plan,parts,config,CancellationToken.None);
                     await WriteJson(Path.Combine(folder,"derived-report.json"),
                         new{derived.Provenance,derived.SourceFrames,
                             derived.FramesWithMasks,derived.MissingCoreFrames,
@@ -330,9 +345,13 @@ public sealed class SamAdaptiveLiveService(
                     }
                     else status="PROVIDER_PARTS_COMPLETE_SEAM_OR_DETECTION_INCONCLUSIVE";
                 }
-                catch(InvalidDataException)
+                catch(Exception e) when(e is InvalidDataException or OperationCanceledException or System.ComponentModel.Win32Exception)
                 {
                     status="PROVIDER_PARTS_COMPLETE_DERIVED_EVIDENCE_REJECTED";
+                    await WriteJson(Path.Combine(folder,"validation-failed.json"),
+                        new{reason=e is InvalidDataException ? "MASK_OR_INDEX_VALIDATION_FAILED" :
+                            "LOCAL_MASK_WORKER_UNAVAILABLE",recordedAtUtc=DateTimeOffset.UtcNow},
+                        CancellationToken.None);
                 }
             }
             var report=new SamAdaptiveLiveReport(batchId,status,
@@ -388,7 +407,7 @@ public sealed class SamAdaptiveLiveService(
             outputs.Add(new(w.Part,w.InputStart,w.InputEndExclusive,
                 w.CoreStart,w.CoreEndExclusive,receipt.ResponseSha256,raw));
         }
-        var derived=SamAdaptiveMaskStitcher.Stitch(plan,outputs);
+        var derived=await SamAdaptiveMaskStitcher.StitchAsync(plan,outputs,config,ct);
         var saved=await File.ReadAllTextAsync(Path.Combine(folder,"derived-response.json"),ct);
         if(!derived.SeamsVerified || derived.FramesWithMasks<=0 ||
            derived.DerivedResponseSha256!=report.DerivedResponseSha256 ||
@@ -425,11 +444,30 @@ public sealed class SamAdaptiveLiveService(
     {
         if(!ValidBatchId(batchId))throw new ArgumentException("Invalid batch ID.");
         var folder=BatchDir(batchId);
-        var attempt=Path.Combine(folder,"batch-started.json");
+        var attempt=Path.Combine(folder,"batch-preparing.json");
+        if(!File.Exists(attempt))attempt=Path.Combine(folder,"batch-started.json");
         if(!File.Exists(attempt))
             throw new FileNotFoundException("Unknown adaptive batch.");
         using var data=JsonDocument.Parse(await File.ReadAllTextAsync(attempt,ct));
         var total=data.RootElement.GetProperty("expectedParts").GetInt32();
+        var created=data.RootElement.GetProperty("createdAtUtc").GetDateTimeOffset();
+        var report=await ReadReportAsync(batchId,ct);
+        var end=report?.RecordedAtUtc??DateTimeOffset.UtcNow;
+        var preparationMs=(long)(end-created).TotalMilliseconds;
+        var prep=Path.Combine(folder,"preparation-completed.json");
+        var phase=File.Exists(Path.Combine(folder,"preparation-failed.json"))?"FAILED":"PREPARING";
+        if(File.Exists(prep)) {
+            using var doc=JsonDocument.Parse(await File.ReadAllTextAsync(prep,ct));
+            preparationMs=doc.RootElement.GetProperty("elapsedMs").GetInt64();phase="SAM";
+        } else if(File.Exists(Path.Combine(folder,"batch-started.json"))) {preparationMs=0;phase="SAM";}
+        long validationMs=0;
+        var validation=Path.Combine(folder,"validation-started.json");
+        if(File.Exists(validation)) {
+            using var doc=JsonDocument.Parse(await File.ReadAllTextAsync(validation,ct));
+            validationMs=(long)(end-doc.RootElement.GetProperty("startedAtUtc").GetDateTimeOffset()).TotalMilliseconds;
+            phase="VALIDATING";
+        }
+        if(report is not null)phase=report.DerivedSeamsVerified==true?"COMPLETED":"FAILED";
         var rows=new List<SamAdaptivePartStatus>(total);
         for(var part=0;part<total;part++)
         {
@@ -437,33 +475,34 @@ public sealed class SamAdaptiveLiveService(
             var state=File.Exists(Path.Combine(path,"receipt.json"))?"COMPLETED":
                 File.Exists(Path.Combine(path,"failure.json"))?"FAILED":
                 File.Exists(Path.Combine(path,"attempt-started.json"))?"IN_PROGRESS":"NOT_STARTED";
-            var events=0;var deltas=0;var chars=0;
+            var events=0;var deltas=0;var chars=0;long elapsedMs=0;
             var telemetry=Path.Combine(path,"progress.jsonl");
             if(File.Exists(telemetry))
             {
                 try
                 {
-                    var last=File.ReadLines(telemetry).LastOrDefault(
-                        line=>!string.IsNullOrWhiteSpace(line));
-                    if(last is not null)
-                    {
-                        using var doc=JsonDocument.Parse(last);
-                        var entry=doc.RootElement;
-                        if(entry.TryGetProperty("Events",out var ev))
-                            events=ev.GetInt32();
-                        if(entry.TryGetProperty("DeltaEvents",out var de))
-                            deltas=de.GetInt32();
-                        if(entry.TryGetProperty("OutputChars",out var oc))
-                            chars=oc.GetInt32();
+                    foreach(var line in File.ReadLines(telemetry).Where(x=>!string.IsNullOrWhiteSpace(x))) {
+                        try {
+                            using var doc=JsonDocument.Parse(line);var entry=doc.RootElement;
+                            if(entry.TryGetProperty("Events",out var ev))events=Math.Max(events,ev.GetInt32());
+                            if(entry.TryGetProperty("DeltaEvents",out var de))deltas=Math.Max(deltas,de.GetInt32());
+                            if(entry.TryGetProperty("OutputChars",out var oc))chars=Math.Max(chars,oc.GetInt32());
+                            if(entry.TryGetProperty("elapsedMs",out var ms))elapsedMs=Math.Max(elapsedMs,ms.GetInt64());
+                        }catch(JsonException){} // active writer may have a partial final line
                     }
                 }
                 catch(IOException){} // reader can collide with an active writer
                 catch(JsonException){} // a partially flushed last line is not evidence
             }
-            rows.Add(new(part,state,events,deltas,chars));
+            var dispatch=Path.Combine(path,"provider-dispatch.json");
+            if(state=="IN_PROGRESS" && File.Exists(dispatch)) {
+                using var doc=JsonDocument.Parse(await File.ReadAllTextAsync(dispatch,ct));
+                elapsedMs=(long)(DateTimeOffset.UtcNow-doc.RootElement.GetProperty("dispatchedAtUtc").GetDateTimeOffset()).TotalMilliseconds;
+            }
+            rows.Add(new(part,state,events,deltas,chars,Math.Max(0,elapsedMs)));
         }
         return new(batchId,total,rows.Count(x=>x.State!="NOT_STARTED"),
             rows.Count(x=>x.State=="COMPLETED"),
-            rows.Count(x=>x.State=="FAILED"),rows);
+            rows.Count(x=>x.State=="FAILED"),rows,phase,Math.Max(0,preparationMs),Math.Max(0,validationMs),Math.Max(0,(long)(end-created).TotalMilliseconds));
     }
 }

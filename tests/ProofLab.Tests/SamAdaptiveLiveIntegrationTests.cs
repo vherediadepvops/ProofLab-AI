@@ -49,6 +49,11 @@ public sealed class SamAdaptiveLiveIntegrationTests
         Assert.False(artifact.Derivation!.NativeProviderResult);Assert.True(artifact.Derivation.SeamsVerified);
         Assert.Equal(4,artifact.Derivation.PartResponseSha256.Length);
         Assert.Equal(f.Runtime.Pts,artifact.Receipt.FramePtsSeconds);
+        var progress=await f.Service.ReadProgressAsync(request.ClientBatchId,default);
+        Assert.Equal("COMPLETED",progress.Phase);
+        Assert.Equal(4,progress.Completed);Assert.True(progress.TotalElapsedMs>=progress.PreparationElapsedMs);
+        Assert.All(progress.PerPart,x=>Assert.True(x.ElapsedMs>=0));
+        Assert.Contains("f>1<|box;",SamFourWayMaskAssembler.OutputWire(artifact.RawResponseJson));
         Assert.Equal(SamAdaptiveLiveService.Protocol,artifact.Receipt.RequestProtocol);
         Assert.Equal("VERIFIED_META_SAM_SEGMENTS_REQUIRES_VISUAL_REVIEW",artifact.State.Status);
         var path=Path.Combine(f.Store,"batches",request.ClientBatchId,"part-00","response.json");

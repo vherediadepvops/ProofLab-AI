@@ -43,7 +43,7 @@ public sealed record SamAdaptivePartReceipt(
     DateTimeOffset FinishedAtUtc,string Status);
 
 public sealed record SamAdaptivePartStatus(int Part,string State,
-    int Events=0,int Deltas=0,int OutputChars=0);
+    int Events=0,int Deltas=0,int OutputChars=0,long ElapsedMs=0);
 
 public sealed record SamAdaptiveLiveReport(
     string BatchId,string Status,string SourceSha256,string SparkSceneKey,
@@ -58,4 +58,6 @@ public sealed record SamAdaptiveLiveReport(
 
 public sealed record SamAdaptiveProgress(
     string BatchId,int Parts,int Started,int Completed,int Failed,
-    IReadOnlyList<SamAdaptivePartStatus> PerPart);
+    IReadOnlyList<SamAdaptivePartStatus> PerPart,
+    string Phase="SAM",long PreparationElapsedMs=0,long ValidationElapsedMs=0,
+    long TotalElapsedMs=0);
