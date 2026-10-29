@@ -42,6 +42,8 @@ builder.Services.AddSingleton<ISamVideoRuntime, SamVideoRuntime>();
 builder.Services.AddSingleton(sp => new SamVideoEvidenceIndex(
     sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
 builder.Services.AddSingleton<PendulumSamCache>();
+builder.Services.AddSingleton<SuspensionReviewStore>();
+builder.Services.AddSingleton<SuspensionReviewService>();
 builder.Services.AddSingleton<IKnotFrames>(sp => sp.GetRequiredService<VideoMediaDecoder>());
 builder.Services.AddSingleton<IKnotTransport, KnotMetaTransport>();
 builder.Services.AddSingleton<PendulumKnotLocator>();
@@ -59,6 +61,7 @@ app.UseCors("HackathonLocal");
 app.MapKnotEndpoints();
 app.MapAssemblyEndpoints();
 app.MapMuseExperimentEndpoints();
+app.MapSuspensionReviewEndpoints();
 app.MapGet("/api/health", (MetaModelClient meta) =>
     Results.Ok(new {
         project = "ProofLab AI — competition edition",

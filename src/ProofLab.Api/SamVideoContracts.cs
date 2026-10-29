@@ -22,14 +22,14 @@ public sealed record SamVideoPreflight(
     int SourceWidth, int SourceHeight, int SourceFrames,
     double DurationSeconds, double EstimatedCostUsd,
     string FramePtsSha256, bool SupportsSingleCall,
-    string TimingSource, string BillingStatus);
+    string TimingSource, string BillingStatus, double SuspensionReviewMaximumCostUsd=0.05);
 
 // Derived metadata beside the immutable receipt; never labels an AI estimate as human review.
 public sealed record SamSuspensionEvidence(string SourceSha256,string SceneKey,string EvidenceKey,
     string ResponseSha256,string Model,int Width,int Height,KnotPoint[] Points);
 public sealed record SamVideoArtifact(
     SamVideoState State, SamVideoReceipt Receipt, string RawResponseJson,
-    SamSuspensionEvidence? Suspension = null);
+    SamSuspensionEvidence? Suspension = null, SuspensionReviewEvidence? SuspensionReview=null);
 
 public sealed record SamVideoRunRequest(
     string VideoSha256, bool ConfirmPrivateVideoTransfer,

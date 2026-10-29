@@ -54,6 +54,57 @@ describe('SAM guided manual processing and parallel quotes',()=>{
   async function quote(ctx:Context,options:Parameters<typeof flush>[1]={}) {
     const p=ctx.c.check();flush(requests(ctx),options);await p;ctx.f.detectChanges();
   }
+
+
+  it('offers one paid suspension review for cached SAM and reuses a completed review for free',async()=>{
+    const ctx=setup();token(ctx);const url=base+'/sam/baseline/suspension-review';
+    const p=ctx.c.check();
+    flush(requests(ctx),{status:cached(),quote:{...pf,suspensionReviewMaximumCostUsd:.05}});
+    await Promise.resolve();await Promise.resolve();
+    const q={analysisId:'synthetic-analysis',required:true,priorAttempt:false,canRun:true,
+      maximumEstimatedCostUsd:.05,reason:'TRACK_INCONSISTENT_WITH_SUSPENSION',evidence:null};
+    await Promise.resolve();await Promise.resolve();
+    ctx.h.expectOne(url).flush(q);await p;ctx.f.detectChanges();
+    expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBe(.05);
+    expect(ctx.f.nativeElement.querySelector('.paid-cost')).not.toBeNull();
+    const emit=spyOn(ctx.c.cacheUpdated,'emit'),run=ctx.c.process();
+    ctx.h.expectOne(url).flush(q);await Promise.resolve();await Promise.resolve();
+    const post=ctx.h.expectOne(url);expect(post.request.method).toBe('POST');
+    post.flush({...q,required:false,evidence:{}});await run;
+    expect(emit).toHaveBeenCalledTimes(1);expect(ctx.c.freeCacheAvailable()).toBeTrue();
+    ctx.h.expectNone(r=>r.url.endsWith('/manual-one-shot')||r.url.includes('/grounding'));
+  });
+
+  it('includes a bounded conditional Spark review and invokes it only after SAM succeeds',async()=>{
+    const ctx=setup();token(ctx);
+    await quote(ctx,{quote:{...pf,suspensionReviewMaximumCostUsd:.05},readiness:{...ready,...unlimited}});
+    expect(ctx.c.displayedCost()).toBeCloseTo(.425,8);
+    const emit=spyOn(ctx.c.cacheUpdated,'emit'),p=ctx.c.process();
+    ctx.h.expectOne(base+'/sam/baseline/manual-one-shot').flush(cached());
+    await Promise.resolve();await Promise.resolve();
+    const url=base+'/sam/baseline/suspension-review';
+    ctx.h.expectOne(url).flush({analysisId:'synthetic-analysis',required:true,canRun:true,priorAttempt:false,
+      maximumEstimatedCostUsd:.05,evidence:null,reason:'TRACK_INCONSISTENT_WITH_SUSPENSION'});
+    await Promise.resolve();await Promise.resolve();
+    const review=ctx.h.expectOne(url);
+    expect(review.request.method).toBe('POST');
+    expect(review.request.body.analysisId).toBe('synthetic-analysis');
+    expect(review.request.body.maximumEstimatedCostUsd).toBe(.05);
+    expect(review.request.headers.get('X-ProofLab-Manual-Action')).toBe('suspension-review');
+    review.flush({analysisId:'synthetic-analysis',required:false,evidence:{},maximumEstimatedCostUsd:.05});
+    await p;expect(emit).toHaveBeenCalledTimes(1);
+  });
+  it('preserves the SAM result when the separate Spark review fails and never retries',async()=>{
+    const ctx=setup();token(ctx);
+    await quote(ctx,{quote:{...pf,suspensionReviewMaximumCostUsd:.05},readiness:{...ready,...unlimited}});
+    const emit=spyOn(ctx.c.cacheUpdated,'emit'),p=ctx.c.process();
+    ctx.h.expectOne(base+'/sam/baseline/manual-one-shot').flush(cached());
+    await Promise.resolve();await Promise.resolve();
+    ctx.h.expectOne(base+'/sam/baseline/suspension-review').flush({}, {status:503,statusText:'Unavailable'});
+    await p;expect(emit).toHaveBeenCalledTimes(1);
+    expect(ctx.c.error()).toContain('SAM está guardado');ctx.h.expectNone(r=>r.method==='POST');
+  });
+
   it('starts four independent GETs together and keeps Process disabled until the cost arrives',async()=>{
     const ctx=setup();token(ctx);const p=ctx.c.check();const all=requests(ctx);
     const cost=all.find(r=>r.request.url.includes('/sam/')&&r.request.url.endsWith('/preflight'))!;

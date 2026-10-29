@@ -6,6 +6,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom, timeout } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LabConnection } from './lab-connection';
+import type {SuspensionReview} from './sam-playback';
 import { LabActivity } from './lab-activity';
 import {
   decodeSamVideoResponse, type SamVideoEvidence, type SamVideoFrame
@@ -26,7 +27,7 @@ interface SamCacheStatus {
 interface SamPreflight {
   sourceSha256:string;sourceFrames:number;durationSeconds:number;
   codec:string;estimatedCostUsd:number;supportsSingleCall:boolean;
-  timingSource:string;framePtsSha256:string;
+  timingSource:string;framePtsSha256:string;suspensionReviewMaximumCostUsd?:number;
 }
 interface GroundingScene {key:string;videoSha256:string}
 interface GroundingQuote {
@@ -35,6 +36,10 @@ interface GroundingQuote {
   mode:SamMode;freshRequired:boolean;protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2';
   status:'NEEDS_LOCALIZATION'|'READY'|'AMBIGUOUS'|'NOT_VISIBLE'|'PRIOR_ATTEMPT';
   scene:GroundingScene|null;
+}
+interface SuspensionReviewQuote {
+  analysisId:string;required:boolean;priorAttempt:boolean;canRun:boolean;
+  maximumEstimatedCostUsd:number;reason:string;evidence:SuspensionReview|null;
 }
 interface SamReadiness {
   apiKeyConfigured:boolean; creditsConfirmedByOwner:boolean;
@@ -69,17 +74,20 @@ interface SamReadiness {
       @if(studyId() && videoSha256()) {
         <div class="sam-actions">
           <div class="sam-quote" aria-live="polite">
-            <span class="sam-status" [class.available]="cachedResultAvailable()"><i aria-hidden="true"></i>{{statusLabel()}}</span>
+            <span class="sam-status" [class.available]="freeCacheAvailable()"><i aria-hidden="true"></i>{{statusLabel()}}</span>
             <div class="sam-price">
               @if(preflight(); as pf) {
                 <div class="sam-price-line">
-                  <strong [class.paid-cost]="!cachedResultAvailable()" [class.free-cost]="cachedResultAvailable()">{{cachedResultAvailable()?'US$ 0.00':(groundingRequired()?(es?'Hasta US$ ':'Up to US$ '):'US$ ')+costLabel(displayedCost())}}</strong>
-                  <small>{{cachedResultAvailable()?(es?'desde caché · sin cobro':'from cache · no charge'):(groundingRequired()?(es?'Máximo autorizado · no es una factura':'Authorized maximum · not an invoice'):(es?'Usará créditos · estimado':'Uses credits · estimate'))}}</small>
+                  <strong [class.paid-cost]="!freeCacheAvailable()" [class.free-cost]="freeCacheAvailable()">{{freeCacheAvailable()?'US$ 0.00':((groundingRequired() || reviewBudget()>0 || reviewOnlyRequired())?(es?'Hasta US$ ':'Up to US$ '):'US$ ')+costLabel(displayedCost())}}</strong>
+                  <small>{{freeCacheAvailable()?(es?'desde caché · sin cobro':'from cache · no charge'):((groundingRequired() || reviewBudget()>0 || reviewOnlyRequired())?(es?'Máximo autorizado · no es una factura':'Authorized maximum · not an invoice'):(es?'Usará créditos · estimado':'Uses credits · estimate'))}}</small>
                 </div>
-                @if(!cachedResultAvailable() && groundingRequired()) {
+                @if(!freeCacheAvailable() && groundingRequired()) {
                   <small class="sam-meta-estimate">SAM {{es?'estimado':'estimate'}} US$ {{costLabel(pf.estimatedCostUsd)}} + Spark {{es?'hasta':'up to'}} US$ {{groundingQuote()!.maximumEstimatedCostUsd.toFixed(2)}}</small>
                 }
-                @if(cachedResultAvailable()) {
+                @if(!freeCacheAvailable() && !reviewOnlyRequired() && reviewBudget()>0) {
+                  <small class="sam-meta-estimate">{{es?'Incluye revisión de suspensión si hace falta: hasta US$ ':'Includes suspension review if needed: up to US$ '}}{{reviewBudget().toFixed(2)}}</small>
+                }
+                @if(freeCacheAvailable()) {
                   <small class="sam-meta-estimate">{{es?'Enviar a Meta':'Send to Meta'}}: US$ {{pf.estimatedCostUsd.toFixed(2)}} {{es?'estimados':'estimated'}}</small>
                 }
               } @else {
@@ -102,7 +110,7 @@ interface SamReadiness {
             <app-lab-activity class="sam-progress" [label]="processingLabel()" [detail]="processingDetail()"/>
           }
           @if(!checking() && !processing() && !connection.busy()) {
-          <div class="sam-message" [class.warning]="!cachedResultAvailable() && !canProcess() && !checking() && !sending()" role="status">
+          <div class="sam-message" [class.warning]="!freeCacheAvailable() && !canProcess() && !checking() && !sending()" role="status">
             @if(error()) {
               <span>{{error()}}</span>
 
@@ -110,7 +118,7 @@ interface SamReadiness {
               <span>{{es?'Procesado · reproducción disponible.':'Processed · playback available.'}}</span>
             } @else if(!mediaReady()) {
               <span>{{es?'Esperando que termine de cargar el video original.':'Waiting for the original video to finish loading.'}}</span>
-            } @else if(cachedResultAvailable()) {
+            } @else if(freeCacheAvailable()) {
               <span>{{es?'Resultado disponible. Pulsa Procesar para cargarlo sin consumir créditos.':'Saved result available. Press Process to load it without spending credits.'}}</span>
             } @else if(!canProcess()) {
               <span aria-hidden="true">⚠</span>
@@ -143,7 +151,7 @@ interface SamReadiness {
               <p class="sam-cache-origin">{{s.storage || '—'}} · {{s.cacheHit===true?'HIT':s.cacheHit===false?'MISS':'—'}}
                 @if(s.analysisId) { · {{es?'Análisis':'Analysis'}}: {{s.analysisId}} }
               </p>
-              @if(s.status.startsWith('CACHED_META_') && !cachedResultAvailable()) {
+              @if(s.status.startsWith('CACHED_META_') && !freeCacheAvailable()) {
                 <p>{{es?'Nuevo análisis SAM guardado.':'New SAM analysis saved.'}}</p>
               }
               @if(s.status.includes('RECONCILIATION')) {
@@ -151,6 +159,10 @@ interface SamReadiness {
                   ? 'Existe un intento previo posiblemente facturado. Se requiere revisión manual antes de otra ejecución; nunca habrá reintento automático.'
                   : 'A prior attempt may have been billed. Manual review is required before another execution; no automatic retry.'}}</p>
               }
+            }
+            @if(suspensionReviewQuote()?.evidence?.answer; as review) {
+              <p class="sam-review-explanation"><strong>{{es?'Revisión de suspensión por Spark':'Suspension review by Spark'}}:</strong>
+                {{es?review.justification.es:review.justification.en}}</p>
             }
             <p>{{tokenEntered()?(es?'Token registrado para esta sesión':'Key registered for this session'):(es?'Token en Configuración':'API key in Settings')}} · 127.0.0.1:{{localApiPort()}}
               <button type="button" class="sam-settings-link" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
@@ -290,7 +302,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly processingStarted=output<void>();
   readonly processingFailed=output<void>();
   readonly processing=signal(false);
-  readonly processingPhase=signal<'grounding'|'sam'|'validating'|null>(null);
+  readonly processingPhase=signal<'grounding'|'sam'|'review'|'validating'|null>(null);
   private beginProcessing():void {
     this.processing.set(true);this.processingPhase.set('validating');this.connection.busy.set(true);this.processingStarted.emit();
   }
@@ -327,7 +339,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.error.set('');
     this.cacheStatus.set(null);
     this.preflight.set(null);
-    this.groundingQuote.set(null);
+    this.groundingQuote.set(null);this.suspensionReviewQuote.set(null);
     this.readiness.set(null);
     this.transferConsent.set(false);
     this.paidConsent.set(false);
@@ -362,7 +374,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
        this.checking() || this.sending() || this.connection.busy() ||
        !quote || quote.sourceSha256!==this.videoSha256() ||
        !Number.isFinite(quote.estimatedCostUsd) || quote.estimatedCostUsd<=0)return false;
-    return this.cachedResultAvailable() || (this.canOfferPaidRun() &&
+    if(this.cachedResultAvailable())return !this.reviewOnlyRequired() ||
+      (this.tokenEntered() && this.readiness()?.manualTokenCallsPermitted===true);
+    return (this.canOfferPaidRun() &&
       this.tokenEntered() &&
       (this.cacheStatus()?.status!=='PREVIOUS_ATTEMPT_REQUIRES_MANUAL_RECONCILIATION' ||
         this.retryConsent()));
@@ -378,6 +392,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   async process():Promise<void> {
     if(!this.canProcess())return;
     if(this.cachedResultAvailable()) {
+      if(this.reviewOnlyRequired()){await this.reviewCached();return;}
       this.processingReset.emit();
       this.beginProcessing();
       this.openResult(this.cacheStatus()!);
@@ -390,6 +405,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly cacheStatus=signal<SamCacheStatus|null>(null);
   readonly preflight=signal<SamPreflight|null>(null);
   readonly groundingQuote=signal<GroundingQuote|null>(null);
+  readonly suspensionReviewQuote=signal<SuspensionReviewQuote|null>(null);
   readonly readiness=signal<SamReadiness|null>(null);
   readonly transferConsent=signal(false);
   readonly paidConsent=signal(false);
@@ -458,11 +474,15 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         (this.mode()==='api-meta-cache' || g.freshRequired)));
   }
   processingLabel():string {
+    if(this.processingPhase()==='review')return this.es?'Spark revisando la suspensión…':'Spark is reviewing the suspension…';
     if(this.processingPhase()==='grounding')return this.es?'Spark analizando el video…':'Spark is analyzing the video…';
     if(this.processingPhase()==='sam')return this.es?'SAM siguiendo el objeto…':'SAM is tracking the object…';
     return this.es?'Preparando resultados…':'Preparing results…';
   }
   processingDetail():string {
+    if(this.processingPhase()==='review')return this.es?
+      'Contrastando el anclaje visible con las posiciones de SAM. Una revisión, sin repetir el seguimiento.':
+      'Checking the visible suspension against SAM positions. One review, without repeating tracking.';
     if(this.processingPhase()==='grounding')return this.es?
       'Localizando el objeto con el video completo. SAM solo se enviará si la localización es válida.':
       'Locating the object using the complete video. SAM will run only if localization is valid.';
@@ -490,21 +510,36 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       pf.estimatedCostUsd>0 && pf.estimatedCostUsd<=0.50 &&
       (ready.manualTokenCallsPermitted===true || (ready.apiKeyConfigured && ready.liveCallsPermitted)) &&
       ready.creditsConfirmedByOwner && ready.ownerApprovedPaidRequests &&
-      (ready.manualRequestsUnlimited===true || ready.remainingRequests>=(this.groundingRequired()?2:1));
+      (ready.manualRequestsUnlimited===true || ready.remainingRequests>=this.requiredCalls());
   }
+  private requiredCalls():number {return (this.groundingRequired()?2:1)+(this.reviewBudget()>0?1:0);}
+  reviewOnlyRequired():boolean {
+    const r=this.suspensionReviewQuote();
+    return this.cachedResultAvailable() && !!r && r.analysisId===this.cacheStatus()?.analysisId &&
+      r.required && !r.priorAttempt && !r.evidence;
+  }
+  freeCacheAvailable():boolean {return this.cachedResultAvailable()&&!this.reviewOnlyRequired();}
+  reviewBudget():number {return this.preflight()?.suspensionReviewMaximumCostUsd??0;}
   displayedCost():number {
-    return (this.preflight()?.estimatedCostUsd ?? 0)+
+    if(this.reviewOnlyRequired())return this.suspensionReviewQuote()!.maximumEstimatedCostUsd;
+    return (this.preflight()?.estimatedCostUsd ?? 0)+this.reviewBudget()+
       (this.groundingRequired()?this.groundingQuote()!.maximumEstimatedCostUsd:0);
   }
   costLabel(value:number):string {return (Math.ceil(value*100-1e-8)/100).toFixed(2);}
   nextActionDescription():string {
+    if(this.reviewOnlyRequired())return this.es?
+      'SAM está guardado. Procesar autoriza una revisión de Spark del video y la suspensión, hasta el máximo mostrado; no repite SAM.':
+      'SAM is saved. Process authorizes one Spark review of the video and suspension up to the displayed maximum; SAM is not repeated.';
     if(this.groundingRequired())return this.es?
-      'Al pulsar Procesar autorizas enviar el video completo y sus imágenes de referencia a Spark; después, el video a SAM, hasta el máximo combinado mostrado. Si Spark no localiza el objeto, SAM no se envía.':
-      'Pressing Process authorizes the complete video and its reference images to Spark, then the video to SAM, up to the displayed combined maximum. If Spark cannot locate the object, SAM is not sent.';
+      'Al pulsar Procesar autorizas enviar el video completo y sus imágenes de referencia a Spark; después, el video a SAM, hasta el máximo combinado mostrado, incluida una revisión de suspensión si hace falta. Si Spark no localiza el objeto, SAM no se envía.':
+      'Pressing Process authorizes the complete video and its reference images to Spark, then the video to SAM, up to the displayed combined maximum, including a suspension review if needed. If Spark cannot locate the object, SAM is not sent.';
     return this.es?'Al pulsar Procesar autorizas enviar este video a Meta y usar los créditos del costo mostrado.':
       'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.';
   }
   processBlockedReason():string {
+    if(this.reviewOnlyRequired())return this.es?
+      'La suspensión requiere revisión de Spark. Confirma tu token para usar el costo mostrado.':
+      'The suspension needs Spark review. Confirm your key to use the displayed cost.';
     const pf=this.preflight(),ready=this.readiness(),s=this.cacheStatus();
     if(!pf)return this.es?'No se pudo calcular el costo. Pulsa Actualizar costo.':'Cost unavailable. Press Refresh cost.';
     if(!pf.supportsSingleCall || pf.estimatedCostUsd>.50)return this.es?
@@ -543,7 +578,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.error.set('');
     this.cacheStatus.set(null);
     this.preflight.set(null);
-    this.groundingQuote.set(null);
+    this.groundingQuote.set(null);this.suspensionReviewQuote.set(null);
     this.readiness.set(null);
     this.transferConsent.set(false);
     this.paidConsent.set(false);
@@ -565,6 +600,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       const samHit=this.mode()==='api-meta-cache' && status.cacheHit===true &&
         status.status==='CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW' && !!status.analysisId;
       if(!samHit && !this.validGrounding(ground))throw new Error('INVALID_GROUNDING_QUOTE');
+      let review:SuspensionReviewQuote|null=null;
+      if(samHit && (pf.suspensionReviewMaximumCostUsd??0)>0)review=await firstValueFrom(this.http.get<SuspensionReviewQuote>(this.url()+'/suspension-review').pipe(timeout(90000))).catch(()=>null);
+      if(serial!==this.serial || this.disposed)return;
+      this.suspensionReviewQuote.set(review);
       this.cacheStatus.set(status);this.preflight.set(pf);this.readiness.set(access);
       this.groundingQuote.set(this.validGrounding(ground)?ground:null);
     } catch(e) {
@@ -641,7 +680,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         previousAttemptBillingEvidence:isRetry?SamVideoReplay.reconciledOnce:null
       },{headers:{'X-ProofLab-Manual-Action':'sam-one-shot'}}));
       if(!current())return;
-      this.openResult(state);this.cacheStatus.set(state);this.processingPhase.set('validating');
+      this.cacheStatus.set(state);
+      await this.reviewAfterSam(state,oneTimeToken,samUrl,quote.suspensionReviewMaximumCostUsd??0,current);
+      if(!current())return;
+      this.openResult(state);this.processingPhase.set('validating');
     }catch(e){
       if(current()){
         const changed=e instanceof Error && e.message.startsWith('POST_GROUNDING_');
@@ -659,7 +701,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           'Spark localization did not complete. A request might have been billed. SAM was not sent; check status before another attempt.'):
           (this.es?'SAM no se completó. Puede existir una solicitud facturada. Revisa el estado; no reintentes automáticamente.':
           'SAM did not complete. A request might have been billed. Check status; never auto-retry.'));
-        this.cacheStatus.set(null);this.groundingQuote.set(null);this.failProcessing();
+        this.cacheStatus.set(null);this.groundingQuote.set(null);this.suspensionReviewQuote.set(null);this.failProcessing();
       }
     }finally{
       if(!this.processing() || this.disposed || !current())this.finishProcessing();
@@ -669,6 +711,44 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       }
     }
   }
+
+  private async reviewAfterSam(state:SamCacheStatus,token:string,url:string,budget:number,current:()=>boolean):Promise<void> {
+    if(!this.http || budget<=0)return;
+    this.processingPhase.set('review');
+    try {
+      const q=await firstValueFrom(this.http.get<SuspensionReviewQuote>(url+'/suspension-review').pipe(timeout(90000)));
+      if(!current())return;
+      this.suspensionReviewQuote.set(q);
+      if(q.analysisId!==state.analysisId)throw Error('REVIEW_ANALYSIS_CHANGED');
+      if(!q.required || q.evidence || q.priorAttempt)return;
+      if(!q.canRun || !Number.isFinite(q.maximumEstimatedCostUsd) ||
+        q.maximumEstimatedCostUsd<=0 || q.maximumEstimatedCostUsd>budget)throw Error('REVIEW_BUDGET_CHANGED');
+      const reviewed=await firstValueFrom(this.http.post<SuspensionReviewQuote>(url+'/suspension-review',{
+        videoSha256:state.sourceSha256,analysisId:state.analysisId,modelApiToken:token,
+        confirmVideoTransfer:true,confirmPaidCall:true,maximumEstimatedCostUsd:q.maximumEstimatedCostUsd
+      },{headers:{'X-ProofLab-Manual-Action':'suspension-review'}}));
+      if(current())this.suspensionReviewQuote.set(reviewed);
+    } catch {
+      if(current())this.error.set(this.es?
+        'SAM está guardado. La revisión de suspensión no se completó; puede haber un cobro de Spark. No se repetirá automáticamente.':
+        'SAM is saved. The suspension review did not complete; Spark may have charged. It will not retry automatically.');
+    }
+  }
+  private async reviewCached():Promise<void> {
+    const token=this.connection.tokenForManualRequest(),state=this.cacheStatus(),quote=this.suspensionReviewQuote();
+    if(!token||!state||!quote)return;
+    const url=this.url(),sha=this.videoSha256(),serial=++this.serial;
+    const current=()=>!this.disposed&&serial===this.serial&&sha===this.videoSha256()&&url===this.url();
+    this.processingReset.emit();this.beginProcessing();this.sending.set(true);this.error.set('');
+    try {
+      await this.reviewAfterSam(state,token,url,quote.maximumEstimatedCostUsd,current);
+      if(current()){this.openResult(state);this.processingPhase.set('validating');}
+    } finally {
+      this.sending.set(false);
+      if(!current())this.finishProcessing();
+    }
+  }
+
   ngOnChanges(changes:SimpleChanges):void {
     if(changes['validationState'] && this.processing() &&
        (this.validationState()==='ready' || this.validationState()==='error')) {
@@ -684,7 +764,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.result.set(null);
     this.cacheStatus.set(null);
     this.preflight.set(null);
-    this.groundingQuote.set(null);
+    this.groundingQuote.set(null);this.suspensionReviewQuote.set(null);
     this.readiness.set(null);
     this.transferConsent.set(false);
     this.paidConsent.set(false);

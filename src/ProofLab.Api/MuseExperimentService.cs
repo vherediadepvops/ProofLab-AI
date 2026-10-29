@@ -44,7 +44,7 @@ public sealed class MuseExperimentService(
             videoSha256=request.VideoSha256,analysisId=request.AnalysisId,
             responseSha256=archive.Receipt.ResponseJsonSha256,
             ptsSha256=KnotPolicy.Hash(JsonSerializer.Serialize(archive.Receipt.FramePtsSeconds,Json)),
-            request.PivotRevisionId,pivot,pivotProvenance,automaticSuspension=archive.Suspension,sceneKey=archive.Receipt.Scene?.Key,
+            request.PivotRevisionId,pivot,pivotProvenance,automaticSuspension=archive.Suspension,suspensionReview=archive.SuspensionReview,sceneKey=archive.Receipt.Scene?.Key,
             baselineLengthMeters=study.BaselineLengthMeters,study.AngleDegrees,study.MassGrams,
             objectReview=study.HumanReview?.BobConfirmed??false
         },Json);

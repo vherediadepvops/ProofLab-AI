@@ -78,3 +78,46 @@ describe('Automatic Spark/SAM suspension estimates',()=>{
     expect(resolveSamSuspension(archive,track).pivot).toBeNull();
   });
 });
+describe('Spark review is a measured proposal, never a geometry override',()=>{
+  function reviewed() {
+    const data=experiment(408,720);
+    data.archive.receipt.analysisId='one';
+    data.archive.receipt.responseJsonSha256='e'.repeat(64);
+    const points=structuredClone(data.archive.suspension!.points);
+    data.archive.suspension!.points.forEach(p=>p.x=950);
+    data.archive.suspensionReview={protocol:'SPARK_SAM_SUSPENSION_REVIEW_V1',key:'f'.repeat(64),
+      analysisId:'one',sourceSha256:'a'.repeat(64),samResponseSha256:'e'.repeat(64),sceneKey:'b'.repeat(64),
+      responseSha256:'f'.repeat(64),model:'muse-spark-1.3',
+      answer:{decision:'RELOCATED',camera:'STATIC',justification:{es:'Prueba sintética',en:'Synthetic test'},points}};
+    return data;
+  }
+  it('recovers angles only after a corrected visible suspension passes the same checks',()=>{
+    const {archive,track}=reviewed();
+    expect(resolveSamSuspension({...archive,suspensionReview:null},track).pivot).toBeNull();
+    const result=resolveSamSuspension(archive,track);
+    expect(result.pivot).not.toBeNull();
+    expect(samAngularFrameAt(track,result.pivot!,1)!.angularVelocityRadiansPerSecond!).toBeCloseTo(-.35*Math.PI,2);
+  });
+  it('rejects a review for another source, scene, analysis, response or model',()=>{
+    for(const change of [{analysisId:'two'},{sourceSha256:'0'.repeat(64)},
+      {sceneKey:'0'.repeat(64)},{samResponseSha256:'0'.repeat(64)},{model:'other'}]) {
+      const {archive,track}=reviewed();Object.assign(archive.suspensionReview!,change);
+      expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    }
+  });
+  it('does not turn a moving camera, ambiguous review or poor geometry into angular values',()=>{
+    for(const camera of ['MOVING','UNCLEAR'] as const) {
+      const {archive,track}=reviewed();
+      archive.suspension!.points=structuredClone(archive.suspensionReview!.answer.points);
+      expect(resolveSamSuspension({...archive,suspensionReview:null},track).pivot).not.toBeNull();
+      archive.suspensionReview!.answer.camera=camera;
+      expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    }
+    const {archive,track}=reviewed();
+    archive.suspensionReview!.answer.decision='INCONCLUSIVE';
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    archive.suspensionReview!.answer.decision='CONFIRMED';
+    archive.suspensionReview!.answer.points.forEach(p=>p.x=950);
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
+});

@@ -59,6 +59,10 @@ public interface IAssemblyScenes {
     Task<SamSceneDefinition?> ApprovedForQuoteAsync(string studyId,string role,CancellationToken ct)=>ApprovedAsync(studyId,role,ct);
 }
 public interface IAssemblyTransport {
+    Task<AssemblyVideoProviderResult> ReviewSuspensionAsync(string path,AssemblyVideoInput video,
+        KnotFrame[] anchors,byte[][] images,string diagnostics,string token,double maximumCostUsd,
+        Func<AssemblyVideoInput,Task> uploaded,Func<string,Task> captured,CancellationToken ct)=>
+        throw new NotSupportedException("Suspension review transport is unavailable.");
     Task<KnotProviderResult> LocateAsync(byte[][] images,string token,CancellationToken ct);
     Task<KnotProviderResult> LocateGroundingAsync(byte[][] images,string token,CancellationToken ct)=>
         throw new NotSupportedException("Automatic object grounding transport is unavailable.");

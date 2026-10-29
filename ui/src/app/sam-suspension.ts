@@ -21,7 +21,18 @@ const quantile=(values:number[],q:number)=>{
 export function resolveSamSuspension(
   archive:AuthenticatedSamVideoArchive,track:SamPlaybackTrack|null
 ):AutomaticSuspension {
-  const e=archive.suspension,s=archive.receipt.scene;
+  let e=archive.suspension;const s=archive.receipt.scene;
+  const review=archive.suspensionReview;
+  // Authenticated, immutable review is bound to this exact SAM result.
+  if(e && review && review.protocol==='SPARK_SAM_SUSPENSION_REVIEW_V1' &&
+    /^[a-f0-9]{64}$/.test(review.key) && /^[a-f0-9]{64}$/.test(review.responseSha256) &&
+    review.model==='muse-spark-1.3' && review.sourceSha256===archive.receipt.originalVideoSha256 &&
+    review.analysisId===archive.receipt.analysisId &&
+    review.samResponseSha256===archive.receipt.responseJsonSha256 && review.sceneKey===s?.key) {
+    if(review.answer.camera!=='STATIC' || !['RELOCATED','CONFIRMED'].includes(review.answer.decision))
+      return none('SPARK_REVIEW_INCONCLUSIVE');
+    e={...e,points:review.answer.points};
+  }
   if(!e||!s||!track)return none('MISSING_SPARK_SUSPENSION');
   if(s.origin!=='SPARK_GROUNDING'||s.arrangement!=='simple_pendulum'||
     e.sourceSha256!==archive.receipt.originalVideoSha256||e.sceneKey!==s.key||
@@ -96,4 +107,31 @@ export function suspensionPlaybackTrack(track:SamPlaybackTrack,estimate:Automati
   const excluded=new Set(estimate.excludedFrameIndices);
   return {...track,masks:track.masks.filter(m=>!excluded.has(m.frameIndex)),
     points:track.points.filter((_,i)=>!excluded.has(track.masks[i].frameIndex))};
+}
+/** All-frame numerical evidence for a visual review, not a phenomenon verdict. */
+export function samSuspensionDiagnostics(archive:AuthenticatedSamVideoArchive,track:SamPlaybackTrack|null) {
+  const result=resolveSamSuspension({...archive,suspensionReview:null},track);
+  const e=archive.suspension;
+  const anchors=e?.points.filter(p=>p.visible&&Number.isFinite(p.x)&&Number.isFinite(p.y))??[];
+  const center=e&&anchors.length?{
+    x:quantile(anchors.map(p=>p.x*e.width/1000),.5),
+    y:quantile(anchors.map(p=>p.y*e.height/1000),.5)}:null;
+  const all=track?.masks??[];
+  const radii=center?all.map(p=>Math.hypot(p.centroidXpx-center.x,p.centroidYpx-center.y)):[];
+  const median=radii.length?quantile(radii,.5):null;
+  const residuals=median!==null?radii.map(r=>Math.abs(r-median)):[];
+  const count=Math.min(96,all.length);
+  return {protocol:'SAM_SUSPENSION_DIAGNOSTICS_V1',result,
+    sourceFrames:archive.receipt.sourceFrameCount,detectedFrames:all.length,
+    imageWidth:track?.frameWidth??e?.width,imageHeight:track?.frameHeight??e?.height,
+    proposedPivotPixels:center,originalSparkPoints:anchors,
+    allFrameMedianRadiusPixels:median,
+    allFrameRadialRmsPixels:residuals.length?Math.sqrt(residuals.reduce((s,r)=>s+r*r,0)/residuals.length):null,
+    allFrameRadialP95Pixels:residuals.length?quantile(residuals,.95):null,
+    samples:Array.from({length:count},(_,i)=>{
+      const m=all[count===1?0:Math.round(i*(all.length-1)/(count-1))];
+      return {frame:m.frameIndex,timeSeconds:m.timeSeconds,x:m.centroidXpx,y:m.centroidYpx};
+    }),
+    scope:'IMAGE_SPACE_ONLY; NO_PHYSICAL_CALIBRATION; RAW_SAM_POINTS_RETAINED; UNIFORM_SAMPLES_MAY_ALIAS'
+  };
 }

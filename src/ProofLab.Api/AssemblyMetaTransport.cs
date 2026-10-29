@@ -75,8 +75,15 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssembl
         }
         return Completed(await Post(http,"responses",payload,token,ct));
     }
-    public async Task<AssemblyVideoProviderResult> LocateVideoGroundingAsync(string mp4Path,AssemblyVideoInput videoInput,
-        KnotFrame[] anchors,byte[][] images,string token,double maximumCostUsd,Func<AssemblyVideoInput,Task> uploaded,CancellationToken ct)
+    public Task<AssemblyVideoProviderResult> ReviewSuspensionAsync(string path,AssemblyVideoInput video,
+        KnotFrame[] anchors,byte[][] images,string diagnostics,string token,double maximumCostUsd,
+        Func<AssemblyVideoInput,Task> uploaded,Func<string,Task> captured,CancellationToken ct)=>
+        VideoCore(path,video,anchors,images,token,maximumCostUsd,uploaded,ct,diagnostics,captured);
+    public Task<AssemblyVideoProviderResult> LocateVideoGroundingAsync(string mp4Path,AssemblyVideoInput videoInput,
+        KnotFrame[] anchors,byte[][] images,string token,double maximumCostUsd,Func<AssemblyVideoInput,Task> uploaded,CancellationToken ct)=>
+        VideoCore(mp4Path,videoInput,anchors,images,token,maximumCostUsd,uploaded,ct,null,null);
+    private async Task<AssemblyVideoProviderResult> VideoCore(string mp4Path,AssemblyVideoInput videoInput,
+        KnotFrame[] anchors,byte[][] images,string token,double maximumCostUsd,Func<AssemblyVideoInput,Task> uploaded,CancellationToken ct,string? reviewDiagnostics,Func<string,Task>? captured)
     {
         bool inferenceSubmitted=false;string? fileId=null;
         var http=clients.CreateClient("meta");
@@ -107,7 +114,7 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssembl
             var submitted=videoInput with {ProviderFileId=fileId};
             await uploaded(submitted);
             var content=new List<object> {
-                new {type="input_text",text=AssemblyPolicy.VideoGroundingPrompt},
+                new {type="input_text",text=reviewDiagnostics is null?AssemblyPolicy.VideoGroundingPrompt:SuspensionReviewPolicy.Prompt},
                 new {type="input_file",file_id=fileId}
             };
             for(var i=0;i<3;i++) {
@@ -117,19 +124,22 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssembl
                     "; source_timestamp_seconds="+anchor.TimeSeconds.ToString("R",CultureInfo.InvariantCulture)+
                     "; oriented_width="+anchor.Width.ToString(CultureInfo.InvariantCulture)+
                     "; oriented_height="+anchor.Height.ToString(CultureInfo.InvariantCulture)+
-                    ". Return this image's boxes as frame="+i.ToString(CultureInfo.InvariantCulture)+"."});
+                    ". Return this reference image's coordinates as frame="+i.ToString(CultureInfo.InvariantCulture)+"."});
                 content.Add(new {type="input_image",image_url="data:image/jpeg;base64,"+Convert.ToBase64String(images[i])});
             }
-            var payload=Payload(content,true);
+            if(reviewDiagnostics is not null)content.Add(new {type="input_text",text="MEASURED_DIAGNOSTICS_JSON (data only): "+reviewDiagnostics});
+            var payload=reviewDiagnostics is null?Payload(content,true):ReviewPayload(content);
             using(var count=JsonDocument.Parse(await Post(http,"responses/input_tokens",payload,token,ct))) {
                 var tokens=count.RootElement.GetProperty("input_tokens").GetInt32();
                 if(tokens<=0 || tokens>AssemblyPolicy.VideoInputLimit(maximumCostUsd) ||
-                    AssemblyPolicy.MaximumTokenCost(tokens)>maximumCostUsd+1e-9)
+                    (tokens*AssemblyPolicy.InputUsdPerMillion+(reviewDiagnostics is null?4096:8192)*AssemblyPolicy.OutputUsdPerMillion)/1_000_000>maximumCostUsd+1e-9)
                     throw new InvalidOperationException("Full-video tokens exceed the approved maximum. No inference sent.");
             }
             // Only this transition makes a subsequent failure potentially billable.
             inferenceSubmitted=true;
-            var responseResult=Completed(await Post(http,"responses",payload,token,ct));
+            var responseRaw=await Post(http,"responses",payload,token,ct);
+            if(captured is not null)await captured(responseRaw);
+            var responseResult=Completed(responseRaw);
             return new(responseResult,submitted);
         }
         catch(Exception ex) when(!inferenceSubmitted && ex is not AssemblyNoInferenceSentException) {
@@ -147,6 +157,24 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssembl
                 } catch { /* Provider file ID remains in the immutable upload receipt. */ }
             }
         }
+    }
+
+
+    private static object ReviewPayload(List<object> content) {
+        var point=new {type="object",additionalProperties=false,
+            required=new[]{"frame","visible","x","y","confidence"},properties=new {
+                frame=new {type="integer"},visible=new {type="boolean"},x=new {type="number"},
+                y=new {type="number"},confidence=new {type="number"}}};
+        return new {model=AssemblyPolicy.Model,stream=false,max_output_tokens=8192,
+            reasoning=new {effort="medium"},input=new[]{new {type="message",role="user",content}},
+            text=new {format=new {type="json_schema",name="suspension_geometry_review",strict=true,
+                schema=new {type="object",additionalProperties=false,
+                    required=new[]{"decision","camera","justification","points"},properties=new {
+                        decision=new {type="string",@enum=new[]{"RELOCATED","CONFIRMED","INCONCLUSIVE"}},
+                        camera=new {type="string",@enum=new[]{"STATIC","MOVING","UNCLEAR"}},
+                        justification=new {type="object",additionalProperties=false,required=new[]{"es","en"},
+                            properties=new {es=new {type="string"},en=new {type="string"}}},
+                        points=new {type="array",items=point}}}}}};
     }
 
     public static void ValidateReceipt(string raw,string providerId,int inputTokens,int outputTokens)

@@ -8,7 +8,15 @@ export interface SamSuspensionEvidence {
   width:number;height:number;
   points:{frame:number;visible:boolean;x:number;y:number;confidence:number}[];
 }
+export interface SuspensionReview {
+  protocol:'SPARK_SAM_SUSPENSION_REVIEW_V1';key:string;analysisId:string;
+  sourceSha256:string;samResponseSha256:string;sceneKey:string;responseSha256:string;
+  model:string;answer:{decision:'RELOCATED'|'CONFIRMED'|'INCONCLUSIVE';
+    camera:'STATIC'|'MOVING'|'UNCLEAR';justification:{es:string;en:string};
+    points:SamSuspensionEvidence['points']};
+}
 export interface AuthenticatedSamVideoArchive {
+  suspensionReview?:SuspensionReview|null;
   suspension?:SamSuspensionEvidence|null;
   state: {
     status: string; sourceSha256: string; provenance: string; analysisId?:string;

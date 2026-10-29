@@ -1,4 +1,4 @@
-import {resolveSamSuspension,automaticPivotProvenance} from '../ui/src/app/sam-suspension';
+import {resolveSamSuspension,automaticPivotProvenance,samSuspensionDiagnostics} from '../ui/src/app/sam-suspension';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {decodeSamVideoResponse} from '../ui/src/app/sam-video-evidence';
@@ -31,6 +31,10 @@ async function main() {
   const width=track?.frameWidth??input.sourceWidth,height=track?.frameHeight??input.sourceHeight;
   if(!Number.isFinite(width)||!Number.isFinite(height)||width<1||height<1)
     throw Error('SOURCE_DIMENSIONS_MISSING');
+  if(input.operation==='suspension-review-diagnostics') {
+    process.stdout.write(JSON.stringify({diagnostics:samSuspensionDiagnostics(archive,track??null),
+      current:track?resolveSamSuspension(archive,track):null}));return;
+  }
   const automatic=!input.pivot&&track?resolveSamSuspension(archive,track):null;
   const pivot=input.pivot??(automatic?.pivot?{x:automatic.pivot.pivotXpx/480,y:automatic.pivot.pivotYpx/270}:null);
   const provenance=input.pivot?input.pivotProvenance:automatic?.pivot?automaticPivotProvenance:'PIVOT_MISSING';

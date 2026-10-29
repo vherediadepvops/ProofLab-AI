@@ -15,7 +15,7 @@ namespace ProofLab.Api;
 public sealed class PendulumSamCache(
     IWebHostEnvironment environment, ISamVideoRuntime runtime,
     ISamVideoTransport transport, SamVideoEvidenceIndex index,
-    ILogger<PendulumSamCache> logger, IAssemblyScenes? scenes = null)
+    ILogger<PendulumSamCache> logger, IAssemblyScenes? scenes = null, SuspensionReviewStore? reviews=null)
 {
     public const string SamModel = "sam-3.1";
     public const string Prompt = "pendulum bob";
@@ -231,8 +231,9 @@ public sealed class PendulumSamCache(
         var prior = await PriorArchives(studyId, role, video, key, ct);
         var result=Artifact(Reusable(all, prior, scene) ?? Latest(all) ??
             throw new FileNotFoundException("SAM provider evidence not cached."));
-        return result with {Suspension=scenes is not null && result.Receipt.Scene is { } usedScene
+        result=result with {Suspension=scenes is not null && result.Receipt.Scene is { } usedScene
             ? await scenes.SuspensionAsync(studyId,role,usedScene,ct):null};
+        return result with {SuspensionReview=reviews is not null?await reviews.ReadAsync(result,ct):null};
     }
 
     public async Task<SamVideoArtifact> RunOnceAsync(
