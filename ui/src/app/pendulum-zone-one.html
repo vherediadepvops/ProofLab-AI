@@ -243,7 +243,7 @@
         @if(activeTrial() === 'followup' && s.followup) {
           @if(s.followup; as clip) {
               <app-pendulum-master-player [videoUrl]="reviewVideo('followup')"
-                [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'" [processedAnalysisId]="processedAnalysis('followup')"
+                [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'" [processedAnalysisId]="processedAnalysis('followup')" [processedAdaptiveBatchId]="processedAdaptiveBatch('followup')"
                 [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
                 [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
                 (processingFinished)="onProcessingFinished($event)" (previewStateChanged)="onPreviewState($event)"
@@ -257,7 +257,7 @@
           }
         } @else {
             <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
-              [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'" (researchFrozen)="onResearchFrozen($event)" [processedAnalysisId]="processedAnalysis('baseline')"
+              [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'" (researchFrozen)="onResearchFrozen($event)" [processedAnalysisId]="processedAnalysis('baseline')" [processedAdaptiveBatchId]="processedAdaptiveBatch('baseline')"
               [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
                 [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
                 (processingFinished)="onProcessingFinished($event)" (previewStateChanged)="onPreviewState($event)"

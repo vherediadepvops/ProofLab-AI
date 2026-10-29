@@ -21,13 +21,18 @@ public sealed record SamAdaptiveLiveQuote(
     string SourcePtsSha256,string PlanSha256,string SuggestedBatchId,int SourceFrames,
     int Parts,int SimultaneousRequests,int SubmittedFrames,int BillableFrames,
     double TotalSamEstimatedUsd,double MaximumAllowedSamUsd,
-    int RemainingTrialSlots,bool CanRunWithManualToken,
+    int? RemainingTrialSlots,bool CanRunWithManualToken,
     bool ExistingSparkSceneVerified,
     bool RequiresNewSparkCall,
     string Provenance,
     int IdealPartsWithoutSparkCoverage,
     int VerifiedSparkSeedCount,
     bool ReducedForSparseSparkSeeds);
+
+public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight);
+
+public sealed record SamAdaptiveDerivation(string BatchId,bool NativeProviderResult,
+    bool SeamsVerified,string SourcePtsSha256,string[] PartResponseSha256);
 
 public sealed record SamAdaptivePartReceipt(
     int Part,int InputStart,int InputEndExclusive,

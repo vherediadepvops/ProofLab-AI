@@ -30,7 +30,8 @@ public sealed record SamSuspensionEvidence(string SourceSha256,string SceneKey,s
     string ResponseSha256,string Model,int Width,int Height,KnotPoint[] Points);
 public sealed record SamVideoArtifact(
     SamVideoState State, SamVideoReceipt Receipt, string RawResponseJson,
-    SamSuspensionEvidence? Suspension = null, SuspensionReviewEvidence? SuspensionReview=null);
+    SamSuspensionEvidence? Suspension = null, SuspensionReviewEvidence? SuspensionReview=null,
+    SamAdaptiveDerivation? Derivation=null);
 
 public sealed record SamVideoRunRequest(
     string VideoSha256, bool ConfirmPrivateVideoTransfer,

@@ -19,6 +19,10 @@ public static class SamAdaptiveEndpoints
             (host=="127.0.0.1" || host=="localhost");
     }
 
+    internal static bool AuthorizedOrigin(string origin) => origin.Length==0 ||
+        origin is "http://127.0.0.1:4300" or "http://localhost:4300" or
+            "http://127.0.0.1:4327" or "http://localhost:4327";
+
     private const string Route=
         "/api/science/director/pendulum/sessions/{id}/sam-adaptive/{role}";
 
@@ -67,8 +71,7 @@ public static class SamAdaptiveEndpoints
             CancellationToken ct)=>
         {
             var origin=ctx.Request.Headers.Origin.ToString();
-            if(!Loopback(ctx) || (origin.Length>0 &&
-                origin is not ("http://127.0.0.1:4327" or "http://localhost:4327")) ||
+            if(!Loopback(ctx) || !AuthorizedOrigin(origin) ||
                ctx.Request.Headers["X-ProofLab-Manual-Action"]!="sam-adaptive-spark" ||
                ctx.Request.ContentLength is >4096)
                 return Results.StatusCode(403);
@@ -101,8 +104,7 @@ public static class SamAdaptiveEndpoints
             SamAdaptiveLiveService service,HttpContext ctx,CancellationToken ct)=>
         {
             var origin=ctx.Request.Headers.Origin.ToString();
-            var authorizedOrigin=origin.Length==0 ||
-                origin is "http://127.0.0.1:4327" or "http://localhost:4327";
+            var authorizedOrigin=AuthorizedOrigin(origin);
             if(!Loopback(ctx) || !authorizedOrigin ||
                ctx.Request.Headers["X-ProofLab-Manual-Action"]!="sam-adaptive-batch" ||
                ctx.Request.ContentLength is >4096)
@@ -151,6 +153,16 @@ public static class SamAdaptiveEndpoints
             }
             catch(ArgumentException){return Results.BadRequest();}
             catch(InvalidDataException){return Results.Conflict();}
+        });
+        app.MapGet(Route+"/batches/{batchId}/evidence",async(
+            string id,string role,string batchId,SamAdaptiveLiveService service,
+            HttpContext ctx,CancellationToken ct)=>{
+            if(!Loopback(ctx))return Results.StatusCode(403);
+            ctx.Response.Headers.CacheControl="no-store";
+            try{return Results.Ok(await service.ReadPlaybackAsync(id,role,batchId,ct));}
+            catch(ArgumentException){return Results.BadRequest();}
+            catch(FileNotFoundException){return Results.NotFound();}
+            catch(InvalidDataException){return Results.Conflict(new{error="Segment evidence is incomplete or inconsistent."});}
         });
         return app;
     }

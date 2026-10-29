@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 
 namespace ProofLab.Api;
 
@@ -16,11 +17,10 @@ namespace ProofLab.Api;
 /// </summary>
 public sealed class SamAdaptiveLiveService(
     ISamVideoRuntime runtime,IAssemblyScenes scenes,ISamVideoTransport transport,
-    SamAdaptiveClipBuilder clipBuilder,MetaLiveAccess access,
+    ISamAdaptiveClipBuilder clipBuilder,MetaLiveAccess access,
     IWebHostEnvironment environment,IConfiguration config)
 {
     public const string Protocol="PROOFLAB_SAM_ADAPTIVE_SSE_SOURCE_PTS_V1";
-    public const int MaximumApprovedTrials=3;
     public const int MaximumLiveConcurrentRequests=4;
     private readonly SemaphoreSlim gate=new(1,1);
     private static readonly JsonSerializerOptions JsonOptions=new(JsonSerializerDefaults.Web)
@@ -46,7 +46,6 @@ public sealed class SamAdaptiveLiveService(
     private static bool ValidBatchId(string? s)=>
         s is {Length:32} && s.All(c=>c is >= '0' and <= '9' or >= 'a' and <= 'f');
     private string BatchDir(string id)=>Path.Combine(StoreRoot,"batches",id);
-    private string CampaignDir=>Path.Combine(StoreRoot,"campaign-2026-10-29");
     private static async Task WriteImmutable(string path,string contents,CancellationToken ct)
     {
         await using var fs=new FileStream(path,FileMode.CreateNew,
@@ -58,12 +57,6 @@ public sealed class SamAdaptiveLiveService(
     }
     private static Task WriteJson(string path,object value,CancellationToken ct)=>
         WriteImmutable(path,JsonSerializer.Serialize(value,JsonOptions),ct);
-    private int ExistingTrials()
-    {
-        var folder=CampaignDir;
-        return Directory.Exists(folder)?
-            Directory.EnumerateFiles(folder,"trial-*.json").Count():0;
-    }
     private static string PlanKey(string sourceSha,string sceneKey,string ptsSha,
         SamAdaptiveSegmentPlan plan)=>Hash(
             Protocol+"\n"+sourceSha+"\n"+sceneKey+"\n"+ptsSha+"\n"+
@@ -102,40 +95,33 @@ public sealed class SamAdaptiveLiveService(
     public async Task<SamAdaptiveLiveQuote> PreflightAsync(
         string studyId,string role,int targetCoreFrames,int maxInFlight,CancellationToken ct)
     {
-        var (source,scene,pts,plan,key)=await Context(
-            studyId,role,targetCoreFrames,maxInFlight,ct);
-        var grounded=SamAdaptiveGroundedPlan.Select(
-            pts.Length,scene,targetCoreFrames,maxInFlight,budgetUsd:0.50);
-        return new(Protocol,source.Sha256.ToLowerInvariant(),scene.Key,
-            plan.VerifySourcePts(pts),key,Guid.NewGuid().ToString("N"),
-            pts.Length,plan.PartCount,
+        // A read-only upper-bound quote must work before the first Spark call.
+        // Exact grounded parts are quoted again after localization, before SAM.
+        var source=await runtime.GetQuoteSourceAsync(studyId,role,ct);
+        if(source.Codec is not ("h264" or "hevc" or "mpeg4") ||
+           maxInFlight is <1 or >MaximumLiveConcurrentRequests)
+            throw new ArgumentException("Unsupported video or concurrency.");
+        var pts=await runtime.ReadSourceFramePtsAsync(source,ct);
+        var scene=await scenes.TrackingForQuoteAsync(studyId,role,ct);
+        var ideal=SamAdaptiveSegmentPlan.Create(pts.Length,targetCoreFrames,maxInFlight,
+            alignToTwoFrameIntraKeyframes:true);
+        SamAdaptiveGroundingDecision? grounded=null;
+        if(scene is not null) {
+            AssemblyPolicy.Validate(scene,source.Sha256,pts.Length);
+            grounded=SamAdaptiveGroundedPlan.Select(pts.Length,scene,targetCoreFrames,maxInFlight);
+        }
+        var plan=grounded?.Plan??ideal;
+        var ptsSha=plan.VerifySourcePts(pts);
+        return new(Protocol,source.Sha256.ToLowerInvariant(),scene?.Key??"",
+            ptsSha,PlanKey(source.Sha256,scene?.Key??"PENDING_SPARK",ptsSha,plan),
+            Guid.NewGuid().ToString("N"),pts.Length,plan.PartCount,
             plan.MaxInFlight,plan.SubmittedFrames,plan.BilledFrames,
-            plan.EstimatedSamCostUsd,0.50,
-            Math.Max(0,MaximumApprovedTrials-ExistingTrials()),
-            access.ManualTokenCallsPermitted,true,false,
-            "ONE_REUSED_SPARK_SCENE; ONLY_SOURCE_FRAMES_WITH_AUTHENTIC_SPARK_BOXES; NO_AUTOMATIC_RETRY",
-            grounded.IdealParts,grounded.VerifiedSparkSeedCount,
-            grounded.ReducedForSparseSparkSeeds);
-    }
-
-    private int ReserveTrialSlot(string batchId,SamAdaptiveLiveQuote quote)
-    {
-        Directory.CreateDirectory(CampaignDir);
-        using var guard=new FileStream(Path.Combine(CampaignDir,".trial.lock"),
-            FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
-        var n=ExistingTrials();
-        if(n>=MaximumApprovedTrials)
-            throw new InvalidOperationException("Three authorized real adaptive trials already consumed.");
-        var slot=n+1;
-        var path=Path.Combine(CampaignDir,"trial-"+slot.ToString("D2",
-            CultureInfo.InvariantCulture)+".json");
-        WriteJson(path,new{
-            slot,batchId,quote.SourceSha256,quote.SparkSceneKey,quote.PlanSha256,
-            maximumEstimatedSamUsd=quote.TotalSamEstimatedUsd,
-            startedAtUtc=DateTimeOffset.UtcNow,
-            status="OWNER_AUTHORIZED_TEST_MAY_BE_BILLABLE_NO_RETRY"
-        },CancellationToken.None).GetAwaiter().GetResult();
-        return slot;
+            plan.EstimatedSamCostUsd,0.50,null,access.ManualTokenCallsPermitted,
+            scene is not null,scene is null,
+            scene is null?"SAM_UPPER_BOUND_PENDING_SPARK_NO_INFERENCE_SENT":
+                "VERIFIED_SPARK_SEEDS; SOURCE_FRAMES; NO_AUTOMATIC_RETRY",
+            grounded?.IdealParts??ideal.PartCount,grounded?.VerifiedSparkSeedCount??0,
+            grounded?.ReducedForSparseSparkSeeds??false);
     }
 
     private static string Prompt(SamSceneDefinition scene,SamAdaptiveWindow window) =>
@@ -166,10 +152,9 @@ public sealed class SamAdaptiveLiveService(
                request.PlanSha256!=key ||
                !double.IsFinite(request.MaximumSamCostUsd) ||
                request.MaximumSamCostUsd<exact.TotalSamEstimatedUsd ||
-               request.MaximumSamCostUsd>0.500000001 ||
-               exact.RemainingTrialSlots==0)
+               request.MaximumSamCostUsd>0.500000001)
                 throw new InvalidOperationException(
-                    "Source/scene/quote/three-test spending limit changed.");
+                    "Source, scene or approved batch quote changed.");
             // Prepare and VERIFY ALL clips before any billable call or trial slot.
             var batchId=request.ClientBatchId;
             var folder=BatchDir(batchId);
@@ -190,7 +175,9 @@ public sealed class SamAdaptiveLiveService(
             var prompts=plan.Windows.Select(window=>Prompt(scene,window))
                 .ToArray();
             ct.ThrowIfCancellationRequested();
-            _=ReserveTrialSlot(batchId,exact);
+            await WriteJson(Path.Combine(folder,"batch-context.json"),
+                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,request.MaxInFlight),
+                CancellationToken.None);
             var created=DateTimeOffset.UtcNow;
             await WriteJson(Path.Combine(folder,"batch-started.json"),new{
                 batchId,createdAtUtc=created,sourceSha256=source.Sha256,
@@ -361,6 +348,64 @@ public sealed class SamAdaptiveLiveService(
             return report;
         }
         finally{gate.Release();}
+    }
+
+    public async Task<SamVideoArtifact> ReadPlaybackAsync(
+        string studyId,string role,string batchId,CancellationToken ct)
+    {
+        var report=await ReadReportAsync(batchId,ct) ??
+            throw new FileNotFoundException("Batch report unavailable.");
+        if(report.Status!="PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW" ||
+           report.DerivedSeamsVerified!=true || report.CompletedParts!=report.Parts)
+            throw new InvalidDataException("Incomplete or inconclusive batch cannot drive overlays.");
+        var source=await runtime.GetVerifiedSourceAsync(studyId,role,ct);
+        if(source.Sha256!=report.SourceSha256)throw new InvalidDataException("Batch source mismatch.");
+        var folder=BatchDir(batchId);
+        var context=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(
+            Path.Combine(folder,"batch-context.json"),ct);
+        var scene=context.Scene;
+        var pts=await runtime.ReadSourceFramePtsAsync(source,ct);
+        AssemblyPolicy.Validate(scene,source.Sha256,pts.Length);
+        var plan=SamAdaptiveGroundedPlan.Select(pts.Length,scene,
+            context.TargetCoreFrames,context.MaxInFlight).Plan;
+        var ptsSha=plan.VerifySourcePts(pts);
+        if(scene.Key!=report.SparkSceneKey || plan.PartCount!=report.Parts ||
+           PlanKey(source.Sha256,scene.Key,ptsSha,plan)!=report.PlanSha256)
+            throw new InvalidDataException("Batch plan identity mismatch.");
+        var outputs=new List<SamAdaptivePartOutput>();
+        foreach(var w in plan.Windows) {
+            var part=Path.Combine(folder,"part-"+w.Part.ToString("D2",CultureInfo.InvariantCulture));
+            var receipt=await SamVideoArchive.ReadJsonAsync<SamAdaptivePartReceipt>(
+                Path.Combine(part,"receipt.json"),ct);
+            var raw=await File.ReadAllTextAsync(Path.Combine(part,"response.json"),ct);
+            if(receipt.Part!=w.Part || receipt.OriginalVideoSha256!=source.Sha256 ||
+               receipt.SparkSceneKey!=scene.Key || receipt.SourcePtsSha256!=ptsSha ||
+               receipt.InputStart!=w.InputStart || receipt.InputEndExclusive!=w.InputEndExclusive ||
+               receipt.CoreStart!=w.CoreStart || receipt.CoreEndExclusive!=w.CoreEndExclusive ||
+               receipt.ResponseSha256!=Hash(raw) || receipt.PromptSha256!=Hash(Prompt(scene,w)) ||
+               receipt.Status!="COMPLETED_PROVIDER_STREAM_PENDING_HUMAN_VISUAL_REVIEW")
+                throw new InvalidDataException("Part receipt mismatch.");
+            outputs.Add(new(w.Part,w.InputStart,w.InputEndExclusive,
+                w.CoreStart,w.CoreEndExclusive,receipt.ResponseSha256,raw));
+        }
+        var derived=SamAdaptiveMaskStitcher.Stitch(plan,outputs);
+        var saved=await File.ReadAllTextAsync(Path.Combine(folder,"derived-response.json"),ct);
+        if(!derived.SeamsVerified || derived.FramesWithMasks<=0 ||
+           derived.DerivedResponseSha256!=report.DerivedResponseSha256 ||
+           Hash(saved)!=derived.DerivedResponseSha256)
+            throw new InvalidDataException("Derived masks failed verification.");
+        var state=new SamVideoState("VERIFIED_META_SAM_SEGMENTS_REQUIRES_VISUAL_REVIEW",
+            "sam-3.1","pendulum object",source.Sha256,report.PlanSha256,pts.Length,
+            report.EstimatedSamUsd,derived.DerivedResponseSha256,null,false,
+            "DERIVED_FROM_AUTHENTICATED_META_SEGMENTS_NOT_A_NATIVE_SINGLE_RESPONSE",
+            batchId,"api-meta-adaptive",false,"private-segment-archive",scene.Key);
+        var receiptAll=new SamVideoReceipt(report.PlanSha256,source.Sha256,source.VideoId,
+            "sam-3.1","pendulum object",Protocol,report.RecordedAtUtc,
+            derived.DerivedResponseSha256,"",null,pts.Length,pts,"",
+            "COMPLETED_PROVIDER_PARTS_DERIVED_REQUIRES_VISUAL_REVIEW",
+            report.EstimatedSamUsd,batchId,scene);
+        return new(state,receiptAll,saved,await scenes.SuspensionAsync(studyId,role,scene,ct),
+            Derivation:new(batchId,false,true,ptsSha,outputs.Select(x=>x.ResponseJsonSha256).ToArray()));
     }
 
     private sealed record PartOutcome(string State,

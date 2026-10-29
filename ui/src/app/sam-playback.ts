@@ -16,6 +16,7 @@ export interface SuspensionReview {
     points:SamSuspensionEvidence['points']};
 }
 export interface AuthenticatedSamVideoArchive {
+  derivation?:{batchId:string;nativeProviderResult:false;seamsVerified:boolean;sourcePtsSha256:string;partResponseSha256:string[]}|null;
   suspensionReview?:SuspensionReview|null;
   suspension?:SamSuspensionEvidence|null;
   state: {
@@ -44,7 +45,7 @@ export interface SamPlaybackMask {
 export interface SamPlaybackTrack {
   frameWidth:number;
   frameHeight:number;
-  source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE';
+  source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE'|'META_SAM_3_1_VERIFIED_SEGMENTS';
   objectId:string;
   points:CandidatePixelPoint[];
   masks:SamPlaybackMask[];
@@ -67,8 +68,7 @@ export function verifiedSamPlaybackTrack(
   if(!validSha(currentOriginalSha) ||
       r.originalVideoSha256.toLowerCase()!==currentOriginalSha.toLowerCase() ||
       s.sourceSha256.toLowerCase()!==currentOriginalSha.toLowerCase() ||
-      s.status!=='CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW' ||
-      r.providerEvidenceStatus!=='COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW' ||
+      !verifiedSamArchiveKind(archive) ||
       r.model!=='sam-3.1' || !validSamTarget(archive,currentOriginalSha) ||
       !Array.isArray(r.framePtsSeconds) ||
       r.sourceFrameCount!==r.framePtsSeconds.length ||
@@ -124,8 +124,24 @@ export function verifiedSamPlaybackTrack(
   }));
   return {
     frameWidth:parsed.frameWidth,frameHeight:parsed.frameHeight,
-    source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId,points,masks
+    source:archive.derivation?'META_SAM_3_1_VERIFIED_SEGMENTS':'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId,points,masks
   };
+}
+
+/** A joined archive is explicitly derived, never represented as one native response. */
+export function verifiedSamArchiveKind(a:AuthenticatedSamVideoArchive):boolean {
+  const r=a.receipt,d=a.derivation;
+  if(!d)return a.state.status==='CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW' &&
+    r.providerEvidenceStatus==='COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW' &&
+    r.requestProtocol!=='PROOFLAB_SAM_ADAPTIVE_SSE_SOURCE_PTS_V1';
+  return a.state.status==='VERIFIED_META_SAM_SEGMENTS_REQUIRES_VISUAL_REVIEW' &&
+    r.providerEvidenceStatus==='COMPLETED_PROVIDER_PARTS_DERIVED_REQUIRES_VISUAL_REVIEW' &&
+    r.requestProtocol==='PROOFLAB_SAM_ADAPTIVE_SSE_SOURCE_PTS_V1' &&
+    d.nativeProviderResult===false && d.seamsVerified===true &&
+    /^[a-f0-9]{32}$/.test(d.batchId) && d.batchId===r.analysisId && d.batchId===a.state.analysisId &&
+    validSha(d.sourcePtsSha256) && Array.isArray(d.partResponseSha256) &&
+    d.partResponseSha256.length>0 && d.partResponseSha256.length<=50 &&
+    d.partResponseSha256.every(validSha);
 }
 
 /** Role bindings originate only in the backend's reviewed scene receipt. */
@@ -137,7 +153,8 @@ export function validSamTarget(archive:AuthenticatedSamVideoArchive,sha:string):
     (r.concept==='metal pendulum bob' &&
       (!r.requestProtocol || r.requestProtocol==='PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V2'));
   const roles=['object','cord','knot','pulley','support'];
-  return r.requestProtocol==='PROOFLAB_SAM_MULTIOBJECT_SOURCE_PTS_V1' &&
+  return (r.requestProtocol==='PROOFLAB_SAM_MULTIOBJECT_SOURCE_PTS_V1' ||
+      (r.requestProtocol==='PROOFLAB_SAM_ADAPTIVE_SSE_SOURCE_PTS_V1' && verifiedSamArchiveKind(archive))) &&
     scene.videoSha256===sha && validSha(scene.key) &&
     (scene.origin==null || scene.origin==='SPARK_GROUNDING') &&
     (scene.origin!=='SPARK_GROUNDING' || (scene.roles.length===1 &&

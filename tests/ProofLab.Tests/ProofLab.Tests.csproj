@@ -39,6 +39,10 @@
              Link="SamAdaptiveOfflineScheduler.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveMaskStitcher.cs"
              Link="SamAdaptiveMaskStitcher.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveLiveContracts.cs" Link="SamAdaptiveLiveContracts.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveLiveService.cs" Link="SamAdaptiveLiveService.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveClipContracts.cs" Link="SamAdaptiveClipContracts.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveEndpoints.cs" Link="SamAdaptiveEndpoints.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveGroundedPlan.cs"
              Link="SamAdaptiveGroundedPlan.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamManualApiTokenPolicy.cs"

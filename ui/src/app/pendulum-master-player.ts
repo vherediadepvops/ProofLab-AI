@@ -109,6 +109,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   });
   readonly periodSource=computed<SamPeriodSource|null>(()=>{
     const receipt=this.periodReceipt();
+    // Segmented evidence has its own provenance; do not submit it as a native response to the research director.
+    if(receipt?.requestProtocol==='PROOFLAB_SAM_ADAPTIVE_SSE_SOURCE_PTS_V1')return null;
     if(!this.samVerified() || !receipt || !/^[a-f0-9]{32}$/i.test(receipt.analysisId??'') ||
        !/^[a-f0-9]{64}$/i.test(receipt.responseJsonSha256??''))return null;
     const scene=this.scene(),manual=this.manualPivotOverride() || !scene ||
@@ -155,6 +157,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly samRefreshNonce = input(0);
   readonly processingRequired=input(false);
   readonly processedAnalysisId=input('');
+  readonly processedAdaptiveBatchId=input('');
   readonly samApiPort=input<5391|5393|5398|5410>(5391);
   readonly processingReady=output<boolean>();
   readonly processingFinished=output<boolean>();
@@ -326,7 +329,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       this.previewStateChanged.emit('loading');
     }
     const key=this.studyId()+'|'+this.videoRole()+'|'+this.videoSha256()+'|'+
-      this.samApiPort()+'|'+this.processingRequired()+'|'+this.processedAnalysisId();
+      this.samApiPort()+'|'+this.processingRequired()+'|'+this.processedAnalysisId()+'|'+this.processedAdaptiveBatchId();
     if(this.revisionKey===key && !changes['samRefreshNonce']){
       if(changes['language'])this.paintFrame(this.frameTime());
       return;
@@ -361,8 +364,13 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
    */
   private async loadSam(serial:number):Promise<void>{
     try {
+      const batch=this.processedAdaptiveBatchId();
+      if(batch && (!/^[a-f0-9]{32}$/.test(batch) || batch!==this.processedAnalysisId()))
+        throw Error('INVALID_SEGMENT_SELECTION');
       const endpoint='http://127.0.0.1:'+this.samApiPort()+
-        '/api/science/director/pendulum/sessions/'+this.studyId()+'/sam/'+this.videoRole()+'/evidence';
+        '/api/science/director/pendulum/sessions/'+this.studyId()+
+        (batch?'/sam-adaptive/'+this.videoRole()+'/batches/'+batch+'/evidence':
+          '/sam/'+this.videoRole()+'/evidence');
       const archive=await firstValueFrom(
         this.http!.get<AuthenticatedSamVideoArchive>(endpoint));
       if(serial!==this.samSerial || this.disposed)return;
@@ -397,7 +405,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       this.rememberFramePts(archive.receipt.framePtsSeconds);
       this.periodReceipt.set(archive.receipt);
       this.samTrack.set(track);this.automaticSuspension.set(resolveSamSuspension(archive,track));this.setVerified(true);
-      this.samStatus.set('SAM_3_1_CACHED_MASKS_PENDING_HUMAN_BOB_REVIEW');
+      this.samStatus.set(archive.derivation?'SAM_3_1_SEGMENTS_MASKS_PENDING_HUMAN_REVIEW':'SAM_3_1_CACHED_MASKS_PENDING_HUMAN_BOB_REVIEW');
       this.processingFinished.emit(true);
       this.paintFrame(this.frameTime());
     } catch(e:unknown) {

@@ -230,3 +230,36 @@ describe('multi-object assembly identity',()=>{
     expect(()=>verifiedSamSceneTracks(a,p,sha)).toThrow();
   });
 });
+describe('verified segmented playback',()=>{
+ function segmented(){
+  const a=archive(),p=result(),batch='b'.repeat(32);
+  a.state={...a.state,status:'VERIFIED_META_SAM_SEGMENTS_REQUIRES_VISUAL_REVIEW',analysisId:batch};
+  a.receipt={...a.receipt,analysisId:batch,concept:'pendulum object',
+    requestProtocol:'PROOFLAB_SAM_ADAPTIVE_SSE_SOURCE_PTS_V1',
+    providerEvidenceStatus:'COMPLETED_PROVIDER_PARTS_DERIVED_REQUIRES_VISUAL_REVIEW',
+    scene:{key:'c'.repeat(64),videoSha256:sha,width:1920,height:1080,
+      arrangement:'simple_pendulum',origin:'SPARK_GROUNDING',pivotX:null,pivotY:null,
+      roles:[{id:'1',role:'object'}]}};
+  a.derivation={batchId:batch,nativeProviderResult:false,seamsVerified:true,
+    sourcePtsSha256:'d'.repeat(64),partResponseSha256:['e'.repeat(64),'f'.repeat(64)]};
+  p.objectIds=['1'];for(const f of p.frames)f.detections[0].objectId='1';
+  return {a,p};
+ }
+ it('renders verified joined masks at original timestamps without pretending to be one provider response',()=>{
+  const {a,p}=segmented(),t=verifiedSamPlaybackTrack(a,p,sha);
+  expect(t.source).toBe('META_SAM_3_1_VERIFIED_SEGMENTS');
+  expect(t.masks.length).toBe(8);expect(t.points[1].timeSeconds).toBeCloseTo(4/60);
+  expect(verifiedSamSceneTracks(a,p,sha)['object'].masks.length).toBe(8);
+ });
+ it('rejects missing provenance, failed seams, a wrong batch or a native/derived mix',()=>{
+  for(const change of [
+    (a:AuthenticatedSamVideoArchive)=>{a.derivation=undefined;},
+    (a:AuthenticatedSamVideoArchive)=>{a.derivation!.seamsVerified=false;},
+    (a:AuthenticatedSamVideoArchive)=>{a.derivation!.batchId='0'.repeat(32);},
+    (a:AuthenticatedSamVideoArchive)=>{Object.assign(a.derivation!,{nativeProviderResult:true});}
+  ]){
+   const {a,p}=segmented();change(a);
+   expect(()=>verifiedSamPlaybackTrack(a,p,sha)).toThrowError(/INVALID_PROVENANCE/);
+  }
+ });
+});

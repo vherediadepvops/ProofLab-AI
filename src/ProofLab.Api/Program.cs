@@ -40,6 +40,7 @@ builder.Services.AddSingleton<PendulumDirectorKinematicsStore>();
 builder.Services.AddSingleton<ISamVideoTransport, SamVideoMetaTransport>();
 builder.Services.AddSingleton<ISamVideoRuntime, SamVideoRuntime>();
 builder.Services.AddSingleton<SamAdaptiveClipBuilder>();
+builder.Services.AddSingleton<ISamAdaptiveClipBuilder>(sp=>sp.GetRequiredService<SamAdaptiveClipBuilder>());
 builder.Services.AddSingleton<SamAdaptiveLiveService>();
 builder.Services.AddSingleton(sp => new SamVideoEvidenceIndex(
     sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));

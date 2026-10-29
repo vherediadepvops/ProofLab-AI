@@ -153,6 +153,9 @@ export class PendulumZoneOne extends PendulumDirector {
       selected?.sourceSha256===clip?.sha256 && selected?.port===this.connection.port()
       ? selected.analysisId : '';
   }
+  processedAdaptiveBatch(role:'baseline'|'followup'):string {
+    return this.processedAnalysis(role)?this.samSelection()?.adaptiveBatchId??'':'';
+  }
   selectTrial(role:'baseline'|'followup'):void {
     if(role===this.activeTrial() || this.videoActionsBusy())return;
     this.clearProcessed();this.previewState.set('loading');this.activeTrial.set(role);

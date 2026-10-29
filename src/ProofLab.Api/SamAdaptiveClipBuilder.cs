@@ -6,16 +6,6 @@ using System.Text.Json;
 
 namespace ProofLab.Api;
 
-public sealed record SamAdaptiveClip(
-    int Part,int InputStart,int InputEndExclusive,int CoreStart,int CoreEndExclusive,
-    int Frames,string RelativePath,long Bytes,string VideoSha256,
-    string SourceFrameHashSha256,double MaximumPtsErrorSeconds,int BilledFrames);
-
-public sealed record SamAdaptiveClipManifest(
-    string OriginalVideoSha256,string OriginalPtsSha256,int OriginalFrames,
-    int SubmittedFrames,int BilledFrames,double EstimatedSamUsd,
-    string CutProtocol,IReadOnlyList<SamAdaptiveClip> Clips,long PrepareElapsedMs);
-
 /// <summary>
 /// Prepare N EXACT source-frame clips by transcoding ONE private intermediate
 /// with a keyframe every TWO frames, then stream-copying windows starting at
@@ -24,7 +14,7 @@ public sealed record SamAdaptiveClipManifest(
 /// A failed/incomplete clip disqualifies the entire batch from paid transport.
 /// </summary>
 public sealed class SamAdaptiveClipBuilder(
-    VideoMediaDecoder decoder,IConfiguration configuration)
+    VideoMediaDecoder decoder,IConfiguration configuration) : ISamAdaptiveClipBuilder
 {
     public const string Protocol="SAM_ADAPTIVE_INTRA2_SOURCE_PTS_PIXEL_SHA_V1";
     private static readonly CultureInfo Inv=CultureInfo.InvariantCulture;
