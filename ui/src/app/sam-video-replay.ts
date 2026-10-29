@@ -319,8 +319,13 @@ interface SamAdaptiveReport {
     .sam-buttons{display:flex;gap:12px;margin-left:auto}
     .sam-actions button{border:1px solid #343e4a;border-radius:6px;background:#14181f;color:#e9f1fa;padding:9px 12px;font:inherit;cursor:pointer}
     .sam-actions button:disabled{cursor:not-allowed;opacity:.6}
-    .sam-actions .sam-submit{min-width:112px;padding:11px 20px;border-color:#2c6399;background:#2c6399;font-weight:700}
-    .sam-actions .sam-submit:disabled{opacity:.85}
+    .sam-actions .sam-submit{min-width:112px;padding:11px 20px;font-weight:700;transition:background-color .2s,border-color .2s}
+    .sam-actions .sam-submit:enabled{background:#15803d;border-color:#4ade80;color:#f0fff4;animation:sam-ready-pulse 2s ease-in-out infinite}
+    .sam-actions .sam-submit:enabled:hover{background:#166534;border-color:#86efac}
+    .sam-actions .sam-submit:focus-visible{outline:2px solid #bbf7d0;outline-offset:3px}
+    .sam-actions .sam-submit:disabled{background:#303843;border-color:#48515e;color:#aab6c5;opacity:1;animation:none;box-shadow:none}
+    @keyframes sam-ready-pulse{0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}50%{box-shadow:0 0 0 5px rgba(74,222,128,.24)}}
+    @media(prefers-reduced-motion:reduce){.sam-actions .sam-submit:enabled{animation:none;transition:none}}
     .sam-message{display:flex;align-items:baseline;flex-wrap:wrap;gap:5px;margin-top:16px;padding-top:13px;border-top:1px solid #343e4a;color:#a9c8da;font-size:12px;line-height:1.55}
     .sam-message.warning,.sam-caution{color:#ffbd52}
     .sam-actions .sam-settings-link,.sam-settings-link{border:0;background:none;padding:0;color:#69b7ff;cursor:pointer;font:inherit;text-align:left}
