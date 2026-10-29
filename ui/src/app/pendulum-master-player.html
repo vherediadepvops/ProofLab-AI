@@ -44,12 +44,12 @@
           <span class="angle-value" [class.value-missing]="!currentCordAngle()"
             [title]="cordAngleHint()+' · '+cordAngleDirection()+' · '+(es?'Referencia: vertical de la imagen':'Reference: image vertical')"
             [attr.aria-label]="es?'Ángulo con la vertical':'Angle from vertical'">
-            θ <strong>{{cordAngleText()}}</strong>
+            θ{{usesAutomaticSuspension()?' ≈':''}} <strong>{{cordAngleText()}}</strong>
           </span>
           <span class="angular-velocity-value" [class.value-missing]="angularVelocityAtFrame()===null"
             [title]="angularVelocityHint()+' · '+angularVelocityDirection()+(angularVelocityAtFrame()!==null?' · '+angularVelocityText(true)+' °/s':'')"
             [attr.aria-label]="es?'Velocidad angular':'Angular velocity'">
-            ω <strong>{{angularVelocityText()}}</strong><span class="velocity-unit">rad/s</span>
+            ω{{usesAutomaticSuspension()?' ≈':''}} <strong>{{angularVelocityText()}}</strong><span class="velocity-unit">rad/s</span>
           </span>
         </span>
         <button class="focus-action" type="button" (click)="selectView('combined')"
@@ -66,7 +66,7 @@
           [attr.aria-label]="es?'Fotograma con vectores y rastro sincronizados':'Frame with synchronized vectors and trail'"></canvas>
       </div>
       <div class="view-meta">{{processingRequired() && !samTrack() ? (es?'Sin resultado SAM con máscaras':'No SAM mask result') : samTrack()
-        ? (es?'SAM 3.1 · máscaras y centros guardados · pendiente revisión humana':'SAM 3.1 · cached masks and centroids · human review pending')
+        ? (automaticSuspension() && !pivotRevision()?automaticGeometryNote():(es?'SAM 3.1 · máscaras y centros guardados · pendiente revisión humana':'SAM 3.1 · cached masks and centroids · human review pending'))
         : (es?'Seguimiento local provisional NO SAM':'Provisional LOCAL tracking NOT SAM')}}</div>
     </div>
 

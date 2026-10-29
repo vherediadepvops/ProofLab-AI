@@ -47,6 +47,8 @@ public sealed record SamSceneDefinition(string Key,string VideoSha256,string Evi
             ";y2="+s.Y2+";w="+Width+";h="+Height+"|>"))));
 }
 public interface IAssemblyScenes {
+    Task<SamSuspensionEvidence?> SuspensionAsync(string id,string role,SamSceneDefinition scene,CancellationToken ct)=>
+        Task.FromResult<SamSuspensionEvidence?>(null);
     async Task<SamSceneDefinition[]> TrackingHistoryAsync(string id,string role,CancellationToken ct,bool quote=false) {
         var scene=quote?await TrackingForQuoteAsync(id,role,ct):await TrackingAsync(id,role,ct);
         return scene is null?[]:[scene];

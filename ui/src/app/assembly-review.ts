@@ -7,6 +7,7 @@ import {LabActivity} from './lab-activity';
 export interface SceneDefinition {
   key:string;videoSha256:string;width:number;height:number;arrangement:string;
   origin?:'SPARK_GROUNDING'|null;
+  evidenceKey?:string;responseSha256?:string;
   roles:{id:string;role:string}[];pivotX:number|null;pivotY:number|null;
 }
 interface Observation {frame:number;role:string;visible:boolean;x1:number;y1:number;x2:number;y2:number;confidence:number}

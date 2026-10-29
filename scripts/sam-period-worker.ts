@@ -1,3 +1,4 @@
+import {resolveSamSuspension,automaticPivotProvenance} from '../ui/src/app/sam-suspension';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {decodeSamVideoResponse} from '../ui/src/app/sam-video-evidence';
@@ -30,17 +31,20 @@ async function main() {
   const width=track?.frameWidth??input.sourceWidth,height=track?.frameHeight??input.sourceHeight;
   if(!Number.isFinite(width)||!Number.isFinite(height)||width<1||height<1)
     throw Error('SOURCE_DIMENSIONS_MISSING');
+  const automatic=!input.pivot&&track?resolveSamSuspension(archive,track):null;
+  const pivot=input.pivot??(automatic?.pivot?{x:automatic.pivot.pivotXpx/480,y:automatic.pivot.pivotYpx/270}:null);
+  const provenance=input.pivot?input.pivotProvenance:automatic?.pivot?automaticPivotProvenance:'PIVOT_MISSING';
   const measurement={
     framePtsSeconds:receipt.framePtsSeconds,
     centroids:track?.masks.map(m=>({frameIndex:m.frameIndex,x:m.centroidXpx,y:m.centroidYpx}))??[],
     sourceWidth:width,sourceHeight:height,imageWidth:width,imageHeight:height,
-    pivot:input.pivot,arrangement:receipt.scene?.arrangement??'legacy_pendulum'
+    pivot,arrangement:receipt.scene?.arrangement??'legacy_pendulum'
   };
   const source={
     studyId:input.studyId,role:'baseline',originalVideoSha256:input.videoSha256,
     analysisId:receipt.analysisId,providerResponseSha256:receipt.responseJsonSha256,
     providerModel:'sam-3.1' as const,objectId:track?.objectId??'NO_MATCH',
-    pivotRevisionId:input.pivotRevisionId,pivotProvenance:input.pivotProvenance
+    pivotRevisionId:input.pivotRevisionId,pivotProvenance:provenance
   };
   process.stdout.write(JSON.stringify(periodReportPayload(source,measurement)));
 }

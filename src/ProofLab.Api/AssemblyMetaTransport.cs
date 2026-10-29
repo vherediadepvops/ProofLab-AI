@@ -36,7 +36,7 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssembl
         var format=new {type="json_schema",name=grounding?"hanging_object_grounding":"hanging_assembly",strict=true,
             schema=new {type="object",additionalProperties=false,required=properties.Keys.ToArray(),properties}};
         return new {model=AssemblyPolicy.Model,input,stream=false,max_output_tokens=AssemblyPolicy.MaximumOutputTokens,
-            reasoning=new {effort="low"},text=new {format}};
+            reasoning=new {effort=grounding?"medium":"low"},text=new {format}};
     }
     private static async Task<string> ReadResponse(HttpResponseMessage response,CancellationToken ct) {
         if(!response.IsSuccessStatusCode)throw new HttpRequestException("Meta grounding request failed.",null,response.StatusCode);

@@ -1,0 +1,10 @@
+# Angular values from Spark and SAM
+Updated: 2026-10-29.
+
+Spark receives the full video and three native reference images, identifies a suspended target without material/shape restrictions, and supplies SAM's tracking boxes. Grounding now uses medium reasoning within the unchanged token and cost cap. This does not train or modify Meta's models.
+
+SAM archives expose suspension points from the **exact Spark response bound to that SAM scene**, not another newer localization. Historical receipts, hashes, scenes and raw masks are unchanged. The player and scientific worker share `sam-suspension.ts`: consistent visible anchors and sufficient native-pixel geometry yield an estimated pivot, optionally refined by a nearby arc fit. Human correction overrides it. θ is relative to image vertical; ω uses original timestamps, independent of playback speed.
+
+The existing header marks automatic values with ≈. Gross spatial mismatches are excluded only from automatic playback; no synthetic detections or ghost lines across missing observations. Period reports and Muse inputs retain every original centroid, so visual filtering cannot artificially improve scientific evidence. The existing footer reports exclusions or an inconclusive suspension. Moving cameras, oblique perspective, occlusion and ambiguous tracking can prevent reliable angular values. These are image estimates, not physical calibration or certified mass centers; self-reported confidence and fit residuals are not total uncertainty. Muse retains responsibility for interpreting the phenomenon.
+
+Validation: 68 backend and 95 Angular tests, clean local publish/build, ES/EN browser at 1440/390, three real-archive worker checks. Six real Spark→SAM flows consumed 12 authorized inferences out of 24. Red ball: 916 valid angular readings, 28 display-only exclusions; video2: 701 readings; video4: 1798. Video4 is synthetic animation, a geometry check around ±30°, not physical evidence. Videos1 and3 remain explicitly inconclusive for suspension/camera geometry, while masks/trails remain available. No universal accuracy claim, new UI sections or CI.

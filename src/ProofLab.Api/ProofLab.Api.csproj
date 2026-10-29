@@ -17,7 +17,7 @@
     <Content Include="Workers\sam-period-worker.cjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="BuildSamPeriodWorker" BeforeTargets="BeforeBuild"
-          Inputs="../../scripts/sam-period-worker.ts;../../scripts/build-sam-period-worker.cjs;../../ui/src/app/sam-period.ts;../../ui/src/app/sam-playback.ts;../../ui/src/app/sam-video-evidence.ts;../../ui/src/app/pendulum-kinematics.ts;../../ui/package-lock.json"
+          Inputs="../../scripts/sam-period-worker.ts;../../scripts/build-sam-period-worker.cjs;../../ui/src/app/sam-period.ts;../../ui/src/app/sam-suspension.ts;../../ui/src/app/sam-playback.ts;../../ui/src/app/sam-video-evidence.ts;../../ui/src/app/pendulum-kinematics.ts;../../ui/package-lock.json"
           Outputs="Workers/sam-period-worker.cjs">
     <Exec Command="node &quot;../../scripts/build-sam-period-worker.cjs&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>

@@ -127,6 +127,21 @@ public sealed partial class AssemblyLocator
         var legacy=records.Legacy is null?null:AssemblyPolicy.Ground(records.Legacy);if(legacy is not null)scenes.Add(legacy);
         return scenes.DistinctBy(s=>s.Key).ToArray();
     }
+    public async Task<SamSuspensionEvidence?> SuspensionAsync(string id,string role,SamSceneDefinition scene,CancellationToken ct)
+    {
+        // Resolve the EXACT localization used by this saved SAM analysis, not the newest scene.
+        if(scene.Origin!=AssemblyPolicy.GroundingOrigin || scene.Arrangement!="simple_pendulum")return null;
+        var (video,_,_)=await Source(id,role,ct,true);
+        if(scene.VideoSha256!=video.Sha256)throw new InvalidDataException("Suspension source mismatch.");
+        var records=await GroundingRecords(video.Sha256,ct);
+        var evidence=records.Runs.Select(r=>r.Evidence).Append(records.Legacy)
+            .FirstOrDefault(e=>e?.CacheKey==scene.EvidenceKey);
+        if(evidence is null)return null;
+        if(evidence.ResponseSha256!=scene.ResponseSha256 || AssemblyPolicy.Ground(evidence)?.Key!=scene.Key)
+            throw new InvalidDataException("Suspension scene mismatch.");
+        return new(video.Sha256,scene.Key,evidence.CacheKey,evidence.ResponseSha256,evidence.Model,
+            scene.Width,scene.Height,evidence.Proposal.Suspension.Points);
+    }
     public Task<SamSceneDefinition?> TrackingAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,false);
     public Task<SamSceneDefinition?> TrackingForQuoteAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,true);
     private async Task<SamSceneDefinition?> TrackingCore(string id,string role,CancellationToken ct,bool quote)

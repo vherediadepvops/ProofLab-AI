@@ -229,8 +229,10 @@ public sealed class PendulumSamCache(
         var (video, key, archive, scene) = await Source(studyId, role, ct);
         var all = await archive.LoadAsync(video, key, ct);
         var prior = await PriorArchives(studyId, role, video, key, ct);
-        return Artifact(Reusable(all, prior, scene) ?? Latest(all) ??
+        var result=Artifact(Reusable(all, prior, scene) ?? Latest(all) ??
             throw new FileNotFoundException("SAM provider evidence not cached."));
+        return result with {Suspension=scenes is not null && result.Receipt.Scene is { } usedScene
+            ? await scenes.SuspensionAsync(studyId,role,usedScene,ct):null};
     }
 
     public async Task<SamVideoArtifact> RunOnceAsync(

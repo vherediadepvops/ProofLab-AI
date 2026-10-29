@@ -768,6 +768,17 @@ describe('One-clock three-view pendulum laboratory',()=>{
     component.pivotRevision.set(null);
     expect(component.periodMeasurement()?.pivot).toBeNull();
     expect(component.periodSource()?.pivotProvenance).toBe('PIVOT_MISSING');
+    component.automaticSuspension.set({pivot:{pivotXpx:240,pivotYpx:27},reason:'ESTIMATED_NOT_HUMAN_CONFIRMED',
+      method:'SPARK',spreadPixels:1,radialRmsPixels:1,radiusPixels:800,samples:1,excludedFrameIndices:[1]});
+    expect(component.periodMeasurement()?.pivot).toEqual({x:.5,y:.1});
+    expect(component.periodSource()?.pivotProvenance).toBe('SPARK_SAM_ESTIMATE_REVIEW_PENDING');
+    expect(component.playbackSamTrack()?.masks.length).toBe(0);
+    // Filtering for display must not improve the scientific evidence by deletion.
+    expect(component.periodMeasurement()?.centroids.length).toBe(1);
+    component.pivotRevision.set(revision);
+    expect(component.periodSource()?.pivotProvenance).toBe(revision.pivotProvenance);
+    expect(component.playbackSamTrack()?.masks.length).toBe(1);
+    component.automaticSuspension.set(null);
     component.scene.set(null);component.pivotRevision.set(revision);
     component.pivotRevision.set({...revision,revisionId:'new-pivot',
       analysis:{...revision.analysis,pivotXpx:250}});

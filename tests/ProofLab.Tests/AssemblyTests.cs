@@ -371,6 +371,8 @@ public sealed class AssemblyTests
         var quote=await sam.PreflightAsync("s","baseline",Ct);
         var result=await sam.RunOnceAsync("s","baseline",new(Sha,true,true,quote.EstimatedCostUsd,SceneKey:q.Scene!.Key),Ct,Token);
         Assert.Equal(q.Scene.Prompt,samTransport.Prompt);Assert.Equal(q.Scene.Key,result.Receipt.Scene!.Key);
+        var archive=await sam.ReadArchiveAsync("s","baseline",Ct);
+        Assert.NotNull(archive!.Suspension);Assert.Equal(q.Scene.EvidenceKey,archive.Suspension.EvidenceKey);
         Assert.Equal(AssemblyPolicy.GroundingOrigin,result.Receipt.Scene.Origin);Assert.Null(result.Receipt.Scene.PivotX);
         Assert.Equal(1,samTransport.Calls);Assert.Equal(1,f.Transport.Calls);Assert.Equal(2,f.Runtime.Reservations);
     }
@@ -379,6 +381,7 @@ public sealed class AssemblyTests
             using var doc=JsonDocument.Parse(r.Content!.ReadAsStringAsync().Result);var root=doc.RootElement;
             var format=root.GetProperty("text").GetProperty("format");
             Assert.True(format.GetProperty("strict").GetBoolean());
+            Assert.Equal("medium",root.GetProperty("reasoning").GetProperty("effort").GetString());
             Assert.Contains(format.GetProperty("schema").GetProperty("required").EnumerateArray(),p=>p.GetString()=="target");
             Assert.Equal(AssemblyPolicy.GroundingPrompt,root.GetProperty("input")[0].GetProperty("content")[0].GetProperty("text").GetString());
             Assert.False(root.TryGetProperty("tools",out _));
@@ -468,6 +471,24 @@ public sealed class AssemblyTests
         Assert.Equal(0,f.Transport.VideoCalls);Assert.Equal(0,f.Runtime.Reservations);
         var freshQuote=await f.Open().GroundingQuoteAsync("s","baseline",Ct,"api-meta");
         Assert.Equal("NEEDS_LOCALIZATION",freshQuote.Status);Assert.True(freshQuote.FreshRequired);
+    }
+
+
+    [Fact] public async Task SuspensionUsesTheExactGroundingRunAndPreservesTheReceipt() {
+        using var f=new Fixture();var locator=f.Open();var request=f.GroundRequest() with {Mode="api-meta"};
+        var first=await locator.GroundAsync("s","baseline",request,Ct);
+        var second=await locator.GroundAsync("s","baseline",request,Ct);
+        var scene=first.Scene!;var before=JsonSerializer.Serialize(scene);
+        var result=await locator.SuspensionAsync("s","baseline",scene,Ct);
+        Assert.NotNull(result);Assert.Equal(first.Evidence!.CacheKey,result.EvidenceKey);
+        Assert.NotEqual(second.Evidence!.CacheKey,result.EvidenceKey);
+        Assert.Equal(scene.Key,result.SceneKey);Assert.Equal(first.Evidence.ResponseSha256,result.ResponseSha256);
+        Assert.Equal(first.Evidence.Proposal.Suspension.Points,result.Points);
+        Assert.Equal(before,JsonSerializer.Serialize(scene));Assert.Null(scene.PivotX);
+        Assert.Equal(2,f.Transport.VideoCalls);
+        await Assert.ThrowsAsync<InvalidDataException>(()=>locator.SuspensionAsync("s","baseline",
+            scene with {ResponseSha256=new string('f',64)},Ct));
+        Assert.Null(await locator.SuspensionAsync("s","baseline",scene with {Origin=null},Ct));
     }
 
 }

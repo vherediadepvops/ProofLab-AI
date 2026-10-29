@@ -1,3 +1,4 @@
+import {resolveSamSuspension,suspensionPlaybackTrack,automaticPivotProvenance,type AutomaticSuspension} from './sam-suspension';
 import type {SceneDefinition} from './assembly-review';
 import {
   AfterViewInit, Component, ElementRef, OnChanges, OnDestroy, SimpleChanges, ViewChild,
@@ -48,13 +49,32 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly scene=signal<SceneDefinition|null>(null);
   readonly sceneTracks=signal<Record<string,SamPlaybackTrack>>({});
   private readonly manualPivotOverride=signal(false);
+  readonly automaticSuspension=signal<AutomaticSuspension|null>(null);
+  usesAutomaticSuspension():boolean {
+    return !!this.automaticSuspension()?.pivot && !this.pivotRevision() && !this.manualPivotOverride();
+  }
+  readonly playbackSamTrack=computed(()=>{
+    const track=this.samTrack();
+    return track&&this.usesAutomaticSuspension()?suspensionPlaybackTrack(track,this.automaticSuspension()):track;
+  });
+  automaticGeometryNote():string {
+    const estimate=this.automaticSuspension();
+    if(!estimate?.pivot)return this.es
+      ? 'Suspensión automática inconclusa: revisa el punto de salida de la cuerda y la estabilidad de la cámara.'
+      : 'Automatic suspension is inconclusive: check the cord exit and camera stability.';
+    const excluded=estimate.excludedFrameIndices.length;
+    return this.es
+      ? 'Suspensión estimada por Spark + SAM · '+excluded+' fotogramas inconsistentes sin valores · datos originales conservados'
+      : 'Suspension estimated by Spark + SAM · '+excluded+' inconsistent frames without values · original data retained';
+  }
   private measurementPivot():ImagePivot|null {
     const scene=this.scene();
     if(scene && scene.arrangement!=='simple_pendulum')return null;
     const manual=this.pivotRevision()?.analysis;
     if((this.manualPivotOverride() || scene?.origin==='SPARK_GROUNDING') && manual)return manual;
     if(scene)return scene.pivotX!==null && scene.pivotY!==null
-      ? {pivotXpx:scene.pivotX*480/1000,pivotYpx:scene.pivotY*270/1000}:null;
+      ? {pivotXpx:scene.pivotX*480/1000,pivotYpx:scene.pivotY*270/1000}
+      : this.automaticSuspension()?.pivot??null;
     return manual??null;
   }
   sceneLabel(role:string):string {
@@ -98,7 +118,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       analysisId:receipt.analysisId!,providerResponseSha256:receipt.responseJsonSha256!,
       providerModel:'sam-3.1',objectId:this.samTrack()?.objectId??'NO_MATCH',
       pivotRevisionId:manual?revision?.revisionId??null:null,
-      pivotProvenance:manual?revision?.pivotProvenance??'PIVOT_MISSING':
+      pivotProvenance:this.usesAutomaticSuspension()?automaticPivotProvenance:
+        manual?revision?.pivotProvenance??'PIVOT_MISSING':
         scene?.origin==='SPARK_GROUNDING'?'PIVOT_MISSING':'HUMAN_CONFIRMED_SCENE_PIVOT'
     };
   });
@@ -163,7 +184,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   // One scale per track/pivot/native geometry, never a per-frame clamp or radius.
   private readonly maximumObservedAngularSpeed=computed(()=>{
-    const track=this.samTrack(),pivot=this.measurementPivot(),image=this.decodedSize();
+    const track=this.playbackSamTrack(),pivot=this.measurementPivot(),image=this.decodedSize();
     if(!track || !pivot || !image)return 0;
     let peak=0;
     for(const point of track.points){
@@ -317,7 +338,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     this.setVerified(false);
     this.pivotRevision.set(null);this.currentKinematics.set(null);this.currentCordAngle.set(null);
     this.pivotMode.set(false);this.pivotError.set('');this.pivotSaving.set(false);
-    this.samTrack.set(null);this.scene.set(null);this.sceneTracks.set({});this.manualPivotOverride.set(false);this.samPathCache.clear();this.sourceFramePts=[];this.periodReceipt.set(null);
+    this.samTrack.set(null);this.scene.set(null);this.sceneTracks.set({});this.manualPivotOverride.set(false);this.samPathCache.clear();this.sourceFramePts=[];this.periodReceipt.set(null);this.automaticSuspension.set(null);
     if(this.processingRequired() && !this.processedAnalysisId()) {
       this.samStatus.set('AWAITING_PROCESS');
       this.paintFrame(this.frameTime());
@@ -375,7 +396,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       this.scene.set(archive.receipt.scene??null);this.sceneTracks.set(tracks);
       this.rememberFramePts(archive.receipt.framePtsSeconds);
       this.periodReceipt.set(archive.receipt);
-      this.samTrack.set(track);this.setVerified(true);
+      this.samTrack.set(track);this.automaticSuspension.set(resolveSamSuspension(archive,track));this.setVerified(true);
       this.samStatus.set('SAM_3_1_CACHED_MASKS_PENDING_HUMAN_BOB_REVIEW');
       this.processingFinished.emit(true);
       this.paintFrame(this.frameTime());
@@ -668,7 +689,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   cordAngleHint():string {
     if(!this.samTrack())return this.es?'Se necesitan detecciones de la plomada para medir el ángulo.':'Bob detections are required to measure the angle.';
-    if(!this.measurementPivot())return this.es?'Marca el punto de suspensión para medir el ángulo.':'Select the suspension point to measure the angle.';
+    if(!this.measurementPivot())return this.es?'Suspensión automática inconclusa. Marca el punto de suspensión para medir el ángulo.':'Automatic suspension is inconclusive. Select the suspension point to measure the angle.';
+    if(this.usesAutomaticSuspension())return this.es?
+      'Suspensión estimada por Spark y contrastada con SAM; puedes corregirla. Referencia: vertical de la imagen.':
+      'Suspension estimated by Spark and checked against SAM; you can correct it. Reference: image vertical.';
     if(!this.currentCordAngle())return this.es?'Sin detección válida en este fotograma.':'No valid detection in this frame.';
     return this.es?'Estimado entre la suspensión y el centro de la plomada.':'Estimated between the suspension point and the bob centre.';
   }
@@ -914,7 +938,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       this.paintedViews.set(4);
       return;
     }
-    const sam=this.samTrack();
+    const sam=this.playbackSamTrack();
     // SAM authenticated cache takes priority. If an archive is invalid or
     // ambiguous, do NOT silently replace its observations with local data.
     const legacy=!this.processingRequired() && this.samStatus()==='NO_SAM_ARCHIVE_LOCAL_LEGACY_ONLY';
@@ -1012,7 +1036,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       ghostCtx.beginPath();
       ghostCtx.strokeStyle='rgba(229,177,255,.45)';ghostCtx.lineWidth=trailUnit;
       trail.forEach((item,i)=>{
-        if(i===0)ghostCtx.moveTo(item.x*fx,item.y*fy);
+        if(i===0 || (sam && item.timeSeconds-trail[i-1].timeSeconds>1.5/this.sourceFps()))ghostCtx.moveTo(item.x*fx,item.y*fy);
         else ghostCtx.lineTo(item.x*fx,item.y*fy);
       });
       if(trail.length>1)ghostCtx.stroke();

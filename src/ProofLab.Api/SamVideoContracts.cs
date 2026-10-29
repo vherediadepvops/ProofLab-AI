@@ -24,8 +24,12 @@ public sealed record SamVideoPreflight(
     string FramePtsSha256, bool SupportsSingleCall,
     string TimingSource, string BillingStatus);
 
+// Derived metadata beside the immutable receipt; never labels an AI estimate as human review.
+public sealed record SamSuspensionEvidence(string SourceSha256,string SceneKey,string EvidenceKey,
+    string ResponseSha256,string Model,int Width,int Height,KnotPoint[] Points);
 public sealed record SamVideoArtifact(
-    SamVideoState State, SamVideoReceipt Receipt, string RawResponseJson);
+    SamVideoState State, SamVideoReceipt Receipt, string RawResponseJson,
+    SamSuspensionEvidence? Suspension = null);
 
 public sealed record SamVideoRunRequest(
     string VideoSha256, bool ConfirmPrivateVideoTransfer,
