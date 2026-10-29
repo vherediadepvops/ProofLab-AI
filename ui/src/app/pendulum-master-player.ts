@@ -6,6 +6,8 @@ import {
 import { CommonModule } from '@angular/common';
 import { LabActivity } from './lab-activity';
 import { KnotReview } from './knot-review';
+import { SamPeriodPanel } from './sam-period-panel';
+import type { SamPeriodInput, SamPeriodSource } from './sam-period';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import {
@@ -30,7 +32,7 @@ import {
 @Component({
   selector: 'app-pendulum-master-player',
   standalone: true,
-  imports: [LabActivity,CommonModule,KnotReview],
+  imports: [LabActivity,CommonModule,KnotReview,SamPeriodPanel],
   templateUrl: './pendulum-master-player.html',
   styleUrl: './pendulum-master-player.scss'
 })
@@ -66,6 +68,36 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const track=this.sceneTracks()[role];
     return !!track && !!nearestSamMask(track,this.currentTime(),Math.min(.055,.5/this.sourceFps()));
   }
+  private readonly periodReceipt=signal<AuthenticatedSamVideoArchive['receipt']|null>(null);
+  // Recomputed for evidence/pivot/native geometry changes, never for each playback frame.
+  readonly periodMeasurement=computed<SamPeriodInput|null>(()=>{
+    const receipt=this.periodReceipt(),image=this.decodedSize();
+    if(!this.samVerified() || !receipt || !image)return null;
+    const track=this.samTrack(),pivot=this.measurementPivot();
+    return {
+      framePtsSeconds:receipt.framePtsSeconds,
+      centroids:track?.masks.map(m=>({frameIndex:m.frameIndex,x:m.centroidXpx,y:m.centroidYpx}))??[],
+      sourceWidth:track?.frameWidth??image.width,sourceHeight:track?.frameHeight??image.height,
+      imageWidth:image.width,imageHeight:image.height,
+      pivot:pivot?{x:pivot.pivotXpx/480,y:pivot.pivotYpx/270}:null,
+      arrangement:!this.scene()?'legacy_pendulum':
+        this.scene()!.arrangement==='simple_pendulum'?'simple_pendulum':
+        this.scene()!.arrangement==='pulley_system'?'pulley_system':'unclear'
+    };
+  });
+  readonly periodSource=computed<SamPeriodSource|null>(()=>{
+    const receipt=this.periodReceipt();
+    if(!this.samVerified() || !receipt || !/^[a-f0-9]{32}$/i.test(receipt.analysisId??'') ||
+       !/^[a-f0-9]{64}$/i.test(receipt.responseJsonSha256??''))return null;
+    const manual=this.manualPivotOverride() || !this.scene(),revision=this.pivotRevision();
+    return {
+      studyId:this.studyId(),role:this.videoRole(),originalVideoSha256:receipt.originalVideoSha256,
+      analysisId:receipt.analysisId!,providerResponseSha256:receipt.responseJsonSha256!,
+      providerModel:'sam-3.1',objectId:this.samTrack()?.objectId??'NO_MATCH',
+      pivotRevisionId:manual?revision?.revisionId??null:null,
+      pivotProvenance:manual?revision?.pivotProvenance??'PIVOT_MISSING':'HUMAN_CONFIRMED_SCENE_PIVOT'
+    };
+  });
   readonly samStatus=signal('CHECKING_SAM_CACHE');
   @ViewChild('masterVideo') masterVideo?: ElementRef<HTMLVideoElement>;
   @ViewChild('vectorCanvas') vectorCanvas?: ElementRef<HTMLCanvasElement>;
@@ -281,7 +313,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     this.setVerified(false);
     this.pivotRevision.set(null);this.currentKinematics.set(null);this.currentCordAngle.set(null);
     this.pivotMode.set(false);this.pivotError.set('');this.pivotSaving.set(false);
-    this.samTrack.set(null);this.scene.set(null);this.sceneTracks.set({});this.manualPivotOverride.set(false);this.samPathCache.clear();this.sourceFramePts=[];
+    this.samTrack.set(null);this.scene.set(null);this.sceneTracks.set({});this.manualPivotOverride.set(false);this.samPathCache.clear();this.sourceFramePts=[];this.periodReceipt.set(null);
     if(this.processingRequired() && !this.processedAnalysisId()) {
       this.samStatus.set('AWAITING_PROCESS');
       this.paintFrame(this.frameTime());
@@ -327,6 +359,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
            archive.receipt.model!=='sam-3.1' || !validSamTarget(archive,this.videoSha256()))
           throw new Error('SAM_NO_MATCH_PROVENANCE_INVALID');
         this.rememberFramePts(archive.receipt.framePtsSeconds);
+        this.periodReceipt.set(archive.receipt);
         this.samTrack.set(null);this.scene.set(archive.receipt.scene??null);this.sceneTracks.set({});this.setVerified(true);
         this.samStatus.set('SAM_3_1_COMPLETED_NO_MATCH');
         this.processingFinished.emit(true);
@@ -337,13 +370,14 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       const track=tracks['object']??null;
       this.scene.set(archive.receipt.scene??null);this.sceneTracks.set(tracks);
       this.rememberFramePts(archive.receipt.framePtsSeconds);
+      this.periodReceipt.set(archive.receipt);
       this.samTrack.set(track);this.setVerified(true);
       this.samStatus.set('SAM_3_1_CACHED_MASKS_PENDING_HUMAN_BOB_REVIEW');
       this.processingFinished.emit(true);
       this.paintFrame(this.frameTime());
     } catch(e:unknown) {
       if(serial!==this.samSerial || this.disposed)return;
-      this.samTrack.set(null);this.scene.set(null);this.sceneTracks.set({});this.setVerified(false);
+      this.samTrack.set(null);this.scene.set(null);this.sceneTracks.set({});this.periodReceipt.set(null);this.setVerified(false);
       if((e as {status?:number})?.status===404){
         this.samStatus.set('NO_SAM_ARCHIVE_LOCAL_LEGACY_ONLY');
       }else{

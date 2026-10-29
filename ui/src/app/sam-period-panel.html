@@ -1,0 +1,57 @@
+<section class="period-panel" [attr.aria-label]="es?'Período observado':'Observed period'">
+  <header>
+    <div><span class="eyebrow">{{es?'MEDICIÓN DEL VIDEO':'VIDEO MEASUREMENT'}}</span>
+      <h3>{{es?'Período de oscilación':'Oscillation period'}}</h3></div>
+    <span class="status" [class.inconclusive]="assessment().status==='INCONCLUSIVE'">
+      {{assessment().status==='CANDIDATE'?(es?'Estimación preliminar':'Preliminary estimate'):(es?'Inconcluso':'Inconclusive')}}
+    </span>
+  </header>
+  <div class="metrics">
+    <div><span>{{es?'Período medido · T':'Measured period · T'}}</span>
+      <strong>{{number(assessment().periodSeconds)}} <small>s</small></strong></div>
+    <div><span>{{es?'Incertidumbre estadística · u':'Statistical uncertainty · u'}}</span>
+      <strong>{{uncertainty()}} <small>s</small></strong></div>
+    <div><span>{{es?'Ciclos usados / completos':'Cycles used / complete'}}</span>
+      <strong>{{assessment().usedCycles}} <small>/ {{assessment().completeCycles}}</small></strong></div>
+    <div><span>{{es?'Fotogramas con detección':'Frames with detections'}}</span>
+      <strong>{{number(assessment().detectionCoverage*100,1)}} <small>%</small></strong></div>
+  </div>
+  <p class="scope">{{es
+    ? 'u = s/√n de ciclos alternos. Solo repetibilidad: no incluye errores de SAM, pivote, cámara ni reloj. No es incertidumbre total ni intervalo del 95%.'
+    : 'u = s/√n of alternating cycles. Repeatability only: SAM, pivot, camera and clock errors are excluded. Not total uncertainty or a 95% interval.'}}</p>
+  @if(assessment().status==='INCONCLUSIVE') {
+    <p class="warning" role="status">{{es
+      ? 'Los datos aún no permiten una estimación estable. Cualquier valor mostrado es diagnóstico.'
+      : 'The data do not yet support a stable estimate. Any displayed value is diagnostic.'}}</p>
+  }
+  <details>
+    <summary>{{es?'Calidad y método':'Quality and method'}}</summary>
+    <p>{{es?'Cruces por la posición central en la misma dirección, con tiempos originales. No se interpola entre detecciones ausentes. Se usan ciclos alternos para no compartir los extremos de medición.':'Same-direction center crossings with source timestamps. Missing detections are not bridged. Alternating cycles avoid shared measurement endpoints.'}}</p>
+    <div class="quality">
+      <span>{{es?'Detectados':'Detected'}}: {{assessment().detectedFrames}} / {{assessment().totalFrames}}</span>
+      <span>{{es?'Ausentes':'Missing'}}: {{assessment().missingFrames}}</span>
+      <span>{{es?'Mayor hueco':'Longest gap'}}: {{number(assessment().longestMissingRunSeconds)}} s</span>
+      <span>{{es?'Desviación entre ciclos · s':'Cycle standard deviation · s'}}: {{number(assessment().cycleStandardDeviationSeconds,4)}} s</span>
+    </div>
+    @if(assessment().issues.length) {
+      <ul>@for(issue of assessment().issues;track issue){<li>{{issueText(issue)}}</li>}</ul>
+    }
+    <p>{{es?'Los umbrales de calidad son criterios de esta versión, no una certificación. La incertidumbre supone errores aproximadamente independientes; revisar visualmente el objeto y la suspensión sigue siendo necesario. Un valor cero solo indica que no se resolvió dispersión entre estos ciclos.':'Quality thresholds are versioned engineering criteria, not certification. Uncertainty assumes approximately independent errors; visual review of the object and suspension remains necessary. Zero means only that no dispersion was resolved between these cycles.'}}</p>
+    @if(assessment().cycles.length) {
+      <div class="cycle-table"><table>
+        <caption>{{es?'Ciclos observados':'Observed cycles'}}</caption>
+        <thead><tr><th>#</th><th>{{es?'Inicio (s)':'Start (s)'}}</th><th>T (s)</th><th>{{es?'Usado':'Used'}}</th></tr></thead>
+        <tbody>@for(cycle of assessment().cycles;track $index){
+          <tr><td>{{$index+1}}</td><td>{{number(cycle.startSeconds)}}</td>
+            <td>{{number(cycle.periodSeconds,4)}}</td><td>{{cycle.usedForEstimate?(es?'Sí':'Yes'):'—'}}</td></tr>
+        }</tbody>
+      </table></div>
+    }
+    <button type="button" (click)="download()" [disabled]="!source() || downloading()">
+      {{downloading()?(es?'Preparando…':'Preparing…'):(es?'Descargar informe reproducible':'Download reproducible report')}}
+    </button>
+    @if(!source()){<p>{{es?'Falta la identificación completa de la evidencia para exportar.':'Complete evidence identification is required to export.'}}</p>}
+    @if(downloadError()){<p class="warning" role="alert">{{es?'No se pudo preparar la descarga.':'Could not prepare the download.'}}</p>}
+    <p class="footnote">{{es?'JSON con datos de entrada, ciclos, procedencia y hash de integridad. Cálculo local; no representa una evaluación de Muse.':'JSON with inputs, cycles, provenance and integrity hash. Local calculation; not a Muse evaluation.'}}</p>
+  </details>
+</section>

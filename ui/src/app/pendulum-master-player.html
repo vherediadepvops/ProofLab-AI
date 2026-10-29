@@ -218,6 +218,9 @@
       [port]="samApiPort()" [language]="language()" (confirmed)="acceptMetaPivot($event)"
       (manual)="beginPivotSelection()"/>
   }
+  @if(periodMeasurement(); as measurement) {
+    <app-sam-period-panel [measurement]="measurement" [source]="periodSource()" [language]="language()"/>
+  }
   @if(droppedFrames()>0) {
     <p class="playback-performance" role="status">{{es?'Fotogramas omitidos por el navegador':'Frames dropped by the browser'}}: {{droppedFrames()}}.
       {{es?'El archivo mantiene su resolución y FPS originales.':'The file retains its original resolution and FPS.'}}</p>
@@ -233,8 +236,8 @@
         'Vectors and trails require valid SAM masks. Local tracking is not substituted.')
       : samTrack()
       ? (es
-        ? 'Se recuperó una respuesta auténtica del proveedor SAM 3.1 desde la caché privada. Centros y máscaras son observaciones de imagen; los vectores y el rastro se calculan localmente con tiempos originales. Se reproduce el archivo original; las máscaras se sincronizan con el tiempo del fotograma presentado por el navegador. Sin revisión humana, incertidumbre ni unidades métricas certificadas.'
-        : 'A genuine SAM 3.1 provider response was recovered from the private cache. Image-mask centroids drive locally computed vectors and trails using source timestamps. Playback uses the original file; masks follow the timestamp of the frame presented by the browser. No independent bob review, uncertainty or calibrated physical units yet.')
+        ? 'Se recuperó una respuesta auténtica del proveedor SAM 3.1 desde la caché privada. Centros y máscaras son observaciones de imagen; los vectores y el rastro se calculan localmente con tiempos originales. Se reproduce el archivo original; las máscaras se sincronizan con el tiempo del fotograma presentado por el navegador. La revisión humana, la incertidumbre total y la calibración métrica siguen pendientes.'
+        : 'A genuine SAM 3.1 provider response was recovered from the private cache. Image-mask centroids drive locally computed vectors and trails using source timestamps. Playback uses the original file; masks follow the timestamp of the frame presented by the browser. Independent object review, total uncertainty and metric calibration remain pending.')
       : (es
         ? 'No hay evidencia SAM 3.1 de este video. Las vistas locales anteriores se conservan solo como referencia provisional, nunca como resultados de Meta. Se reproduce el original privado sin reducir resolución ni FPS.'
         : 'This video has no SAM 3.1 evidence. Earlier local views remain only as provisional controls, NEVER Meta model results. Playback uses the private original without reducing resolution or FPS.')}}

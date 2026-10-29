@@ -740,6 +740,36 @@ describe('One-clock three-view pendulum laboratory',()=>{
     fixture.destroy();
   });
 
+  it('period inputs require verified SAM and follow pivot/evidence changes, not playback time',()=>{
+    const {fixture,component}=init();
+    const internal=component as any;
+    const receipt={model:'sam-3.1',originalVideoSha256:sha,framePtsSeconds:[0,.016,.033],
+      sourceFrameCount:3,analysisId:'f'.repeat(32),responseJsonSha256:'b'.repeat(64)};
+    internal.periodReceipt.set(receipt);
+    component.pivotRevision.set(revision);
+    component.samTrack.set({frameWidth:1080,frameHeight:1920,
+      source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'0',points:[],
+      masks:[{frameIndex:1,timeSeconds:.016,left:500,top:1100,right:560,bottom:1200,
+        maskPath:'',centroidXpx:530,centroidYpx:1150,foregroundPixels:200}]});
+    expect(component.periodMeasurement()).toBeNull();expect(component.periodSource()).toBeNull();
+    component.samVerified.set(true);
+    const measured=component.periodMeasurement()!;
+    expect(measured.centroids).toEqual([{frameIndex:1,x:530,y:1150}]);
+    expect(measured.framePtsSeconds).toEqual(receipt.framePtsSeconds);
+    expect(component.periodSource()?.providerResponseSha256).toBe('b'.repeat(64));
+    component.currentTime.set(3);
+    expect(component.periodMeasurement()).toBe(measured);
+    component.pivotRevision.set({...revision,revisionId:'new-pivot',
+      analysis:{...revision.analysis,pivotXpx:250}});
+    expect(component.periodMeasurement()!.pivot!.x).toBeCloseTo(250/480,8);
+    expect(component.periodSource()?.pivotRevisionId).toBe('new-pivot');
+    component.samTrack.set(null);
+    expect(component.periodMeasurement()!.centroids).toEqual([]);
+    fixture.componentRef.setInput('videoSha256','c'.repeat(64));fixture.detectChanges();
+    expect(component.periodMeasurement()).toBeNull();expect(component.periodSource()).toBeNull();
+    fixture.destroy();
+  });
+
 });
 
 describe('Pixel-space synchronized annotation helpers',()=>{

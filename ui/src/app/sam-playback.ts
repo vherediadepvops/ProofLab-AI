@@ -10,7 +10,7 @@ export interface AuthenticatedSamVideoArchive {
   receipt: {
     model: string; concept: string; originalVideoSha256: string;
     providerEvidenceStatus: string; framePtsSeconds: number[];
-    sourceFrameCount: number; analysisId?:string; requestProtocol?:string; scene?:SceneDefinition|null;
+    sourceFrameCount: number; analysisId?:string; responseJsonSha256?:string; requestProtocol?:string; scene?:SceneDefinition|null;
   };
   rawResponseJson: string;
 }
