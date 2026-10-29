@@ -37,6 +37,10 @@
              Link="SamAdaptiveSegmentPlan.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveOfflineScheduler.cs"
              Link="SamAdaptiveOfflineScheduler.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveMaskStitcher.cs"
+             Link="SamAdaptiveMaskStitcher.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveGroundedPlan.cs"
+             Link="SamAdaptiveGroundedPlan.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamManualApiTokenPolicy.cs"
              Link="SamManualApiTokenPolicy.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamVideoEvidenceIndex.cs"

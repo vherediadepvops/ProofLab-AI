@@ -1,0 +1,3 @@
+# Grounding prompts use C# raw strings: their bytes enter scientific evidence keys.
+# Keep this source LF across Windows and Linux to preserve provider cache SHA.
+src/ProofLab.Api/AssemblyContracts.cs text eol=lf

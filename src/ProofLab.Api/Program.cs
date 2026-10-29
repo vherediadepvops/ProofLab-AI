@@ -39,6 +39,8 @@ builder.Services.AddSingleton<PendulumDirectorWorkflow>();
 builder.Services.AddSingleton<PendulumDirectorKinematicsStore>();
 builder.Services.AddSingleton<ISamVideoTransport, SamVideoMetaTransport>();
 builder.Services.AddSingleton<ISamVideoRuntime, SamVideoRuntime>();
+builder.Services.AddSingleton<SamAdaptiveClipBuilder>();
+builder.Services.AddSingleton<SamAdaptiveLiveService>();
 builder.Services.AddSingleton(sp => new SamVideoEvidenceIndex(
     sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
 builder.Services.AddSingleton<PendulumSamCache>();
@@ -53,13 +55,15 @@ builder.Services.AddSingleton<IAssemblyScenes>(sp => sp.GetRequiredService<Assem
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =>
-    policy.WithOrigins("http://localhost:4300", "http://127.0.0.1:4300")
+    policy.WithOrigins("http://localhost:4300", "http://127.0.0.1:4300",
+        "http://127.0.0.1:4327", "http://localhost:4327")
           .AllowAnyMethod().AllowAnyHeader()));
 var app = builder.Build();
 
 app.UseCors("HackathonLocal");
 app.MapKnotEndpoints();
 app.MapAssemblyEndpoints();
+app.MapSamAdaptiveEndpoints();
 app.MapMuseExperimentEndpoints();
 app.MapSuspensionReviewEndpoints();
 app.MapGet("/api/health", (MetaModelClient meta) =>

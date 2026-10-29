@@ -47,10 +47,12 @@ public sealed class SamAdaptiveSegmentPlan
     public double EstimatedSamCostUsd { get; }
     public double UnsplitSamCostUsd => Math.Max(MinimumBilledFrames,SourceFrames)*SamUsdPerFrame;
     public bool BudgetReducedPartCount { get; }
+    public bool IntraKeyframeAligned { get; }
     public IReadOnlyList<SamAdaptiveWindow> Windows { get; }
 
     private SamAdaptiveSegmentPlan(int sourceFrames,int target,int maxInFlight,
-        double budget,IReadOnlyList<SamAdaptiveWindow> windows,bool budgetReduced)
+        double budget,IReadOnlyList<SamAdaptiveWindow> windows,bool budgetReduced,
+        bool intraAligned)
     {
         SourceFrames=sourceFrames;
         RequestedTargetCoreFrames=target;
@@ -58,6 +60,7 @@ public sealed class SamAdaptiveSegmentPlan
         BudgetCapUsd=budget;
         Windows=windows;
         BudgetReducedPartCount=budgetReduced;
+        IntraKeyframeAligned=intraAligned;
         SubmittedFrames=windows.Sum(w=>w.InputFrames);
         BilledFrames=windows.Sum(w=>w.BilledFrames);
         EstimatedSamCostUsd=BilledFrames*SamUsdPerFrame;
@@ -66,7 +69,9 @@ public sealed class SamAdaptiveSegmentPlan
     public static SamAdaptiveSegmentPlan Create(int frames,
         int targetCoreFrames=TargetCoreFrames,
         int maxInFlight=4,
-        double maximumSamCostUsd=DefaultMaximumSamUsd)
+        double maximumSamCostUsd=DefaultMaximumSamUsd,
+        bool alignToTwoFrameIntraKeyframes=false,
+        int? maximumPartCount=null)
     {
         if(frames is < MinimumBilledFrames or > MaximumSourceFrames)
             throw new ArgumentOutOfRangeException(nameof(frames),
@@ -80,24 +85,28 @@ public sealed class SamAdaptiveSegmentPlan
            maximumSamCostUsd<=0 || maximumSamCostUsd>DefaultMaximumSamUsd)
             throw new ArgumentOutOfRangeException(nameof(maximumSamCostUsd),
                 "The dynamic proposal never raises the existing US$0.50 SAM cap.");
+        if(maximumPartCount is <1 or >MaximumPlannedParts)
+            throw new ArgumentOutOfRangeException(nameof(maximumPartCount));
         // Default 53 gives the owner's examples: 1000->19 and 1500->28.
         var ideal=Math.Clamp(
             (int)Math.Round(frames/(double)targetCoreFrames,
                 MidpointRounding.AwayFromZero),
-            1,Math.Min(MaximumPlannedParts,frames/MinimumBilledFrames));
+            1,Math.Min(maximumPartCount??MaximumPlannedParts,
+                Math.Min(MaximumPlannedParts,frames/MinimumBilledFrames)));
         for(var count=ideal;count>=1;count--)
         {
-            var windows=CreateWindows(frames,count);
+            var windows=CreateWindows(frames,count,alignToTwoFrameIntraKeyframes);
             var billed=windows.Sum(w=>w.BilledFrames);
             if(billed*SamUsdPerFrame<=maximumSamCostUsd+1e-10)
                 return new(frames,targetCoreFrames,maxInFlight,maximumSamCostUsd,
-                    windows,count!=ideal);
+                    windows,count!=ideal,alignToTwoFrameIntraKeyframes);
         }
         throw new InvalidOperationException(
             "Even the unsplit video exceeds the owner-approved SAM cost cap.");
     }
 
-    private static IReadOnlyList<SamAdaptiveWindow> CreateWindows(int frames,int parts)
+    private static IReadOnlyList<SamAdaptiveWindow> CreateWindows(
+        int frames,int parts,bool intraAligned)
     {
         var windows=new List<SamAdaptiveWindow>(parts);
         for(var part=0;part<parts;part++)
@@ -105,6 +114,7 @@ public sealed class SamAdaptiveSegmentPlan
             var coreStart=(int)((long)part*frames/parts);
             var coreEnd=(int)((long)(part+1)*frames/parts);
             var inputStart=Math.Max(0,coreStart-OverlapFrames);
+            if(intraAligned)inputStart-=inputStart%2;
             var inputEnd=Math.Min(frames,coreEnd+OverlapFrames);
             if(coreEnd-coreStart<MinimumBilledFrames ||
                inputEnd-inputStart<MinimumBilledFrames)

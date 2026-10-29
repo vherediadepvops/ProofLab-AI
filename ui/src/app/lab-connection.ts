@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { Subject } from 'rxjs';
 
-export type LocalApiPort = 5391 | 5393 | 5398;
+export type LocalApiPort = 5391 | 5393 | 5398 | 5410;
 
 /** A single password field owns the secret. Never copy it to app state or storage. */
 @Injectable({providedIn:'root'})
@@ -41,7 +41,7 @@ export class LabConnection {
     return this.tokenField?.value.trim() ?? '';
   }
   setPort(value:number):boolean {
-    if(this.busy() || (value!==5391 && value!==5393 && value!==5398))return false;
+    if(this.busy() || (value!==5391 && value!==5393 && value!==5398 && value!==5410))return false;
     if(value===this.port())return true;
     this.clearToken();this.selectedPort.set(value);this.changed.next();
     return true;
