@@ -33,3 +33,20 @@ There is NO verified 4× speedup: the provider may throttle or serialize streams
 5. Do not merge this feature into `main` without owner approval. No routine CI.
 
 **Español:** [SAM-PARALLEL4-STREAMING.es.md](SAM-PARALLEL4-STREAMING.es.md).
+
+
+## Expanded results — Oct 29, 2026: REAL clips and isolated offline SSE QA
+
+All code remains in `feature/sam-parallel4-streaming`; no changes to the billable Meta endpoints or the product UI.
+
+- `SamFourWayClipBuilder.cs` and `SamFourWayOnePassClips.cs` cut the real 50 cm, 1,828-frame MOV into four lossless HEVC NVENC MP4 files with frame-exact selection. Decoded per-frame SHA-256 hashes match the original, with maximum FFprobe PTS difference **1.55 ms**. Four clips have lengths 119–160 MB and total **532,387,036 bytes**, compared to **45,708,115 bytes** for the MOV (~11.65× more to upload).
+- Windows of 459/461/461/459 frames: 1,840 submitted frames including 12 overlaps. Estimated SAM cost **USD0.3680**, excluding Spark/provider-billing variability.
+- Four separate preparations: **120.76 s**; a single original decode routed to four NVENC encoders simultaneously: **98.24 s**; single-source-framehash verification optimization: **90.208 s**, approximately **25.3% faster** than the first local method. These include local pixel and timestamp QA, not provider inference.
+- An HEVC `-c copy` seek experiment was rejected: an expected 56-frame segment instead yielded **115** frames for input seek and **3** for output seek. Keyframe-aligned remux is not accepted without exact proven boundaries.
+- `SamFourWayMaskAssembler.cs` preserves each original mask/box record and maps local indices back to original PTS. It strictly checks shared-overlap payload equality for the offline reference; an inconsistent mask invalidates the seam. Four independent provider responses may differ: raster mask-IoU matching and human review would be required before scientifically accepting such changes.
+- `scripts/sam-parallel4-reference.mjs` decoded the authentic stored full-video SAM response via `@meta-sam/parser`: **1,781 masks**, zero warnings, frames 47–1827.
+- `SamFourWayOfflineSseReplay.cs` routes four SSE sequences rebuilt from ONE previously completed SAM reference through the real `SamVideoSseParser` and the four-way coordinator, then recombines the masks. All **1,781 mask records match byte-for-byte**, 3/3 seams verified, centroid errors 0 px **because the same reference was reused**. This is **NOT** evidence that four independent Meta inferences are equally fast or accurate.
+- `tools/SamFourWayQa` writes private manifests and benchmarks. `tools/SamFourWayQaServer` runs a read-only report on `127.0.0.1:5407/api/qa/report` and a visibly labeled simulated offline SSE stream on `/api/qa/stream` (16 progress events and one terminal event). No media upload, provider call, token, or spending route.
+- **QA:** 19/19 focused .NET tests, clean CLI and QA-server builds. No new Meta calls or verified independent chunk masks.
+
+Before owner-approved merge: authentic per-part immutable receipts/attempt locks, strict aggregate spending consent for four requests, independently validated official per-part masks and cross-seam raster-IoU/human checks, followed by a **real** A/B latency/cost/quality comparison. With 90.2 s local preparation and ~177 s monolithic SAM provider runtime, four remote calls need to finish in under ~87 s (ignoring Spark/other overhead) to win under a sequential scheduling assumption. No real speedup has yet been measured.

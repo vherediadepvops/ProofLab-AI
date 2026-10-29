@@ -29,7 +29,7 @@ public static class SamFourWayStreaming
         Func<SamFourWayWindow,Func<SamVideoSseProgress,ValueTask>,
              CancellationToken,Task<SamFourWaySegment>> runOne,
         Func<SamFourWayProgress,ValueTask>? onProgress,
-        CancellationToken ct)
+        CancellationToken ct,bool offlineFixture=false)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(runOne);
@@ -44,12 +44,14 @@ public static class SamFourWayStreaming
                     await onProgress(new SamFourWayProgress(
                         part.Part,p.Stage,p.Events,p.DeltaEvents,p.OutputChars));
             }
-            await Publish(new("CHUNK_STARTED",0,0,0));
+            await Publish(new(offlineFixture
+                ? "OFFLINE_CHUNK_STARTED" : "CHUNK_STARTED",0,0,0));
             try
             {
                 var result=await runOne(part,Publish,ct);
                 await Publish(new(result.ProviderCompleted
-                    ? "CHUNK_PROVIDER_COMPLETED" : "CHUNK_INCOMPLETE",0,0,0));
+                    ? (offlineFixture?"OFFLINE_CHUNK_REPLAY_COMPLETED":"CHUNK_PROVIDER_COMPLETED")
+                    : "CHUNK_INCOMPLETE",0,0,0));
                 return result;
             }
             catch

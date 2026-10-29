@@ -114,7 +114,9 @@ public sealed record SamFourWaySegment(
 
 public sealed record SamFourWayFrame(
     int FrameIndex,double SourcePts,string ObjectId,
-    double CentroidX,double CentroidY,int Part);
+    double CentroidX,double CentroidY,int Part,
+    double Left=double.NaN,double Top=double.NaN,
+    double Right=double.NaN,double Bottom=double.NaN);
 
 public sealed record SamFourWaySeam(
     int FirstPart,int SecondPart,int VerifiedCommonFrames,
@@ -217,7 +219,8 @@ public static class SamFourWayStitcher
             {
                 if(!frameMaps[i].TryGetValue(frame,out var mask))continue;
                 frames.Add(new(frame,pts[frame],mask.ObjectId,
-                    mask.CentroidX,mask.CentroidY,i));
+                    mask.CentroidX,mask.CentroidY,i,
+                    mask.Left,mask.Top,mask.Right,mask.Bottom));
             }
         }
         return new(sourceSha,sceneKey,plan.SourceFrames,frames,seams);

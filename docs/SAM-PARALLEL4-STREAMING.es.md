@@ -33,3 +33,20 @@ El tiempo **NO** se puede pronosticar como 177/4 sin medir proveedor: diez o cua
 5. No fusionar a `main` sin decisión del propietario. No ejecutar CI rutinariamente.
 
 **English:** [SAM-PARALLEL4-STREAMING.md](SAM-PARALLEL4-STREAMING.md).
+
+
+## Resultado ampliado del 29/10/2026 — clips REALES y QA SSE aislado
+
+Se implementaron herramientas ejecutables **solo de forma local** en la rama `feature/sam-parallel4-streaming`, sin cambios a los endpoints de pago ni a la UI del producto.
+
+- `SamFourWayClipBuilder.cs` y `SamFourWayOnePassClips.cs`: cortan el MOV original de 50 cm, 1.828 fotogramas, en cuatro MP4 HEVC NVENC sin pérdida mediante selección exacta de cuadro. Los cortes preservan los fotogramas por comparación SHA-256 del raster decodificado y PTS medidos con FFprobe (error máximo observado **1,55 ms**). Cada MP4 pesa 119–160 MB; conjunto **532.387.036 bytes**, frente a **45.708.115 bytes** del MOV original. Este aumento de subida (~11,65×) puede anular ventajas de paralelismo remoto.
+- Para 1.828 fotogramas: 459/461/461/459 cuadros por fragmento, solapamiento total 12 cuadros, 1.840 enviados; estimación SAM de **US$0,3680**, antes de cualquier Spark, facturación real o restricciones del proveedor.
+- Primera preparación con cuatro decodificaciones: **120,76 s**. Una sola decodificación alimentando cuatro codificadores NVENC simultáneos: **98,24 s**. Verificación optimizada con una sola lectura de hashes del video fuente: **90,208 s** hasta cuatro MP4 validados, **25,3 % menos** que el primer método. La comparación incluye validación pixel-a-pixel, no mide la inferencia.
+- Intento de remux/corte HEVC `-c copy` sin recodificación: un fragmento esperado de 56 frames devolvió **115** frames con `-ss` antes de `-i` y **3** con `-ss` después, así que se descartó por no garantizar equivalencia.
+- `SamFourWayMaskAssembler.cs`: conserva el payload original de caja y máscara, restituye los índices globales, verifica geometría consistente, exige máscara **exactamente igual** en los fotogramas solapados de la referencia offline (si no coincide, rechaza). El criterio estricto no garantiza que cuatro inferencias reales produzcan máscaras iguales: si divergen, se requieren comparaciones raster IoU y revisión científica, aún no implementadas.
+- `scripts/sam-parallel4-reference.mjs` decodificó con `@meta-sam/parser` el archivo real autenticado de una ejecución SAM previa: **1.781 máscaras**, cero advertencias, frames 47–1827.
+- `SamFourWayOfflineSseReplay.cs` reconstruye cuatro streams SSE desde **esa misma respuesta antigua**, pasa por `SamVideoSseParser` y posteriormente por `SamFourWayStreaming`. Los cuatro streams se reunieron, 3/3 empalmes y **100 % de igualdad byte por byte** con los 1.781 registros reales originales. Media y p95 de centroides: **0 px por origen idéntico**. **NO prueba calidad ni velocidad de cuatro inferencias autónomas del proveedor**.
+- `tools/SamFourWayQa` produce manifiestos y benchmark en `.private/fourclip-qa` sin credenciales. `tools/SamFourWayQaServer` expone solo en `127.0.0.1:5407` un informe de lectura y un SSE `/api/qa/stream` **claramente etiquetado como simulado offline** (16 eventos + fin). No transmite videos ni ofrece endpoints facturables. Consultar `/api/qa/report` para ver duraciones, cobertura, costos estimados, hashes y datos de la validación.
+- **QA:** 19/19 pruebas focalizadas, builds CLI/servidor .NET Debug sin errores ni advertencias. No hubo llamadas a Meta, nuevas máscaras auténticas ni modificación de servicios de otros chats.
+
+**Faltan antes de cualquier merge:** integrar recibos inmutables POR FRAGMENTO con presupuesto agregado y autorización de las cuatro solicitudes, decodificación oficial por cada nueva respuesta real, comparación de máscaras distintas por raster-IoU/huecos en empalmes y medición A/B **real** de latencia/coste/calidad. Con 90,2 s de preparación local y ~177 s de SAM completo, el procesamiento remoto de los cuatro fragmentos tendría que tardar menos de ~87 s (excluyendo Spark y sobrecargas) para mejorar la latencia SAM total, si ambas tareas son secuenciales. No se ha demostrado esa mejora ni se autorizó gasto.

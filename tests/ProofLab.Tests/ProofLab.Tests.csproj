@@ -29,6 +29,10 @@
              Link="SamFourWayPlan.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamFourWayStreaming.cs"
              Link="SamFourWayStreaming.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamFourWayMaskAssembler.cs"
+             Link="SamFourWayMaskAssembler.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamFourWayOfflineSseReplay.cs"
+             Link="SamFourWayOfflineSseReplay.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamManualApiTokenPolicy.cs"
              Link="SamManualApiTokenPolicy.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamVideoEvidenceIndex.cs"
