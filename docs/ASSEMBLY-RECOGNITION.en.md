@@ -1,10 +1,12 @@
 # Assembly recognition and per-element tracking
 
+> Current status: **Recognize assembly** was removed from the lab at the user’s request. **Process** runs SAM directly using the session key and video estimate, without preliminary recognition or an extra US$0.05. The extended workflow below remains in the code; existing reviewed definitions and their cache remain valid. New interface components require prior consultation with the user.
+
 The lab can propose identities for a suspended object of any color/material/shape
 (such as a coin), cord, upper knot, actual pulley and support. Live Meta accuracy
 for this extended workflow remains unverified.
 
-## Workflow
+## Retained extended workflow (not shown in the lab)
 
 1. Load the original and open **Recognize assembly**. There is no automatic paid call.
 2. Muse Spark 1.3 proposes role-specific boxes and the exact free-string exit in
@@ -32,7 +34,7 @@ and positions without applying simple-pendulum angle/angular velocity.
 Original resolution, orientation and timestamps are preserved. SAM's SQLite
 cache is keyed by the source and reviewed scene; protocol, hashes, role IDs,
 dimensions and original times are verified. Historical bob cache remains usable
-without payment; new production inferences require assembly review.
+without payment; new inferences can process a bob directly without prior assembly review.
 
 Muse stores private original frames, response, hashes, attempt and review under
 `.private/physics/assembly`. SAM retains its durable journal/receipt/SQLite flow.

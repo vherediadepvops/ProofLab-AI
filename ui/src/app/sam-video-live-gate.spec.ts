@@ -14,7 +14,6 @@ function state(extra:any={}) {return {status:'NOT_ANALYZED_WITH_SAM',sourceSha25
   cacheKey:key,sourceFrames:0,estimatedCostUsd:0,canRunLive:false,provenance:'test',
   mode:'api-meta-cache',cacheHit:false,analysisId:null,...extra};}
 const cached=()=>state({status:'CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW',cacheHit:true,analysisId:'synthetic-analysis'});
-const aq={cacheKey:key,videoSha256:sha,maximumEstimatedCostUsd:.05,cacheHit:false,priorAttempt:false,canRun:true,evidence:null,approved:null};
 
 describe('SAM guided manual processing and parallel quotes',()=>{
   beforeEach(async()=>{await TestBed.configureTestingModule({imports:[SamVideoReplay],
@@ -31,23 +30,22 @@ describe('SAM guided manual processing and parallel quotes',()=>{
   type Context=ReturnType<typeof setup>;
   function token(ctx:Context){ctx.field.value=fake;ctx.con.confirmToken();}
   function requests(ctx:Context):TestRequest[] {
-    const all=ctx.h.match(()=>true);expect(all.length).toBe(4);
+    const all=ctx.h.match(()=>true);expect(all.length).toBe(3);
     all.forEach(r=>{expect(r.request.method).toBe('GET');expect(r.request.body).toBeNull();
       expect(r.request.headers.has('Authorization')).toBeFalse();});
     return all;
   }
-  function flush(all:TestRequest[],options:{status?:any;quote?:any;readiness?:any;assembly?:any}={}) {
+  function flush(all:TestRequest[],options:{status?:any;quote?:any;readiness?:any}={}) {
     for(const r of all) {
       if(r.request.url.includes('/status?'))r.flush(options.status??state());
       else if(r.request.url.endsWith('/readiness'))r.flush(options.readiness??ready);
-      else if(r.request.url.includes('/assembly/'))r.flush(options.assembly??aq);
       else r.flush(options.quote??pf);
     }
   }
   async function quote(ctx:Context,options:Parameters<typeof flush>[1]={}) {
     const p=ctx.c.check();flush(requests(ctx),options);await p;ctx.f.detectChanges();
   }
-  it('starts four independent GETs together and keeps Process disabled until the cost arrives',async()=>{
+  it('starts three independent GETs together and keeps Process disabled until the cost arrives',async()=>{
     const ctx=setup();token(ctx);const p=ctx.c.check();const all=requests(ctx);
     const cost=all.find(r=>r.request.url.includes('/sam/')&&r.request.url.endsWith('/preflight'))!;
     flush(all.filter(r=>r!==cost));await Promise.resolve();
@@ -92,31 +90,19 @@ describe('SAM guided manual processing and parallel quotes',()=>{
     const p=ctx.c.process(),req=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
     expect(req.request.body.mode).toBe('api-meta');req.flush({...cached(),cacheHit:false,analysisId:'new'});await p;
   });
-  it('makes recognition the next Process action with an upfront combined estimate and allowance notice',async()=>{
-    const ctx=setup();token(ctx);await quote(ctx,{status:state({recognitionRequired:true})});
-    expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBe(.425);
-    expect(ctx.f.nativeElement.textContent).toContain('2 envíos');
-    expect(ctx.f.nativeElement.textContent).toContain('queda 1');
-    const next=spyOn(ctx.c.assemblyRequested,'emit');await ctx.c.process();
-    expect(next).toHaveBeenCalledOnceWith({studyId:id,role:'baseline',sha,port:5391,cacheKey:key,maximumEstimatedCostUsd:.05});
-    ctx.h.expectNone(r=>r.method==='POST');
-  });
-  it('opens cached recognition for review without a token or additional credits',async()=>{
-    const ctx=setup();await quote(ctx,{status:state({recognitionRequired:true}),
-      readiness:{...ready,remainingRequests:0,manualTokenCallsPermitted:false},
-      assembly:{...aq,cacheHit:true,evidence:{cacheKey:key}}});
+  it('processes a new video directly with one remaining request and only the SAM cost',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{status:state({recognitionRequired:false})});
     expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBe(.375);
-    const emit=spyOn(ctx.c.assemblyRequested,'emit');await ctx.c.process();
-    expect(emit.calls.mostRecent().args[0].maximumEstimatedCostUsd).toBe(0);
+    expect(ctx.f.nativeElement.textContent).not.toContain('Reconocer montaje');
+    expect(ctx.f.nativeElement.textContent).not.toContain('2 envíos');
+    const p=ctx.c.process(),req=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
+    expect(req.request.body.sceneKey).toBeNull();expect(req.request.body.maximumEstimatedCostUsd).toBe(.375);
+    ctx.h.expectNone(r=>r.url.includes('/assembly/'));req.flush(cached());await p;
   });
-  it('does not start a paid recognition without its quote, on a prior attempt or on exhausted allowance',async()=>{
-    const ctx=setup();token(ctx);
-    await quote(ctx,{status:state({recognitionRequired:true}),assembly:{...aq,priorAttempt:true}});
-    expect(ctx.c.canProcess()).toBeFalse();
-    await quote(ctx,{status:state({recognitionRequired:true}),readiness:{...ready,remainingRequests:0}});
+  it('still blocks spending when no requests remain',async()=>{
+    const ctx=setup();token(ctx);await quote(ctx,{readiness:{...ready,remainingRequests:0,manualTokenCallsPermitted:false}});
     expect(ctx.c.canProcess()).toBeFalse();expect(ctx.c.processBlockedReason()).toContain('cupo');
-    ctx.c.assemblyQuote.set(null);expect(ctx.c.canProcess()).toBeFalse();await ctx.c.process();
-    ctx.h.expectNone(r=>r.method==='POST');
+    await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
   });
   it('explains server permission even with a registered token',async()=>{
     const ctx=setup();token(ctx);await quote(ctx,{readiness:{...ready,paidRequestsSwitchEnabled:false,

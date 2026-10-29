@@ -1,7 +1,6 @@
 import type {FrozenMusePrediction} from './muse-investigator';
-import { AssemblyReview, type AssemblyProcessRequest } from './assembly-review';
 import { CommonModule } from '@angular/common';
-import { Component, ViewChild, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -19,7 +18,7 @@ import { SamVideoReplay, type SamProcessingSelection } from './sam-video-replay'
 @Component({
   selector: 'app-pendulum-zone-one',
   standalone: true,
-  imports: [AssemblyReview, CommonModule, FormsModule, PendulumMasterPlayer, SamVideoReplay, LabActivity],
+  imports: [CommonModule, FormsModule, PendulumMasterPlayer, SamVideoReplay, LabActivity],
   templateUrl: './pendulum-zone-one.html',
   styleUrl: './pendulum-zone-one.scss'
 })
@@ -85,10 +84,6 @@ export class PendulumZoneOne extends PendulumDirector {
     this.resultState.set(ready?'ready':'error');this.onPlaybackReady(ready);
   }
 
-  @ViewChild(AssemblyReview) private assemblyReview?:AssemblyReview;
-  startAssembly(request:AssemblyProcessRequest):void {void this.assemblyReview?.startFromProcess(request);}
-  readonly assemblyNonce=signal(0);
-  onAssemblyConfirmed():void {this.clearProcessed();this.assemblyNonce.update(n=>n+1);}
   readonly activeTrial = signal<'baseline'|'followup'>('baseline');
   readonly registeringAndUploading = signal(false);
   readonly samRefreshNonce = signal(0);

@@ -96,8 +96,8 @@ public sealed class PendulumSamCache(
         return state with {
             Status = pending.Any ? pending.Status :
                 latest is not null ? "READY_FOR_FRESH_META_ANALYSIS" : "NOT_ANALYZED_WITH_SAM",
-            CanRunLive = !pending.Any && (scenes is null || scene is not null) && runtime.LiveCallsPermitted,
-            RecognitionRequired = scenes is not null && scene is null, SceneKey=scene?.Key,
+            CanRunLive = !pending.Any && runtime.LiveCallsPermitted,
+            RecognitionRequired = false, SceneKey=scene?.Key,
             Mode = mode, CacheHit = false
         };
     }
@@ -151,8 +151,7 @@ public sealed class PendulumSamCache(
             if (!string.Equals(request.VideoSha256, video.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Video SHA-256 confirmation mismatch.");
             if (mode == CacheMode && latest is not null) return Artifact(latest);
-            if(scenes is not null && scene is null)
-                throw new InvalidOperationException("Review assembly before a new SAM call.");
+            // Reviewed scenes remain usable; a new video can use direct single-object SAM.
             if(request.SceneKey!=scene?.Key)
                 throw new ArgumentException("Assembly changed; refresh the quote.");
             if (!request.ConfirmPrivateVideoTransfer || !request.ConfirmOneBillableSamCall)

@@ -193,13 +193,29 @@ public sealed class AssemblyTests
             return Task.FromResult(new SamApiCompletedResult("{\"model\":\"sam-3.1\",\"status\":\"completed\"}","synthetic-sam",600));
         }
     }
+    [Fact] public async Task DirectSamRequiresNoRecognitionAndReservesOnlyOneCall() {
+        using var f=new Fixture();var locator=f.Open();var transport=new SamTransport();
+        var sam=new PendulumSamCache(new Env(f.Root),f.Runtime,transport,new SamVideoEvidenceIndex(f.Root),
+            NullLogger<PendulumSamCache>.Instance,locator);
+        var status=await sam.StatusAsync("s","baseline",Ct);
+        Assert.False(status.RecognitionRequired);Assert.True(status.CanRunLive);
+        var quote=await sam.PreflightAsync("s","baseline",Ct);
+        var result=await sam.RunOnceAsync("s","baseline",new(Sha,true,true,quote.EstimatedCostUsd),Ct,Token);
+        Assert.Null(result.Receipt.Scene);Assert.Equal(PendulumSamCache.Prompt,transport.Prompt);
+        Assert.Equal(PendulumSamCache.Protocol,result.Receipt.RequestProtocol);
+        Assert.Equal(1,transport.Calls);Assert.Equal(1,f.Runtime.Reservations);Assert.Equal(0,f.Transport.Calls);
+        f.Runtime.LiveCallsPermitted=false;
+        var hit=await sam.RunOnceAsync("s","baseline",new(Sha,false,false,0),Ct);
+        Assert.True(hit.State.CacheHit);Assert.Equal(1,transport.Calls);Assert.Equal(1,f.Runtime.Reservations);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>sam.RunOnceAsync("s","baseline",
+            new(Sha,true,true,.12,Mode: "api-meta"),Ct,Token));
+        Assert.Equal(1,transport.Calls);
+    }
     [Fact] public async Task ReviewedAssemblyFlowsIntoSamAndSqliteWithoutAnotherRecognition() {
         using var f=new Fixture();var locator=f.Open();var samTransport=new SamTransport();
         var sam=new PendulumSamCache(new Env(f.Root),f.Runtime,samTransport,new SamVideoEvidenceIndex(f.Root),
             NullLogger<PendulumSamCache>.Instance,locator);
         var request=new SamVideoRunRequest(Sha,true,true,.5);
-        await Assert.ThrowsAsync<InvalidOperationException>(()=>sam.RunOnceAsync("s","baseline",request,Ct,Token));
-        Assert.Equal(0,f.Runtime.Reservations);
         var evidence=await locator.RunAsync("s","baseline",f.Request(),Ct);
         var scene=await locator.ConfirmAsync("s","baseline",new(Sha,evidence.CacheKey,true,["object","cord","knot"]),Ct);
         await Assert.ThrowsAsync<ArgumentException>(()=>sam.RunOnceAsync("s","baseline",request,Ct,Token));

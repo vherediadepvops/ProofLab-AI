@@ -1,10 +1,12 @@
 # Reconocimiento del montaje y seguimiento por elemento
 
+> Estado actual: la sección **Reconocer montaje** se retiró del laboratorio a petición del usuario. **Procesar** ejecuta SAM directamente, con el token de sesión y el costo del video, sin reconocimiento previo ni US$0,05 adicionales. La ruta ampliada descrita abajo se conserva en el código; las definiciones ya revisadas y su caché siguen siendo válidas. Nuevos componentes de interfaz requieren consulta previa al usuario.
+
 El laboratorio admite la identificación visual de un objeto suspendido sin fijar su color,
 material o forma (por ejemplo, una moneda), la cuerda, el nudo superior, una polea real y
 el soporte. La precisión de este flujo ampliado aún requiere una prueba real con Meta.
 
-## Flujo
+## Flujo ampliado conservado (no visible en el laboratorio)
 
 1. Cargar el original y abrir **Reconocer montaje**. No hay llamadas pagadas automáticas.
 2. Muse Spark 1.3 propone cajas por elemento y la salida exacta de la cuerda en tres
@@ -35,7 +37,7 @@ y se desactivan θ/ω del péndulo simple; no se presume esa dinámica.
 - Caché SAM en SQLite separada por video y definición revisada. Recepción y
   reproducción verifican protocolo, SHA, roles, dimensiones, IDs y tiempos.
 - La caché histórica de una plomada sigue disponible sin otra llamada.
-  Las inferencias nuevas en producción requieren revisión del montaje.
+  Las inferencias nuevas pueden procesar directamente una plomada sin revisión previa del montaje.
 - Muse: archivos privados en `.private/physics/assembly`; respuesta, imágenes,
   hashes, intento y revisión. SAM conserva su archivo/journal/SQLite existente.
 - Dos acciones potencialmente facturables, presupuestadas por separado; cada una
