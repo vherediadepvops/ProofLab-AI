@@ -155,7 +155,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly samRefreshNonce = input(0);
   readonly processingRequired=input(false);
   readonly processedAnalysisId=input('');
-  readonly samApiPort=input<5391|5393|5398>(5391);
+  readonly samApiPort=input<5391|5393|5398|5410>(5391);
   readonly processingReady=output<boolean>();
   readonly processingFinished=output<boolean>();
   readonly processingPending=input(false);

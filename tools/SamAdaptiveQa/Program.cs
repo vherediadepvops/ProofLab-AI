@@ -1,0 +1,62 @@
+using Microsoft.Extensions.Configuration;
+using ProofLab.Api;
+
+// Local-only clip preparation; NEVER contacts Meta or reserves credits.
+if(args.Length is not (4 or 5) || args[0]!="--verify-clips")
+{
+    Console.Error.WriteLine("Usage: --verify-clips <verified-source.MOV> <SHA256> <private-target> [maximum-parts]");
+    return 2;
+}
+var input=Path.GetFullPath(args[1]);
+var sha=args[2].ToLowerInvariant();
+var target=Path.GetFullPath(args[3]);
+if(!target.Split(Path.DirectorySeparatorChar)
+    .Contains(".private",StringComparer.OrdinalIgnoreCase))
+{
+    Console.Error.WriteLine("Invalid private output path.");
+    return 2;
+}
+var ffDir=Path.Combine(Environment.GetFolderPath(
+    Environment.SpecialFolder.LocalApplicationData),"Microsoft","WinGet","Links");
+var config=new ConfigurationBuilder()
+    .AddInMemoryCollection(new Dictionary<string,string?>{
+        ["Media:FfmpegDirectory"]=ffDir
+    }).Build();
+var decoder=new VideoMediaDecoder(config);
+try
+{
+    var pts=await decoder.ReadVideoFramePtsAsync(input,CancellationToken.None);
+    int? maxParts=null;
+    if(args.Length==5)
+    {
+        if(!int.TryParse(args[4],out var parsed) || parsed is <1 or >50)
+            throw new ArgumentException("Invalid allowed part count.");
+        maxParts=parsed;
+    }
+    var plan=SamAdaptiveSegmentPlan.Create(pts.Length,
+        alignToTwoFrameIntraKeyframes:true,
+        maximumPartCount:maxParts);
+    var manifest=await new SamAdaptiveClipBuilder(decoder,config).PrepareAsync(
+        new SamVideoSource(sha,"offline-verified-source",input,"hevc",
+            1920,1080,pts[^1]),
+        pts,plan,target,CancellationToken.None);
+    Console.WriteLine("FRAME_EXACT_ADAPTIVE_CLIPS_OK source="+manifest.OriginalFrames+
+        " clips="+manifest.Clips.Count+
+        " submitted="+manifest.SubmittedFrames+
+        " billed="+manifest.BilledFrames+
+        " cost="+manifest.EstimatedSamUsd.ToString("F4",
+            System.Globalization.CultureInfo.InvariantCulture)+
+        " prepareMs="+manifest.PrepareElapsedMs);
+    foreach(var clip in manifest.Clips)
+        Console.WriteLine("PART="+clip.Part+" FRAMES="+clip.Frames+
+            " BYTES="+clip.Bytes+" PIXEL_SHA_MATCH=true"+
+            " PTS_MAX_MS="+(clip.MaximumPtsErrorSeconds*1000).ToString(
+                "F3",System.Globalization.CultureInfo.InvariantCulture));
+    Console.WriteLine("OFFLINE_ONLY NO_META_CALLS=true");
+    return 0;
+}
+catch(Exception ex)
+{
+    Console.Error.WriteLine("LOCAL_CLIP_QA_FAILED="+ex.GetType().Name);
+    return 1;
+}
