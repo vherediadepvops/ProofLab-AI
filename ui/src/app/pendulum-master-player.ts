@@ -78,7 +78,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     return manual??null;
   }
   sceneLabel(role:string):string {
-    return ({object:this.es?'Objeto · centro visible':'Object · visible center',
+    return ({object:this.es?'Objeto':'Object',
       cord:this.es?'Cuerda':'Cord',knot:this.es?'Nudo':'Knot',
       pulley:this.es?'Polea':'Pulley',support:this.es?'Soporte':'Support'} as Record<string,string>)[role]??role;
   }
@@ -800,13 +800,15 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
         ctx.lineWidth=unit;ctx.beginPath();ctx.arc(x,y,3*unit,0,2*Math.PI);ctx.stroke();
         ctx.beginPath();ctx.moveTo(x-6*unit,y);ctx.lineTo(x+6*unit,y);
         ctx.moveTo(x,y-6*unit);ctx.lineTo(x,y+6*unit);ctx.stroke();
+      } else {
+        ctx.font='600 '+(10*unit)+'px system-ui';ctx.lineWidth=2*unit;
+        const text=this.sceneLabel(role);
+        const tx=Math.max(4*unit,Math.min(canvas.width-ctx.measureText(text).width-4*unit,
+          mark.left/track.frameWidth*canvas.width));
+        const ty=Math.max(12*unit,mark.top/track.frameHeight*canvas.height-6*unit);
+        ctx.strokeStyle='#07121b';ctx.strokeText(text,tx,ty);ctx.fillText(text,tx,ty);
       }
-      ctx.font='600 '+(10*unit)+'px system-ui';ctx.lineWidth=2*unit;
-      const text=this.sceneLabel(role);
-      const tx=Math.max(4*unit,Math.min(canvas.width-ctx.measureText(text).width-4*unit,
-        mark.left/track.frameWidth*canvas.width));
-      const ty=Math.max(12*unit,mark.top/track.frameHeight*canvas.height-6*unit);
-      ctx.strokeStyle='#07121b';ctx.strokeText(text,tx,ty);ctx.fillText(text,tx,ty);ctx.restore();
+      ctx.restore();
     }
   }
 

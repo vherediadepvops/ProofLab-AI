@@ -10,7 +10,7 @@
           : (es?'No se pudo validar el resultado. Actualiza la comprobación y revisa el estado antes de procesar otra vez.':
             'The result could not be validated. Refresh the check and inspect status before processing again.')}}
       } @else {
-        {{scene()?(es?'Procesado · elementos seguidos por separado · centro visible calculado desde la máscara del objeto':'Processed · elements tracked separately · visible center calculated from the object mask'):samTrack()?(es?'Procesado · gráficos calculados desde las máscaras de SAM':'Processed · overlays calculated from SAM masks'):
+        {{scene()?(es?'Procesado · elementos seguidos por separado':'Processed · elements tracked separately'):samTrack()?(es?'Procesado · gráficos calculados desde las máscaras de SAM':'Processed · overlays calculated from SAM masks'):
           (es?'Procesado · SAM no detectó objetos; reproducción disponible sin gráficos inventados.':
             'Processed · SAM found no objects; playback is available without fabricated overlays.')}}
       }
