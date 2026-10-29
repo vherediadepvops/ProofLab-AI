@@ -4,4 +4,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+  <!-- Pure offline planning and simulation only: no Meta transport. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveSegmentPlan.cs" Link="SamAdaptiveSegmentPlan.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveOfflineScheduler.cs" Link="SamAdaptiveOfflineScheduler.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamVideoSseParser.cs" Link="SamVideoSseParser.cs" />
+  </ItemGroup>
 </Project>

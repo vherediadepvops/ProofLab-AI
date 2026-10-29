@@ -50,3 +50,23 @@ All code remains in `feature/sam-parallel4-streaming`; no changes to the billabl
 - **QA:** 19/19 focused .NET tests, clean CLI and QA-server builds. No new Meta calls or verified independent chunk masks.
 
 Before owner-approved merge: authentic per-part immutable receipts/attempt locks, strict aggregate spending consent for four requests, independently validated official per-part masks and cross-seam raster-IoU/human checks, followed by a **real** A/B latency/cost/quality comparison. With 90.2 s local preparation and ~177 s monolithic SAM provider runtime, four remote calls need to finish in under ~87 s (ignoring Spark/other overhead) to win under a sequential scheduling assumption. No real speedup has yet been measured.
+
+## Oct 29, 2026 — Near-minimum-billing adaptive segmentation policy
+
+The new experimental `SamAdaptiveSegmentPlan` targets **53 core source frames** per segment (configurable), matching the owner's examples **1,000 → 19 requests** and **1,500 → 28 requests**. The **50-frame minimum is a BILLING minimum**, not a proven speed optimum or an input hard limit. Every interior seam retains two source frames of overlap per side. The repeated frames are also potentially billable.
+
+| Source frames | Segments | Total submitted/billed frames | Nominal SAM cost |
+|---|---:|---:|---:|
+| 1,000 | 19 | 1,072 | USD0.2144 |
+| 1,500 | 28 | 1,608 | USD0.3216 |
+| 1,828 | 34 | 1,960 | USD0.3920 |
+| 2,400 | **26** (budget-reduced) | 2,500 | USD0.5000 |
+| 2,500 | **1** (budget-reduced) | 2,500 | USD0.5000 |
+
+The **aggregate quoted SAM cap is USD0.50**, consistent with the existing backend safeguard; Spark and any provider-specific spending require separate checks. The planner verifies monotonic original PTS and fingerprints the actual timeline. Maximum simulated in-flight tasks default to **4**, configurable up to 32, with no automatic claim that Meta's **3,000 RPM** guarantees 28 concurrent inferencers.
+
+`SamAdaptiveOfflineScheduler` runs only synthetic delegates with concurrency limiting, tagged offline SSE progress, zero retries, and a stop-admitting-new-work policy after a failure. The **15 new adaptive tests** and **34 total focused tests** passed.
+
+Read-only QA endpoints on isolated `127.0.0.1:5407`: `/api/qa/dynamic-plan?frames=1000` and `/api/qa/dynamic-stream?frames=1500&concurrency=28`. Local HTTP tests confirmed 19 plans/4 concurrent fake streams and 28 plans/28 concurrent fake streams, **zero Meta calls**, with auto-reduced request counts near the spend cap.
+
+**NOT implemented:** actual creation of 19/28 separate MP4s, trustworthy multi-segment SAM mask joining, real provider transport, or production paid/retry/cache wiring. Four-way physical clips remain the validated baseline, and no realistic speed gain has been measured. No merge to main without owner approval.

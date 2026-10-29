@@ -50,3 +50,21 @@ Se implementaron herramientas ejecutables **solo de forma local** en la rama `fe
 - **QA:** 19/19 pruebas focalizadas, builds CLI/servidor .NET Debug sin errores ni advertencias. No hubo llamadas a Meta, nuevas máscaras auténticas ni modificación de servicios de otros chats.
 
 **Faltan antes de cualquier merge:** integrar recibos inmutables POR FRAGMENTO con presupuesto agregado y autorización de las cuatro solicitudes, decodificación oficial por cada nueva respuesta real, comparación de máscaras distintas por raster-IoU/huecos en empalmes y medición A/B **real** de latencia/coste/calidad. Con 90,2 s de preparación local y ~177 s de SAM completo, el procesamiento remoto de los cuatro fragmentos tendría que tardar menos de ~87 s (excluyendo Spark y sobrecargas) para mejorar la latencia SAM total, si ambas tareas son secuenciales. No se ha demostrado esa mejora ni se autorizó gasto.
+
+## 29/10/2026 — Planificación dinámica cercana al mínimo facturable
+
+**Nueva política experimental:** `SamAdaptiveSegmentPlan` calcula la cantidad de fragmentos a partir del video, tomando **53 cuadros centrales como objetivo por petición**. Este valor, ajustable, reproduce el ejemplo del propietario: **1.000 → 19** y **1.500 → 28**. No es una garantía de velocidad ni un requisito mínimo de Meta: Meta factura como mínimo **50 cuadros por solicitud**, pero el seguimiento de clips demasiado cortos puede perder continuidad/identidad. Dos fotogramas se superponen a cada lado interior, para comparar máscaras; los cuadros duplicados también son facturables.
+
+| Original | Fragmentos | Cuadros con solapamiento | SAM estimado |
+|---|---:|---:|---:|
+| 1.000 | 19 | 1.072 | US$0,2144 |
+| 1.500 | 28 | 1.608 | US$0,3216 |
+| 1.828 | 34 | 1.960 | US$0,3920 |
+| 2.400 | **26**, reducido por tope | 2.500 | US$0,5000 |
+| 2.500 | **1**, sin división por tope | 2.500 | US$0,5000 |
+
+La suma de los costos estimados **nunca supera US$0,50** según el límite SAM existente; Spark, transferencia, cotización y gasto real requieren controles adicionales. El plan exige PTS originales crecientes y proporciona SHA de su secuencia. Concurrencia máxima de la simulación: **4 predeterminadas**, configurable hasta 32; **3.000 RPM** documentados por Meta **no** garantizan 3.000 inferencias simultáneas. Se debe medir la cuota efectiva, latencia y calidad del proveedor antes de configurar 19 o 28 en vivo.
+
+`SamAdaptiveOfflineScheduler` ejecuta delegados **sintéticos** con semáforo, progreso SSE etiquetado OFFLINE, sin reintentos, y detiene nuevas admisiones tras falla mientras deja terminar las ya iniciadas. Se verificó **15/15 pruebas nuevas** del reparto y **34/34 pruebas focalizadas** en total.
+
+En el servicio aislado `127.0.0.1:5407` hay dos GET sin facturación: `/api/qa/dynamic-plan?frames=1000` y `/api/qa/dynamic-stream?frames=1500&concurrency=28`. Las respuestas confirmaron 19 partes/4 simultáneas y 28 partes/28 simultáneas **solo simuladas**, con 0 llamadas Meta, además de ajustes por presupuesto. **No existe aún generación física dinámica de 19/28 MP4 ni unión de máscaras auténticas independientes:** el cortador y ensamblador siguen validados para cuatro partes, y la ruta productiva de Meta/Spark/SQLite no se ha modificado. No presentar mejora de tiempo real hasta medir un A/B autorizado. No merge a main sin aprobación.
