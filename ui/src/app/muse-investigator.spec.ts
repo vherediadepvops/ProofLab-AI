@@ -65,4 +65,65 @@ describe('Muse investigator',()=>{
     f.componentRef.setInput('language','en');f.detectChanges();http.expectOne(base).flush(empty);await f.whenStable();f.detectChanges();
     expect(f.nativeElement.textContent).toContain('Research lab log');f.destroy();
   });
+  function response(classification?:'PENDULUM_COMPATIBLE'|'OTHER_MOTION'|'INCONCLUSIVE',analysisId='analysis') {
+    const t={es:'Justificación científica registrada.',en:'Recorded scientific justification.'};
+    return {...prepared,observation:{...prepared.observation,analysisId,videoSha256:'video'},
+      evaluation:{model:'muse-spark-1.3',responseId:'recorded-muse-receipt',
+        observationId:'observation',studyId:'study',rawResponseSha256:'hash',tokenCostEstimateUsd:.001,
+        answer:{decision:classification==='OTHER_MOTION'?'INCONCLUSIVE':'PROPOSE_EXPERIMENT',
+          justification:t,limitations:t,protocol:t,hypothesis:t,falsification:t,
+          nextLengthMeters:null,periodSeconds:null,tolerancePercent:null,
+          ...(classification?{phenomenon:{classification,justification:{
+            es:'Spark interpreta la trayectoria medida por SAM.',en:'Spark interprets the trajectory measured by SAM.'}}}:{})}}};
+  }
+  it('waits for Spark instead of classifying from local measurements or preparing evidence',async()=>{
+    const f=await init(prepared);
+    expect(f.nativeElement.textContent).toContain('La clasificación del movimiento está pendiente');
+    expect(f.componentInstance.phenomenon()).toBeNull();
+    expect(f.nativeElement.querySelector('.decision')).toBeNull();
+    expect(f.nativeElement.querySelectorAll('section').length).toBe(1);f.destroy();
+  });
+  it('attributes the recorded phenomenon and justification to Muse Spark in ES and EN',async()=>{
+    const recorded=response('PENDULUM_COMPATIBLE'),f=await init(recorded);
+    expect(f.nativeElement.querySelector('.decision').textContent).toContain('Muse Spark: compatible con un péndulo');
+    expect(f.nativeElement.textContent).toContain('Spark interpreta la trayectoria medida por SAM.');
+    expect(f.nativeElement.textContent).toContain('Experimento propuesto');
+    expect(f.nativeElement.querySelectorAll('section').length).toBe(1);
+    f.componentRef.setInput('language','en');f.detectChanges();http.expectOne(base).flush(recorded);
+    await f.whenStable();f.detectChanges();
+    expect(f.nativeElement.querySelector('.decision').textContent).toContain('Muse Spark: consistent with a pendulum');
+    expect(f.nativeElement.textContent).toContain('Spark interprets the trajectory measured by SAM.');
+    expect(f.nativeElement.textContent).toContain('recorded-muse-receipt');f.destroy();
+  });
+  for(const classification of ['OTHER_MOTION','INCONCLUSIVE'] as const)
+    it('shows Spark classification '+classification+' without local substitution',async()=>{
+      const f=await init(response(classification));
+      expect(f.nativeElement.querySelector('.decision').textContent).toContain(
+        classification==='OTHER_MOTION'?'Muse Spark: otro tipo de movimiento':'Muse Spark: clasificación inconclusa');
+      expect(f.nativeElement.querySelector('.decision').textContent).not.toContain('compatible con un péndulo');
+      f.destroy();
+    });
+  it('never infers a phenomenon from a historical experiment proposal',async()=>{
+    const f=await init(response());
+    expect(f.nativeElement.querySelector('.decision').textContent).toContain('Experimento propuesto');
+    expect(f.nativeElement.textContent).toContain('no incluye una clasificación del fenómeno');
+    expect(f.componentInstance.phenomenon()).toBeNull();
+    expect(f.nativeElement.textContent).not.toContain('Muse Spark: compatible con un péndulo');f.destroy();
+  });
+  it('does not present a previous analysis classification as belonging to the current video',async()=>{
+    const f=await init(response('PENDULUM_COMPATIBLE','previous-analysis'));
+    expect(f.nativeElement.querySelector('.decision').textContent).toContain('Evaluación de un análisis anterior');
+    expect(f.nativeElement.textContent).toContain('no clasifica el video actual');
+    expect(f.componentInstance.phenomenon()).toBeNull();
+    expect(f.nativeElement.textContent).not.toContain('Muse Spark: compatible con un péndulo');
+    expect(f.componentInstance.canEvaluate()).toBeFalse();f.destroy();
+  });
+  it('rejects classification attribution if the stored observation refers to another video',async()=>{
+    const recorded=response('PENDULUM_COMPATIBLE');
+    recorded.observation.videoSha256='another-video';
+    const f=await init(recorded);
+    expect(f.componentInstance.phenomenon()).toBeNull();
+    expect(f.nativeElement.textContent).toContain('no clasifica el video actual');f.destroy();
+  });
+
 });

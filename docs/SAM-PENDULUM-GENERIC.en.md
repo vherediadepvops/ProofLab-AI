@@ -1,20 +1,17 @@
-# Pendulums with different shapes and materials
+# SAM, local measurements and the Muse Spark assessment
 
-Direct inference uses the noun phrase **`pendulum bob`**, without filtering by metal, color, shape or a reference video. SAM segments the requested object; ProofLab derives centroids, vectors and trails from its masks and the original timestamps.
+Direct SAM inference uses **`pendulum bob`**, without material, color or shape filters. SAM provides masks and tracking; ProofLab calculates centroids, angles, period, coverage and geometric residuals using original timestamps. These calculations are input data, **not a phenomenon verdict**.
 
-Protocol `PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V3_GENERIC_BOB` and the cache key distinguish this target from the former `metal pendulum bob`. API Meta mode always requests a fresh analysis. Cache mode may reuse historical evidence containing mask records, retaining its original description and provenance; an empty historical response cannot replace the new analysis. The parser still validates masks and identity before rendering. Receipts and outstanding attempts are preserved.
+**Muse Spark interprets the SAM evidence** in the existing lab log and returns `PENDULUM_COMPATIBLE`, `OTHER_MOTION` or `INCONCLUSIVE`, with ES/EN reasoning. Its actual response, identifier and provenance are recorded. Classification is not inferred from the prompt name, an isolated mask or a historical evaluation lacking this field.
 
-## Motion interpretation
+Muse receives a bounded summary of measurements and centroids with original frame indices and timestamps, dimensions, pivot and limitations. Samples are selected from actual observations without bridging gaps. The reduced sample does not replace measured cycles. Muse has not viewed the video images and must frame its conclusion as an inference from those data, without inventing observed materials, knots or forces. An empty SAM response only establishes detection failure and supports an inconclusive report.
 
-The existing scientific panel evaluates compatibility with simple pendulum motion using cycles, coverage, stability and a resolvable arc around the pivot. Periodic straight-line motion is insufficient. The assessment and its criteria are included in the reproducible report.
+## Flow and preservation
 
-- **Compatible** means geometric and temporal compatibility; it does not certify a cord or prove the physical mechanism.
-- **Inconclusive** applies when detections, a usable pivot, sufficient cycles or resolvable curvature are missing, or tracking is ambiguous.
-- Material and shape are not inferred from a centroid. A silhouette centroid is not necessarily the center of mass.
-- Perspective, camera motion, a rotating coin or occlusion can affect the trajectory. Double pendulums and other arrangements are not automatically accepted as simple pendulums.
+The existing **Prepare evidence → Ask Muse** flow retains its visible cost. There is no new section or automatic inference after SAM processing. Classification is recorded in the same Muse evaluation before proposing another experiment. Only a compatible classification with sufficient measurements can support a conditional prediction; the app verifies the data and arithmetic.
 
-No UI sections, Muse calls or automatic retries are added. Each manual submission retains its visible cost. Local tests use synthetic masks and trajectories; actual detection of a new setup requires its SAM response and review.
+SAM protocol `PROOFLAB_SAM_VIDEO_1_SOURCE_PTS_REMUX_MP4_V3_GENERIC_BOB` distinguishes the generic target from the former `metal pendulum bob`. Historical mask archives retain their provenance; old empty responses do not replace generic analyses. Research protocol `MUSE_SAM_INVESTIGATOR_V3` requires Spark's explicit classification. Historical responses and predictions retain their JSON and hash without acquiring a new classification.
 
-[Meta's official documentation](https://dev.meta.ai/docs/sam/segmenting) recommends a single short noun phrase for text segmentation. Material lists, long instructions and alternatives do not replace scene understanding.
+Identification of each setup depends on actual evidence. Perspective, camera motion, occlusion, multiple objects and an inaccurate pivot can limit it. A mask centroid does not certify the center of mass.
 
-[Español](SAM-PENDULUM-GENERIC.es.md).
+[Official Meta segmentation documentation](https://dev.meta.ai/docs/sam/segmenting). [Español](SAM-PENDULUM-GENERIC.es.md).

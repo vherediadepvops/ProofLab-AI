@@ -52,6 +52,7 @@ public sealed class MuseExperimentService(
         var existing=store.Observation(key);if(existing is not null)return existing;
         var measured=await worker.MeasureAsync(new {
             archive,studyId=id,videoSha256=request.VideoSha256,pivot,
+            sourceWidth=study.Baseline.Media.Width,sourceHeight=study.Baseline.Media.Height,
             request.PivotRevisionId,pivotProvenance
         },ct);
         using var measurement=JsonDocument.Parse(measured);
@@ -91,20 +92,7 @@ public sealed class MuseExperimentService(
            request.MaximumEstimatedCostUsd!=MuseExperimentPolicy.MaximumEstimatedCostUsd ||
            !SamManualApiTokenPolicy.Accepts(token)||!access.Status(token).LiveCallsPermitted)
             throw new InvalidOperationException("Credential, consent, credits or cost gate blocked.");
-        var summary=root.GetProperty("measurement").GetProperty("assessment").EnumerateObject()
-            .Where(p=>p.Name!="cycles").ToDictionary(p=>p.Name,p=>p.Value.Clone());
-        var input=JsonSerializer.Serialize(new {
-            observationId=observation.Id,videoSha256=observation.VideoSha256,samAnalysisId=observation.AnalysisId,
-            baselineLengthMeters=root.GetProperty("baselineLengthMeters"),
-            lengthProvenance=root.GetProperty("lengthProvenance"),
-            nominalReleaseAngleDegrees=root.GetProperty("nominalReleaseAngleDegrees"),
-            humanObjectReviewed=root.GetProperty("humanObjectReviewed"),
-            pivotIndependentlyVerified=false,totalUncertaintyAvailable=false,assessment=summary,
-            limitations=root.GetProperty("measurement").GetProperty("limitations"),
-            experimentOptions=MuseExperimentPolicy.ExperimentOptions(root),
-            nextVideoSeen=false,interpretation="Masked image centroids are not independently measured centers of mass."
-        },Json);
-        if(input.Length>16000)throw new ArgumentException("Evidence summary exceeds the input limit.");
+        var input=MuseExperimentPolicy.BuildInput(observation);
         ct.ThrowIfCancellationRequested();
         access.ReserveOrThrow(token);
         store.BeginAttempt(observation);

@@ -2,8 +2,8 @@
   <header>
     <div><span class="eyebrow">{{es?'MEDICIÓN DEL VIDEO':'VIDEO MEASUREMENT'}}</span>
       <h3>{{es?'Período de oscilación':'Oscillation period'}}</h3></div>
-    <span class="status" [class.inconclusive]="assessment().motion.status==='INCONCLUSIVE'">
-      {{assessment().motion.status==='COMPATIBLE_WITH_SIMPLE_PENDULUM'?(es?'Movimiento compatible con un péndulo simple':'Motion consistent with a simple pendulum'):(es?'Movimiento pendular: inconcluso':'Pendular motion: inconclusive')}}
+    <span class="status" [class.inconclusive]="assessment().status==='INCONCLUSIVE'">
+      {{assessment().status==='CANDIDATE'?(es?'Medición local disponible':'Local measurement available'):(es?'Medición local insuficiente':'Insufficient local measurement')}}
     </span>
   </header>
   <div class="metrics">
@@ -26,12 +26,12 @@
   }
   @if(assessment().status==='CANDIDATE' && assessment().motion.status==='INCONCLUSIVE') {
     <p class="warning" role="status">{{es
-      ? 'Se observa periodicidad, pero no hay evidencia suficiente de un arco pendular. El período sigue siendo una estimación preliminar.'
-      : 'Periodicity is observed, but evidence for a pendular arc is insufficient. The period remains a preliminary estimate.'}}</p>
+      ? 'Se observa periodicidad, pero la geometría del arco no está resuelta. Estas mediciones son insumos para la evaluación de Muse Spark.'
+      : 'Periodicity is observed, but the arc geometry is unresolved. These measurements are inputs for evaluation by Muse Spark.'}}</p>
   }
   <details>
     <summary>{{es?'Calidad y método':'Quality and method'}}</summary>
-    <p>{{es?'Cruces por la posición central en la misma dirección, con tiempos originales. No se interpola entre detecciones ausentes. Se usan ciclos alternos para no compartir extremos. La compatibilidad pendular exige además un arco resoluble alrededor del pivote que explique mejor los datos que una recta. No depende de forma, color ni material.':'Same-direction center crossings with source timestamps. Missing detections are not bridged. Alternating cycles avoid shared endpoints. Pendular consistency also requires a resolvable arc about the pivot that explains observations better than a straight line. It does not depend on shape, color or material.'}}</p>
+    <p>{{es?'Cruces por la posición central en la misma dirección, con tiempos originales. No se interpola entre detecciones ausentes. Se usan ciclos alternos para no compartir extremos. Se compara la geometría del arco alrededor del pivote con una recta. Estos cálculos no clasifican el fenómeno; Muse Spark interpreta las mediciones de SAM en la bitácora.':'Same-direction center crossings with source timestamps. Missing detections are not bridged. Alternating cycles avoid shared endpoints. The arc geometry around the pivot is compared with a straight line. These calculations do not classify the phenomenon; Muse Spark interprets SAM measurements in the lab log.'}}</p>
     <div class="quality">
       <span>{{es?'Detectados':'Detected'}}: {{assessment().detectedFrames}} / {{assessment().totalFrames}}</span>
       <span>{{es?'Ausentes':'Missing'}}: {{assessment().missingFrames}}</span>
@@ -44,7 +44,7 @@
     @if(assessment().motion.issues.length) {
       <ul>@for(issue of assessment().motion.issues;track issue){<li>{{motionIssueText(issue)}}</li>}</ul>
     }
-    <p>{{es?'Los umbrales de calidad son criterios de esta versión, no una certificación ni prueba de que sea físicamente un péndulo. La incertidumbre supone errores aproximadamente independientes; revisar visualmente el objeto y la suspensión sigue siendo necesario. Un valor cero solo indica que no se resolvió dispersión entre estos ciclos.':'Quality thresholds are versioned engineering criteria, not certification or proof of a physical pendulum. Uncertainty assumes approximately independent errors; visual review of the object and suspension remains necessary. Zero means only that no dispersion was resolved between these cycles.'}}</p>
+    <p>{{es?'Los umbrales son controles locales de calidad; no sustituyen el dictamen de Muse Spark ni constituyen una certificación física. La incertidumbre supone errores aproximadamente independientes; revisar visualmente el objeto y la suspensión sigue siendo necesario. Un valor cero solo indica que no se resolvió dispersión entre estos ciclos.':'These thresholds are local quality checks; they do not replace the assessment by Muse Spark or constitute physical certification. Uncertainty assumes approximately independent errors; visual review of the object and suspension remains necessary. Zero means only that no dispersion was resolved between these cycles.'}}</p>
     @if(assessment().cycles.length) {
       <div class="cycle-table"><table>
         <caption>{{es?'Ciclos observados':'Observed cycles'}}</caption>
@@ -60,6 +60,6 @@
     </button>
     @if(!source()){<p>{{es?'Falta la identificación completa de la evidencia para exportar.':'Complete evidence identification is required to export.'}}</p>}
     @if(downloadError()){<p class="warning" role="alert">{{es?'No se pudo preparar la descarga.':'Could not prepare the download.'}}</p>}
-    <p class="footnote">{{es?'JSON con datos de entrada, ciclos, procedencia y hash de integridad. Cálculo local; no representa una evaluación de Muse.':'JSON with inputs, cycles, provenance and integrity hash. Local calculation; not a Muse evaluation.'}}</p>
+    <p class="footnote">{{es?'JSON con datos de entrada, ciclos, procedencia y hash de integridad. Cálculo local para Muse Spark; la clasificación del fenómeno se muestra únicamente con su respuesta registrada.':'JSON with inputs, cycles, provenance and integrity hash. Local calculation for Muse Spark; phenomenon classification is shown only from its recorded response.'}}</p>
   </details>
 </section>

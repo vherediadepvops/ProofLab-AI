@@ -23,12 +23,17 @@ public sealed class MuseExperimentTransport(IHttpClientFactory clients):IMuseExp
         var format=new {type="json_schema",name="pendulum_research_director",strict=true,
             schema=new {type="object",additionalProperties=false,
                 required=new[]{"decision","justification","limitations","protocol","hypothesis","falsification",
-                    "nextLengthMeters","periodSeconds","tolerancePercent"},
+                    "nextLengthMeters","periodSeconds","tolerancePercent","phenomenon"},
                 properties=new {
                     decision=new {type="string",@enum=new[]{"PROPOSE_EXPERIMENT","REPEAT_RECORDING","INCONCLUSIVE"}},
                     justification=bilingual,limitations=bilingual,protocol=bilingual,hypothesis=bilingual,
                     falsification=bilingual,nextLengthMeters=lengthChoice,periodSeconds=periodChoice,
-                    tolerancePercent=nullableNumber}}};
+                    tolerancePercent=nullableNumber,
+                    phenomenon=new {type="object",additionalProperties=false,
+                        required=new[]{"classification","justification"},
+                        properties=new {
+                            classification=new {type="string",@enum=new[]{"PENDULUM_COMPATIBLE","OTHER_MOTION","INCONCLUSIVE"}},
+                            justification=bilingual}}}}};
         var payload=new {model=MuseExperimentPolicy.Model,stream=false,
             max_output_tokens=MuseExperimentPolicy.MaximumOutputTokens,reasoning=new {effort="low"},
             text=new {format},input=new[]{
@@ -51,7 +56,7 @@ public sealed class MuseExperimentTransport(IHttpClientFactory clients):IMuseExp
             return System.Text.Encoding.UTF8.GetString(output.ToArray());
         }
         // One token-count API request followed by at most ONE inference request.
-        // Both count toward the user's five-API-call allowance. No automatic retries.
+        // Both belong to this explicitly admitted evaluation. No automatic retries.
         using(var counted=JsonDocument.Parse(await Post("responses/input_tokens"))) {
             var count=counted.RootElement.GetProperty("input_tokens").GetInt32();
             if(count<=0||count>MuseExperimentPolicy.MaximumInputTokens)

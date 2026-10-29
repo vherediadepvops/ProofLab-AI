@@ -3,8 +3,8 @@
     <h3>{{es?'Bitácora de investigación':'Research lab log'}}</h3></div>
     @if(state()?.prediction){<span class="lock">🔒 {{es?'Predicción congelada':'Prediction frozen'}}</span>}
   </header>
-  <p class="intro">{{es?'Muse revisa las mediciones, la incertidumbre y las pérdidas de detección antes de proponer otra prueba.':
-    'Muse reviews measurements, uncertainty and detection gaps before proposing another experiment.'}}</p>
+  <p class="intro">{{es?'Muse Spark interpreta las mediciones de SAM, la geometría y la incertidumbre para clasificar el movimiento y decidir si conviene otra prueba.':
+    'Muse Spark interprets SAM measurements, geometry and uncertainty to classify the motion and decide whether another experiment is appropriate.'}}</p>
   @if(busy(); as phase) {
     <app-lab-activity [label]="phase==='evaluating'?(es?'Muse está evaluando la evidencia…':'Muse is evaluating the evidence…'):
       phase==='preparing'?(es?'Verificando mediciones guardadas…':'Verifying saved measurements…'):(es?'Cargando bitácora…':'Loading lab log…')"
@@ -13,8 +13,20 @@
   }
   @if(state(); as s) {
     @if(s.evaluation; as evaluation) {
-      <div class="decision"><strong>{{decision()}}</strong><span>{{evaluation.model}}</span></div>
-      <p>{{text(evaluation.answer.justification)}}</p>
+      <div class="decision"><strong>{{phenomenonDecision() || decision()}}</strong><span>{{evaluation.model}}</span></div>
+      <p>
+        @if(phenomenon(); as phenomenon) {
+          {{text(phenomenon.justification)}}<br><strong>{{decision()}}.</strong>
+        }
+        {{text(evaluation.answer.justification)}}
+      </p>
+      @if(!evaluationMatchesSource()) {
+        <p class="fine">{{es?'Este registro pertenece a otro análisis y no clasifica el video actual.':
+          'This record belongs to another analysis and does not classify the current video.'}}</p>
+      } @else if(!phenomenon()) {
+        <p class="fine">{{es?'La respuesta registrada no incluye una clasificación del fenómeno. No se deduce de la propuesta de experimento.':
+          'The recorded response does not include a phenomenon classification. It is not inferred from the experiment proposal.'}}</p>
+      }
       @if(prediction(); as p) {
         <div class="prediction">
           <div><span>{{es?'Longitud propuesta':'Proposed length'}}</span><strong>{{(p.nextLengthMeters*100).toFixed(0)}} cm</strong></div>
@@ -58,8 +70,8 @@
         @if(s.attemptStatus){<p class="warning">{{es?'Existe un intento registrado que requiere revisión. No se harán reintentos automáticos.':
           'A recorded attempt requires review. There will be no automatic retries.'}}</p>}
       }
-      <p class="fine">{{es?'El segundo video se habilita únicamente después de guardar una predicción válida en SQLite. Muse puede recomendar repetir la grabación o declarar el resultado inconcluso.':
-        'Video 2 is enabled only after a valid prediction is stored in SQLite. Muse may recommend another recording or an inconclusive result.'}}</p>
+      <p class="fine">{{es?'La clasificación del movimiento está pendiente de la respuesta de Muse Spark. El segundo video se habilita después de guardar una predicción válida en SQLite. Muse puede recomendar repetir la grabación o declarar el resultado inconcluso.':
+        'Motion classification is awaiting a response from Muse Spark. Video 2 is enabled after a valid prediction is stored in SQLite. Muse may recommend another recording or an inconclusive result.'}}</p>
     }
   }
   @if(error()){<p class="warning" role="alert">{{error()}}</p>

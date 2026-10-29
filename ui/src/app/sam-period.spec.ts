@@ -33,7 +33,7 @@ describe('SAM period from native timestamps',()=>{
   for(const fps of [60,120,240])it('recovers a known period at '+fps+' FPS',()=>{
     const r=measureSamPeriod(oscillation(fps));
     expect(r.status).toBe('CANDIDATE');
-    expect(r.motion.status).toBe('COMPATIBLE_WITH_SIMPLE_PENDULUM');
+    expect(r.motion.status).toBe('RESOLVED_ARC');
     expect(r.periodSeconds!).toBeCloseTo(1.4,3);
     expect(r.usedCycles).toBeGreaterThanOrEqual(3);
     expect(r.statisticalStandardUncertaintySeconds).not.toBeNull();
@@ -170,7 +170,7 @@ describe('Pendular motion evidence, independent of object appearance',()=>{
     const input=oscillation();
     input.centroids.forEach((c,i)=>{c.x+=.3*Math.sin(i*1.7);c.y+=.3*Math.cos(i*1.3);});
     const r=measureSamPeriod(input);
-    expect(r.motion.status).toBe('COMPATIBLE_WITH_SIMPLE_PENDULUM');
+    expect(r.motion.status).toBe('RESOLVED_ARC');
     expect(r.motion.issues).toEqual([]);
   });
   it('does not treat periodic straight-line motion as a pendulum',()=>{

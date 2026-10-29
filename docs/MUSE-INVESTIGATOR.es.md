@@ -1,5 +1,7 @@
 # Etapa 5 — investigador Muse sobre evidencia SAM
 
+El protocolo V3 añade una clasificación explícita emitida por Muse Spark: PENDULUM_COMPATIBLE, OTHER_MOTION o INCONCLUSIVE, con justificación ES/EN. ProofLab aporta métricas y hasta 48 centroides observados con PTS; no presenta el diagnóstico geométrico local como veredicto. SAM sin detecciones produce evidencia insuficiente. La misma consulta de Muse interpreta esos datos y propone o rechaza el siguiente experimento; no hay otra inferencia automática. Las respuestas V1/V2 conservan su formato y hash, sin inventarles una clasificación. Véase [distribución de responsabilidades](SAM-PENDULUM-GENERIC.es.md).
+
 El Laboratorio ofrece una bitácora bajo el período observado. **Preparar evidencia** es local: el servidor verifica el archivo y la respuesta SAM guardada y ejecuta el mismo estimador TypeScript que usa la pantalla. Requiere Node, `ui/node_modules` instalado con `npm ci` y el worker generado automáticamente al compilar la API. El worker no recibe credenciales ni ejecuta código del modelo.
 
 **Consultar Muse** envía únicamente un resumen de mediciones, cobertura, huecos, incertidumbre estadística, parámetros declarados y límites. No vuelve a subir el video. Usa `muse-spark-1.3`, JSON Schema estricto, una consulta de tokens y como máximo una inferencia. Ambas solicitudes HTTP se incluyen en el registro de ejecución. Sin reintentos automáticos; el presupuesto estimado es US$0,05. Conserva los controles de crédito, token y costo por solicitud.

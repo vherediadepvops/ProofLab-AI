@@ -6,14 +6,18 @@ import {LabActivity} from './lab-activity';
 import type {SamPeriodSource} from './sam-period';
 
 interface Bilingual {es:string;en:string}
+interface MusePhenomenon {
+  classification:'PENDULUM_COMPATIBLE'|'OTHER_MOTION'|'INCONCLUSIVE';
+  justification:Bilingual;
+}
 export interface FrozenMusePrediction {
   studyId:string;observationId:string;responseId:string;frozenAtUtc:string;payloadJson:string;sha256:string;
 }
 interface MuseState {
-  observation:null|{id:string;analysisId:string;payloadJson:string;payloadSha256:string};
-  evaluation:null|{model:string;responseId:string;rawResponseSha256:string;tokenCostEstimateUsd:number;
+  observation:null|{id:string;analysisId:string;videoSha256?:string;payloadJson:string;payloadSha256:string};
+  evaluation:null|{model:string;responseId:string;observationId?:string;studyId?:string;rawResponseSha256:string;tokenCostEstimateUsd:number;
     answer:{decision:string;justification:Bilingual;limitations:Bilingual;protocol:Bilingual;
-      hypothesis:Bilingual;falsification:Bilingual;nextLengthMeters:number|null;periodSeconds:number|null;tolerancePercent:number|null}};
+      hypothesis:Bilingual;falsification:Bilingual;phenomenon?:MusePhenomenon|null;nextLengthMeters:number|null;periodSeconds:number|null;tolerancePercent:number|null}};
   prediction:FrozenMusePrediction|null;attemptStatus:string|null;manualCallsPermitted:boolean;maximumEstimatedCostUsd:number;
 }
 @Component({
@@ -92,7 +96,30 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     if(!p)return null;
     try{return JSON.parse(p.payloadJson).prediction;}catch{return null;}
   }
+  evaluationMatchesSource():boolean {
+    const s=this.state(),o=s?.observation,e=s?.evaluation,source=this.source();
+    return !!o && !!e && o.analysisId===source.analysisId &&
+      (!o.videoSha256 || o.videoSha256===source.originalVideoSha256) &&
+      (!e.observationId || e.observationId===o.id) && (!e.studyId || e.studyId===source.studyId);
+  }
+  phenomenon():MusePhenomenon|null {
+    const e=this.state()?.evaluation,p=e?.answer.phenomenon;
+    if(!this.evaluationMatchesSource() || e?.model!=='muse-spark-1.3' || !e.responseId?.trim() || !p ||
+      !['PENDULUM_COMPATIBLE','OTHER_MOTION','INCONCLUSIVE'].includes(p.classification) ||
+      !p.justification?.es?.trim() || !p.justification?.en?.trim())return null;
+    return p;
+  }
+  phenomenonDecision():string|null {
+    switch(this.phenomenon()?.classification) {
+      case 'PENDULUM_COMPATIBLE':return this.es?'Muse Spark: compatible con un péndulo':'Muse Spark: consistent with a pendulum';
+      case 'OTHER_MOTION':return this.es?'Muse Spark: otro tipo de movimiento':'Muse Spark: another type of motion';
+      case 'INCONCLUSIVE':return this.es?'Muse Spark: clasificación inconclusa':'Muse Spark: inconclusive classification';
+      default:return null;
+    }
+  }
   decision():string {
+    if(this.state()?.evaluation && !this.evaluationMatchesSource())
+      return this.es?'Evaluación de un análisis anterior':'Evaluation of an earlier analysis';
     switch(this.state()?.evaluation?.answer.decision) {
       case 'PROPOSE_EXPERIMENT':return this.es?'Experimento propuesto':'Experiment proposed';
       case 'REPEAT_RECORDING':return this.es?'Repetir grabación':'Repeat recording';

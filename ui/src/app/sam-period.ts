@@ -6,7 +6,7 @@ export const SAM_PERIOD_POLICY=Object.freeze({
   minimumCoverage:.8,maximumCycleCv:.05,maximumRelativeDrift:.05,
   maximumRadiusMadFraction:.1
 });
-/** Geometric consistency only; these engineering thresholds do not identify an object or force law. */
+/** Local arc diagnostics only; Muse Spark interprets the phenomenon from the supplied evidence. */
 export const SAM_PENDULUM_MOTION_METHOD='SAM_PIVOT_ARC_VS_LINE_V1';
 export const SAM_PENDULUM_MOTION_POLICY=Object.freeze({
   minimumArcSagittaSourcePixels:2,maximumRadialRmsToSagitta:.2,
@@ -16,7 +16,7 @@ export type PendulumMotionIssue='PERIOD_OR_TRACKING_INCONCLUSIVE'|'ARC_TOO_SMALL
   'RADIAL_RESIDUAL_TOO_LARGE'|'ARC_NOT_BETTER_THAN_LINE';
 export interface PendulumMotionAssessment {
   method:typeof SAM_PENDULUM_MOTION_METHOD;
-  status:'COMPATIBLE_WITH_SIMPLE_PENDULUM'|'INCONCLUSIVE';issues:PendulumMotionIssue[];
+  status:'RESOLVED_ARC'|'INCONCLUSIVE';issues:PendulumMotionIssue[];
   radialRmsPixels:number|null;lineRmsPixels:number|null;arcSagittaPixels:number|null;
   minimumResolvableSagittaPixels:number|null;
 }
@@ -205,7 +205,7 @@ export function measureSamPeriod(input:SamPeriodInput):SamPeriodAssessment {
     m.issues.push('RADIAL_RESIDUAL_TOO_LARGE');
   if(m.lineRmsPixels<=1e-9 || m.radialRmsPixels>mp.maximumArcRmsToLineRms*m.lineRmsPixels)
     m.issues.push('ARC_NOT_BETTER_THAN_LINE');
-  if(!m.issues.length)m.status='COMPATIBLE_WITH_SIMPLE_PENDULUM';
+  if(!m.issues.length)m.status='RESOLVED_ARC';
   return r;
 }
 
@@ -219,8 +219,8 @@ export function periodReportPayload(source:SamPeriodSource,input:SamPeriodInput,
   return {schemaVersion:'PROOFLAB_PERIOD_REPORT_V1',source,method:SAM_PERIOD_METHOD,
     policy:SAM_PERIOD_POLICY,motionPolicy:SAM_PENDULUM_MOTION_POLICY,input,assessment,
     limitations:{
-      es:'Estimación local desde centroides SAM y tiempos originales. u = s/√n de ciclos alternos; supone errores aproximadamente independientes. No incluye sesgo de seguimiento, pivote, cámara ni reloj. No es incertidumbre total ni intervalo del 95%. Compatibilidad pendular: prueba geométrica local, no identificación del material ni certificación física. Requiere revisar el objeto, el pivote y la cámara.',
-      en:'Local estimate from SAM centroids and original timestamps. u = s/√n of alternating cycles assumes approximately independent errors. Tracking bias, pivot, camera and clock errors are excluded. Not total uncertainty or a 95% interval. Pendular compatibility is a local geometric test, not material identification or physical certification. Review the object, pivot and camera.'
+      es:'Estimación local desde centroides SAM y tiempos originales. u = s/√n de ciclos alternos; supone errores aproximadamente independientes. No incluye sesgo de seguimiento, pivote, cámara ni reloj. No es incertidumbre total ni intervalo del 95%. Diagnóstico geométrico local; la clasificación del fenómeno corresponde a una respuesta registrada de Muse Spark. Requiere revisar el objeto, el pivote y la cámara.',
+      en:'Local estimate from SAM centroids and original timestamps. u = s/√n of alternating cycles assumes approximately independent errors. Tracking bias, pivot, camera and clock errors are excluded. Not total uncertainty or a 95% interval. Local geometry diagnostics; phenomenon classification belongs to a recorded Muse Spark response. Review the object, pivot and camera.'
     }};
 }
 /** Integrity checksum of the exact UTF-8 payload; not a digital signature or certification. */

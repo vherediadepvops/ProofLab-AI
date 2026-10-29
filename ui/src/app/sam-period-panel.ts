@@ -9,7 +9,7 @@ const ISSUE_TEXT:Record<PeriodIssue,[string,string]>={
   INVALID_CENTROIDS:['Centroides inválidos o duplicados.','Invalid or duplicate centroids.'],
   NO_DETECTIONS:['SAM no detectó el objeto.','SAM did not detect the object.'],
   MISSING_PIVOT:['Marca o confirma el punto de suspensión.','Select or confirm the suspension point.'],
-  UNSUPPORTED_ASSEMBLY:['Este método requiere un péndulo simple.','This method requires a simple pendulum.'],
+  UNSUPPORTED_ASSEMBLY:['La configuración no permite aplicar este método geométrico.','This arrangement does not support this geometric method.'],
   INVALID_GEOMETRY:['No hay geometría suficiente para medir.','Insufficient geometry for measurement.'],
   LOW_AMPLITUDE:['Oscilación insuficiente para separar los ciclos.','Insufficient oscillation to separate cycles.'],
   TOO_FEW_CYCLES:['Se necesitan al menos 3 ciclos alternos completos.','At least 3 complete alternating cycles are required.'],

@@ -1,5 +1,7 @@
 # Stage 5 — Muse investigator using SAM evidence
 
+Protocol V3 adds an explicit classification issued by Muse Spark: PENDULUM_COMPATIBLE, OTHER_MOTION or INCONCLUSIVE, with ES/EN reasoning. ProofLab supplies metrics and up to 48 observed centroids with PTS; it does not present local geometry diagnostics as a verdict. SAM with no detections supplies insufficient evidence. The same Muse evaluation interprets those data and proposes or rejects the next experiment; there is no extra automatic inference. V1/V2 responses retain their format and hash without an invented classification. See [responsibilities](SAM-PENDULUM-GENERIC.en.md).
+
 The lab log below the observed-period panel prepares evidence locally. The server verifies the saved original and authentic SAM response, then runs the same TypeScript estimator used by the UI. Building the API requires Node and UI dependencies installed with `npm ci`; MSBuild generates the worker. No model-generated code or credentials enter the worker.
 
 **Ask Muse** sends measured summaries, coverage, gaps, statistical uncertainty, declared physical parameters and limitations, without uploading the video again. It uses `muse-spark-1.3` with strict JSON Schema. One token-count request precedes at most one inference; both HTTP calls are included in the execution record. Estimated ceiling: US$0.05. No automatic retries; server credit, credential and per-request cost checks remain active.
