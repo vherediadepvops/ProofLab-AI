@@ -1,5 +1,7 @@
 # ProofLab AI — Meta Hackathon 2026
 
+**Edge testing:** [reproducible workflow and tools](docs/EDGE-TESTING.en.md).
+
 **Competition edition — created October 26, 2026 after the official kickoff.**
 
 ProofLab AI is an experimental **scientific evidence engine** for adult researchers, built for the
