@@ -65,10 +65,10 @@ public sealed record DirectorSession(
     string FollowUpMode = "recommended",
     double? SelectedFollowUpLengthMeters = null,
     DirectorSingleComparison? SingleComparison = null,
-    string? ModelSha256 = null);
+    string? ModelSha256 = null, MusePrediction? MusePrediction = null);
 
 public sealed class PendulumDirectorWorkflow(
-    IWebHostEnvironment environment, VideoMediaDecoder decoder)
+    IWebHostEnvironment environment, VideoMediaDecoder decoder, MuseExperimentStore? muse = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
         { WriteIndented = true };
@@ -169,13 +169,12 @@ public sealed class PendulumDirectorWorkflow(
         string? posterPath = null;
         try
         {
+            using var studyLock=role=="followup"?muse?.LockStudy(id):null;
             var session = await LoadUnlockedAsync(id, ct);
             if (role == "baseline" && session.Baseline is not null)
                 throw new ArgumentException("Initial video is already registered.");
-            if (role == "followup" && (!session.IncludeSecondTrial ||
-                                       session.Proposal is null ||
-                                       session.Followup is not null))
-                throw new ArgumentException("Register a proposal before the second video.");
+            if (role == "followup" && (session.MusePrediction is null || session.Followup is not null))
+                throw new ArgumentException("Freeze a Muse prediction in SQLite before the second video.");
             if (role == "baseline" && session.Proposal is not null)
                 throw new ArgumentException("The first video cannot be replaced after a proposal.");
 
@@ -204,6 +203,8 @@ public sealed class PendulumDirectorWorkflow(
             await using(var source = File.OpenRead(rawPath))
                 hash = Convert.ToHexString(await SHA256.HashDataAsync(source,ct))
                     .ToLowerInvariant();
+            if(role=="followup" && hash==session.Baseline?.Sha256)
+                throw new ArgumentException("The second experiment must use a different video.");
             var media = await decoder.ProbeAsync(rawPath,ct);
             var tracking = await decoder.TrackAsync(rawPath, ct);
             var spectral = PendulumSpectralEstimator.Estimate(
@@ -413,6 +414,7 @@ public sealed class PendulumDirectorWorkflow(
         var review=await ReadOptionalAsync<DirectorHumanReview>(PathFor(id,"human-review.json"),ct);
         var proposal=await ReadOptionalAsync<DirectorProposal>(PathFor(id,"proposal.json"),ct);
         var second=await ReadOptionalAsync<DirectorVideoEvidence>(PathFor(id,"followup.json"),ct);
+        var musePrediction=muse?.Prediction(id);
         var result=await ReadOptionalAsync<DirectorComparison>(PathFor(id,"comparison.json"),ct);
         var single=await ReadOptionalAsync<DirectorSingleComparison>(PathFor(id,"single-comparison.json"),ct);
         if(first is not null && first.Role!="baseline" ||
@@ -427,7 +429,7 @@ public sealed class PendulumDirectorWorkflow(
               proposal.PredictionSha256!=CalculateProposalHash(
                   id,proposal.BaselineSha256,proposal.Theory,
                   proposal.Source,proposal.RegisteredAtUtc)) ||
-           second is not null && proposal is null ||
+           second is not null && proposal is null && musePrediction is null ||
            result is not null && (proposal is null || second is null ||
                                   !original.IncludeSecondTrial) ||
            single is not null && (original.IncludeSecondTrial ||
@@ -437,12 +439,13 @@ public sealed class PendulumDirectorWorkflow(
                                   review.ReviewedAtUtc < first.UploadedAtUtc) ||
            proposal is not null && (review is null ||
                                     proposal.RegisteredAtUtc < review.ReviewedAtUtc) ||
-           second is not null && (proposal is null ||
-                                  second.UploadedAtUtc < proposal.RegisteredAtUtc) ||
+           second is not null && ((musePrediction is not null && second.UploadedAtUtc < musePrediction.FrozenAtUtc) ||
+                                  (musePrediction is null && (proposal is null || second.UploadedAtUtc < proposal.RegisteredAtUtc))) ||
            result is not null && (second is null ||
                                   result.ComparedAtUtc < second.UploadedAtUtc))
             throw new InvalidDataException("Research order/provenance mismatch.");
-        var step=single is not null ? "SINGLE_COMPARED_PRELIMINARY":
+        var step=musePrediction is not null ? (second is null ? "MUSE_PREDICTION_FROZEN_AWAITING_VIDEO_2" : "MUSE_FOLLOWUP_READY_FOR_SAM"):
+            single is not null ? "SINGLE_COMPARED_PRELIMINARY":
             result is not null ? "COMPARED_PRELIMINARY":
             second is not null ? "READY_TO_COMPARE":
             proposal is not null ? "AWAITING_SECOND_VIDEO":
@@ -453,7 +456,7 @@ public sealed class PendulumDirectorWorkflow(
         return original with {
             Step=step, ModelStatus=NotAi,Baseline=first,HumanReview=review,
             Proposal=proposal,Followup=second,Comparison=result,
-            SingleComparison=single
+            SingleComparison=single, MusePrediction=musePrediction
         };
     }
 

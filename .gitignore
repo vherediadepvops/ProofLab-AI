@@ -42,3 +42,6 @@ local-evidence/
 .vscode-test/
 # Machine-local demo selection (contains a private study ID).
 /ui/public/demo-video.json
+
+# Built from trusted TypeScript and the pinned SAM parser during .NET builds.
+/src/ProofLab.Api/Workers/sam-period-worker.cjs

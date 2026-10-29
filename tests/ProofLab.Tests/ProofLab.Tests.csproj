@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -47,4 +47,9 @@
     <Compile Include="..\..\src\ProofLab.Api\AssemblyLocator.cs" Link="AssemblyLocator.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\src\ProofLab.Api\MuseExperimentContracts.cs" Link="MuseExperimentContracts.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\MuseExperimentStore.cs" Link="MuseExperimentStore.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\MuseExperimentTransport.cs" Link="MuseExperimentTransport.cs" />
+  </ItemGroup>
 </Project>

@@ -29,6 +29,10 @@ builder.Services.AddSingleton<VideoMediaDecoder>();
 builder.Services.AddSingleton<IVideoTimingReader>(sp=>sp.GetRequiredService<VideoMediaDecoder>());
 builder.Services.AddSingleton<VideoTimingCatalog>();
 builder.Services.AddSingleton<PendulumVideoWorkflow>();
+builder.Services.AddSingleton<MuseExperimentStore>();
+builder.Services.AddSingleton<ISamPeriodWorker,SamPeriodWorker>();
+builder.Services.AddSingleton<IMuseExperimentTransport,MuseExperimentTransport>();
+builder.Services.AddSingleton<MuseExperimentService>();
 builder.Services.AddSingleton<PendulumDirectorWorkflow>();
 builder.Services.AddSingleton<PendulumDirectorKinematicsStore>();
 builder.Services.AddSingleton<ISamVideoTransport, SamVideoMetaTransport>();
@@ -52,6 +56,7 @@ var app = builder.Build();
 app.UseCors("HackathonLocal");
 app.MapKnotEndpoints();
 app.MapAssemblyEndpoints();
+app.MapMuseExperimentEndpoints();
 app.MapGet("/api/health", (MetaModelClient meta) =>
     Results.Ok(new {
         project = "ProofLab AI — competition edition",

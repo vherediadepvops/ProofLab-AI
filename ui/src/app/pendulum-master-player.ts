@@ -7,6 +7,7 @@ import { CommonModule } from '@angular/common';
 import { LabActivity } from './lab-activity';
 import { KnotReview } from './knot-review';
 import { SamPeriodPanel } from './sam-period-panel';
+import {MuseInvestigator,type FrozenMusePrediction} from './muse-investigator';
 import type { SamPeriodInput, SamPeriodSource } from './sam-period';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -32,7 +33,7 @@ import {
 @Component({
   selector: 'app-pendulum-master-player',
   standalone: true,
-  imports: [LabActivity,CommonModule,KnotReview,SamPeriodPanel],
+  imports: [LabActivity,CommonModule,KnotReview,SamPeriodPanel,MuseInvestigator],
   templateUrl: './pendulum-master-player.html',
   styleUrl: './pendulum-master-player.scss'
 })
@@ -43,6 +44,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   private samSerial=0;
   private readonly samPathCache=new Map<string,Path2D>();
   readonly samTrack=signal<SamPlaybackTrack|null>(null);
+  readonly researchFrozen=output<FrozenMusePrediction|null>();
   readonly scene=signal<SceneDefinition|null>(null);
   readonly sceneTracks=signal<Record<string,SamPlaybackTrack>>({});
   private readonly manualPivotOverride=signal(false);

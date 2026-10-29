@@ -184,7 +184,7 @@
           }
         } @else {
             <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
-              [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'" [processedAnalysisId]="processedAnalysis('baseline')"
+              [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'" (researchFrozen)="onResearchFrozen($event)" [processedAnalysisId]="processedAnalysis('baseline')"
               [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
                 [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
                 (processingFinished)="onProcessingFinished($event)" (previewStateChanged)="onPreviewState($event)"
@@ -218,28 +218,17 @@
           </div>
         }
 
-        @if(s.humanReview && (s.includeSecondTrial ?? true)) {
+        @if(frozenForStudy()) {
           <div class="next-trial-strip">
-            @if(!s.proposal) {
-              <span>{{es ? 'Siguiente: registrar predicción antes del segundo video.' :
-                'Next: register the prediction before uploading a second video.'}}</span>
-              <button class="secondary-button" type="button" [disabled]="busy()"
-                (click)="propose()">
-                {{es ? 'Registrar predicción local (sin IA)' : 'Register local prediction (not AI)'}}
-              </button>
-            } @else if(!s.followup) {
-              <span>{{es ? 'Predicción registrada · segunda longitud:' :
-                'Prediction recorded · second length:'}}
-                {{s.proposal.theory.followUpLengthMeters * 100 | number:'1.0-0'}} cm
-              </span>
-              <label class="file-action">
-                {{es ? 'Subir segunda grabación' : 'Upload second recording'}}
+            @if(!s.followup) {
+              <span>🔒 {{es?'Predicción de Muse guardada · segunda longitud:':'Muse prediction saved · second length:'}}
+                {{(nextResearchLength() ?? 0)*100 | number:'1.0-0'}} cm</span>
+              <label class="file-action">{{es?'Subir segundo video':'Upload video 2'}}
                 <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
-                  [disabled]="!!stageBusy() || busy()" (change)="uploadFocused($event,'followup')"/>
+                  [disabled]="!!stageBusy() || busy() || connection.busy()" (change)="uploadFocused($event,'followup')"/>
               </label>
             } @else {
-              <span>{{es ? 'Dos videos guardados · cambia de prueba con las pestañas superiores' :
-                'Two videos saved · switch using the trial tabs above'}}</span>
+              <span>{{es?'Segundo video guardado. Procésalo con SAM para medirlo.':'Video 2 saved. Process it with SAM to measure it.'}}</span>
             }
           </div>
         }

@@ -1,3 +1,4 @@
+import type {FrozenMusePrediction} from './muse-investigator';
 import { AssemblyReview, type AssemblyProcessRequest } from './assembly-review';
 import { CommonModule } from '@angular/common';
 import { Component, ViewChild, inject, signal } from '@angular/core';
@@ -24,6 +25,17 @@ import { SamVideoReplay, type SamProcessingSelection } from './sam-video-replay'
 })
 export class PendulumZoneOne extends PendulumDirector {
   private readonly demoHttp=inject(HttpClient);
+  readonly musePrediction=signal<FrozenMusePrediction|null>(null);
+  onResearchFrozen(prediction:FrozenMusePrediction|null):void {
+    if(!prediction || prediction.studyId===this.session()?.id)this.musePrediction.set(prediction);
+  }
+  frozenForStudy():FrozenMusePrediction|null {
+    const p=this.musePrediction();return p?.studyId===this.session()?.id?p:null;
+  }
+  nextResearchLength():number|null {
+    const p=this.frozenForStudy();if(!p)return null;
+    try{return JSON.parse(p.payloadJson).prediction.nextLengthMeters;}catch{return null;}
+  }
   readonly sourceChoice=signal<'empty'|'demo'|'upload'>('empty');
   readonly demoLoading=signal(false);
   readonly choosingUpload=signal(false);

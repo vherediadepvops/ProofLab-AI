@@ -1,0 +1,67 @@
+<section class="muse-card">
+  <header><div><span class="eyebrow">{{es?'ETAPA 5 · MUSE SPARK':'STAGE 5 · MUSE SPARK'}}</span>
+    <h3>{{es?'Bitácora de investigación':'Research lab log'}}</h3></div>
+    @if(state()?.prediction){<span class="lock">🔒 {{es?'Predicción congelada':'Prediction frozen'}}</span>}
+  </header>
+  <p class="intro">{{es?'Muse revisa las mediciones, la incertidumbre y las pérdidas de detección antes de proponer otra prueba.':
+    'Muse reviews measurements, uncertainty and detection gaps before proposing another experiment.'}}</p>
+  @if(busy(); as phase) {
+    <app-lab-activity [label]="phase==='evaluating'?(es?'Muse está evaluando la evidencia…':'Muse is evaluating the evidence…'):
+      phase==='preparing'?(es?'Verificando mediciones guardadas…':'Verifying saved measurements…'):(es?'Cargando bitácora…':'Loading lab log…')"
+      [detail]="phase==='evaluating'?(es?'Una inferencia, sin reintentos automáticos.':'One inference, no automatic retries.'):
+        (es?'Proceso local; no consume créditos de Meta.':'Local operation; no Meta credits used.')"/>
+  }
+  @if(state(); as s) {
+    @if(s.evaluation; as evaluation) {
+      <div class="decision"><strong>{{decision()}}</strong><span>{{evaluation.model}}</span></div>
+      <p>{{text(evaluation.answer.justification)}}</p>
+      @if(prediction(); as p) {
+        <div class="prediction">
+          <div><span>{{es?'Longitud propuesta':'Proposed length'}}</span><strong>{{(p.nextLengthMeters*100).toFixed(0)}} cm</strong></div>
+          <div><span>{{es?'Período predicho':'Predicted period'}}</span><strong>{{p.periodSeconds.toFixed(3)}} s</strong></div>
+          <div><span>{{es?'Banda de contraste':'Comparison band'}}</span><strong>±{{p.tolerancePercent}} %</strong></div>
+        </div>
+        <p class="fine">{{es?'Banda práctica fijada antes de subir el video 2; no es un intervalo de confianza.':
+          'Practical band fixed before video 2 is uploaded; not a confidence interval.'}}</p>
+      }
+      <div class="narrative">
+        <h4>{{es?'Hipótesis falsable':'Falsifiable hypothesis'}}</h4><p>{{text(evaluation.answer.hypothesis)}}</p>
+        <h4>{{es?'Protocolo':'Protocol'}}</h4><p>{{text(evaluation.answer.protocol)}}</p>
+        <h4>{{es?'Criterio de contraste':'Comparison criterion'}}</h4><p>{{text(evaluation.answer.falsification)}}</p>
+      </div>
+      <details><summary>{{es?'Límites y procedencia':'Limits and provenance'}}</summary>
+        <p>{{text(evaluation.answer.limitations)}}</p>
+        <p class="fine">{{es?'Respuesta real registrada':'Recorded provider response'}}: {{evaluation.responseId}}</p>
+        <p class="fine">{{es?'Costo por tokens estimado, no factura':'Estimated token cost, not an invoice'}}: US$ {{evaluation.tokenCostEstimateUsd.toFixed(4)}}</p>
+        @if(s.prediction; as frozen){
+          <p class="fine">{{frozen.frozenAtUtc}}</p><code>{{frozen.sha256}}</code>
+          <p class="fine">{{es?'El hash comprueba integridad local; no prueba cuándo se filmó el segundo video.':'The hash checks local integrity; it does not establish when video 2 was filmed.'}}</p>
+        }
+      </details>
+      <a class="report" [href]="url()+'/report'" download>{{es?'Descargar acta e informe':'Download lab record and report'}}</a>
+    } @else {
+      <div class="actions">
+        <button type="button" (click)="prepare()" [disabled]="!!busy()||connection.busy()">
+          {{s.observation?(es?'Actualizar evidencia':'Refresh evidence'):(es?'Preparar evidencia':'Prepare evidence')}}
+        </button>
+        @if(s.observation){
+          <button class="primary" type="button" (click)="evaluate()" [disabled]="!canEvaluate()">
+            {{es?'Consultar Muse · máx. US$ 0,05':'Ask Muse · max. US$ 0.05'}}
+          </button>
+        }
+      </div>
+      @if(s.observation){
+        <p class="fine">{{es?'Se enviarán mediciones y limitaciones, sin volver a subir el video. Al consultar confirmas ese envío y el costo máximo estimado.':
+          'Measurements and limitations will be sent without uploading the video again. Asking Muse confirms this transfer and estimated cost ceiling.'}}</p>
+        @if(!connection.hasToken()){<button class="link" type="button" (click)="connection.openSettings()">{{es?'Configurar token':'Configure token'}}</button>}
+        @if(!s.manualCallsPermitted){<p class="warning">{{es?'El servidor no tiene cupo de envío disponible.':'The server has no available request allowance.'}}</p>}
+        @if(s.attemptStatus){<p class="warning">{{es?'Existe un intento registrado que requiere revisión. No se harán reintentos automáticos.':
+          'A recorded attempt requires review. There will be no automatic retries.'}}</p>}
+      }
+      <p class="fine">{{es?'El segundo video se habilita únicamente después de guardar una predicción válida en SQLite. Muse puede recomendar repetir la grabación o declarar el resultado inconcluso.':
+        'Video 2 is enabled only after a valid prediction is stored in SQLite. Muse may recommend another recording or an inconclusive result.'}}</p>
+    }
+  }
+  @if(error()){<p class="warning" role="alert">{{error()}}</p>
+    <button type="button" (click)="load()" [disabled]="!!busy()">{{es?'Consultar estado':'Refresh status'}}</button>}
+</section>

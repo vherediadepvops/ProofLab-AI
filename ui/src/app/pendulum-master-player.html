@@ -221,6 +221,9 @@
   @if(periodMeasurement(); as measurement) {
     <app-sam-period-panel [measurement]="measurement" [source]="periodSource()" [language]="language()"/>
   }
+  @if(videoRole()==='baseline' && periodSource(); as researchSource) {
+    <app-muse-investigator [source]="researchSource" [language]="language()" (frozen)="researchFrozen.emit($event)"/>
+  }
   @if(droppedFrames()>0) {
     <p class="playback-performance" role="status">{{es?'Fotogramas omitidos por el navegador':'Frames dropped by the browser'}}: {{droppedFrames()}}.
       {{es?'El archivo mantiene su resolución y FPS originales.':'The file retains its original resolution and FPS.'}}</p>
