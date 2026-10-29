@@ -12,7 +12,9 @@ builder.Services.AddHttpClient("meta", client =>
 builder.Services.AddHttpClient("sam-video", client =>
     client.Timeout = TimeSpan.FromMinutes(30));
 builder.Services.AddSingleton(sp => new MetaCallSafetyBudget(
-    sp.GetRequiredService<IConfiguration>().GetValue<int>("Meta:AlreadyUsedRequests")));
+    sp.GetRequiredService<IConfiguration>().GetValue<int>("Meta:AlreadyUsedRequests"),
+    sp.GetRequiredService<IConfiguration>().GetValue<int?>("Meta:MaximumRequestsPerProcess")
+        ?? MetaCallSafetyBudget.MaximumRequestsPerProcess));
 builder.Services.AddSingleton<MetaLiveAccess>();
 builder.Services.AddScoped<MetaModelClient>();
 builder.Services.AddSingleton<LeanProofVerifier>();

@@ -4,6 +4,8 @@ The lab log below the observed-period panel prepares evidence locally. The serve
 
 **Ask Muse** sends measured summaries, coverage, gaps, statistical uncertainty, declared physical parameters and limitations, without uploading the video again. It uses `muse-spark-1.3` with strict JSON Schema. One token-count request precedes at most one inference; both HTTP calls count toward the owner's authorized allowance. Estimated ceiling: US$0.05. No automatic retries; server credit, credential and request-budget checks remain active.
 
+Protocol V2 supplies experiment options computed by ProofLab. Muse selects and justifies one; JSON Schema limits numeric fields to those values and the server checks the matching length/period pair. Protocol version is part of observation identity, preserving earlier attempts.
+
 Decisions are a conditional experiment proposal, repeat recording, or inconclusive. A proposal is neither scientific certification nor discovery. The app independently validates candidate measurements, a 0.10–2 m follow-up length at least 15% different, and T₂ = measured T₁ × √(L₂/L₁). The predeclared 1–10% comparison band is practical, not a confidence interval. Bilingual justification, limitations, falsifiable hypothesis and protocol are required.
 
 ## Evidence and freezing
@@ -14,6 +16,10 @@ Evaluation and prediction commit atomically. A study lock prevents a concurrent 
 
 Hashes verify local integrity, not independent timestamps or filming chronology. Follow-up length must be measured from suspension to visible object center; this is not an independently measured center of mass.
 
+## Server allowance
+
+The default remains two admitted requests. An explicitly authorized extension can set `Meta:MaximumRequestsPerProcess` from 1 to 5 while preserving `Meta:AlreadyUsedRequests`. Restarting must not erase spent requests. This counter tracks admitted inferences, not HTTP requests or account billing; token-count calls also count against the user-authorized API-call allowance.
+
 ## Local API
 
 Base: `/api/science/director/pendulum/sessions/{id}/muse`.
@@ -21,7 +27,7 @@ GET reads state; POST `/prepare` reconstructs evidence without Meta; POST `/eval
 
 ## Validation boundary
 
-Offline HTTP fixtures test strict output, arithmetic, immutable storage, atomic writes, concurrency, cost limits and absence of retries. Fixtures are not live Muse results. Scientific acceptance still requires a real recorded response. Repeat/inconclusive decisions do not unlock video two or fabricate a prediction.
+Offline HTTP fixtures test strict output, arithmetic, immutable storage, atomic writes, concurrency, cost limits and absence of retries. Fixtures are not live Muse results. The live test on 2026-10-28 recorded a real bilingual Muse hypothesis, justification and protocol: change length from 0.50 to 0.80 m, predicted period 1.7909424812 s with a practical ±5% band. The prediction was frozen before video two and survived an API restart. An earlier inconsistent numeric response was rejected and retained. Two inferences plus two token-count calls cost an estimated US$0.0239455 total. Cached rereads consumed no allowance. This verifies integration, not the hypothesis against a second experiment. Repeat/inconclusive decisions do not unlock video two or fabricate a prediction.
 
 Stage 6 still requires independent second-video SAM measurements, comparison between lengths, uncertainty and a reproducible conclusion. This implementation does not silently reuse the legacy local tracker as that scientific comparison.
 

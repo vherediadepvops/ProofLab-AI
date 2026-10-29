@@ -11,7 +11,15 @@ public sealed class MuseExperimentTransport(IHttpClientFactory clients):IMuseExp
             throw new ArgumentException("Invalid investigator input.");
         var bilingual=new {type="object",additionalProperties=false,required=new[]{"es","en"},
             properties=new {es=new {type="string"},en=new {type="string"}}};
+        using var supplied=JsonDocument.Parse(inputJson);
+        var options=supplied.RootElement.GetProperty("experimentOptions").Deserialize<MuseExperimentPolicy.ExperimentOption[]>(MuseExperimentPolicy.Json)
+            ??throw new ArgumentException("Missing experiment options.");
         var nullableNumber=new {type=new[]{"number","null"}};
+        var lengthChoice=new {type=new[]{"number","null"},
+            @enum=options.Select(p=>(double?)p.NextLengthMeters).Append(null).ToArray()};
+        var periodChoice=new {type=new[]{"number","null"},
+            @enum=options.Select(p=>(double?)p.PeriodSeconds).Append(null).ToArray(),
+            description="Predicted second-video period T2 from the selected experiment option, not baseline T1."};
         var format=new {type="json_schema",name="pendulum_research_director",strict=true,
             schema=new {type="object",additionalProperties=false,
                 required=new[]{"decision","justification","limitations","protocol","hypothesis","falsification",
@@ -19,7 +27,7 @@ public sealed class MuseExperimentTransport(IHttpClientFactory clients):IMuseExp
                 properties=new {
                     decision=new {type="string",@enum=new[]{"PROPOSE_EXPERIMENT","REPEAT_RECORDING","INCONCLUSIVE"}},
                     justification=bilingual,limitations=bilingual,protocol=bilingual,hypothesis=bilingual,
-                    falsification=bilingual,nextLengthMeters=nullableNumber,periodSeconds=nullableNumber,
+                    falsification=bilingual,nextLengthMeters=lengthChoice,periodSeconds=periodChoice,
                     tolerancePercent=nullableNumber}}};
         var payload=new {model=MuseExperimentPolicy.Model,stream=false,
             max_output_tokens=MuseExperimentPolicy.MaximumOutputTokens,reasoning=new {effort="low"},

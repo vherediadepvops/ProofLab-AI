@@ -15,10 +15,14 @@ public sealed class MetaCallSafetyBudget
 {
     public const int MaximumRequestsPerProcess = 2;
     private int used;
+    private readonly int maximum;
 
-    public MetaCallSafetyBudget(int alreadyUsedRequests = 0)
+    public MetaCallSafetyBudget(int alreadyUsedRequests = 0, int maximumRequests = MaximumRequestsPerProcess)
     {
-        if(alreadyUsedRequests is <0 or >MaximumRequestsPerProcess)
+        if(maximumRequests is <1 or >5)
+            throw new ArgumentOutOfRangeException(nameof(maximumRequests));
+        maximum=maximumRequests;
+        if(alreadyUsedRequests<0 || alreadyUsedRequests>maximum)
             throw new ArgumentOutOfRangeException(nameof(alreadyUsedRequests));
         used=alreadyUsedRequests;
     }
@@ -30,12 +34,12 @@ public sealed class MetaCallSafetyBudget
         bool paidRequestsEnabled)
     {
         var usedNow = Used;
-        var remaining = Math.Max(0, MaximumRequestsPerProcess - usedNow);
+        var remaining = Math.Max(0, maximum - usedNow);
         var allowed = apiKeyConfigured && creditsConfirmed && ownerApproved &&
             paidRequestsEnabled && remaining > 0;
         return new MetaCallSafetySnapshot(apiKeyConfigured, creditsConfirmed,
             ownerApproved, paidRequestsEnabled, allowed, usedNow, remaining,
-            MaximumRequestsPerProcess);
+            maximum);
     }
 
     public bool TryReserve(bool apiKeyConfigured, bool creditsConfirmed,
@@ -46,7 +50,7 @@ public sealed class MetaCallSafetyBudget
         while (true)
         {
             var before = Used;
-            if (before >= MaximumRequestsPerProcess) return false;
+            if (before >= maximum) return false;
             if (Interlocked.CompareExchange(ref used, before + 1, before) == before)
                 return true;
         }

@@ -101,6 +101,7 @@ public sealed class MuseExperimentService(
             humanObjectReviewed=root.GetProperty("humanObjectReviewed"),
             pivotIndependentlyVerified=false,totalUncertaintyAvailable=false,assessment=summary,
             limitations=root.GetProperty("measurement").GetProperty("limitations"),
+            experimentOptions=MuseExperimentPolicy.ExperimentOptions(root),
             nextVideoSeen=false,interpretation="Masked image centroids are not independently measured centers of mass."
         },Json);
         if(input.Length>16000)throw new ArgumentException("Evidence summary exceeds the input limit.");
