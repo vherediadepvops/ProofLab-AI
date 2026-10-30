@@ -8,7 +8,7 @@ Local implementation, 2026-10-30. Reviewing stored evidence requires no new prov
 2. Press **Generate recovery code**, then copy and save it. Creating this empty study enables the parameters and video upload.
 3. Length, angle, mass and follow-up settings are saved under the same code before the first video is registered. The UI shows saving progress or a retry action on failure. Parameters become locked after registration.
 4. **Test video** and the first personal upload keep the generated code. A subsequent New trial creates another study; the previous study remains recoverable with its own code.
-5. Paste a code in **Already have a code?**, beside the generation action, and press **Search**. The previous Home entry remains available. Uppercase and surrounding whitespace are accepted.
+5. Paste a code in **Already have a code?**, beside the generation action, and press **Search**. Home keeps only “Open laboratory”; recovery is available inside Laboratory. Uppercase and surrounding whitespace are accepted.
 6. The recovery progress bar remains until saved settings, media and results finish loading. Unknown codes display “No session was found”; connection failures display a separate retry message.
 7. Both videos, verifiable results and the frozen prediction are restored. Active operations are polled every 2.5 seconds without resubmission. Interrupted operations require checking their state before continuing manually.
 

@@ -8,7 +8,7 @@ Implementación local del 30/10/2026. No requiere nuevas inferencias para revisa
 2. Pulsa **Generar código de recuperación** para crear una sesión vacía. Copia el código y guárdalo. Esto habilita la configuración y la carga de video.
 3. Los cambios de longitud, ángulo, masa y segunda prueba se guardan con el mismo código antes de cargar el primer video. La interfaz indica «Guardando parámetros» o permite reintentar si falla la conexión. Al registrar el video, estos parámetros quedan protegidos.
 4. **Video de prueba** y la primera carga propia conservan el código generado. Una Nueva prueba posterior crea otra investigación; la anterior continúa recuperable mediante su propio código.
-5. Para recuperar, pega el código en **¿Ya tienes un código?**, al lado del botón de generación, y pulsa **Buscar**. También se conserva el acceso anterior desde Inicio. Se aceptan mayúsculas y espacios al principio/final.
+5. Para recuperar, pega el código en **¿Ya tienes un código?**, al lado del botón de generación, y pulsa **Buscar**. Inicio conserva únicamente «Abrir laboratorio»; la recuperación se realiza en Laboratorio. Se aceptan mayúsculas y espacios al principio/final.
 6. La barra «Recuperando sesión» permanece hasta cargar la configuración, el video y los resultados guardados. Un ID desconocido muestra «No se encontró ninguna sesión»; un fallo de conexión muestra un mensaje diferente para reintentar.
 7. Se recuperan ambos videos, resultados verificables y predicción congelada. Si una operación sigue en curso, se consulta cada 2,5 s sin reenviarla. Una etapa interrumpida requiere revisar su estado antes de continuar manualmente.
 
