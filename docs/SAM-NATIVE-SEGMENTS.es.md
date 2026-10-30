@@ -44,3 +44,9 @@ El parser y el dibujo aceptan máscaras cuya cuadrícula interna tiene dimension
 - Ver [pruebas en Edge](EDGE-TESTING.es.md). La campaña utiliza perfil/CDP propios y respuestas archivadas para comprobar reproducción sin nuevas inferencias. Nunca guardar tokens, videos o recibos privados en Git.
 
 Los tres permisos Meta y los envíos manuales ilimitados del propietario permanecen habilitados. La cuota de pruebas autorizadas al agente se controla en su bitácora, separada del servicio del usuario.
+
+## Seguimiento del 30/10: tiempos y calidad del objeto
+
+En API Meta/API Meta + caché, el cronómetro SAM se detiene cuando termina su solicitud; la revisión posterior de suspensión con Spark y la preparación de gráficos tienen tiempos separados en la tarjeta existente. SAM reutilizado aparece como caché con cero segundos de inferencia. Una revisión fallida no convierte una respuesta SAM guardada en fallida. 56 pruebas Angular locales verifican estos estados y el flujo segmentado; no se hicieron llamadas Meta para esta corrección.
+
+Una unión coherente de segmentos comprueba continuidad, no identidad correcta del objeto. Una respuesta Spark con cajas de formato válido y confianza alta puede localizar la cuerda o el fondo. Si SAM sigue esas cajas, las máscaras pueden ser coherentes entre partes y aun así producir una trayectoria incorrecta. La ausencia de θ/ω con TRACK_INCONSISTENT_WITH_SUSPENSION no se resuelve desactivando la validación ni moviendo manualmente solo el pivote. La validación visual de las cajas antes del seguimiento sigue pendiente; este cambio de tiempos no corrige ese problema.

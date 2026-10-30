@@ -74,7 +74,30 @@ describe('SAM guided manual processing and parallel quotes',()=>{
     const post=ctx.h.expectOne(url);expect(post.request.method).toBe('POST');
     post.flush({...q,required:false,evidence:{}});await run;
     expect(emit).toHaveBeenCalledTimes(1);expect(ctx.c.freeCacheAvailable()).toBeTrue();
+    expect(ctx.c.stageRows().find(r=>r.key==='sam')).toEqual(jasmine.objectContaining({label:'SAM · caché',state:'COMPLETED',ms:0}));
     ctx.h.expectNone(r=>r.url.endsWith('/manual-one-shot')||r.url.includes('/grounding'));
+  });
+
+  it('freezes SAM time while Spark reviews suspension and playback validates',async()=>{
+    const ctx=setup();token(ctx);let clock=1000;spyOn(Date,'now').and.callFake(()=>clock);
+    await quote(ctx,{quote:{...pf,suspensionReviewMaximumCostUsd:.05},readiness:{...ready,...unlimited}});
+    const p=ctx.c.process(),sam=ctx.h.expectOne(base+'/sam/baseline/manual-one-shot');
+    clock=5000;ctx.c.traceClock.set(clock);expect(ctx.c.stageRows().find(r=>r.key==='sam')?.ms).toBe(4000);
+    sam.flush(cached());await Promise.resolve();await Promise.resolve();
+    const url=base+'/sam/baseline/suspension-review';
+    ctx.h.expectOne(url).flush({analysisId:'synthetic-analysis',required:true,canRun:true,priorAttempt:false,maximumEstimatedCostUsd:.05,evidence:null});
+    await Promise.resolve();await Promise.resolve();
+    clock=13000;ctx.c.traceClock.set(clock);
+    expect(ctx.c.stageRows().find(r=>r.key==='sam')).toEqual(jasmine.objectContaining({state:'COMPLETED',ms:4000}));
+    expect(ctx.c.stageRows().find(r=>r.key==='review')).toEqual(jasmine.objectContaining({state:'IN_PROGRESS',ms:8000}));
+    ctx.h.expectOne(url).flush({analysisId:'synthetic-analysis',required:false,evidence:{},maximumEstimatedCostUsd:.05});await p;
+    clock=16000;ctx.c.traceClock.set(clock);
+    expect(ctx.c.stageRows().find(r=>r.key==='review')).toEqual(jasmine.objectContaining({state:'COMPLETED',ms:8000}));
+    expect(ctx.c.stageRows().find(r=>r.key==='view')).toEqual(jasmine.objectContaining({state:'IN_PROGRESS',ms:3000}));
+    ctx.f.componentRef.setInput('validationState','ready');ctx.f.detectChanges();
+    expect(ctx.c.stageRows().every(r=>r.state==='COMPLETED')).toBeTrue();
+    expect(ctx.f.nativeElement.textContent).not.toContain('Los segmentos SAM se ejecutan en paralelo');
+    ctx.f.destroy();
   });
 
   it('includes a bounded conditional Spark review and invokes it only after SAM succeeds',async()=>{
@@ -105,6 +128,8 @@ describe('SAM guided manual processing and parallel quotes',()=>{
     ctx.h.expectOne(base+'/sam/baseline/suspension-review').flush({}, {status:503,statusText:'Unavailable'});
     await p;expect(emit).toHaveBeenCalledTimes(1);
     expect(ctx.c.error()).toContain('SAM está guardado');ctx.h.expectNone(r=>r.method==='POST');
+    expect(ctx.c.stageRows().find(r=>r.key==='sam')?.state).toBe('COMPLETED');
+    expect(ctx.c.stageRows().find(r=>r.key==='review')?.state).toBe('FAILED');
   });
 
   it('starts four independent GETs together and keeps Process disabled until the cost arrives',async()=>{

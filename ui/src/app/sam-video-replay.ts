@@ -165,7 +165,7 @@ interface SamAdaptiveReport {
                   </div>
                 </div>
               }
-              <small class="sam-stage-help">{{es?'Los segmentos SAM se ejecutan en paralelo. Las barras animadas indican actividad; Meta no informa un porcentaje exacto.':'SAM segments run in parallel. Animated bars indicate activity; Meta does not report an exact percentage.'}}</small>
+              <small class="sam-stage-help">{{mode()==='api-meta-adaptive'?(es?'Los segmentos SAM se ejecutan en paralelo. Las barras animadas indican actividad; Meta no informa un porcentaje exacto.':'SAM segments run in parallel. Animated bars indicate activity; Meta does not report an exact percentage.'):(es?'Este modo envía el video completo en una solicitud SAM cuando no reutiliza un resultado. La revisión de suspensión con Spark se mide por separado.':'This mode sends the complete video in one SAM request unless reusing a result. Spark suspension review is timed separately.')}}</small>
             </div>
           }
           @if(!checking() && !processing() && !connection.busy()) {
@@ -417,6 +417,12 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private traceTicker:ReturnType<typeof setInterval>|null=null;
   private traceStartedAt=0;
   private sparkFinishedAt=0;
+  private samStartedAt=0;
+  private samFinishedAt=0;
+  private samWasReused=false;
+  private reviewStartedAt=0;
+  private reviewFinishedAt=0;
+  private reviewFailed=false;
   readonly sparkStages=signal<{key:string;state:string;elapsedMs:number;percent:number|null}[]>([]);
   private sparkPoll:ReturnType<typeof setInterval>|null=null;
   private async pollSpark():Promise<void> {
@@ -432,11 +438,13 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private viewFinishedAt=0;
   private traceFailed=false;
   private sparkWasNeeded=false;
-  private startStageTrace():void {
+  private startStageTrace(cached=false):void {
     if(this.traceTicker!==null)clearInterval(this.traceTicker);
     this.traceStartedAt=Date.now();this.traceClock.set(this.traceStartedAt);
-    this.sparkFinishedAt=0;this.viewStartedAt=0;this.viewFinishedAt=0;this.traceFailed=false;
-    this.sparkWasNeeded=this.mode()==='api-meta-adaptive'?!!this.adaptiveQuote()?.requiresNewSparkCall:this.groundingRequired();
+    this.sparkFinishedAt=cached?this.traceStartedAt:0;this.viewStartedAt=0;this.viewFinishedAt=0;this.traceFailed=false;
+    this.samStartedAt=0;this.samFinishedAt=0;this.samWasReused=cached;
+    this.reviewStartedAt=0;this.reviewFinishedAt=0;this.reviewFailed=false;
+    this.sparkWasNeeded=!cached && (this.mode()==='api-meta-adaptive'?!!this.adaptiveQuote()?.requiresNewSparkCall:this.groundingRequired());
     this.stopSparkPoll();this.sparkStages.set([]);
     if(this.sparkWasNeeded)this.sparkPoll=setInterval(()=>{void this.pollSpark();},1000);
     this.stageTraceStarted.set(true);
@@ -461,7 +469,15 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       rows.splice(0,1,...names.map(([key,es,en])=>{const s=this.sparkStages().find(x=>x.key===key);return {key:'spark-'+key,label:this.es?es:en,state:s?.state??'NOT_STARTED',ms:s?.elapsedMs??0,percent:s?.percent};}));
     }
     if(this.mode()!=='api-meta-adaptive'){
-      rows.splice(rows.length-1,1,{key:'sam',label:'SAM',state:!sparkDone?'NOT_STARTED':this.viewStartedAt?'COMPLETED':this.traceFailed?'FAILED':'IN_PROGRESS',ms:sparkDone?Math.max(0,(this.viewStartedAt||now)-this.sparkFinishedAt):0});
+      rows.splice(rows.length-1,1,{key:'sam',label:this.samWasReused?(this.es?'SAM · caché':'SAM · cache'):(this.es?'SAM · video completo':'SAM · full video'),
+        state:this.samWasReused||this.samFinishedAt?'COMPLETED':!this.samStartedAt?'NOT_STARTED':this.traceFailed?'FAILED':'IN_PROGRESS',
+        ms:this.samStartedAt?Math.max(0,(this.samFinishedAt||now)-this.samStartedAt):0});
+      if(this.reviewStartedAt)rows.push({key:'review',label:this.es?'Revisión de suspensión · Spark':'Suspension review · Spark',
+        state:this.reviewFailed?'FAILED':this.reviewFinishedAt?'COMPLETED':'IN_PROGRESS',
+        ms:Math.max(0,(this.reviewFinishedAt||now)-this.reviewStartedAt)});
+      rows.push({key:'view',label:this.es?'Gráficos y reproducción':'Overlays and playback',
+        state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.viewStartedAt?'IN_PROGRESS':'NOT_STARTED',
+        ms:this.viewStartedAt?Math.max(0,(this.viewFinishedAt||now)-this.viewStartedAt):0});
       return rows;
     }
     for(let i=0;i<(this.adaptiveQuote()?.parts??0);i++){
@@ -1050,6 +1066,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           nextQuote.estimatedCostUsd<=0 || nextQuote.estimatedCostUsd>quote.estimatedCostUsd+1e-9)
           throw new Error('POST_GROUNDING_QUOTE_CHANGED');
         if(mode==='api-meta-cache' && nextStatus.cacheHit===true) {
+          this.sparkFinishedAt=Date.now();this.samWasReused=true;this.viewStartedAt=Date.now();
           this.openResult(nextStatus);this.cacheStatus.set(nextStatus);
           this.preflight.set(nextQuote);this.processingPhase.set('validating');return;
         }
@@ -1061,7 +1078,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       }
       if(!current() || !scene || scene.videoSha256!==sha)throw new Error('GROUNDING_RESULT_MISMATCH');
       void this.pollSpark();this.stopSparkPoll();this.sparkFinishedAt=Date.now();
-      this.processingPhase.set('sam');
+      this.processingPhase.set('sam');this.samStartedAt=Date.now();
       const state=await firstValueFrom(this.http.post<SamCacheStatus>(samUrl+'/manual-one-shot',{
         mode,sceneKey:scene.key,modelApiToken:oneTimeToken,videoSha256:sha,
         confirmPrivateVideoTransfer:true,confirmOneBillableSamCall:true,
@@ -1070,7 +1087,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         previousAttemptBillingEvidence:isRetry?SamVideoReplay.reconciledOnce:null
       },{headers:{'X-ProofLab-Manual-Action':'sam-one-shot'}}));
       if(!current())return;
-      this.cacheStatus.set(state);
+      this.samFinishedAt=Date.now();this.cacheStatus.set(state);
       await this.reviewAfterSam(state,oneTimeToken,samUrl,quote.suspensionReviewMaximumCostUsd??0,current);
       if(!current())return;
       this.viewStartedAt=Date.now();this.openResult(state);this.processingPhase.set('validating');
@@ -1105,7 +1122,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
 
   private async reviewAfterSam(state:SamCacheStatus,token:string,url:string,budget:number,current:()=>boolean):Promise<void> {
     if(!this.http || budget<=0)return;
-    this.processingPhase.set('review');
+    this.processingPhase.set('review');this.reviewStartedAt=Date.now();
     try {
       const q=await firstValueFrom(this.http.get<SuspensionReviewQuote>(url+'/suspension-review').pipe(timeout(90000)));
       if(!current())return;
@@ -1120,20 +1137,20 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       },{headers:{'X-ProofLab-Manual-Action':'suspension-review'}}));
       if(current())this.suspensionReviewQuote.set(reviewed);
     } catch {
-      if(current())this.error.set(this.es?
+      if(current()){this.reviewFailed=true;this.error.set(this.es?
         'SAM está guardado. La revisión de suspensión no se completó; puede haber un cobro de Spark. No se repetirá automáticamente.':
-        'SAM is saved. The suspension review did not complete; Spark may have charged. It will not retry automatically.');
-    }
+        'SAM is saved. The suspension review did not complete; Spark may have charged. It will not retry automatically.');}
+    } finally {if(current())this.reviewFinishedAt=Date.now();}
   }
   private async reviewCached():Promise<void> {
     const token=this.connection.tokenForManualRequest(),state=this.cacheStatus(),quote=this.suspensionReviewQuote();
     if(!token||!state||!quote)return;
     const url=this.url(),sha=this.videoSha256(),serial=++this.serial;
     const current=()=>!this.disposed&&serial===this.serial&&sha===this.videoSha256()&&url===this.url();
-    this.processingReset.emit();this.beginProcessing();this.sending.set(true);this.error.set('');
+    this.processingReset.emit();this.beginProcessing();this.sending.set(true);this.error.set('');this.startStageTrace(true);
     try {
       await this.reviewAfterSam(state,token,url,quote.maximumEstimatedCostUsd,current);
-      if(current()){this.openResult(state);this.processingPhase.set('validating');}
+      if(current()){this.viewStartedAt=Date.now();this.openResult(state);this.processingPhase.set('validating');}
     } finally {
       this.sending.set(false);
       if(!current())this.finishProcessing();

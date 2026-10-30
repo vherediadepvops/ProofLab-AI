@@ -44,3 +44,9 @@ Parsing/rendering now accepts SAM mask rasters whose resolution differs from the
 - See [Edge testing](EDGE-TESTING.en.md). Use a dedicated profile/CDP and archived responses to check playback without another inference. Never commit tokens, videos or private receipts.
 
 The owner's three Meta permission flags and unlimited manual requests remain enabled. The agent's authorized test allowance is tracked separately from the user's service.
+
+## October 30 follow-up: timing and target quality
+
+In API Meta/API Meta + cache, the SAM timer stops when its request completes. Subsequent Spark suspension review and playback preparation have separate timings in the existing card. Reused SAM shows cache with zero inference seconds. A failed review does not mark the saved SAM response as failed. 56 local Angular tests cover these states and the segmented flow; no Meta calls were made for this fix.
+
+Coherent segment seams verify continuity, not correct object identity. Syntactically valid, high-confidence Spark boxes can still identify the cord or background. SAM may follow those boxes consistently across parts while producing an incorrect trajectory. Missing θ/ω with TRACK_INCONSISTENT_WITH_SUSPENSION must not be repaired by disabling validation or only moving the pivot manually. Visual validation of target boxes before tracking remains pending; the timing fix does not resolve that problem.
