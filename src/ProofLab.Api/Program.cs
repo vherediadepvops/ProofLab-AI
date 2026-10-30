@@ -35,6 +35,8 @@ builder.Services.AddSingleton<MuseExperimentStore>();
 builder.Services.AddSingleton<ISamPeriodWorker,SamPeriodWorker>();
 builder.Services.AddSingleton<IMuseExperimentTransport,MuseExperimentTransport>();
 builder.Services.AddSingleton<MuseExperimentService>();
+builder.Services.AddSingleton<MuseContrastTransport>();
+builder.Services.AddSingleton<MuseContrastService>();
 builder.Services.AddSingleton<PendulumDirectorWorkflow>();
 builder.Services.AddSingleton<PendulumDirectorKinematicsStore>();
 builder.Services.AddSingleton<ISamVideoTransport, SamVideoMetaTransport>();

@@ -27,10 +27,35 @@ At the user’s request, `Meta:UnlimitedManualRequests=true` allows manual submi
 Base: `/api/science/director/pendulum/sessions/{id}/muse`.
 GET reads state; POST `/prepare` reconstructs evidence without Meta; POST `/evaluate` requires explicit transfer/cost consent; GET `/report` downloads reproducible JSON. Writes require loopback, the local 4300 origin and `X-ProofLab-Manual-Action: muse-research`. Credentials are never persisted in SQLite or reports.
 
-## Validation boundary
+## Historical validation on 2026-10-28
 
 Offline HTTP fixtures test strict output, arithmetic, immutable storage, atomic writes, concurrency, cost limits and absence of retries. Fixtures are not live Muse results. The live test on 2026-10-28 recorded a real bilingual Muse hypothesis, justification and protocol: change length from 0.50 to 0.80 m, predicted period 1.7909424812 s with a practical ±5% band. The prediction was frozen before video two and survived an API restart. An earlier inconsistent numeric response was rejected and retained. Two inferences plus two token-count calls cost an estimated US$0.0239455 total. Cached rereads consumed no allowance. This verifies integration, not the hypothesis against a second experiment. Repeat/inconclusive decisions do not unlock video two or fabricate a prediction.
 
 Stage 6 still requires independent second-video SAM measurements, comparison between lengths, uncertainty and a reproducible conclusion. This implementation does not silently reuse the legacy local tracker as that scientific comparison.
 
 Integration references: [models](https://dev.meta.ai/docs/models), [structured output](https://dev.meta.ai/docs/structured-output), [pricing](https://dev.meta.ai/docs/pricing-rate-limits). Token cost is an estimate, not an invoice.
+
+## Second-video comparison — 2026-10-30
+
+The existing lab log now accepts segmented SAM batches. adaptiveBatchId binds the original SHA, provider receipts and verified joins before measurement. An operator-selected follow-up length is respected; Muse must not claim autonomous selection. The second video uses its own authenticated tracking, never the legacy local trajectory.
+
+After freezing a prediction and uploading video two, Verify comparison prepares its measurements, declared length and frozen band locally. Ask Muse sends this summary in one manual inference, estimated ceiling US$0.05, without a preliminary token-count call or automatic retry. Outcomes are within the predeclared band, outside it, or inconclusive. Muse may abstain but cannot reverse the numerical comparison or revise the frozen prediction. Differences cannot be attributed to friction without evidence.
+
+Additional routes under the same base: GET /contrast, POST /contrast/prepare and POST /contrast/evaluate, with the existing local-origin protections. Private files at .private/physics/muse-contrasts/{id}/ retain evidence, attempt, raw response and evaluation using new files without overwrite. Predictions remain in SQLite. Repeating a completed evaluation reads its receipt without another inference; changing source, analysis or length of stored comparison evidence is rejected. A new experiment requires a new study.
+
+Preexisting recordings support retrospective comparison. Uploading after JSON freezing establishes application order, not blinded prospective acquisition. Synthetic controls named synthetic- are identified as software validation; this marker does not detect synthetic videos. Length remains user-declared and statistical uncertainty excludes camera, pivot and calibration errors. Agreement does not prove a physical law or constitute discovery.
+
+This update completes the SAM→Muse comparison inside the existing lab log, without new UI sections. Calibration and scientific validation remain separate. The ten-case campaign and limitations are retained in private evidence and shared memory.
+
+
+## Full live workflow validation — 2026-10-30
+
+Ten authorized completed cases: eight comparisons of six preexisting 50/80 cm recordings (three primary pairs and five cross combinations), one negative control using a 50 cm recording declared as 80 cm, and one known-period synthetic control. Cross combinations reused exact-SHA SAM evidence; every case requested fresh Muse hypothesis and contrast responses. These are not ten independent physical experiments.
+
+Outcomes: seven within the predeclared band (one synthetic), two inconclusive because 80CM_2 lacked reliable suspension localization, and the negative control outside the band (-20.97%). All predictions and hashes preceded the second upload. Source/length rebinding rejection and idempotent reads without another inference were verified.
+
+102 inferences were recorded, including two continuous recoveries after inconsistent SAM seams (80CM_1 and the first synthetic). Summed estimated budgets were US$ 7.1816, not an invoice or confirmed spend. Videos, full responses and receipts remain private.
+
+Synthetic measured periods were 1.419011 s and 1.793957 s against known 1.418746 s and 1.794587 s (+0.019% and -0.035%). This does NOT validate angular accuracy: Spark displaced the pivot and SAM missed 13.4% of the first control's frames. Next priority is image-grounded pivot verification and tracking gaps; do not weaken validation to display values.
+
+Validation: 401 .NET tests, 46 Angular tests and production build passed (existing bundle warning). Isolated Edge checks covered original H.264 playback, changing θ/ω, gaps without invented values, ES/EN contrast and a non-overflowing card at 390 px. HEVC originals decoded as audio without image in these profiles; this is not a claim about all browsers. No CI. Owner service permissions and counter preserved.

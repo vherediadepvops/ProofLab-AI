@@ -74,6 +74,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\src\ProofLab.Api\MuseContrastContracts.cs" Link="MuseContrastContracts.cs" />
     <Compile Include="..\..\src\ProofLab.Api\MuseExperimentContracts.cs" Link="MuseExperimentContracts.cs" />
     <Compile Include="..\..\src\ProofLab.Api\MuseExperimentStore.cs" Link="MuseExperimentStore.cs" />
     <Compile Include="..\..\src\ProofLab.Api\MuseExperimentTransport.cs" Link="MuseExperimentTransport.cs" />

@@ -93,9 +93,12 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   private readonly periodReceipt=signal<AuthenticatedSamVideoArchive['receipt']|null>(null);
   // Recomputed for evidence/pivot/native geometry changes, never for each playback frame.
   readonly periodMeasurement=computed<SamPeriodInput|null>(()=>{
-    const receipt=this.periodReceipt(),image=this.decodedSize();
+    const receipt=this.periodReceipt(),decoded=this.decodedSize(),track=this.samTrack();
+    // Measurements use authenticated source geometry even when this browser cannot decode HEVC.
+    const image=decoded&&decoded.width>0&&decoded.height>0?decoded:
+      track?{width:track.frameWidth,height:track.frameHeight}:null;
     if(!this.samVerified() || !receipt || !image)return null;
-    const track=this.samTrack(),pivot=this.measurementPivot();
+    const pivot=this.measurementPivot();
     return {
       framePtsSeconds:receipt.framePtsSeconds,
       centroids:track?.masks.map(m=>({frameIndex:m.frameIndex,x:m.centroidXpx,y:m.centroidYpx}))??[],
@@ -109,8 +112,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   });
   readonly periodSource=computed<SamPeriodSource|null>(()=>{
     const receipt=this.periodReceipt();
-    // Segmented evidence has its own provenance; do not submit it as a native response to the research director.
-    if(receipt?.requestProtocol==='PROOFLAB_SAM_ADAPTIVE_SSE_SOURCE_PTS_V1')return null;
+    // Keep the batch identity so the API revalidates every segment and join.
     if(!this.samVerified() || !receipt || !/^[a-f0-9]{32}$/i.test(receipt.analysisId??'') ||
        !/^[a-f0-9]{64}$/i.test(receipt.responseJsonSha256??''))return null;
     const scene=this.scene(),manual=this.manualPivotOverride() || !scene ||
@@ -118,6 +120,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     return {
       studyId:this.studyId(),role:this.videoRole(),originalVideoSha256:receipt.originalVideoSha256,
       analysisId:receipt.analysisId!,providerResponseSha256:receipt.responseJsonSha256!,
+      adaptiveBatchId:this.processedAdaptiveBatchId()||null,
       providerModel:'sam-3.1',objectId:this.samTrack()?.objectId??'NO_MATCH',
       pivotRevisionId:manual?revision?.revisionId??null:null,
       pivotProvenance:this.usesAutomaticSuspension()?automaticPivotProvenance:
@@ -538,7 +541,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const video=this.masterVideo?.nativeElement;
     if(!video)return;
     this.duration.set(Number.isFinite(video.duration)?video.duration:0);
-    this.decodedSize.set({width:video.videoWidth,height:video.videoHeight});
+    this.decodedSize.set(video.videoWidth>0&&video.videoHeight>0?{width:video.videoWidth,height:video.videoHeight}:null);
     this.setCanvasSizes();
     this.startFrameLoop();
     if(typeof video.requestVideoFrameCallback!=='function')this.paintFrame(video.currentTime);
@@ -547,6 +550,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   onDecodedFrame():void{
     const video=this.masterVideo?.nativeElement;
     if(!video)return;
+    // Some browsers accept the audio track of HEVC while reporting a 0x0 video.
+    if(video.readyState>=2&&(video.videoWidth<1||video.videoHeight<1)){
+      this.decodedSize.set(null);this.onPreviewError();return;
+    }
     if(this.previewLoading() && video.readyState>=2) {
       this.previewLoading.set(false);this.previewStateChanged.emit('ready');
     }

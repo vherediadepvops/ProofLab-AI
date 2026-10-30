@@ -5,7 +5,7 @@ namespace ProofLab.Api;
 public sealed class MuseExperimentService(
     PendulumDirectorWorkflow director,PendulumSamCache sam,
     PendulumDirectorKinematicsStore pivots,ISamPeriodWorker worker,
-    MuseExperimentStore store,MetaLiveAccess access,IMuseExperimentTransport transport)
+    MuseExperimentStore store,MetaLiveAccess access,IMuseExperimentTransport transport,SamAdaptiveLiveService adaptive)
 {
     private static readonly JsonSerializerOptions Json=new(JsonSerializerDefaults.Web);
     public MuseExperimentState State(string id)
@@ -23,7 +23,8 @@ public sealed class MuseExperimentService(
         var study=await director.ReadAsync(id,ct);
         if(study.Baseline is null || study.Followup is not null || store.Prediction(id) is not null)
             throw new InvalidOperationException("Research requires baseline evidence before video two.");
-        var archive=await sam.ReadArchiveAsync(id,"baseline",ct);
+        var archive=request.AdaptiveBatchId is null ? await sam.ReadArchiveAsync(id,"baseline",ct)
+            : await adaptive.ReadPlaybackAsync(id,"baseline",request.AdaptiveBatchId,ct);
         if(archive.Receipt.OriginalVideoSha256!=request.VideoSha256 ||
            archive.Receipt.AnalysisId!=request.AnalysisId || study.Baseline.Sha256!=request.VideoSha256)
             throw new ArgumentException("Source analysis changed.");
@@ -33,7 +34,7 @@ public sealed class MuseExperimentService(
             if(revision.RevisionId!=request.PivotRevisionId)throw new ArgumentException("Pivot changed.");
             pivot=new {x=revision.Analysis.PivotXpx/480,y=revision.Analysis.PivotYpx/270};
             pivotProvenance=revision.PivotProvenance;
-        } else if(archive.Receipt.Scene is {PivotX: not null,PivotY: not null} scene) {
+        } else if(archive.Receipt.Scene is {PivotX: not null,PivotY: not null} scene && scene.Origin!=AssemblyPolicy.GroundingOrigin) {
             pivot=new {x=scene.PivotX/1000,y=scene.PivotY/1000};
             pivotProvenance="HUMAN_CONFIRMED_SCENE_PIVOT";
         }
@@ -44,8 +45,9 @@ public sealed class MuseExperimentService(
             videoSha256=request.VideoSha256,analysisId=request.AnalysisId,
             responseSha256=archive.Receipt.ResponseJsonSha256,
             ptsSha256=KnotPolicy.Hash(JsonSerializer.Serialize(archive.Receipt.FramePtsSeconds,Json)),
-            request.PivotRevisionId,pivot,pivotProvenance,automaticSuspension=archive.Suspension,suspensionReview=archive.SuspensionReview,sceneKey=archive.Receipt.Scene?.Key,
+            request.PivotRevisionId,request.AdaptiveBatchId,derivation=archive.Derivation,pivot,pivotProvenance,automaticSuspension=archive.Suspension,suspensionReview=archive.SuspensionReview,sceneKey=archive.Receipt.Scene?.Key,
             baselineLengthMeters=study.BaselineLengthMeters,study.AngleDegrees,study.MassGrams,
+            plannedFollowupLengthMeters=study.FollowUpMode=="manual"?study.SelectedFollowUpLengthMeters:null,
             objectReview=study.HumanReview?.BobConfirmed??false
         },Json);
         var key=KnotPolicy.Hash(identity.GetRawText());
@@ -60,6 +62,8 @@ public sealed class MuseExperimentService(
             throw new InvalidDataException("Worker evidence mismatch.");
         var payload=JsonSerializer.Serialize(new {
             identity,baselineLengthMeters=study.BaselineLengthMeters,
+            dataKind=study.Baseline.OriginalFilename.StartsWith("synthetic-",StringComparison.OrdinalIgnoreCase)?"SYNTHETIC_SOFTWARE_VALIDATION":"OWNER_SUPPLIED_PREEXISTING_RECORDING",
+            plannedFollowupLengthMeters=study.FollowUpMode=="manual"?study.SelectedFollowUpLengthMeters:null,
             lengthProvenance="USER_CONFIGURED_NOT_CALIBRATED_SUSPENSION_TO_VISIBLE_CENTER",
             nominalReleaseAngleDegrees=study.AngleDegrees,massGrams=study.MassGrams,
             humanObjectReviewed=study.HumanReview?.BobConfirmed??false,
@@ -85,7 +89,8 @@ public sealed class MuseExperimentService(
         using var doc=JsonDocument.Parse(observation.PayloadJson);
         var root=doc.RootElement;var identity=root.GetProperty("identity");
         var current=await PrepareAsync(id,new(observation.VideoSha256,observation.AnalysisId,
-            identity.GetProperty("pivotRevisionId").GetString()),ct);
+            identity.GetProperty("pivotRevisionId").GetString(),
+                identity.TryGetProperty("adaptiveBatchId",out var batch0)?batch0.GetString():null),ct);
         if(current.Id!=observation.Id)throw new InvalidOperationException("Measurement changed; prepare again.");
         var token=request.ModelApiToken??Environment.GetEnvironmentVariable("MODEL_API_KEY")??"";
         if(!request.ConfirmMeasuredDataTransfer || !request.ConfirmPaidCall ||
@@ -108,7 +113,8 @@ public sealed class MuseExperimentService(
                 receipt.InputTokens*1.25/1_000_000+receipt.OutputTokens*4.25/1_000_000);
             // The study lock is also held by uploads; video two cannot arrive during inference.
             var finalSource=await PrepareAsync(id,new(observation.VideoSha256,observation.AnalysisId,
-                identity.GetProperty("pivotRevisionId").GetString()),CancellationToken.None);
+                identity.GetProperty("pivotRevisionId").GetString(),
+                identity.TryGetProperty("adaptiveBatchId",out var batch1)?batch1.GetString():null),CancellationToken.None);
             if(finalSource.Id!=observation.Id)
                 throw new InvalidOperationException("Source changed during evaluation; prediction not frozen.");
             store.Complete(observation,result);

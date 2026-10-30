@@ -45,7 +45,7 @@ async function main() {
     pivot,arrangement:receipt.scene?.arrangement??'legacy_pendulum'
   };
   const source={
-    studyId:input.studyId,role:'baseline',originalVideoSha256:input.videoSha256,
+    studyId:input.studyId,role:input.role??'baseline',originalVideoSha256:input.videoSha256,
     analysisId:receipt.analysisId,providerResponseSha256:receipt.responseJsonSha256,
     providerModel:'sam-3.1' as const,objectId:track?.objectId??'NO_MATCH',
     pivotRevisionId:input.pivotRevisionId,pivotProvenance:provenance

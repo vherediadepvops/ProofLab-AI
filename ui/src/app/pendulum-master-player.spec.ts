@@ -853,3 +853,15 @@ describe('Pixel-space synchronized annotation helpers',()=>{
   });
 
 });
+
+describe('Original video decoder readiness',()=>{
+  it('does not report an audio-only decode as a ready video or zero geometry',()=>{
+    TestBed.configureTestingModule({imports:[PendulumMasterPlayer]});
+    const fixture=TestBed.createComponent(PendulumMasterPlayer),player=fixture.componentInstance;
+    fixture.componentRef.setInput('videoUrl','');
+    const media=document.createElement('video');Object.defineProperties(media,{readyState:{value:4},videoWidth:{value:0},videoHeight:{value:0}});
+    player.masterVideo={nativeElement:media};const states:string[]=[];player.previewStateChanged.subscribe(s=>states.push(s));
+    player.onLoadedMetadata();player.onDecodedFrame();
+    expect(player.decodedSize()).toBeNull();expect(states).toEqual(['error']);expect(player.error()).toContain('original');fixture.destroy();
+  });
+});

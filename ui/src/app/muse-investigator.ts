@@ -32,6 +32,35 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   private readonly http=inject(HttpClient);
   private serial=0;
   readonly state=signal<MuseState|null>(null);
+  readonly contrast=signal<{evidence:null|{sha256:string;payloadJson:string};evaluation:null|{responseId:string;answer:{verdict:string;justification:Bilingual;limitations:Bilingual;nextStep:Bilingual}};attemptStatus:string|null}|null>(null);
+  readonly followupLength=signal<number|null>(null);
+  get isFollowup():boolean{return this.source().role==='followup';}
+  contrastMatches():boolean {try{const c=this.contrast(),p=JSON.parse(c!.evidence!.payloadJson);return p.analysisId===this.source().analysisId&&p.sourceSha256===this.source().originalVideoSha256;}catch{return false;}}
+  async prepareContrast():Promise<void>{
+    if(this.busy()||this.connection.busy()||!this.followupLength())return;
+    const serial=++this.serial,source=this.source();this.busy.set('preparing');this.error.set('');
+    try{const c=await firstValueFrom(this.http.post<NonNullable<ReturnType<typeof this.contrast>>>(this.url()+'/contrast/prepare',{
+      videoSha256:source.originalVideoSha256,analysisId:source.analysisId,pivotRevisionId:source.pivotRevisionId,
+      adaptiveBatchId:source.adaptiveBatchId??null,followupLengthMeters:this.followupLength()
+    },{headers:this.headers}));if(serial===this.serial)this.contrast.set(c);}
+    catch{if(serial===this.serial)this.error.set(this.es?'No se pudo verificar el contraste. Revisa la predicción y el resultado SAM.':'Could not verify comparison. Check the prediction and SAM result.');}
+    finally{if(serial===this.serial)this.busy.set(null);}
+  }
+  canContrast():boolean{return !this.busy()&&!this.connection.busy()&&this.connection.hasToken()&&!!this.state()?.manualCallsPermitted&&this.contrastMatches()&&!this.contrast()?.evaluation&&!this.contrast()?.attemptStatus;}
+  async evaluateContrast():Promise<void>{
+    if(!this.canContrast())return;const token=this.connection.tokenForManualRequest();if(!token)return;
+    const serial=++this.serial,url=this.url();this.busy.set('evaluating');this.connection.busy.set(true);this.error.set('');
+    try{const c=await firstValueFrom(this.http.post<NonNullable<ReturnType<typeof this.contrast>>>(url+'/contrast/evaluate',{
+      evidenceSha256:this.contrast()!.evidence!.sha256,modelApiToken:token,confirmMeasuredDataTransfer:true,confirmPaidCall:true,maximumEstimatedCostUsd:.05
+    },{headers:this.headers}));if(serial===this.serial)this.contrast.set(c);}
+    catch{if(serial===this.serial){try{this.contrast.set(await firstValueFrom(this.http.get<NonNullable<ReturnType<typeof this.contrast>>>(url+'/contrast')));}catch{}this.error.set(this.es?'El contraste no se completó. Revisa el intento registrado.':'Comparison did not complete. Inspect the recorded attempt.');}}
+    finally{this.connection.busy.set(false);if(serial===this.serial)this.busy.set(null);}
+  }
+  contrastVerdict():string {switch(this.contrast()?.evaluation?.answer.verdict){
+    case 'WITHIN_PREDECLARED_BAND':return this.es?'Compatible con la predicción dentro del margen':'Consistent with the prediction within tolerance';
+    case 'OUTSIDE_PREDECLARED_BAND':return this.es?'Fuera del margen de la predicción':'Outside the prediction tolerance';
+    default:return this.es?'Contraste inconcluso':'Inconclusive comparison';}}
+
   readonly busy=signal<'loading'|'preparing'|'evaluating'|null>(null);
   readonly error=signal('');
   readonly headers=new HttpHeaders({'X-ProofLab-Manual-Action':'muse-research'});
@@ -46,10 +75,14 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   }
   async load():Promise<void>{
     if(this.busy()==='evaluating')return;
-    const serial=++this.serial;this.busy.set('loading');this.error.set('');this.state.set(null);
+    const serial=++this.serial,url=this.url(),followup=this.isFollowup;this.busy.set('loading');this.error.set('');this.state.set(null);this.contrast.set(null);this.followupLength.set(null);
     try {
-      const state=await firstValueFrom(this.http.get<MuseState>(this.url()));
-      if(serial===this.serial)this.accept(state);
+      const state=await firstValueFrom(this.http.get<MuseState>(url));
+      if(serial===this.serial){this.accept(state);this.followupLength.set(this.prediction()?.nextLengthMeters??null);}
+      if(serial===this.serial&&followup){
+        const c=await firstValueFrom(this.http.get<NonNullable<ReturnType<typeof this.contrast>>>(url+'/contrast'));
+        if(serial===this.serial){this.contrast.set(c);if(c.evidence){try{this.followupLength.set(JSON.parse(c.evidence.payloadJson).followupLengthMeters);}catch{}}}
+      }
     } catch {if(serial===this.serial)this.error.set(this.es?'No se pudo consultar la bitácora de Muse.':'Could not load the Muse lab log.');}
     finally {if(serial===this.serial)this.busy.set(null);}
   }
@@ -59,7 +92,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     this.busy.set('preparing');this.error.set('');
     try {
       const state=await firstValueFrom(this.http.post<MuseState>(this.url()+'/prepare',{
-        videoSha256:source.originalVideoSha256,analysisId:source.analysisId,pivotRevisionId:source.pivotRevisionId
+        videoSha256:source.originalVideoSha256,analysisId:source.analysisId,pivotRevisionId:source.pivotRevisionId,adaptiveBatchId:source.adaptiveBatchId??null
       },{headers:this.headers}));
       if(serial===this.serial)this.accept(state);
     }catch{if(serial===this.serial)this.error.set(this.es

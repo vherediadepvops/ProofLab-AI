@@ -42,6 +42,22 @@ public static class MuseExperimentEndpoints
             if(c.Request.ContentLength is >4096)return Task.FromResult(Results.BadRequest());
             return Safe(async()=>Results.Ok(await service.EvaluateAsync(id,request,ct)));
         });
+        app.MapGet(path+"/contrast",(string id,MuseContrastService service,HttpContext c,CancellationToken ct)=>{
+            c.Response.Headers.CacheControl="private, no-store";
+            return Local(c)?Safe(async()=>Results.Ok(await service.State(id,ct))):Task.FromResult(Results.StatusCode(403));
+        });
+        app.MapPost(path+"/contrast/prepare",(string id,MuseContrastRequest request,MuseContrastService service,HttpContext c,CancellationToken ct)=>{
+            c.Response.Headers.CacheControl="no-store";
+            if(!Local(c,true))return Task.FromResult(Results.StatusCode(403));
+            if(c.Request.ContentLength is >4096)return Task.FromResult(Results.BadRequest());
+            return Safe(async()=>{await service.Prepare(id,request,ct);return Results.Ok(await service.State(id,ct));});
+        });
+        app.MapPost(path+"/contrast/evaluate",(string id,MuseContrastRunRequest request,MuseContrastService service,HttpContext c,CancellationToken ct)=>{
+            c.Response.Headers.CacheControl="no-store";
+            if(!Local(c,true))return Task.FromResult(Results.StatusCode(403));
+            if(c.Request.ContentLength is >4096)return Task.FromResult(Results.BadRequest());
+            return Safe(async()=>Results.Ok(await service.Evaluate(id,request,ct)));
+        });
         app.MapGet(path+"/report",(string id,MuseExperimentService service,HttpContext c)=>{
             c.Response.Headers.CacheControl="private, no-store";
             return Local(c)?Safe(()=>{

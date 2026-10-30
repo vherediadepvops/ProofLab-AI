@@ -28,7 +28,7 @@ describe('Muse investigator',()=>{
   }
   it('prepares only provenance and leaves paid processing disabled without a token',async()=>{
     const f=await init();const p=f.componentInstance.prepare();
-    const r=http.expectOne(base+'/prepare');expect(r.request.body).toEqual({videoSha256:'video',analysisId:'analysis',pivotRevisionId:'pivot'});
+    const r=http.expectOne(base+'/prepare');expect(r.request.body).toEqual({videoSha256:'video',analysisId:'analysis',pivotRevisionId:'pivot',adaptiveBatchId:null});
     expect(r.request.headers.get('X-ProofLab-Manual-Action')).toBe('muse-research');
     r.flush(prepared);await p;expect(f.componentInstance.canEvaluate()).toBeFalse();f.destroy();
   });
@@ -126,4 +126,43 @@ describe('Muse investigator',()=>{
     expect(f.nativeElement.textContent).toContain('no clasifica el video actual');f.destroy();
   });
 
+});
+
+describe('Muse complete second-video workflow',()=>{
+  const base='http://127.0.0.1:5391/api/science/director/pendulum/sessions/study/muse';
+  const source:SamPeriodSource={studyId:'study',role:'followup',originalVideoSha256:'second',analysisId:'batch',adaptiveBatchId:'batch',providerResponseSha256:'raw',providerModel:'sam-3.1',objectId:'0',pivotRevisionId:null,pivotProvenance:'PIVOT_MISSING'};
+  const state={observation:null,evaluation:null,prediction:{sha256:'frozen',payloadJson:JSON.stringify({prediction:{nextLengthMeters:.8,periodSeconds:1.79,tolerancePercent:5}})},attemptStatus:null,manualCallsPermitted:true,maximumEstimatedCostUsd:.05};
+  const empty={evidence:null,evaluation:null,attemptStatus:null};
+  const evidence={sha256:'evidence',payloadJson:JSON.stringify({analysisId:'batch',sourceSha256:'second',followupLengthMeters:.8})};
+  let http:HttpTestingController;
+  beforeEach(async()=>{await TestBed.configureTestingModule({imports:[MuseInvestigator],providers:[provideHttpClient(),provideHttpClientTesting()]}).compileComponents();http=TestBed.inject(HttpTestingController);});
+  afterEach(()=>http.verify());
+  async function init(contrast:object=empty){
+    const c=TestBed.inject(LabConnection),field=document.createElement('input');field.type='password';field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';c.register(field);c.confirmToken();
+    const f=TestBed.createComponent(MuseInvestigator);f.componentRef.setInput('source',source);f.detectChanges();
+    http.expectOne(base).flush(state);await Promise.resolve();http.expectOne(base+'/contrast').flush(contrast);await f.whenStable();f.detectChanges();return f;
+  }
+  it('binds segmented second-video evidence before making exactly one manual inference',async()=>{
+    const f=await init();expect(f.componentInstance.canContrast()).toBeFalse();
+    const prep=f.componentInstance.prepareContrast();const r=http.expectOne(base+'/contrast/prepare');
+    expect(r.request.body).toEqual({videoSha256:'second',analysisId:'batch',pivotRevisionId:null,adaptiveBatchId:'batch',followupLengthMeters:.8});
+    r.flush({...empty,evidence});await prep;expect(f.componentInstance.canContrast()).toBeTrue();
+    const run=f.componentInstance.evaluateContrast();void f.componentInstance.evaluateContrast();
+    const sent=http.expectOne(base+'/contrast/evaluate');expect(sent.request.body.evidenceSha256).toBe('evidence');
+    expect(sent.request.body.maximumEstimatedCostUsd).toBe(.05);
+    const t={es:'Evidencia insuficiente.',en:'Insufficient evidence.'};
+    sent.flush({evidence,evaluation:{responseId:'real-receipt',answer:{verdict:'INCONCLUSIVE',justification:t,limitations:t,nextStep:t}},attemptStatus:'COMPLETED'});
+    await run;f.detectChanges();expect(f.nativeElement.textContent).toContain('Contraste inconcluso');expect(f.componentInstance.canContrast()).toBeFalse();
+    expect(f.nativeElement.querySelectorAll('section').length).toBe(1);f.destroy();
+  });
+  it('does not use a comparison that belongs to another analysis',async()=>{
+    const f=await init({...empty,evidence:{...evidence,payloadJson:JSON.stringify({analysisId:'old',sourceSha256:'second',followupLengthMeters:.7})}});
+    expect(f.componentInstance.canContrast()).toBeFalse();expect(f.componentInstance.followupLength()).toBe(.7);f.destroy();
+  });
+  it('reconciles a failed contrast without resending to Meta',async()=>{
+    const f=await init({...empty,evidence});const run=f.componentInstance.evaluateContrast();
+    http.expectOne(base+'/contrast/evaluate').flush({}, {status:502,statusText:'Failed'});
+    await Promise.resolve();http.expectOne(base+'/contrast').flush({...empty,evidence,attemptStatus:'ATTEMPT_REQUIRES_INSPECTION'});
+    await run;expect(f.componentInstance.canContrast()).toBeFalse();expect(TestBed.inject(LabConnection).busy()).toBeFalse();f.destroy();
+  });
 });

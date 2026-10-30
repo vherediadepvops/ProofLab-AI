@@ -12,7 +12,25 @@
         (es?'Proceso local; no consume créditos de Meta.':'Local operation; no Meta credits used.')"/>
   }
   @if(state(); as s) {
-    @if(s.evaluation; as evaluation) {
+    @if(isFollowup) {
+      @if(prediction(); as p){<p>🔒 {{es?'Predicción guardada':'Stored prediction'}}: {{p.periodSeconds.toFixed(3)}} s · ±{{p.tolerancePercent}} % · {{(p.nextLengthMeters*100).toFixed(0)}} cm</p>}
+      @if(contrast()?.evaluation; as result){
+        <div class="decision"><strong>{{contrastVerdict()}}</strong><span>Muse Spark</span></div>
+        <p>{{text(result.answer.justification)}}</p><p>{{text(result.answer.limitations)}}</p><p>{{text(result.answer.nextStep)}}</p>
+        @if(!contrastMatches()){<p class="warning">{{es?'Este contraste pertenece a un análisis anterior.':'This comparison belongs to an earlier analysis.'}}</p>}
+        <a class="report" [href]="url()+'/contrast'" download>{{es?'Descargar contraste y fuentes':'Download comparison and sources'}}</a>
+      } @else {
+        <div class="actions">
+          <label>{{es?'Longitud del segundo experimento (m)':'Second experiment length (m)'}}
+            <input type="number" min="0.1" max="2" step="0.01" [value]="followupLength()" [disabled]="!!contrast()?.evidence||!!busy()" (change)="followupLength.set(+$any($event.target).value)"/>
+          </label>
+          <button type="button" (click)="prepareContrast()" [disabled]="!!busy()||connection.busy()||!!contrast()?.evidence">{{es?'Verificar contraste':'Verify comparison'}}</button>
+          @if(contrast()?.evidence){<button type="button" class="primary" (click)="evaluateContrast()" [disabled]="!canContrast()">{{es?'Consultar Muse · máx. US$ 0,05':'Ask Muse · max. US$ 0.05'}}</button>}
+        </div>
+        <p class="fine">{{es?'Comprueba la longitud real. Se comparan las mediciones SAM con el margen congelado; no se modifica la hipótesis. Consultar autoriza enviar esas mediciones a Meta.':'Check the actual length. SAM measurements are compared with the frozen band; the hypothesis stays unchanged. Asking authorizes sending these measurements to Meta.'}}</p>
+        @if(contrast()?.attemptStatus){<p class="warning">{{es?'Revisa el intento registrado; no se repite automáticamente.':'Inspect the recorded attempt; it is not retried automatically.'}}</p>}
+      }
+    } @else if(s.evaluation; as evaluation) {
       <div class="decision"><strong>{{phenomenonDecision() || decision()}}</strong><span>{{evaluation.model}}</span></div>
       <p>
         @if(phenomenon(); as phenomenon) {

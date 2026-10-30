@@ -96,3 +96,5 @@ Missing 9237/tab: verify profile/URL. Stalled loader: inspect errors/requests, n
 A screenshot cannot certify physical accuracy or new provider inference. Handoff must include commit/build, authorized device, profile/port, script/command, private study/analysis IDs, assertions, screenshots/report paths, counters and limitations. Keep profiles/videos/evidence/IDs out of public Git; publish generic tools/docs only. No CI is required for local browser checks.
 
 This guide is discoverable from both README files and shared AGENTS/PROJECT-CONTEXT. Consult it only for browser work. The existing Remote Desktop Commander access is sufficient; no additional browser plugin is required for this workflow.
+
+Additional codec check (2026-10-30): readyState >= 2 is insufficient. Require videoWidth > 0 and videoHeight > 0: Edge may accept only the audio track of MOV/HEVC and report 0×0 without an error. Report original-playback failure, not successful visual QA. Period measurement can use authenticated SAM geometry independently of the decoder. Test H.264 and original HEVC separately; never silently replace the original or claim H.264 proves HEVC playback.

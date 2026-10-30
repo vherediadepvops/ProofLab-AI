@@ -224,7 +224,7 @@
   @if(periodMeasurement(); as measurement) {
     <app-sam-period-panel [measurement]="measurement" [source]="periodSource()" [language]="language()"/>
   }
-  @if(videoRole()==='baseline' && periodSource(); as researchSource) {
+  @if(periodSource(); as researchSource) {
     <app-muse-investigator [source]="researchSource" [language]="language()" (frozen)="researchFrozen.emit($event)"/>
   }
   @if(droppedFrames()>0) {

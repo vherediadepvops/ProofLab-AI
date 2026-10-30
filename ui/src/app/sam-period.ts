@@ -212,7 +212,7 @@ export function measureSamPeriod(input:SamPeriodInput):SamPeriodAssessment {
 export interface SamPeriodSource {
   studyId:string;role:string;originalVideoSha256:string;analysisId:string;
   providerResponseSha256:string;providerModel:'sam-3.1';objectId:string;
-  pivotRevisionId:string|null;pivotProvenance:string;
+  pivotRevisionId:string|null;pivotProvenance:string;adaptiveBatchId?:string|null;
 }
 export function periodReportPayload(source:SamPeriodSource,input:SamPeriodInput,
   assessment=measureSamPeriod(input)) {
