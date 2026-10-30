@@ -50,7 +50,7 @@ export function resolveSamSuspension(
   const x=quantile(anchors.map(p=>p.x*e.width/1000),.5);
   const y=quantile(anchors.map(p=>p.y*e.height/1000),.5);
   const spread=Math.max(...anchors.map(p=>Math.hypot(p.x*e.width/1000-x,p.y*e.height/1000-y)));
-  const visuallyRefined=e.refinement==='SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2';
+  const visuallyRefined=['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3'].includes(e.refinement??'');
   if(spread>Math.max(3,Math.min(e.width,e.height)*(visuallyRefined?.005:.04)))
     return none('SUSPENSION_MOVES_OR_IS_AMBIGUOUS');
   const all=track.masks.map(m=>({x:m.centroidXpx,y:m.centroidYpx}));

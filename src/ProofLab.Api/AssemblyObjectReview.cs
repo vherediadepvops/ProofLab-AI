@@ -9,7 +9,7 @@ public sealed partial class AssemblyLocator
         var evidencePath=Path.Combine(root,"reviewed-evidence.json");
         if(!File.Exists(evidencePath))return null;
         var attempt=await Read<ObjectReviewAttempt>(Path.Combine(root,"object-review-attempt.json"),ct);
-        if(attempt.Protocol is not (ObjectReviewPolicy.Protocol or ObjectReviewPolicy.LegacyProtocol) || attempt.SourceSha256!=draft.VideoSha256 ||
+        if(attempt.Protocol is not (ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or ObjectReviewPolicy.LegacyProtocol) || attempt.SourceSha256!=draft.VideoSha256 ||
             attempt.DraftResponseSha256!=draft.ResponseSha256 || attempt.EvidenceKey!=draft.CacheKey ||
             attempt.References.Length is <2 or >16 || attempt.References.Select(x=>x.Ordinal).Distinct().Count()!=attempt.References.Length)
             throw new InvalidDataException("Visual review provenance changed.");
@@ -20,13 +20,21 @@ public sealed partial class AssemblyLocator
                 throw new InvalidDataException("Visual review image or candidate changed.");
         }
         var cropped=attempt.References.Where(r=>r.SuspensionCrop is not null).ToArray();
-        if((attempt.Protocol==ObjectReviewPolicy.Protocol && cropped.Length!=3) ||
+        if((attempt.Protocol is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol && cropped.Length!=3) ||
             (attempt.Protocol==ObjectReviewPolicy.LegacyProtocol && cropped.Length!=0))throw new InvalidDataException("Crop protocol mismatch.");
         foreach(var r in cropped) {
             var expected=ObjectReviewPolicy.Crop(r.Frame,ObjectReviewPolicy.CoarseSuspension(draft,r.Ordinal));
             if(r.SuspensionCrop! with {Sha256=""}!=expected ||
                 await FileHash(Path.Combine(root,$"suspension-{r.Ordinal}.jpg"),ct)!=r.SuspensionCrop.Sha256)
                 throw new InvalidDataException("Suspension crop geometry or pixels changed.");
+        }
+        var bodies=attempt.References.Where(r=>r.BodyCrop is not null).ToArray();
+        if((attempt.Protocol==ObjectReviewPolicy.Protocol && bodies.Length!=attempt.References.Length) ||
+            (attempt.Protocol!=ObjectReviewPolicy.Protocol && bodies.Length!=0))throw new InvalidDataException("Body crop protocol mismatch.");
+        foreach(var r in bodies) {
+            var expected=ObjectReviewPolicy.BodyRegion(r.Frame,r.Candidate);
+            if(r.BodyCrop! with {Sha256=""}!=expected || await FileHash(Path.Combine(root,$"body-{r.Ordinal}.jpg"),ct)!=r.BodyCrop.Sha256)
+                throw new InvalidDataException("Body crop geometry or pixels changed.");
         }
         var rawPath=Path.Combine(root,"object-review-response.json");
         if(new FileInfo(rawPath).Length>300000)throw new InvalidDataException("Review response too large.");
@@ -54,9 +62,20 @@ public sealed partial class AssemblyLocator
             var dest=Path.Combine(root,$"review-{ordinal}.jpg");
             // An interrupted LOCAL preparation can be resumed without a paid request.
             var marked=File.Exists(dest)?await File.ReadAllBytesAsync(dest,ct):
-                await frames.MarkObjectAsync(Path.Combine(root,$"frame-{ordinal}.jpg"),frame,candidate,dest,ct);
+                await frames.MarkObjectAsync(Path.Combine(root,$"frame-{ordinal}.jpg"),frame,candidate with {Visible=false},dest,ct);
             images.Add(marked);references.Add(new(ordinal,frame,candidate,Convert.ToHexString(SHA256.HashData(marked)).ToLowerInvariant()));
         }
+        // Keep the full scene as context, but measure body boxes on enlarged, unmarked crops.
+        var bodyBytes=new List<byte[]>();
+        for(var i=0;i<references.Count;i++) {
+            var r=references[i];var crop=ObjectReviewPolicy.BodyRegion(r.Frame,r.Candidate);
+            var dest=Path.Combine(root,$"body-{r.Ordinal}.jpg");
+            var bytes=File.Exists(dest)?await File.ReadAllBytesAsync(dest,ct):
+                await frames.CropSuspensionAsync(Path.Combine(root,$"frame-{r.Ordinal}.jpg"),r.Frame,crop,dest,ct);
+            references[i]=r with {BodyCrop=crop with {Sha256=Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()}};
+            bodyBytes.Add(bytes);
+        }
+        images.AddRange(bodyBytes);
         var cropBytes=new List<byte[]>();
         foreach(var ordinal in ObjectReviewPolicy.SuspensionOrdinals(references.ToArray())) {
             var frame=draft.Frames[ordinal];

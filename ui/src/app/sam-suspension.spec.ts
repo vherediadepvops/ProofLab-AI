@@ -23,9 +23,9 @@ function experiment(width=1080,height=1920,offset=0) {
   return {archive,track,cx,cy,radius};
 }
 describe('Automatic Spark/SAM suspension estimates',()=>{
-  it('preserves a visually localized exit instead of moving it to a fitted circle center',()=>{
+  for(const protocol of ['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3']) it('preserves visually localized exit '+protocol,()=>{
     const {archive,track,cx,cy}=experiment(1080,1920,3);
-    archive.suspension!.refinement='SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2';
+    archive.suspension!.refinement=protocol;
     const result=resolveSamSuspension(archive,track);
     expect(result.method).toBe('SPARK');
     expect(result.pivot!.pivotXpx/480*1080).toBeCloseTo(cx+3,8);

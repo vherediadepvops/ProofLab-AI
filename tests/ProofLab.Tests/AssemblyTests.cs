@@ -127,7 +127,7 @@ public sealed class AssemblyTests
         public Task<KnotProviderResult> ReviewObjectAsync(ObjectReviewImage[] refs,byte[][] images,string token,CancellationToken ct) {
             ReviewCalls++;
             var text=JsonSerializer.Serialize(new {observations=refs.Select(r=>new {frame=WrongReviewOrdinal?99:r.Ordinal,decision=ReviewUncertain?"UNCERTAIN":"CORRECTED",visible=!ReviewUncertain,
-                x1=ReviewUncertain?0:400,y1=ReviewUncertain?0:700,x2=ReviewUncertain?0:450,y2=ReviewUncertain?0:800,confidence=ReviewUncertain?0:GroundingConfidence,visual_reason="The suspended body below the cord, not the cord."}),
+                x1=ReviewUncertain?0:(400*r.Frame.Width/1000-r.BodyCrop!.Left)*1000/r.BodyCrop.Width,y1=ReviewUncertain?0:(700*r.Frame.Height/1000-r.BodyCrop!.Top)*1000/r.BodyCrop.Height,x2=ReviewUncertain?0:(450*r.Frame.Width/1000-r.BodyCrop!.Left)*1000/r.BodyCrop.Width,y2=ReviewUncertain?0:(800*r.Frame.Height/1000-r.BodyCrop!.Top)*1000/r.BodyCrop.Height,confidence=ReviewUncertain?0:GroundingConfidence,visual_reason="The suspended body below the cord, not the cord."}),
                 suspension=new {camera="STATIC",points=refs.Where(r=>r.SuspensionCrop is not null).Select(r=>new {frame=r.Ordinal,visible=true,x=500,y=333.25,confidence=.95,visual_reason="Visible fixed cord exit."})},
                 target=new {status=GroundingStatus,justification=new {es="Cuerpo suspendido revisado.",en="Reviewed suspended body."}}});
             return Task.FromResult(new KnotProviderResult(Envelope(text),"synthetic-not-provider",1000,100));
@@ -553,6 +553,16 @@ public sealed class AssemblyTests
         var suspension=await f.Open().SuspensionAsync("s","baseline",restored,Ct);
         Assert.Equal(ObjectReviewPolicy.Protocol,suspension!.Refinement);
         await File.WriteAllTextAsync(Path.Combine(f.GroundFolder,$"suspension-{cropped[0].Ordinal}.jpg"),"tampered");
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().TrackingAsync("s","baseline",Ct));
+        Assert.Equal(1,f.Transport.ReviewCalls);
+    }
+
+    [Fact] public async Task BodyCropPixelsAreBoundToTheReviewedScene() {
+        using var f=new Fixture();var locator=f.Open();var result=await locator.GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var attempt=JsonSerializer.Deserialize<ObjectReviewAttempt>(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"object-review-attempt.json")),new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.All(attempt.References,r=>Assert.NotNull(r.BodyCrop));
+        Assert.Equal(result.Scene!.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
+        await File.WriteAllTextAsync(Path.Combine(f.GroundFolder,$"body-{attempt.References[0].Ordinal}.jpg"),"changed pixels");
         await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().TrackingAsync("s","baseline",Ct));
         Assert.Equal(1,f.Transport.ReviewCalls);
     }
