@@ -8,7 +8,7 @@ namespace ProofLab.Api;
 
 /// <summary>
 /// Prepare N EXACT source-frame clips by transcoding ONE private intermediate
-/// with a keyframe every TWO frames, then stream-copying windows starting at
+/// with keyframes at planned segment starts, then stream-copying windows starting at
 /// verified intra keyframes. No provider uploads and no local source edits.
 /// Every decoded frame is compared byte-for-byte (SHA256) to the original.
 /// A failed/incomplete clip disqualifies the entire batch from paid transport.
@@ -16,7 +16,7 @@ namespace ProofLab.Api;
 public sealed class SamAdaptiveClipBuilder(
     VideoMediaDecoder decoder,IConfiguration configuration) : ISamAdaptiveClipBuilder
 {
-    public const string Protocol="SAM_ADAPTIVE_INTRA2_SOURCE_PTS_PIXEL_SHA_V1";
+    public const string Protocol="SAM_ADAPTIVE_PLANNED_IDR_ORIENTED_PTS_PIXEL_SHA_V2";
     private static readonly CultureInfo Inv=CultureInfo.InvariantCulture;
     private readonly string directory = ResolveDirectory(configuration);
 
@@ -68,7 +68,10 @@ public sealed class SamAdaptiveClipBuilder(
             if(!process.HasExited)try{process.Kill(entireProcessTree:true);}catch{}
         }
     }
-    private sealed record FrameGeometry(int Width,int Height,int RotationDegrees);
+    private sealed record FrameGeometry(int Width,int Height,int RotationDegrees)
+    {
+        public SamOrientedFrameGeometry Display=>SamOrientedFrameGeometry.FromStored(Width,Height,RotationDegrees);
+    }
 
     private async Task<FrameGeometry> ReadGeometry(string filename,CancellationToken ct)
     {
@@ -174,6 +177,7 @@ public sealed class SamAdaptiveClipBuilder(
         var timer=Stopwatch.StartNew();
         var ptsSha=plan.VerifySourcePts(originalPts);
         var originalGeometry=await ReadGeometry(source.Path,ct);
+        var originalDisplay=originalGeometry.Display;
         var actualPts=await decoder.ReadVideoFramePtsAsync(source.Path,ct);
         if(plan.VerifySourcePts(actualPts)!=ptsSha)
             throw new InvalidDataException("Original video PTS are not verified.");
@@ -189,13 +193,18 @@ public sealed class SamAdaptiveClipBuilder(
                 "Adaptive output is not a fresh directory. No overwrites or paid retry.");
         Directory.CreateDirectory(folder);
         var intra=Path.Combine(folder,"source-intra2.mp4");
+        // Force an IDR at each exact source-frame boundary, instead of bloating
+        // the lossless intermediate with an intra frame every two frames.
+        var keyframeExpression="expr:"+string.Join("+",plan.Windows.Select(w=>w.InputStart)
+            .Append(0).Distinct().Order().Select(n=>"eq(n,"+n.ToString(Inv)+")"));
         await Call(Ffmpeg,new[]{
             "-hide_banner","-loglevel","error","-nostdin",
             "-protocol_whitelist","file,pipe","-threads","2",
             "-i",source.Path,"-map","0:v:0","-an","-sn","-dn",
             "-fps_mode","vfr","-c:v","hevc_nvenc",
             "-preset","p4","-tune","lossless",
-            "-rc","constqp","-qp","0","-bf","0","-g","2",
+            "-rc","constqp","-qp","0","-bf","0","-g","2500",
+            "-forced-idr","1","-force_key_frames",keyframeExpression,
             "-pix_fmt","yuv420p","-tag:v","hvc1",
             "-movflags","+faststart","-n","-f","mp4",intra
         },10_000,ct);
@@ -203,9 +212,9 @@ public sealed class SamAdaptiveClipBuilder(
         if(!intermediate.Exists || intermediate.Length is <10000 or >2_000_000_000)
             throw new InvalidDataException("Intermediate lossless video invalid or too large.");
         var intermediateGeometry=await ReadGeometry(intra,ct);
-        if(intermediateGeometry!=originalGeometry)
+        if(intermediateGeometry.Display!=originalDisplay)
             throw new InvalidDataException(
-                "HEVC intermediate changed source dimensions or orientation.");
+                "HEVC intermediate changed displayed source dimensions.");
         var intraInfo=await ReadIntraPacketTimeline(intra,ct);
         var intraPts=intraInfo.Pts;
         if(intraPts.Length!=originalPts.Count)
@@ -253,9 +262,9 @@ public sealed class SamAdaptiveClipBuilder(
             if(!info.Exists || info.Length is <10_000 or >240_000_000)
                 throw new InvalidDataException("Segment is invalid or exceeds Meta file size.");
             var clipGeometry=await ReadGeometry(path,ct);
-            if(clipGeometry!=originalGeometry)
+            if(clipGeometry.Display!=originalDisplay)
                 throw new InvalidDataException(
-                    "The fragment changed source dimensions or rotation.");
+                    "The fragment changed displayed source dimensions.");
             var clipInfo=await ReadIntraPacketTimeline(path,ct);
             var clipPts=clipInfo.Pts;
             if(clipPts.Length!=w.InputFrames)

@@ -96,7 +96,12 @@ public sealed class AssemblyTests
         public void ReserveOrThrow(){if(!LiveCallsPermitted)throw new InvalidOperationException();Reservations++;}
     }
     private sealed class FramesStub:IKnotFrames {
-        public int Calls;
+        public int Calls, BatchCalls;
+        public async Task<KnotFrame[]> ExtractBatchAsync(string p,string root,(int Index,double Time)[] samples,CancellationToken ct) {
+            BatchCalls++;var result=new KnotFrame[samples.Length];
+            for(var i=0;i<samples.Length;i++)result[i]=await ExtractAsync(p,Path.Combine(root,$"frame-{i}.jpg"),samples[i].Index,samples[i].Time,ct);
+            return result;
+        }
         public async Task<KnotFrame> ExtractAsync(string p,string dest,int index,double time,CancellationToken ct) {
             Calls++;var bytes=Encoding.UTF8.GetBytes(new string('x',200));
             await File.WriteAllBytesAsync(dest,bytes,ct);
@@ -489,6 +494,16 @@ public sealed class AssemblyTests
         await Assert.ThrowsAsync<InvalidDataException>(()=>locator.SuspensionAsync("s","baseline",
             scene with {ResponseSha256=new string('f',64)},Ct));
         Assert.Null(await locator.SuspensionAsync("s","baseline",scene with {Origin=null},Ct));
+    }
+
+    [Fact] public async Task FullVideoUsesOneNativeAnchorBatchAndRecordsLocalTiming() {
+        using var f=new Fixture();
+        var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        Assert.Equal(1,f.Frames.BatchCalls);Assert.Equal(3,f.Frames.Calls);
+        Assert.Equal(new[]{60,300,539},result.Evidence!.Frames.Select(x=>x.Index));
+        using var timing=JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"preparation-timing.json")));
+        Assert.Equal(3,timing.RootElement.GetProperty("referenceFrames").GetInt32());
+        Assert.True(timing.RootElement.GetProperty("totalMs").GetInt64()>=0);
     }
 
 }

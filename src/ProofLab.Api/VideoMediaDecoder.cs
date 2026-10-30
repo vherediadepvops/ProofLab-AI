@@ -338,6 +338,47 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
         finally {DecoderLimit.Release();}
     }
 
+    // Read all native reference frames in one decode pass; preserve order,
+    // full displayed geometry and exact source frame indices (including VFR).
+    public async Task<KnotFrame[]> ExtractBatchAsync(string path,string directory,
+        (int Index,double Time)[] samples,CancellationToken ct)
+    {
+        if(ffmpeg is null || ffprobe is null || samples.Length is <1 or >3 ||
+           samples.Any(s=>s.Index<0 || s.Index>=15000 || !double.IsFinite(s.Time) || s.Time<0) ||
+           samples.Zip(samples.Skip(1),(a,b)=>b.Index<=a.Index || b.Time<=a.Time).Any(x=>x))
+            throw new ArgumentException("Invalid original reference frames.");
+        using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(90));
+        await DecoderLimit.WaitAsync(deadline.Token);
+        try {
+            var select="select="+string.Join("+",samples.Select(s=>
+                "eq(n\\,"+s.Index.ToString(CultureInfo.InvariantCulture)+")"));
+            await RunTextAsync(NewProcess(ffmpeg,"-hide_banner","-loglevel","error","-nostdin",
+                "-protocol_whitelist","file,pipe","-threads","2","-i",path,"-map","0:v:0",
+                "-vf",select,"-frames:v",samples.Length.ToString(CultureInfo.InvariantCulture),
+                "-fps_mode","vfr","-q:v","2","-start_number","0","-n",
+                Path.Combine(directory,"frame-%d.jpg")),deadline.Token);
+            var result=new KnotFrame[samples.Length];
+            for(var i=0;i<samples.Length;i++) {
+                var destination=Path.Combine(directory,$"frame-{i}.jpg");
+                var bytes=await File.ReadAllBytesAsync(destination,deadline.Token);
+                if(bytes.Length is <100 or >8_000_000)throw new ArgumentException("Original frame exceeds image limit.");
+                var probe=await RunTextAsync(NewProcess(ffprobe,"-v","error",
+                    "-protocol_whitelist","file,pipe","-select_streams","v:0",
+                    "-show_entries","stream=width,height","-of","json","-i",destination),deadline.Token);
+                using var doc=JsonDocument.Parse(probe);
+                var stream=doc.RootElement.GetProperty("streams")[0];
+                var width=stream.GetProperty("width").GetInt32();var height=stream.GetProperty("height").GetInt32();
+                if(width is <2 or >8192 || height is <2 or >8192)
+                    throw new ArgumentException("Unsafe image geometry.");
+                result[i]=new(samples[i].Index,samples[i].Time,width,height,
+                    Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant());
+            }
+            return result;
+        }
+        finally {DecoderLimit.Release();}
+    }
+
     private static Process NewProcess(string binary, params string[] args)
     {
         var info = new ProcessStartInfo(binary)

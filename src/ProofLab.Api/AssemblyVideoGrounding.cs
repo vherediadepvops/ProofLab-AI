@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 namespace ProofLab.Api;
@@ -211,6 +212,7 @@ public sealed partial class AssemblyLocator
                 throw new InvalidDataException("Invalid source frame timestamps.");
             var runId=Guid.NewGuid().ToString("N");var runRoot=Path.Combine(root,"runs",runId);
             Directory.CreateDirectory(runRoot);
+            var preparationClock=Stopwatch.StartNew();
             var mp4=Path.Combine(runRoot,"full-video.mp4");
             await runtime.CreateMp4Async(video.Path,mp4,ct);
             var submittedPts=await runtime.ReadFramePtsAsync(mp4,ct);
@@ -220,14 +222,18 @@ public sealed partial class AssemblyLocator
                 throw new InvalidDataException("MP4 remux changed source timing. No upload allowed.");
             var bytes=new FileInfo(mp4).Length;
             if(bytes is <1 or >1_073_741_824)throw new InvalidDataException("Full video exceeds Files API size limit.");
-            var prepared=new List<KnotFrame>();var pixels=new List<byte[]>();
-            foreach(var fraction in new[]{.1,.5,.9}) {
-                var index=(int)Math.Round((pts.Length-1)*fraction);
-                var destination=Path.Combine(runRoot,$"frame-{prepared.Count}.jpg");
-                prepared.Add(await frames.ExtractAsync(video.Path,destination,index,pts[index],ct));
-                pixels.Add(await File.ReadAllBytesAsync(destination,ct));
-            }
-            await ValidateFrames(runRoot,prepared.ToArray(),ct);
+            var remuxAndTimingMs=preparationClock.ElapsedMilliseconds;
+            var samples=new[]{.1,.5,.9}.Select(fraction=>{
+                var index=(int)Math.Round((pts.Length-1)*fraction);return(index,pts[index]);
+            }).ToArray();
+            var prepared=await frames.ExtractBatchAsync(video.Path,runRoot,samples,ct);
+            var pixels=await Task.WhenAll(Enumerable.Range(0,prepared.Length).Select(i=>
+                File.ReadAllBytesAsync(Path.Combine(runRoot,$"frame-{i}.jpg"),ct)));
+            await ValidateFrames(runRoot,prepared,ct);
+            await Save(Path.Combine(runRoot,"preparation-timing.json"),new {
+                remuxAndTimingMs,nativeAnchorsMs=preparationClock.ElapsedMilliseconds-remuxAndTimingMs,
+                totalMs=preparationClock.ElapsedMilliseconds,referenceFrames=prepared.Length
+            },ct);
             var videoInput=new AssemblyVideoInput(video.Sha256,await FileHash(mp4,ct),bytes,"",pts.Length,PtsHash(pts));
             var attempt=new AssemblyVideoAttempt(video.Sha256,AssemblyPolicy.VideoRunKey(video.Sha256,runId),
                 runId,AssemblyPolicy.Model,AssemblyPolicy.VideoGroundingProtocol,DateTimeOffset.UtcNow,

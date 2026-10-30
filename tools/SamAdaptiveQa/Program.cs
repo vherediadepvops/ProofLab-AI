@@ -2,14 +2,15 @@ using Microsoft.Extensions.Configuration;
 using ProofLab.Api;
 
 // Local-only clip preparation; NEVER contacts Meta or reserves credits.
-if(args.Length is not (4 or 5) || args[0]!="--verify-clips")
+var anchorsOnly=args.Length==3 && args[0]=="--verify-anchors";
+if(!anchorsOnly && (args.Length is not (4 or 5) || args[0]!="--verify-clips"))
 {
-    Console.Error.WriteLine("Usage: --verify-clips <verified-source.MOV> <SHA256> <private-target> [maximum-parts]");
+    Console.Error.WriteLine("Usage: --verify-clips <source> <SHA256> <private-target> [maximum-parts] OR --verify-anchors <source> <private-target>");
     return 2;
 }
 var input=Path.GetFullPath(args[1]);
-var sha=args[2].ToLowerInvariant();
-var target=Path.GetFullPath(args[3]);
+var sha=anchorsOnly?"":args[2].ToLowerInvariant();
+var target=Path.GetFullPath(args[anchorsOnly?2:3]);
 if(!target.Split(Path.DirectorySeparatorChar)
     .Contains(".private",StringComparer.OrdinalIgnoreCase))
 {
@@ -26,6 +27,22 @@ var decoder=new VideoMediaDecoder(config);
 try
 {
     var pts=await decoder.ReadVideoFramePtsAsync(input,CancellationToken.None);
+    if(anchorsOnly)
+    {
+        if(Directory.Exists(target))throw new InvalidOperationException("Use a fresh private output directory.");
+        var single=Path.Combine(target,"single");var batch=Path.Combine(target,"batch");
+        Directory.CreateDirectory(single);Directory.CreateDirectory(batch);
+        var samples=new[]{.1,.5,.9}.Select(f=>{var n=(int)Math.Round((pts.Length-1)*f);return(n,pts[n]);}).ToArray();
+        var clock=System.Diagnostics.Stopwatch.StartNew();var expected=new KnotFrame[3];
+        for(var i=0;i<3;i++)expected[i]=await decoder.ExtractAsync(input,Path.Combine(single,$"frame-{i}.jpg"),samples[i].n,samples[i].Item2,CancellationToken.None);
+        var sequentialMs=clock.ElapsedMilliseconds;clock.Restart();
+        var actual=await decoder.ExtractBatchAsync(input,batch,samples,CancellationToken.None);
+        var batchMs=clock.ElapsedMilliseconds;
+        if(!expected.SequenceEqual(actual))throw new InvalidDataException("Native batch reference bytes/indices/orientation changed.");
+        Console.WriteLine("NATIVE_ANCHORS_MATCH=true SEQUENTIAL_MS="+sequentialMs+" BATCH_MS="+batchMs+
+            " INDICES="+string.Join(",",actual.Select(f=>f.Index))+" WIDTH="+actual[0].Width+" HEIGHT="+actual[0].Height);
+        Console.WriteLine("OFFLINE_ONLY NO_META_CALLS=true");return 0;
+    }
     int? maxParts=null;
     if(args.Length==5)
     {
@@ -57,6 +74,6 @@ try
 }
 catch(Exception ex)
 {
-    Console.Error.WriteLine("LOCAL_CLIP_QA_FAILED="+ex.GetType().Name);
+    Console.Error.WriteLine("LOCAL_CLIP_QA_FAILED="+ex.GetType().Name+": "+ex.Message);
     return 1;
 }

@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -6,7 +8,7 @@ namespace ProofLab.Api;
 
 /// <summary>No retries, tools or follow-up inferences. Full video uses a bounded
 /// token admission check on the actual uploaded video plus anchor-image payload.</summary>
-public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssemblyTransport
+public sealed class AssemblyMetaTransport(IHttpClientFactory clients,ILogger<AssemblyMetaTransport>? logger=null) : IAssemblyTransport
 {
     private static void CheckImages(byte[][] images,string token) {
         if(images.Length!=3 || images.Any(i=>i.Length is <100 or >8_000_000) ||
@@ -86,6 +88,7 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssembl
         KnotFrame[] anchors,byte[][] images,string token,double maximumCostUsd,Func<AssemblyVideoInput,Task> uploaded,CancellationToken ct,string? reviewDiagnostics,Func<string,Task>? captured)
     {
         bool inferenceSubmitted=false;string? fileId=null;
+        var phaseClock=Stopwatch.StartNew();
         var http=clients.CreateClient("meta");
         try {
             CheckImages(images,token);
@@ -111,6 +114,8 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssembl
                     fileId.Any(c=>!char.IsAsciiLetterOrDigit(c) && c!='-' && c!='_'))
                     throw new FormatException("Invalid uploaded file ID.");
             }
+            logger?.LogInformation("Spark phase upload completed in {ElapsedMs} ms",phaseClock.ElapsedMilliseconds);
+            phaseClock.Restart();
             var submitted=videoInput with {ProviderFileId=fileId};
             await uploaded(submitted);
             var content=new List<object> {
@@ -135,9 +140,12 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssembl
                     (tokens*AssemblyPolicy.InputUsdPerMillion+(reviewDiagnostics is null?4096:8192)*AssemblyPolicy.OutputUsdPerMillion)/1_000_000>maximumCostUsd+1e-9)
                     throw new InvalidOperationException("Full-video tokens exceed the approved maximum. No inference sent.");
             }
+            logger?.LogInformation("Spark phase token_count completed in {ElapsedMs} ms",phaseClock.ElapsedMilliseconds);
+            phaseClock.Restart();
             // Only this transition makes a subsequent failure potentially billable.
             inferenceSubmitted=true;
             var responseRaw=await Post(http,"responses",payload,token,ct);
+            logger?.LogInformation("Spark phase inference completed in {ElapsedMs} ms",phaseClock.ElapsedMilliseconds);
             if(captured is not null)await captured(responseRaw);
             var responseResult=Completed(responseRaw);
             return new(responseResult,submitted);
@@ -149,12 +157,14 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients) : IAssembl
             // This request owns the temporary upload; preserve its ID locally, then
             // remove the provider copy. Cleanup never retries or replaces a result.
             if(fileId is not null) {
+                phaseClock.Restart();
                 try {
                     using var cleanupDeadline=new CancellationTokenSource(TimeSpan.FromSeconds(15));
                     using var cleanup=new HttpRequestMessage(HttpMethod.Delete,"https://api.meta.ai/v1/files/"+Uri.EscapeDataString(fileId));
                     cleanup.Headers.Authorization=new AuthenticationHeaderValue("Bearer",token);
                     using var removed=await http.SendAsync(cleanup,HttpCompletionOption.ResponseHeadersRead,cleanupDeadline.Token);
                 } catch { /* Provider file ID remains in the immutable upload receipt. */ }
+                logger?.LogInformation("Spark phase upload_cleanup finished in {ElapsedMs} ms",phaseClock.ElapsedMilliseconds);
             }
         }
     }

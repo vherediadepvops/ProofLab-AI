@@ -21,6 +21,15 @@ public sealed record KnotProviderResult(string Raw, string ProviderResponseId, i
 public interface IKnotFrames
 {
     Task<KnotFrame> ExtractAsync(string path, string destination, int index, double time, CancellationToken ct);
+    async Task<KnotFrame[]> ExtractBatchAsync(string path,string directory,
+        (int Index,double Time)[] samples,CancellationToken ct)
+    {
+        var result=new KnotFrame[samples.Length];
+        for(var i=0;i<samples.Length;i++)
+            result[i]=await ExtractAsync(path,Path.Combine(directory,$"frame-{i}.jpg"),
+                samples[i].Index,samples[i].Time,ct);
+        return result;
+    }
 }
 public interface IKnotTransport
 {

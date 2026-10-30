@@ -15,13 +15,14 @@ La autorización de pagos del propietario permanece activa en todas las ramas; v
 
 ## Pruebas reales autorizadas y resultados
 
-Se realizaron **3 de las 5 pruebas** autorizadas: **1 llamada Spark + 25 llamadas SAM**. SAM estimado total: **US$0,4368**; la llamada Spark tuvo un máximo aprobado de US$0,25. Estos importes no son una factura.
+Se realizaron **4 de las 5 pruebas** autorizadas: **1 llamada Spark + 29 llamadas SAM**. SAM estimado total: **US$0,8086**; la llamada Spark tuvo un máximo aprobado de US$0,25. Estos importes no son una factura.
 
 | Prueba | Reparto | Tiempo SAM + preparación/unión | Resultado |
 |---|---|---:|---|
 | Péndulo de pelota, 951 fotogramas; experimento con 21 referencias Spark | 18 segmentos, 4 simultáneos | 62,575 s | 888 máscaras; uniones inconclusas |
 | Mismo video, referencias previas | 4 segmentos, 4 simultáneos efectivos | 32,903 s | 951 máscaras; dos uniones inconclusas |
 | Video corto de WhatsApp, 182 fotogramas; Edge real | 3 segmentos simultáneos | 20,071 s de backend + 0,933 s de vista | 182 máscaras, uniones válidas, reproducción, θ, ω, vectores y rastro |
+| Péndulo de 80 cm, MOV vertical, 1845 fotogramas | 4 segmentos simultáneos, Spark guardado | 170,660 s | Preparación correcta; 1845 máscaras; dos uniones inconclusas |
 
 La preparación del video corto bajó de 3,602 s en la prueba anterior a 2,293 s en esta prueba. Son observaciones individuales, no una garantía de mejora global: la latencia de Meta varió.
 
@@ -29,9 +30,21 @@ El experimento de muchas referencias Spark produjo cajas fuera de la pelota y **
 
 ## Verificación y continuidad
 
-39 pruebas .NET de segmentos y 42 Angular focalizadas correctas; prueba real en Edge sin errores de consola/red. Sin CI y sin secciones nuevas de interfaz.
+95 pruebas .NET focalizadas de segmentos, orientación y Spark correctas en esta corrección. Las 42 Angular y la prueba de Edge anteriores siguen documentadas; esta corrección es de backend y se probó directamente por HTTP. Sin CI y sin secciones nuevas de interfaz.
 La evidencia, respuestas, videos y libro de consumo permanecen privados en el equipo autorizado; no publicar tokens ni videos.
 
-Pendiente: mejorar la localización densa con Spark y validar continuidad en el video largo antes de recomendar 19/28 peticiones para cualquier grabación. Las dos pruebas autorizadas restantes no se consumieron.
+Pendiente: mejorar la localización densa con Spark y validar continuidad en el video largo antes de recomendar 19/28 peticiones para cualquier grabación. Queda una de las cinco pruebas autorizadas sin consumir.
 
 Fuentes: [facturación y límites Meta](https://dev.meta.ai/docs/pricing-rate-limits), [prompts SAM](https://dev.meta.ai/docs/sam/segmenting), [localización con Spark](https://dev.meta.ai/docs/image-understanding).
+
+## Corrección de orientación y tiempos de Spark
+
+El MOV vertical almacena 1920×1080 con rotación −90°. FFmpeg produce el intermedio orientado 1080×1920 sin etiqueta de rotación. La igualdad anterior de dimensiones almacenadas/rotación lo rechazaba aunque los píxeles mostrados fueran idénticos. Ahora se comparan dimensiones orientadas y se mantienen las comprobaciones SHA-256 de **todos** los fotogramas y sus PTS. No se modifica el original.
+
+El intermedio lossless fuerza IDR en los inicios reales del plan, en vez de cada dos fotogramas. En este video bajó de 1.016.300.036 a 491.210.226 bytes. Los cuatro clips conservaron todos los píxeles y tiempos (desviación máxima de PTS 1,501 ms). La preparación real tardó 42,693 s; no es comparable al fallo anterior de 15,9 s, que abortaba antes de acabar las verificaciones.
+
+Las cuatro respuestas SAM terminaron, sin pérdidas de fotogramas. Los mínimos IoU de las tres uniones fueron 0,8837 / 0,9989 / 0,8212. Dos incumplen el umbral 0,90; el resultado sigue **inconcluso** y no habilita gráficos científicos. No se relajó el umbral ni se repitieron llamadas.
+
+La espera anterior de Spark (72,3 s de interfaz) incluía subida 15,136 s, conteo de tokens 6,420 s, inferencia 25,880 s y limpieza 4,903 s; el resto corresponde a preparación y tareas del flujo. Las tres referencias nativas ahora se extraen en una pasada. Comparación local sobre el mismo MOV: 9,275 s antes y 5,524 s después, con SHA-256 de cada JPEG, índice, dimensiones y tiempo idénticos. Esto reduce esa fase local un 40%; no prueba una reducción equivalente de la latencia total de Meta.
+
+Se registran tiempos privados por remux/verificación, extracción de referencias, subida, conteo, inferencia y limpieza. Se mantiene el envío del video completo, la calidad original, el presupuesto y el nivel de razonamiento. La prueba 4 reutilizó Spark y realizó cuatro llamadas SAM (US$0,3718 estimados, no factura).
