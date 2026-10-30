@@ -48,6 +48,7 @@ builder.Services.AddSingleton<SamAdaptiveLiveService>();
 builder.Services.AddSingleton(sp => new SamVideoEvidenceIndex(
     sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
 builder.Services.AddSingleton<PendulumSamCache>();
+builder.Services.AddSingleton<SamReusableEvidence>();
 builder.Services.AddSingleton<SuspensionReviewStore>();
 builder.Services.AddSingleton<SuspensionReviewService>();
 builder.Services.AddSingleton<IKnotFrames>(sp => sp.GetRequiredService<VideoMediaDecoder>());
@@ -501,14 +502,23 @@ app.MapGet("/api/science/director/pendulum/sessions/{id}/sam/{role}/preflight",
     catch(InvalidDataException){return Results.Conflict(new{error="Video frame timing integrity mismatch."});}
     catch(InvalidOperationException ex){return Results.Problem(ex.Message,statusCode:503);}
 });
+app.MapGet("/api/science/director/pendulum/sessions/{id}/sam/{role}/reusable",
+    async(string id,string role,SamReusableEvidence cache,HttpContext context,CancellationToken ct)=> {
+    if(context.Connection.RemoteIpAddress is not System.Net.IPAddress ip || !System.Net.IPAddress.IsLoopback(ip))
+        return Results.StatusCode(403);
+    try {return Results.Ok(await cache.FindAsync(id,role,ct));}
+    catch(ArgumentException){return Results.BadRequest(new{error="Invalid video identity."});}
+    catch(FileNotFoundException){return Results.NotFound(new{error="Original or cached evidence unavailable."});}
+    catch(InvalidDataException ex){app.Logger.LogWarning("Reusable evidence validation: {Reason}",ex.Message);return Results.Conflict(new{error="Cached evidence could not be validated."});}
+});
 app.MapGet("/api/science/director/pendulum/sessions/{id}/sam/{role}/evidence",
-    async (string id,string role,PendulumSamCache sam,
+    async (string id,string role,string? analysisId,PendulumSamCache sam,
         HttpContext context,CancellationToken ct) =>
 {
     if(context.Connection.RemoteIpAddress is not System.Net.IPAddress address ||
        !System.Net.IPAddress.IsLoopback(address))
         return Results.StatusCode(403);
-    try {return Results.Ok(await sam.ReadArchiveAsync(id,role,ct));}
+    try {return Results.Ok(await sam.ReadArchiveAsync(id,role,ct,analysisId));}
     catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new{error="No authentic cached SAM evidence."});}
     catch(InvalidDataException){return Results.Conflict(new{error="SAM cache integrity mismatch."});}

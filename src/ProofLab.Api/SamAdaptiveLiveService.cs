@@ -19,7 +19,7 @@ namespace ProofLab.Api;
 public sealed partial class SamAdaptiveLiveService(
     ISamVideoRuntime runtime,IAssemblyScenes scenes,ISamVideoTransport transport,
     ISamAdaptiveClipBuilder clipBuilder,MetaLiveAccess access,
-    IWebHostEnvironment environment,IConfiguration config)
+    IWebHostEnvironment environment,IConfiguration config, SuspensionReviewStore? reviews=null)
 {
     public const string Protocol="PROOFLAB_SAM_ADAPTIVE_SSE_SOURCE_PTS_V1";
     public const int MaximumLiveConcurrentRequests=12;
@@ -78,19 +78,21 @@ public sealed partial class SamAdaptiveLiveService(
 
     // Discovery only: the playback endpoint revalidates every receipt, hash and seam.
     public async Task<SamAdaptiveLiveReport?> LatestRecoverableResultAsync(string sourceSha,CancellationToken ct)
+        =>(await RecoverableResultsAsync(sourceSha,ct)).FirstOrDefault();
+
+    public async Task<IReadOnlyList<SamAdaptiveLiveReport>> RecoverableResultsAsync(string sourceSha,CancellationToken ct)
     {
-        var dir=Path.Combine(StoreRoot,"batches");if(!Directory.Exists(dir))return null;
-        SamAdaptiveLiveReport? latest=null;
+        var results=new List<SamAdaptiveLiveReport>();
+        var dir=Path.Combine(StoreRoot,"batches");if(!Directory.Exists(dir))return results;
         foreach(var folder in Directory.EnumerateDirectories(dir)) {
             var id=Path.GetFileName(folder);if(!ValidBatchId(id))continue;
             SamAdaptiveLiveReport? report;
-            try {report=await ReadReportAsync(id,ct);} catch(IOException){continue;} catch(JsonException){continue;}
+            try {report=await ReadReportAsync(id,ct);}catch(IOException){continue;}catch(JsonException){continue;}
             if(report is not null && report.SourceSha256==sourceSha && report.BatchId==id &&
                report.Status=="PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW" &&
-               report.DerivedSeamsVerified==true && report.CompletedParts==report.Parts &&
-               (latest is null || report.RecordedAtUtc>latest.RecordedAtUtc))latest=report;
+               report.DerivedSeamsVerified==true && report.CompletedParts==report.Parts)results.Add(report);
         }
-        return latest;
+        return results.OrderByDescending(r=>r.RecordedAtUtc).ToArray();
     }
 
     private async Task<string?> RecoveryForQuote(string sourceSha,string sceneKey,CancellationToken ct)
@@ -523,8 +525,9 @@ public sealed partial class SamAdaptiveLiveService(
             derived.DerivedResponseSha256,"",null,pts.Length,pts,"",
             "COMPLETED_PROVIDER_PARTS_DERIVED_REQUIRES_VISUAL_REVIEW",
             report.EstimatedSamUsd,batchId,scene);
-        return new(state,receiptAll,saved,await scenes.SuspensionAsync(studyId,role,scene,ct),
+        var artifact=new SamVideoArtifact(state,receiptAll,saved,await scenes.SuspensionAsync(studyId,role,scene,ct),
             Derivation:new(batchId,false,true,ptsSha,outputs.Select(x=>x.ResponseJsonSha256).ToArray()));
+        return artifact with {SuspensionReview=reviews is not null?await reviews.ReadAsync(artifact,ct):null};
     }
 
     private sealed record PartOutcome(string State,

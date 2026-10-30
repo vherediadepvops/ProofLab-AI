@@ -50,6 +50,17 @@ async function main() {
     providerModel:'sam-3.1' as const,objectId:track?.objectId??'NO_MATCH',
     pivotRevisionId:input.pivotRevisionId,pivotProvenance:provenance
   };
-  process.stdout.write(JSON.stringify(periodReportPayload(source,measurement)));
+  const payload=periodReportPayload(source,measurement);
+  if(input.operation==='cache-quality') {
+    const a=payload.assessment;
+    process.stdout.write(JSON.stringify({
+      usable:!!automatic?.pivot && a.status==='CANDIDATE',
+      reason:!automatic?.pivot?(automatic?.reason??'PIVOT_MISSING'):
+        a.status==='CANDIDATE'?'MEASUREMENTS_AVAILABLE':a.issues.join(','),
+      periodSeconds:a.periodSeconds,usedCycles:a.usedCycles,
+      detectedFrames:a.detectedFrames,totalFrames:a.totalFrames
+    }));return;
+  }
+  process.stdout.write(JSON.stringify(payload));
 }
 main().catch(()=>{process.stderr.write('SAM_PERIOD_WORKER_FAILED');process.exitCode=1;});

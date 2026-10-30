@@ -121,11 +121,17 @@ public sealed class SamVideoArchive(string contentRoot, SamVideoEvidenceIndex in
 
     // SQLite is consulted first. Unindexed durable completions are recovered
     // from private files after a process interruption, never by calling Meta.
-    public async Task<List<Stored>> LoadAsync(SamVideoSource source, string key, CancellationToken ct)
+    public async Task<List<Stored>> LoadAsync(SamVideoSource source, string key, CancellationToken ct, Action? invalidArchive = null)
     {
         var latest = await index.FindLatestAsync(source.Sha256.ToLowerInvariant(),
             key, Hash(ExpectedPrompt), ct);
-        if (latest is not null) await VerifyIndexedAsync(source, key, latest, ct);
+        var rejected = new HashSet<string>();
+        if (latest is not null) {
+            try { await VerifyIndexedAsync(source, key, latest, ct); }
+            catch (InvalidDataException) when(invalidArchive is not null) {
+                rejected.Add(latest.ArchiveRelativePath); invalidArchive();
+            }
+        }
         var result = new List<Stored>();
         var folder = Folder(key);
         if (!Directory.Exists(folder)) return result;
@@ -150,11 +156,17 @@ public sealed class SamVideoArchive(string contentRoot, SamVideoEvidenceIndex in
             else if (File.Exists(Path.Combine(directory, "response-writing.tmp")))
                 throw new InvalidDataException("Incomplete legacy SAM archive needs reconciliation.");
         }
-        await Read(folder, key);
+        async Task ReadCandidate(string directory,string relative) {
+            if(rejected.Contains(relative))return;
+            try {await Read(directory,relative);}
+            catch(InvalidDataException) when(invalidArchive is not null) {invalidArchive();}
+            catch(FileNotFoundException) when(invalidArchive is not null) {invalidArchive();}
+        }
+        await ReadCandidate(folder, key);
         var runs = Path.Combine(folder, "runs");
         if (Directory.Exists(runs))
             foreach (var directory in Directory.EnumerateDirectories(runs))
-                await Read(directory, key + "/runs/" + Path.GetFileName(directory));
+                await ReadCandidate(directory, key + "/runs/" + Path.GetFileName(directory));
         return result;
     }
 

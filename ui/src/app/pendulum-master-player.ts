@@ -451,7 +451,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       const endpoint='http://127.0.0.1:'+this.samApiPort()+
         '/api/science/director/pendulum/sessions/'+this.studyId()+
         (batch?'/sam-adaptive/'+this.videoRole()+'/batches/'+batch+'/evidence':
-          '/sam/'+this.videoRole()+'/evidence');
+          '/sam/'+this.videoRole()+'/evidence'+(this.processedAnalysisId()?'?analysisId='+encodeURIComponent(this.processedAnalysisId()):''));
       const archive=await firstValueFrom(
         this.http!.get<AuthenticatedSamVideoArchive>(endpoint));
       if(serial!==this.samSerial || this.disposed)return;

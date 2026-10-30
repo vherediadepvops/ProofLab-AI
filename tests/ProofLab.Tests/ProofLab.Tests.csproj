@@ -83,4 +83,4 @@
     <Compile Include="..\..\src\ProofLab.Api\MuseExperimentStore.cs" Link="MuseExperimentStore.cs" />
     <Compile Include="..\..\src\ProofLab.Api\MuseExperimentTransport.cs" Link="MuseExperimentTransport.cs" />
   </ItemGroup>
-</Project>
+<ItemGroup><Compile Include="../../src/ProofLab.Api/SamCacheQuality.cs" Link="SamCacheQuality.cs" /></ItemGroup></Project>

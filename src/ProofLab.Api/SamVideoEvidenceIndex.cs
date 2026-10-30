@@ -17,7 +17,7 @@ public sealed record SamIndexedEvidence(
     string ArchiveRelativePath, int SourceFrames,
     string CompletedAtUtc, string ProvenanceStatus);
 
-public sealed class SamVideoEvidenceIndex
+public sealed partial class SamVideoEvidenceIndex
 {
     public const string Provenance = "PROVIDER_RECEIPT_PREVIOUSLY_VERIFIED";
     private readonly string connectionString;

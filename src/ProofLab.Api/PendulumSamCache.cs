@@ -63,7 +63,7 @@ public sealed class PendulumSamCache(
     private sealed record PriorArchive(string Key, SamVideoArchive Archive, List<SamVideoArchive.Stored> All);
 
     private async Task<List<PriorArchive>> PriorArchives(string studyId, string role,
-        SamVideoSource video, string currentKey, CancellationToken ct, bool quote = false)
+        SamVideoSource video, string currentKey, CancellationToken ct, bool quote = false, Action? invalidArchive = null)
     {
         var result = new List<PriorArchive>();
         foreach (var legacy in new[] { false, true })
@@ -71,7 +71,7 @@ public sealed class PendulumSamCache(
             var key = legacy ? LegacyCacheKey(video.Sha256) : CacheKey(video.Sha256);
             if (key == currentKey) continue;
             var archive = new SamVideoArchive(environment.ContentRootPath, index, legacyDirect: legacy);
-            result.Add(new(key, archive, await archive.LoadAsync(video, key, ct)));
+            result.Add(new(key, archive, await archive.LoadAsync(video, key, ct, invalidArchive)));
         }
         // A new Spark evaluation changes the scene identity. Retain each older
         // SAM receipt under its own authenticated scene, including pending runs.
@@ -85,7 +85,7 @@ public sealed class PendulumSamCache(
                     SamModel + "\n" + priorScene.Key + "\n" + video.Sha256);
                 if (key == currentKey || result.Any(p => p.Key == key)) continue;
                 var priorArchive = new SamVideoArchive(environment.ContentRootPath, index, priorScene);
-                result.Add(new(key, priorArchive, await priorArchive.LoadAsync(video, key, ct)));
+                result.Add(new(key, priorArchive, await priorArchive.LoadAsync(video, key, ct, invalidArchive)));
             }
         }
         return result;
@@ -225,9 +225,29 @@ public sealed class PendulumSamCache(
             "PROMOTIONAL_BALANCE_NOT_VERIFIED_BY_THIS_ENDPOINT");
     }
 
-    public async Task<SamVideoArtifact> ReadArchiveAsync(
-        string studyId, string role, CancellationToken ct)
+    public async IAsyncEnumerable<SamVideoArtifact> ReadCandidatesAsync(string studyId,string role,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct, Action? invalidArchive = null)
     {
+        var (video,key,archive,scene)=await Source(studyId,role,ct);
+        var all=await archive.LoadAsync(video,key,ct,invalidArchive);
+        var prior=await PriorArchives(studyId,role,video,key,ct,invalidArchive:invalidArchive);
+        foreach(var stored in all.Concat(prior.SelectMany(p=>p.All)).DistinctBy(s=>s.Entry.AnalysisId)
+            .OrderByDescending(s=>s.Receipt.CapturedAtUtc)) {
+            var result=Artifact(stored);
+            result=result with {Suspension=scenes is not null && result.Receipt.Scene is {} usedScene
+                ?await scenes.SuspensionAsync(studyId,role,usedScene,ct):null};
+            yield return result with {SuspensionReview=reviews is not null?await reviews.ReadAsync(result,ct):null};
+        }
+    }
+
+    public async Task<SamVideoArtifact> ReadArchiveAsync(
+        string studyId, string role, CancellationToken ct,string? analysisId=null)
+    {
+        if(analysisId is not null) {
+            await foreach(var candidate in ReadCandidatesAsync(studyId,role,ct,()=>{}))
+                if(candidate.State.AnalysisId==analysisId)return candidate;
+            throw new FileNotFoundException("Selected SAM evidence unavailable.");
+        }
         var (video, key, archive, scene) = await Source(studyId, role, ct);
         var all = await archive.LoadAsync(video, key, ct);
         var prior = await PriorArchives(studyId, role, video, key, ct);

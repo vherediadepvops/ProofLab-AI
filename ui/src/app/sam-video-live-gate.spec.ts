@@ -31,6 +31,9 @@ describe('SAM guided manual processing and parallel quotes',()=>{
     f.componentRef.setInput('autoCheck',auto);f.componentRef.setInput('studyId',id);
     f.componentRef.setInput('videoSha256',sha);f.detectChanges();
     const c=f.componentInstance;
+    // Exercise the retained native compatibility path. Default cache-first routing
+    // is covered separately by sam-segments-flow; fresh API routing by sam-fresh-flow.
+    spyOn<any>(c,'segmentedMode').and.returnValue(false);
   spyOn<any>(c,'pollSpark').and.callFake(async()=>{c.sparkStages.set(['prepare','references','upload','inference','verify'].map(key=>({key,state:'COMPLETED',elapsedMs:100,percent:100})));});
   const h=TestBed.inject(HttpTestingController),con=TestBed.inject(LabConnection);
     const field=document.createElement('input');field.type='password';con.register(field);

@@ -704,4 +704,31 @@ public sealed class PendulumSamCacheIntegrationTests
             f.Open(scenes).RunOnceAsync("study","primary",f.Request() with {SceneKey=a.Key},Ct));
         Assert.Equal(0,f.Runtime.Reservations);Assert.Equal(0,f.Transport.Calls);
     }
+
+    private sealed class QualityWorker(string accepted):ISamPeriodWorker {
+        public Task<string> MeasureAsync(object input,CancellationToken ct) {
+            var json=JsonSerializer.SerializeToElement(input,new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var good=json.GetProperty("archive").GetProperty("state").GetProperty("analysisId").GetString()==accepted;
+            return Task.FromResult(JsonSerializer.Serialize(new SamCacheQuality(good,good?"MEASUREMENTS_AVAILABLE":"PIVOT_MISSING",good?1.4:null,good?8:0,60,60),new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        }
+    }
+    [Fact] public async Task NewInsufficientResultCannotHideOlderUsableEvidence_OrBillOnLookup() {
+        using var f=new Fixture();var api=f.Open();
+        var good=await api.RunOnceAsync("study","baseline",f.Request(),Ct);
+        var bad=await api.RunOnceAsync("study","baseline",f.Request(),Ct);
+        var config=new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+        var batches=new SamAdaptiveLiveService(f.Runtime,null!,f.Transport,null!,null!,new Environment(f.Root),config);
+        var reusable=new SamReusableEvidence(f.Runtime,api,batches,new SamVideoEvidenceIndex(f.Root),new QualityWorker(good.State.AnalysisId!));
+        var found=await reusable.FindAsync("study","baseline",Ct);
+        Assert.True(found.CacheHit);Assert.Equal(good.State.AnalysisId,found.AnalysisId);Assert.Equal(1,found.ExcludedResults);
+        Assert.Equal(good.State.AnalysisId,(await api.ReadArchiveAsync("study","baseline",Ct,found.AnalysisId)).State.AnalysisId);
+        Assert.Equal(2,f.Transport.Calls);Assert.Equal(2,f.Runtime.Reservations);
+        Assert.True(File.Exists(Path.Combine(f.Run(bad),"receipt.json")));
+        // Quarantine corruption, keep strict old archive reads rejecting it, and still find the good result.
+        await File.WriteAllTextAsync(Path.Combine(f.Run(bad),"response.json"),"corrupted");
+        await Assert.ThrowsAsync<InvalidDataException>(()=>api.ReadArchiveAsync("study","baseline",Ct));
+        var again=await reusable.FindAsync("study","baseline",Ct);
+        Assert.True(again.CacheHit);Assert.Equal(good.State.AnalysisId,again.AnalysisId);Assert.Equal(1,again.ExcludedResults);
+        Assert.Equal(2,f.Transport.Calls);Assert.Equal("corrupted",await File.ReadAllTextAsync(Path.Combine(f.Run(bad),"response.json")));
+    }
 }

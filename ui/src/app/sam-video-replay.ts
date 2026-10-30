@@ -17,6 +17,7 @@ export interface SamProcessingSelection {
   analysisId:string; port:5391|5393|5398|5410; adaptiveBatchId?:string;
 }
 
+interface SamReusableResult {sourceSha256:string;cacheHit:boolean;analysisId:string|null;adaptiveBatchId:string|null;excludedResults:number;quality:{usable:boolean;reason:string}|null;storage:string;}
 type SamMode='api-meta'|'api-meta-cache'|'api-meta-adaptive';
 interface SamCacheStatus {
   status:string; sourceSha256:string; cacheKey:string;
@@ -93,7 +94,7 @@ interface SamAdaptiveReport {
             <span>{{es?'Modo de análisis':'Analysis mode'}}</span>
             <select class="sam-mode" [value]="mode()" (change)="selectMode($event)" [disabled]="processing() || sending() || connection.busy()">
               <option value="api-meta">API Meta</option>
-              <option value="api-meta-cache">{{guided()?(es?'Automático · reutilizar caché':'Automatic · reuse cache'):(es?'API Meta + caché':'API Meta + cache')}}</option>
+              <option value="api-meta-cache">{{guided()?(es?'Automático · caché verificada y segmentos':'Automatic · checked cache and segments'):(es?'API Meta + caché':'API Meta + cache')}}</option>
               <option value="api-meta-adaptive">{{es?'API Meta · segmentos':'Meta API · segments'}}</option>
             </select>
           </label></details>
@@ -112,7 +113,7 @@ interface SamAdaptiveReport {
                 @if(!freeCacheAvailable() && groundingRequired()) {
                   <small class="sam-meta-estimate">SAM {{es?'estimado':'estimate'}} US$ {{costLabel(pf.estimatedCostUsd)}} + Spark {{es?'hasta':'up to'}} US$ {{groundingQuote()!.maximumEstimatedCostUsd.toFixed(2)}}</small>
                 }
-                @if(mode()==='api-meta-adaptive' && adaptiveQuote(); as aq) {
+                @if(segmentedMode() && adaptiveQuote(); as aq) {
                   <small class="sam-meta-estimate">{{aq.parts}} {{es?'solicitudes SAM':'SAM requests'}} ·
                     {{aq.simultaneousRequests}} {{es?'simultáneas':'concurrent'}} ·
                     {{es?'cuadros facturables':'billable frames'}}: {{aq.billableFrames}}</small>
@@ -158,7 +159,7 @@ interface SamAdaptiveReport {
           @if(checking()) {
             <app-lab-activity class="sam-progress" [label]="es?'Calculando costo…':'Estimating cost…'"
               [detail]="es?'Comprobando fotogramas y caché. No se consumen créditos.':'Checking frames and cache. No credits are used.'"/>
-          } @else if(processing() && mode()!=='api-meta-adaptive') {
+          } @else if(processing() && !segmentedMode()) {
             <app-lab-activity class="sam-progress" [label]="processingLabel()" [detail]="processingDetail()"/>
           }
           @if(stageTraceStarted()) {
@@ -173,10 +174,15 @@ interface SamAdaptiveReport {
                   </div>
                 </div>
               }
-              <small class="sam-stage-help">{{mode()==='api-meta-adaptive'?(es?'Los segmentos SAM se ejecutan en paralelo. Las barras animadas indican actividad; Meta no informa un porcentaje exacto.':'SAM segments run in parallel. Animated bars indicate activity; Meta does not report an exact percentage.'):(es?'Este modo envía el video completo en una solicitud SAM cuando no reutiliza un resultado. La revisión de suspensión con Spark se mide por separado.':'This mode sends the complete video in one SAM request unless reusing a result. Spark suspension review is timed separately.')}}</small>
+              <small class="sam-stage-help">{{freeCacheAvailable()?(es?'Recuperando las mediciones guardadas, sin llamadas a Meta.':'Loading saved measurements without Meta calls.'):segmentedMode()?(es?'Los segmentos SAM se ejecutan en paralelo. Las barras animadas indican actividad; Meta no informa un porcentaje exacto.':'SAM segments run in parallel. Animated bars indicate activity; Meta does not report an exact percentage.'):(es?'Este modo envía el video completo en una solicitud SAM cuando no reutiliza un resultado. La revisión de suspensión con Spark se mide por separado.':'This mode sends the complete video in one SAM request unless reusing a result. Spark suspension review is timed separately.')}}</small>
             </div>
           }
           @if(!checking() && !processing() && !connection.busy()) {
+          @if(!checking() && (reusableEvidence()?.excludedResults??0)>0) {
+            <small class="sam-meta-estimate">{{es?
+              'Se excluyeron '+reusableEvidence()!.excludedResults+' resultados guardados por mediciones insuficientes. Se conserva el historial.':
+              reusableEvidence()!.excludedResults+' saved results excluded because measurements were insufficient. History is preserved.'}}</small>
+          }
           <div class="sam-message" [class.warning]="!freeCacheAvailable() && !canProcess() && !checking() && !sending()" role="status">
             @if(error()) {
               <span>{{error()}}</span>
@@ -213,13 +219,13 @@ interface SamAdaptiveReport {
         <details class="sam-technical">
           <summary>{{es?'Detalles técnicos':'Technical details'}}</summary>
           <div class="sam-detail-body">
-            <p>{{mode()==='api-meta-adaptive'?
+            <p>{{segmentedMode()?
               (es?'Prueba de múltiples solicitudes SAM, con una única localización Spark archivada, presupuesto conjunto, recibos separados y sin reintentos automáticos. Las máscaras derivadas requieren revisión humana.':'Experimental multi-request SAM using one archived Spark localization, an aggregate budget, independent receipts and no automatic retries. Derived masks require human review.'):
               mode()==='api-meta-cache'
               ? (es?'Se verifica el mismo video en SQLite. Si hay caché válida se reutiliza; si no, se requiere una solicitud autorizada a Meta.':'SQLite is checked for this exact video. Valid cache is reused; otherwise an authorized Meta request is required.')
               : (es?'Solicita un análisis nuevo a Meta, sujeto a créditos y permisos del servidor.':'Requests a new Meta analysis, subject to credits and server permission.')}}</p>
             @if(preflight(); as pf) {
-              <p>{{es?'Estimación completa para enviar a Meta':'Full estimate for sending to Meta'}}: US$ {{displayedCost().toFixed(4)}} · {{pf.codec}}</p>
+              <p>{{freeCacheAvailable()?(es?'Costo de recuperar las mediciones':'Cost of loading measurements'):(es?'Estimación completa para enviar a Meta':'Full estimate for sending to Meta')}}: US$ {{displayedCost().toFixed(4)}} · {{pf.codec}}</p>
             }
             @if(adaptiveResult(); as batch) {
               <p>{{es?'Lote':'Batch'}}: {{batch.batchId}} · {{batch.status}} ·
@@ -447,6 +453,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.finishProcessing();this.processingFailed.emit();
   }
   readonly mode=signal<SamMode>('api-meta-cache');
+  segmentedMode():boolean {return this.mode()!=='api-meta';}
+  readonly reusableEvidence=signal<SamReusableResult|null>(null);
   readonly adaptiveQuote=signal<SamAdaptiveQuote|null>(null);
   readonly adaptiveProgress=signal<SamAdaptiveProgress|null>(null);
   readonly adaptiveResult=signal<SamAdaptiveReport|null>(null);
@@ -483,7 +491,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.sparkFinishedAt=cached?this.traceStartedAt:0;this.viewStartedAt=0;this.viewFinishedAt=0;this.traceFailed=false;
     this.samStartedAt=0;this.samFinishedAt=0;this.samWasReused=cached;
     this.reviewStartedAt=0;this.reviewFinishedAt=0;this.reviewFailed=false;
-    this.sparkWasNeeded=!cached && (this.mode()==='api-meta-adaptive'?!!this.adaptiveQuote()?.requiresNewSparkCall:this.groundingRequired());
+    this.sparkWasNeeded=!cached && (this.segmentedMode()?!!this.adaptiveQuote()?.requiresNewSparkCall:this.groundingRequired());
     this.stopSparkPoll();this.sparkStages.set([]);
     if(this.sparkWasNeeded)this.sparkPoll=setInterval(()=>{void this.pollSpark();},1000);
     this.stageTraceStarted.set(true);
@@ -495,6 +503,11 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   stageRows():{key:string;label:string;state:string;ms:number;percent?:number|null}[] {
     const p=this.adaptiveProgress(),now=this.traceClock(),phase=p?.phase;
+    if(this.samWasReused && this.segmentedMode())return [
+      {key:'cache',label:this.es?'Caché verificada':'Verified cache',state:'COMPLETED',ms:0},
+      {key:'view',label:this.es?'Gráficos y reproducción':'Overlays and playback',
+       state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.viewStartedAt?'IN_PROGRESS':'NOT_STARTED',
+       ms:this.viewStartedAt?Math.max(0,(this.viewFinishedAt||now)-this.viewStartedAt):0}];
     const sparkDone=!!this.sparkFinishedAt;
     const rows:{key:string;label:string;state:string;ms:number;percent?:number|null}[]=[{key:'spark',label:this.sparkWasNeeded?'Spark':(this.es?'Spark · reutilizado':'Spark · reused'),
       state:sparkDone?'COMPLETED':this.traceFailed?'FAILED':'IN_PROGRESS',
@@ -508,7 +521,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       const reviewOnly=this.sparkStages().some(s=>s.key==='target-review') && !this.sparkStages().some(s=>s.key==='inference');
       rows.splice(0,1,...names.filter(([key])=>!reviewOnly || key==='prepare' || key==='target-review').map(([key,es,en])=>{const s=this.sparkStages().find(x=>x.key===key);return {key:'spark-'+key,label:this.es?es:en,state:s?.state??'NOT_STARTED',ms:s?.elapsedMs??0,percent:s?.percent};}));
     }
-    if(this.mode()!=='api-meta-adaptive'){
+    if(!this.segmentedMode()){
       rows.splice(rows.length-1,1,{key:'sam',label:this.samWasReused?(this.es?'SAM · caché':'SAM · cache'):(this.es?'SAM · video completo':'SAM · full video'),
         state:this.samWasReused||this.samFinishedAt?'COMPLETED':!this.samStartedAt?'NOT_STARTED':this.traceFailed?'FAILED':'IN_PROGRESS',
         ms:this.samStartedAt?Math.max(0,(this.samFinishedAt||now)-this.samStartedAt):0});
@@ -572,7 +585,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.processingReset.emit();
     this.checking.set(false);
     this.error.set('');
-    this.cacheStatus.set(null);
+    this.cacheStatus.set(null);this.reusableEvidence.set(null);
     this.preflight.set(null);
     this.groundingQuote.set(null);this.suspensionReviewQuote.set(null);
     this.readiness.set(null);
@@ -610,6 +623,11 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.processing() && !this.sending())this.finishProcessing();
   }
   cachedResultAvailable():boolean {
+    if(this.segmentedMode()) {
+      const r=this.reusableEvidence();
+      return !!r?.cacheHit && r.quality?.usable===true && r.sourceSha256===this.videoSha256() &&
+        /^[a-f0-9]{32}$/.test(r.analysisId??'') && (!r.adaptiveBatchId || r.adaptiveBatchId===r.analysisId);
+    }
     const s=this.cacheStatus();
     return this.mode()==='api-meta-cache' && !!s && s.cacheHit===true &&
       s.status==='CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW' &&
@@ -617,7 +635,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   canProcess():boolean {
     if(this.recoveryRunning())return false;
-    if(this.mode()==='api-meta-adaptive') {
+    if(this.segmentedMode() && this.cachedResultAvailable())return this.mediaReady() && !this.sourcePending() &&
+      !this.processing() && !this.sending() && !this.checking() && !this.connection.busy();
+    if(this.segmentedMode()) {
       const quote=this.adaptiveQuote(),ready=this.readiness(),spark=this.groundingQuote();
       if(this.adaptiveResult())return false;
       return !!quote && !!ready &&
@@ -657,7 +677,14 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   async process():Promise<void> {
     if(!this.canProcess())return;
-    if(this.mode()==='api-meta-adaptive') {
+    if(this.segmentedMode() && this.cachedResultAvailable()) {
+      const cached=this.reusableEvidence()!;
+      this.processingReset.emit();this.beginProcessing();this.startStageTrace(true);this.viewStartedAt=Date.now();
+      this.cacheUpdated.emit({studyId:this.studyId(),videoRole:this.videoRole(),sourceSha256:cached.sourceSha256,
+        analysisId:cached.analysisId!,adaptiveBatchId:cached.adaptiveBatchId??undefined,port:this.localApiPort()});
+      return;
+    }
+    if(this.segmentedMode()) {
       await this.analyzeAdaptive();
       return;
     }
@@ -696,7 +723,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   get es():boolean {return this.language()==='es';}
   statusLabel():string {
     if(this.processing())return this.es?'Procesando':'Processing';
-    if(this.mode()==='api-meta-adaptive'){
+    if(this.checking())return this.es?'Verificando caché':'Checking cache';
+    if(this.cachedResultAvailable())return this.es?'Caché verificada':'Verified cache';
+    if(this.segmentedMode()){
       const result=this.adaptiveResult();
       if(result)return result.completedParts===result.parts ?
         (this.es?'Lote terminado':'Batch completed') :
@@ -756,13 +785,13 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   processingLabel():string {
     if(this.processingPhase()==='review')return this.es?'Spark revisando la suspensión…':'Spark is reviewing the suspension…';
     if(this.processingPhase()==='grounding')return this.es?'Spark analizando el video…':'Spark is analyzing the video…';
-    if(this.mode()==='api-meta-adaptive' && this.processingPhase()==='sam' && this.adaptiveProgress()?.continuousRetry)
+    if(this.segmentedMode() && this.processingPhase()==='sam' && this.adaptiveProgress()?.continuousRetry)
       return this.es?'SAM · reintento con el video completo…':'SAM · retrying the full video…';
     if(this.processingPhase()==='sam')return this.es?'SAM siguiendo el objeto…':'SAM is tracking the object…';
     return this.es?'Preparando resultados…':'Preparing results…';
   }
   processingDetail():string {
-    if(this.mode()==='api-meta-adaptive' && this.processingPhase()==='sam'){
+    if(this.segmentedMode() && this.processingPhase()==='sam'){
       const progress=this.adaptiveProgress(),q=this.adaptiveQuote();
       if(progress?.continuousRetry)return this.es?
         'El lote no se validó. Se está realizando el único reintento autorizado, sin cortes ni otra consulta Spark.':
@@ -807,20 +836,22 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   private requiredCalls():number {return (this.groundingRequired()?(this.groundingQuote()?.requiredSparkCalls??1)+1:1)+(this.reviewBudget()>0?1:0);}
   reviewOnlyRequired():boolean {
+    if(this.segmentedMode())return false;
     const r=this.suspensionReviewQuote();
     return this.cachedResultAvailable() && !!r && r.analysisId===this.cacheStatus()?.analysisId &&
       r.required && !r.priorAttempt && !r.evidence;
   }
   freeCacheAvailable():boolean {return this.cachedResultAvailable()&&!this.reviewOnlyRequired();}
   reviewBudget():number {
-    return this.mode()==='api-meta-adaptive'?0:
+    return this.segmentedMode()?0:
       (this.preflight()?.suspensionReviewMaximumCostUsd??0);
   }
   private combinedSamCost(q:SamAdaptiveQuote):number {
     return q.maximumSamWithRetryEstimatedUsd??q.totalSamEstimatedUsd;
   }
   displayedCost():number {
-    if(this.mode()==='api-meta-adaptive')
+    if(this.freeCacheAvailable())return 0;
+    if(this.segmentedMode())
       return (this.adaptiveQuote()?this.combinedSamCost(this.adaptiveQuote()!):0)+
         (this.adaptiveQuote()?.requiresNewSparkCall?this.groundingQuote()?.maximumEstimatedCostUsd??0:0);
     if(this.reviewOnlyRequired())return this.suspensionReviewQuote()!.maximumEstimatedCostUsd;
@@ -829,7 +860,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   costLabel(value:number):string {return (Math.ceil(value*100-1e-8)/100).toFixed(2);}
   nextActionDescription():string {
-    if(this.mode()==='api-meta-adaptive'){
+    if(this.freeCacheAvailable())return this.es?'Resultado comprobado en SQLite. Procesar carga las mediciones sin llamadas a Meta.':'Checked SQLite result. Process loads measurements without Meta calls.';
+    if(this.segmentedMode()){
       const q=this.adaptiveQuote();
       return q?(this.es?
         'Procesar autoriza '+(q.requiresNewSparkCall?'localizar y verificar el objeto con Spark y después hasta ':'reutilizar Spark y enviar ')+
@@ -850,7 +882,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.');
   }
   processBlockedReason():string {
-    if(this.mode()==='api-meta-adaptive'){
+    if(this.segmentedMode()){
       const q=this.adaptiveQuote(),r=this.readiness();
       if(!q)return this.es?'Actualiza el costo del procesamiento por segmentos.':'Refresh the segment processing cost.';
       if(q.requiresNewSparkCall && !this.groundingQuote()?.canRun)return this.es?
@@ -920,17 +952,25 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const serial=++this.serial;
     this.processingReset.emit();this.checking.set(true);this.error.set('');
     this.adaptiveQuote.set(null);this.adaptiveResult.set(null);this.groundingQuote.set(null);
-    this.adaptiveProgress.set(null);this.readiness.set(null);this.preflight.set(null);
+    this.adaptiveProgress.set(null);this.readiness.set(null);this.preflight.set(null);this.reusableEvidence.set(null);
     try {
       const root='http://127.0.0.1:'+this.localApiPort();
-      const [quote,preflight,access,spark]=await Promise.all([
+      const [reuse,preflight]=await Promise.all([
+        firstValueFrom(this.http.get<SamReusableResult>(this.url()+'/reusable').pipe(timeout(180000))),
+        firstValueFrom(this.http.get<SamPreflight>(this.url()+'/preflight').pipe(timeout(90000)))
+      ]);
+      if(serial!==this.serial || this.disposed || !this.segmentedMode())return;
+      if(reuse.sourceSha256!==this.videoSha256() || preflight.sourceSha256!==reuse.sourceSha256)
+        throw Error('CACHE_SOURCE_MISMATCH');
+      this.reusableEvidence.set(reuse);this.preflight.set(preflight);
+      if(reuse.cacheHit){if(!this.cachedResultAvailable())throw Error('CACHE_QUALITY_INVALID');return;}
+      const [quote,access,spark]=await Promise.all([
         firstValueFrom(this.http.get<SamAdaptiveQuote>(
           this.adaptiveUrl()+'/preflight?targetCoreFrames=53').pipe(timeout(90000))),
-        firstValueFrom(this.http.get<SamPreflight>(this.url()+'/preflight').pipe(timeout(90000))),
         firstValueFrom(this.http.get<SamReadiness>(root+'/api/meta/readiness').pipe(timeout(10000))),
         firstValueFrom(this.http.get<GroundingQuote>(this.adaptiveUrl()+'/spark-quote').pipe(timeout(90000)))
       ]);
-      if(serial!==this.serial || this.disposed || this.mode()!=='api-meta-adaptive')return;
+      if(serial!==this.serial || this.disposed || !this.segmentedMode())return;
       if(!this.validAdaptiveQuote(quote,this.videoSha256()) ||
          preflight.sourceSha256!==quote.sourceSha256 || spark.videoSha256!==quote.sourceSha256)
         throw new Error('INVALID_ADAPTIVE_QUOTE');
@@ -951,7 +991,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
 
   private async analyzeAdaptive():Promise<void> {
-    if(!this.http || !this.canProcess() || this.mode()!=='api-meta-adaptive')return;
+    if(!this.http || !this.canProcess() || !this.segmentedMode())return;
     let quote=this.adaptiveQuote()!;
     const approvedSam=quote.totalSamEstimatedUsd,approvedCombined=this.combinedSamCost(quote),spark=this.groundingQuote();
     const token=this.connection.tokenForManualRequest();
@@ -959,7 +999,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const sha=this.videoSha256(),url=this.adaptiveUrl(),port=this.localApiPort();
     const serial=++this.serial;
     const current=()=>!this.disposed && serial===this.serial &&
-      this.mode()==='api-meta-adaptive' && sha===this.videoSha256() &&
+      this.segmentedMode() && sha===this.videoSha256() &&
       url===this.adaptiveUrl() && port===this.localApiPort();
     this.processingReset.emit();this.beginProcessing();this.sending.set(true);
     this.error.set('');this.adaptiveProgress.set(null);this.adaptiveResult.set(null);
@@ -1049,7 +1089,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
 
   voidCheck():void {void this.check();}
   async check():Promise<void> {
-    if(this.mode()==='api-meta-adaptive')return this.checkAdaptive();
+    if(this.segmentedMode())return this.checkAdaptive();
     if(!this.http || !this.studyId() || !this.videoSha256() || this.processing() || this.checking() || this.sending())return;
     const serial=++this.serial;
     this.processingReset.emit();

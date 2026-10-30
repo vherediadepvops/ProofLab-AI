@@ -42,13 +42,40 @@ describe('Integrated manual Meta segments',()=>{
   return {f,c,h,con};
  }
  async function check(x:ReturnType<typeof setup>,q:any=quote,g:any=spark){
-  const p=x.c.check(),all=x.h.match(()=>true);expect(all.length).toBe(4);
+  const p=x.c.check();
+  x.h.expectOne(root+'/sam/baseline/reusable').flush({sourceSha256:sha,cacheHit:false,analysisId:null,adaptiveBatchId:null,excludedResults:1,quality:null,storage:'sqlite'});
+  x.h.expectOne(root+'/sam/baseline/preflight').flush(media);
+  await tick();const all=x.h.match(()=>true);expect(all.length).toBe(3);
   for(const r of all){expect(r.request.method).toBe('GET');
    if(r.request.url.includes('/sam-adaptive/')&&r.request.url.includes('/preflight?'))r.flush(q);
    else if(r.request.url.endsWith('/spark-quote'))r.flush(g);
    else if(r.request.url.endsWith('/readiness'))r.flush(access);else r.flush(media);}
   await p;x.f.detectChanges();
  }
+ it('reuses checked native and segmented evidence for free without a token or paid quotes',async()=>{
+  for(const adaptiveBatchId of [null,batch]) {
+   const x=setup();x.c.mode.set('api-meta-cache');x.con.clearToken();
+   const p=x.c.check();
+   x.h.expectOne(root+'/sam/baseline/reusable').flush({sourceSha256:sha,cacheHit:true,analysisId:batch,adaptiveBatchId,excludedResults:2,quality:{usable:true,reason:'MEASUREMENTS_AVAILABLE'},storage:'sqlite'});
+   x.h.expectOne(root+'/sam/baseline/preflight').flush(media);await p;
+   expect(x.c.displayedCost()).toBe(0);expect(x.c.canProcess()).toBeTrue();
+   const emit=spyOn(x.c.cacheUpdated,'emit');await x.c.process();
+   expect(emit).toHaveBeenCalledWith(jasmine.objectContaining({analysisId:batch,adaptiveBatchId:adaptiveBatchId??undefined}));
+   x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+  }
+ });
+ it('does not reuse a quality verdict from a different video',async()=>{
+  const x=setup();const p=x.c.check();
+  x.h.expectOne(root+'/sam/baseline/reusable').flush({sourceSha256:'f'.repeat(64),cacheHit:true,analysisId:batch,quality:{usable:true}});
+  x.h.expectOne(root+'/sam/baseline/preflight').flush(media);await p;
+  expect(x.c.canProcess()).toBeFalse();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('keeps processing blocked if the cache check fails instead of silently billing',async()=>{
+  const x=setup();const p=x.c.check();
+  x.h.expectOne(root+'/sam/baseline/reusable').flush({}, {status:409,statusText:'Conflict'});
+  x.h.expectOne(root+'/sam/baseline/preflight').flush(media);await p;
+  expect(x.c.canProcess()).toBeFalse();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
  it('reads byte progress without any provider POST and ignores stale runs',async()=>{
   const x=setup();await check(x);(x.c as any).startStageTrace();
   (x.c as any).pollSpark.and.callThrough();
