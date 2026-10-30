@@ -6,28 +6,29 @@
       {{assessment().status==='CANDIDATE'?(es?'Medición local disponible':'Local measurement available'):(es?'Medición local insuficiente':'Insufficient local measurement')}}
     </span>
   </header>
-  <div class="metrics">
-    <div><span>{{es?'Período medido · T':'Measured period · T'}}</span>
-      <strong>{{number(assessment().periodSeconds)}} <small>s</small></strong></div>
-    <div><span>{{es?'Incertidumbre estadística · u':'Statistical uncertainty · u'}}</span>
-      <strong>{{uncertainty()}} <small>s</small></strong></div>
-    <div><span>{{es?'Ciclos usados / completos':'Cycles used / complete'}}</span>
-      <strong>{{assessment().usedCycles}} <small>/ {{assessment().completeCycles}}</small></strong></div>
-    <div><span>{{es?'Fotogramas con detección':'Frames with detections'}}</span>
-      <strong>{{number(assessment().detectionCoverage*100,1)}} <small>%</small></strong></div>
+  <div class="period-main" [class.diagnostic]="assessment().status==='INCONCLUSIVE'">
+    <span>{{assessment().status==='INCONCLUSIVE'?(es?'Período · valor diagnóstico':'Period · diagnostic value'):(es?'Tiempo de una oscilación':'Time for one oscillation')}}</span>
+    <strong>{{number(assessment().periodSeconds)}} <small>s</small></strong>
+    <p>{{es?'Estimado a partir del movimiento y los tiempos originales del video.':'Estimated from motion and the original video timestamps.'}}</p>
   </div>
   @if(interval95(); as ci){
-    <p class="scope"><strong>{{es?'Período medio · IC estadístico del 95 %':'Mean period · 95% statistical CI'}}:
-      {{number(ci.estimateSeconds,5)}} ± {{number(ci.marginSeconds,5)}} s
-      (±{{number(ci.relativeMarginPercent,3)}} %)</strong><br>
-      {{es?'Intervalo':'Interval'}}: [{{number(ci.lowerSeconds,5)}}, {{number(ci.upperSeconds,5)}}] s · n = {{ci.cycles}}.
-      {{es?'Margen calculado con t de Student. Solo repetibilidad; supone ciclos aproximadamente independientes y normales. No representa la exactitud total del video.':'Student-t margin. Repeatability only; assumes approximately independent, normally distributed cycles. Does not represent total video accuracy.'}}</p>
+    <div class="confidence-card">
+      <div class="confidence-heading"><span>{{es?'Intervalo del período medio':'Mean period interval'}}</span><strong>{{es?'Nivel de confianza:':'Confidence level:'}} 95 %</strong></div>
+      <div class="confidence-values"><strong>{{number(ci.lowerSeconds,5)}}–{{number(ci.upperSeconds,5)}} <small>s</small></strong><span>± {{number(ci.marginSeconds,5)}} s</span></div>
+      <p class="confidence-scope">{{es?'Solo repetibilidad entre ciclos. La incertidumbre total todavía no está evaluada.':'Cycle-to-cycle repeatability only. Total uncertainty has not yet been evaluated.'}}</p>
+      <details class="confidence-method"><summary>{{es?'¿Qué significa el 95 %?':'What does 95% mean?'}}</summary>
+        <p>{{es?'Período medio':'Mean period'}}: {{number(ci.estimateSeconds,5)}} s · ±{{number(ci.relativeMarginPercent,3)}} % · n = {{ci.cycles}}.</p>
+        <p>{{es?'Margen calculado con t de Student. Solo repetibilidad; supone ciclos aproximadamente independientes y normales. No representa la exactitud total del video.':'Student-t margin. Repeatability only; assumes approximately independent, normally distributed cycles. Does not represent total video accuracy.'}}</p>
+        <p>{{es?'El nivel describe la cobertura del método en mediciones repetidas bajo esos supuestos; no es la probabilidad de que la hipótesis sea correcta ni la confianza de Muse Spark.':'The level describes method coverage across repeated measurements under these assumptions; it is not the probability that the hypothesis is correct or Muse Spark confidence.'}}</p>
+      </details>
+    </div>
   } @else {
-    <p class="scope">{{es?'IC estadístico del 95 %: no disponible; faltan ciclos utilizables o dispersión resuelta.':'95% statistical CI unavailable: usable cycles or resolved dispersion are missing.'}}</p>
+    <p class="scope confidence-unavailable">{{es?'IC estadístico del 95 %: no disponible; faltan ciclos utilizables o dispersión resuelta.':'95% statistical CI unavailable: usable cycles or resolved dispersion are missing.'}}</p>
   }
-  <p class="scope">{{es
-    ? 'u = s/√n de ciclos alternos. Solo repetibilidad: no incluye errores de SAM, pivote, cámara ni reloj. u no es un margen del 95 %. El intervalo mostrado tampoco incluye estos errores sistemáticos. No es incertidumbre total.'
-    : 'u = s/√n of alternating cycles. Repeatability only: SAM, pivot, camera and clock errors are excluded. u is not a 95% margin. The displayed interval also excludes these systematic errors. Not total uncertainty.'}}</p>
+  <div class="metrics">
+    <div><strong>{{assessment().usedCycles}} <small>/ {{assessment().completeCycles}}</small></strong><span>{{es?'Ciclos usados / completos':'Cycles used / complete'}}</span></div>
+    <div><strong>{{number(assessment().detectionCoverage*100,1)}} <small>%</small></strong><span>{{es?'Fotogramas con detección':'Frames with detections'}}</span></div>
+  </div>
   @if(assessment().status==='INCONCLUSIVE') {
     <p class="warning" role="status">{{es
       ? 'Los datos aún no permiten una estimación estable. Cualquier valor mostrado es diagnóstico.'
@@ -40,6 +41,10 @@
   }
   <details>
     <summary>{{es?'Calidad y método':'Quality and method'}}</summary>
+    <p class="uncertainty-detail"><strong>{{es?'Incertidumbre estadística estándar · u':'Statistical standard uncertainty · u'}}: {{uncertainty()}} s</strong></p>
+  <p class="scope">{{es
+    ? 'u = s/√n de ciclos alternos. Solo repetibilidad: no incluye errores de SAM, pivote, cámara ni reloj. u no es un margen del 95 %. El intervalo mostrado tampoco incluye estos errores sistemáticos. No es incertidumbre total.'
+    : 'u = s/√n of alternating cycles. Repeatability only: SAM, pivot, camera and clock errors are excluded. u is not a 95% margin. The displayed interval also excludes these systematic errors. Not total uncertainty.'}}</p>
     <p>{{es?'Cruces por la posición central en la misma dirección, con tiempos originales. No se interpola entre detecciones ausentes. Se usan ciclos alternos para no compartir extremos. Se compara la geometría del arco alrededor del pivote con una recta. Estos cálculos no clasifican el fenómeno; Muse Spark interpreta las mediciones de SAM en la bitácora.':'Same-direction center crossings with source timestamps. Missing detections are not bridged. Alternating cycles avoid shared endpoints. The arc geometry around the pivot is compared with a straight line. These calculations do not classify the phenomenon; Muse Spark interprets SAM measurements in the lab log.'}}</p>
     <div class="quality">
       <span>{{es?'Detectados':'Detected'}}: {{assessment().detectedFrames}} / {{assessment().totalFrames}}</span>

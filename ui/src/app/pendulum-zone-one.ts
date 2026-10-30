@@ -1,6 +1,7 @@
 import type {FrozenMusePrediction} from './muse-investigator';
+import { ExperimentSimulator } from './experiment-simulator';
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal, input, effect, untracked, DestroyRef } from '@angular/core';
+import { Component, computed, inject, signal, input, effect, untracked, DestroyRef, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, timeout } from 'rxjs';
@@ -25,12 +26,102 @@ interface RecoverySnapshot {
 @Component({
   selector: 'app-pendulum-zone-one',
   standalone: true,
-  imports: [CommonModule, FormsModule, PendulumMasterPlayer, SamVideoReplay, LabActivity],
+  imports: [CommonModule, FormsModule, PendulumMasterPlayer, SamVideoReplay, LabActivity, ExperimentSimulator],
   templateUrl: './pendulum-zone-one.html',
   styleUrl: './pendulum-zone-one.scss'
 })
 export class PendulumZoneOne extends PendulumDirector {
   private readonly demoHttp=inject(HttpClient);
+  @ViewChild(PendulumMasterPlayer) private currentPlayer?:PendulumMasterPlayer;
+  // Presentation state only. Evidence, costs, recovery and predictions remain server-owned.
+  readonly active=input(true);
+  readonly experiment=signal<'pendulum'|'ramp'|'rocket'>('pendulum');
+  readonly flowStep=signal<1|2|3|4|5>(1);
+  readonly recoveryMenuOpen=signal(false);
+  readonly recoveryWarning=signal(false);
+  private readonly verifiedRoles=signal<Partial<Record<'baseline'|'followup',string>>>({});
+  private advanceAfterProcessing=false;
+  private recoveredDestination:1|2|3|4|5|null=null;
+  readonly flowSteps=[
+    {id:1 as const,es:'Preparar',en:'Prepare',subEs:'Tu experimento',subEn:'Your experiment'},
+    {id:2 as const,es:'Analizar',en:'Analyze',subEs:'Muse Spark + SAM',subEn:'Muse Spark + SAM'},
+    {id:3 as const,es:'Entender',en:'Understand',subEs:'Mediciones y evidencia',subEn:'Measurements and evidence'},
+    {id:4 as const,es:'Predecir',en:'Predict',subEs:'Muse Spark propone',subEn:'Muse Spark proposes'},
+    {id:5 as const,es:'Comprobar',en:'Compare',subEs:'Comparar resultados',subEn:'Compare results'}
+  ];
+  stepLabel(id:number):string {return id<this.flowStep()?'✓':'0'+id;}
+  flowBusy():boolean {
+    return this.recoveryControlsBusy() || this.resultState()==='loading';
+  }
+  simulationKind():'ramp'|'rocket' {return this.experiment()==='rocket'?'rocket':'ramp';}
+  chooseExperiment(kind:'pendulum'|'ramp'|'rocket'):void {
+    if(this.flowBusy())return;
+    this.currentPlayer?.pausePlayback();this.experiment.set(kind);
+  }
+  private hasSavedSelection(role:'baseline'|'followup'):boolean {
+    const selection=this.roleSelections[role],s=this.session(),clip=role==='baseline'?s?.baseline:s?.followup;
+    return !!selection && selection.studyId===s?.id && selection.sourceSha256===clip?.sha256 &&
+      selection.port===this.connection.port() && /^[a-f0-9]{32}$/.test(selection.analysisId);
+  }
+  hasVerifiedResult(role:'baseline'|'followup'):boolean {
+    return this.hasSavedSelection(role) && this.verifiedRoles()[role]===this.roleSelections[role]?.analysisId;
+  }
+  canVisitStep(step:number):boolean {
+    if(!this.session() || this.flowBusy())return false;
+    if(step===1)return true;
+    if(step===2)return !!this.session()?.baseline;
+    // Navigation may reopen archived evidence; the player still verifies it before showing layers.
+    if(step===3)return this.hasSavedSelection('baseline');
+    if(step===4)return !!this.frozenForStudy() || (this.hasVerifiedResult('baseline') && !!this.session()?.humanReview);
+    return step===5 && !!this.frozenForStudy() && this.hasVerifiedResult('followup');
+  }
+  setJourneyStep(step:1|2|3|4|5):void {
+    if(!this.canVisitStep(step))return;
+    const role=step===5 || step===4&&!!this.session()?.followup?'followup':'baseline';
+    if(role!==this.activeTrial())this.selectTrial(role);
+    if(role!==this.activeTrial())return;
+    this.flowStep.set(step);
+  }
+  presentation():'source'|'understand'|'predict'|'compare' {
+    if(this.flowStep()<=2 || this.flowStep()===4&&this.activeTrial()==='followup')return 'source';
+    return this.flowStep()===3?'understand':this.flowStep()===4?'predict':'compare';
+  }
+  showProcessing():boolean {return this.flowStep()===2 || this.flowStep()===4&&this.activeTrial()==='followup'&&!!this.session()?.followup;}
+  currentPhysicalLength():number|null {
+    return this.activeTrial()==='baseline'?this.session()?.baselineLengthMeters??null:this.nextResearchLength();
+  }
+  stageTitle():string {
+    const labels=this.es
+      ? ['Prepara una pregunta que puedas comprobar.','Procesa el video, paso a paso.','Primero, entiende lo que mediste.','Registra una predicción antes de la siguiente prueba.','¿La evidencia coincide con la predicción?']
+      : ['Prepare a question you can test.','Process the video, step by step.','First, understand what you measured.','Record a prediction before the next trial.','Does the evidence match the prediction?'];
+    return labels[this.flowStep()-1];
+  }
+  stageDescription():string {
+    const labels=this.es
+      ? ['La medida física y tu grabación original son el punto de partida.','Revisa el costo antes de procesar. El video se conserva sin capas durante el análisis.','Las medidas vienen de posiciones y tiempos observados. Muse Spark interpreta la evidencia.','La predicción registrada se conserva antes de cargar el segundo video.','Compara las mediciones del segundo video con el margen fijado de antemano.']
+      : ['Your physical measurement and original recording are the starting point.','Review the cost before processing. The video stays free of overlays during analysis.','Measurements come from observed positions and times. Muse Spark interprets the evidence.','The registered prediction is preserved before video 2 is uploaded.','Compare measurements from video 2 with the band declared in advance.'];
+    return labels[this.flowStep()-1];
+  }
+  async continueToPrediction():Promise<void> {
+    if(this.flowBusy() || !this.hasVerifiedResult('baseline'))return;
+    if(!this.session()?.humanReview) {
+      if(!this.checkedVideo())return;await this.confirm();
+    }
+    if(this.session()?.humanReview)this.setJourneyStep(4);
+  }
+  toggleRecoveryMenu():void {if(!this.recoveryControlsBusy())this.recoveryMenuOpen.update(v=>!v);}
+  closeRecoveryMenu(event?:Event):void {
+    if(this.recoveryLoading())return;
+    this.recoveryMenuOpen.set(false);event?.preventDefault();
+    document.getElementById('manage-recovery')?.focus();
+  }
+  async createNewResearch():Promise<void> {
+    if(this.flowBusy())return;this.newFocusedStudy();await this.generateRecoveryCode();
+  }
+  closeResearch():void {
+    if(this.flowBusy())return;this.newFocusedStudy();this.choosingUpload.set(false);this.recoveryMenuOpen.set(false);
+    this.recoveryMessage.set(this.es?'Sesión cerrada. Puedes recuperarla con su código.':'Session closed. Recover it with its code.');
+  }
   readonly resumeRequest=input<{id:string;nonce:number}|null>(null);
   readonly recoveryCode=signal('');
   readonly generatingCode=signal(false);
@@ -45,11 +136,11 @@ export class PendulumZoneOne extends PendulumDirector {
   validRecoveryCode():boolean {return /^[a-f0-9]{32}$/i.test(this.recoveryCode().trim());}
   async generateRecoveryCode():Promise<void> {
     if(this.session() || this.recoveryControlsBusy())return;
-    this.generatingCode.set(true);this.recoveryMessage.set('');this.recoveryFailure.set(false);
+    this.generatingCode.set(true);this.recoveryMessage.set('');this.recoveryFailure.set(false);this.recoveryWarning.set(false);
     try {
       await this.refreshTheory();await this.start();
       if(this.session()){
-        this.copiedId.set(false);this.recoveryMode=false;this.draftError.set('');
+        this.copiedId.set(false);this.recoveryMode=false;this.draftError.set('');this.recoveryMenuOpen.set(false);this.activeTrial.set('baseline');this.flowStep.set(1);
         this.recoveryMessage.set(this.es?'Código generado. Cópialo y guárdalo antes de continuar.':'Code generated. Copy and save it before continuing.');
       } else {this.recoveryFailure.set(true);this.recoveryMessage.set(this.error() || this.modelError());}
     } finally {this.generatingCode.set(false);}
@@ -87,13 +178,13 @@ export class PendulumZoneOne extends PendulumDirector {
   }
   async copyStudyId():Promise<void> {
     const id=this.session()?.id;if(!id)return;
-    try{await navigator.clipboard.writeText(id);this.copiedId.set(true);}catch{this.copiedId.set(false);}
+    try{await navigator.clipboard.writeText(id);this.copiedId.set(true);}catch{this.copiedId.set(false);const field=document.getElementById('active-recovery-code') as HTMLInputElement|null;field?.focus();field?.select();this.recoveryWarning.set(true);this.recoveryMessage.set(this.es?'Selecciona el código y cópialo con Ctrl+C o Cmd+C.':'Select the code and copy it with Ctrl+C or Cmd+C.');}
   }
   async resumeResearch(id:string):Promise<void> {
     id=id.trim().toLowerCase();
     if(this.recoveryControlsBusy())return;
     if(!/^[a-f0-9]{32}$/.test(id)){this.recoveryFailure.set(true);this.recoveryMessage.set(this.es?'Introduce un código de recuperación válido de 32 caracteres.':'Enter a valid 32-character recovery code.');return;}
-    this.recoveryCode.set(id);this.recoveryFailure.set(false);this.draftError.set('');
+    this.recoveryCode.set(id);this.recoveryFailure.set(false);this.recoveryWarning.set(false);this.draftError.set('');this.verifiedRoles.set({});this.recoveredDestination=null;
     const generation=++this.recoveryGeneration;
     if(this.recoveryTimer)clearTimeout(this.recoveryTimer);
     this.copiedId.set(false);this.recoveryMode=true;this.recovering.set(true);this.recoveryMessage.set('');this.error.set('');this.recoveringOperation.set('');
@@ -110,6 +201,7 @@ export class PendulumZoneOne extends PendulumDirector {
           this.applyRestoredSession(snapshot.session);this.musePrediction.set(snapshot.session.musePrediction??null);
           this.sourceChoice.set('upload');this.choosingUpload.set(false);this.previewState.set(snapshot.session.baseline?'loading':'empty');
           this.activeTrial.set(snapshot.session.followup?'followup':'baseline');
+          this.flowStep.set(snapshot.session.followup||snapshot.session.musePrediction?4:snapshot.session.baseline?2:1);
         } else {
           this.session.set(snapshot.session);this.musePrediction.set(snapshot.session.musePrediction??null);
         }
@@ -121,6 +213,7 @@ export class PendulumZoneOne extends PendulumDirector {
             this.roleSelections[result.videoRole]={...result,port};
         }
         const selected=this.roleSelections[this.activeTrial()];
+        if(first && selected)this.recoveredDestination=this.activeTrial()==='followup'?(snapshot.session.musePrediction?5:4):snapshot.session.musePrediction?4:3;
         if(selected && selected.analysisId!==this.samSelection()?.analysisId){this.acceptProcessed(selected);this.resultState.set('loading');}
         const recent=snapshot.operations.some(o=>o.finishedAtUtc && Date.now()-Date.parse(o.finishedAtUtc)<6000);
         if(running.length || recent){
@@ -128,8 +221,9 @@ export class PendulumZoneOne extends PendulumDirector {
           this.recoveryMessage.set(this.es?'Solicitud guardada en curso. Recuperando su estado; no se envía otra petición.':'Saved request in progress. Recovering status without resending.');
           this.recoveryTimer=setTimeout(()=>void poll(false),2500);
         } else {
-          this.recovering.set(false);this.recoveringOperation.set('');
+          this.recovering.set(false);this.recoveringOperation.set('');this.recoveryMenuOpen.set(false);
           const interrupted=snapshot.operations.some(o=>o.state==='INTERRUPTED' || o.state==='REVIEW_REQUIRED');
+          this.recoveryWarning.set(interrupted || snapshot.unavailable.length>0);
           this.recoveryMessage.set(interrupted?(this.es?'Investigación recuperada. Hay intentos interrumpidos o pendientes de revisión; no se han reenviado.':'Study restored. Interrupted or unresolved attempts were not resent.'):
             snapshot.unavailable.length?(this.es?'Investigación recuperada. Parte de la evidencia guardada no pudo verificarse; no se ha sustituido ni reenviado.':'Study restored. Some saved evidence could not be verified; it was neither replaced nor resent.'):
             snapshot.selections.length?(this.es?'Investigación recuperada con sus resultados guardados. No se han realizado llamadas a Meta.':'Study restored with saved results. No Meta calls were made.'):
@@ -249,9 +343,17 @@ export class PendulumZoneOne extends PendulumDirector {
   }
   videoLoading():boolean {return this.sourcePending() || this.previewState()==='loading';}
   onPreviewState(state:'loading'|'ready'|'error'):void {this.previewState.set(state);}
-  onProcessingStarted():void {this.recoveryMode=false;this.recoveryMessage.set('');this.clearProcessed();this.resultState.set('loading');}
+  onProcessingStarted():void {
+    this.recoveryMode=false;this.recoveryMessage.set('');this.advanceAfterProcessing=true;
+    delete this.roleSelections[this.activeTrial()];
+    const verified={...this.verifiedRoles()};delete verified[this.activeTrial()];this.verifiedRoles.set(verified);
+    this.clearProcessed();this.resultState.set('loading');
+  }
   onProcessingFinished(ready:boolean):void {
     this.resultState.set(ready?'ready':'error');this.onPlaybackReady(ready);
+    if(ready && this.advanceAfterProcessing){this.flowStep.set(this.activeTrial()==='followup'?5:3);this.advanceAfterProcessing=false;}
+    if(ready && this.recoveredDestination){this.flowStep.set(this.recoveredDestination);this.recoveredDestination=null;}
+    if(!ready){this.advanceAfterProcessing=false;this.recoveredDestination=null;}
   }
 
   readonly activeTrial = signal<'baseline'|'followup'>('baseline');
@@ -284,10 +386,12 @@ export class PendulumZoneOne extends PendulumDirector {
   selectTrial(role:'baseline'|'followup'):void {
     if(role===this.activeTrial() || this.videoActionsBusy())return;
     this.clearProcessed();this.previewState.set('loading');this.activeTrial.set(role);
-    const saved=this.roleSelections[role];if(saved){this.recoveryMode=true;this.acceptProcessed(saved);}
+    const saved=this.roleSelections[role];if(saved){this.recoveryMode=true;this.acceptProcessed(saved);this.resultState.set('loading');}
   }
   onPlaybackReady(ready:boolean):void {
     this.playbackReady.set(ready);
+    const selected=this.samSelection();
+    if(ready && selected)this.verifiedRoles.update(v=>({...v,[selected.videoRole]:selected.analysisId}));
     if(!ready)this.checkedVideo.set(false);
   }
 
@@ -303,11 +407,13 @@ export class PendulumZoneOne extends PendulumDirector {
         this.busy() || !!this.stageBusy() || this.connection.busy()) return;
 
     if(!this.session() || this.draftSaving() || this.draftError())return;
+    if(role==='followup' && (!this.frozenForStudy() || this.session()?.followup))return;
     this.sourceChoice.set('upload');this.previewState.set('loading');
     try {
       await this.upload(event, role);
       if((role==='baseline'?this.session()?.baseline:this.session()?.followup))this.choosingUpload.set(false);
-      if(role==='followup' && this.session()?.followup)this.activeTrial.set('followup');
+      if(role==='followup' && this.session()?.followup){this.clearProcessed();this.activeTrial.set('followup');this.flowStep.set(4);}
+      if(role==='baseline' && this.session()?.baseline)this.flowStep.set(1);
     } finally {
       const clip=role==='baseline'?this.session()?.baseline:this.session()?.followup;
       if(!clip)this.previewState.set(this.error()?'error':'empty');
@@ -340,6 +446,7 @@ export class PendulumZoneOne extends PendulumDirector {
   newFocusedStudy():void {
     if(this.recoveryControlsBusy() || this.resultState()==='loading')return;
     this.recoveryGeneration++;this.recoveryMode=false;this.roleSelections={};this.recoveryMessage.set('');this.musePrediction.set(null);
+    this.verifiedRoles.set({});this.flowStep.set(1);this.recoveryMenuOpen.set(false);this.recoveryWarning.set(false);this.recoveryFailure.set(false);this.advanceAfterProcessing=false;this.recoveredDestination=null;
     this.clearProcessed();
     this.reset();
     this.activeTrial.set('baseline');

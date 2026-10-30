@@ -90,7 +90,7 @@ describe('Muse investigator',()=>{
       answer:{decision:'INCONCLUSIVE',justification:t,limitations:t,protocol:t,hypothesis:t,falsification:t}}});
     expect(f.nativeElement.textContent).toContain('Inconcluso');expect(f.componentInstance.prediction()).toBeNull();
     f.componentRef.setInput('language','en');f.detectChanges();http.expectOne(base).flush(empty);await f.whenStable();f.detectChanges();
-    expect(f.nativeElement.textContent).toContain('Research lab log');f.destroy();
+    expect(f.nativeElement.textContent).toContain('Interpretation and next experiment');f.destroy();
   });
   function response(classification?:'PENDULUM_COMPATIBLE'|'OTHER_MOTION'|'INCONCLUSIVE',analysisId='analysis') {
     const t={es:'Justificación científica registrada.',en:'Recorded scientific justification.'};

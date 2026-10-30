@@ -1,5 +1,6 @@
 *{box-sizing:border-box}
-body{margin:0;background:#080b12;color:#ecf0f8;font-family:'Segoe UI',Arial,sans-serif}
+body{margin:0;background:#08111b;color:#edf3fb;font:14px/1.55 'Segoe UI',Arial,sans-serif}
+button,input,select,textarea{font:inherit}
 
 /* Péndulo only: full-width juror workspace, without deleting legacy screens. */
 .shell.focus-shell{display:block;min-height:100vh;background:#0b111b}
@@ -21,8 +22,8 @@ body{margin:0;background:#080b12;color:#ecf0f8;font-family:'Segoe UI',Arial,sans
   .shell.focus-shell .workspace.focus-workspace{padding:8px}
 }
 /* Shared dark laboratory surface; original experimental layouts stay intact. */
-app-root .studio-shell .laboratory-view {
-  .zone1-focus{background:#202022;border:0;color:#e8e8ef;box-shadow:none;padding:8px 0}
+app-root .studio-shell .laboratory-view .zone1-focus:not(.journey-v8) {
+  &{background:#202022;border:0;color:#e8e8ef;box-shadow:none;padding:8px 0}
   .focus-heading h1{color:#f0f0f5}
   .focus-heading p,.focus-section-title p,.focus-note,.focus-disclaimer,.study-hint{color:#a0a4b1}
   .focus-eyebrow{color:#829bb9}

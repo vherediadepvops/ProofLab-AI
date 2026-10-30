@@ -5,12 +5,24 @@ Local implementation, 2026-10-30. Reviewing stored evidence requires no new prov
 ## Use
 
 1. Open **Laboratory**. A fresh visit or reload starts without an active session; no ID is created automatically.
-2. Press **Generate recovery code**, then copy and save it. Creating this empty study enables the parameters and video upload.
+2. Press **Generate code**, then copy and save it. Creating this empty study enables the parameters and video upload.
 3. Length, angle, mass and follow-up settings are saved under the same code before the first video is registered. The UI shows saving progress or a retry action on failure. Parameters become locked after registration.
-4. **Test video** and the first personal upload keep the generated code. A subsequent New trial creates another study; the previous study remains recoverable with its own code.
-5. Paste a code in **Already have a code?**, beside the generation action, and press **Search**. Home keeps only “Open laboratory”; recovery is available inside Laboratory. Uppercase and surrounding whitespace are accepted.
+4. **Use example video** and the first personal upload keep the generated code. Uploading another video 1 or choosing **Manage → New research** creates another study; the previous one remains recoverable with its code.
+5. Open **Recover** (no active session) or **Manage** (active session), paste a code and press **Search**. Home keeps only “Open laboratory”; recovery is available inside Laboratory. Uppercase and surrounding whitespace are accepted.
 6. The recovery progress bar remains until saved settings, media and results finish loading. Unknown codes display “No session was found”; connection failures display a separate retry message.
 7. Both videos, verifiable results and the frozen prediction are restored. Active operations are polled every 2.5 seconds without resubmission. Interrupted operations require checking their state before continuing manually.
+
+## Guided workflow
+
+- **Prepare:** enter the physical measurement and upload video 1. The original plays without analysis overlays.
+- **Analyze:** inspect the real quote before pressing Process. The default mode reuses verified cache; advanced options retain fresh and segmented analysis. Progress appears beside the cost while the original stays clean.
+- **Understand:** review SAM layers, derived measurements and the available 95% statistical interval. Confirm tracking to continue. The scientific Muse consultation retains its own visible cost and consent.
+- **Predict:** request or review the prediction registered by the server with Muse's response. Video 2 is enabled after that record exists; the browser does not simulate another freezing step.
+- **Compare:** review measurements from video 2 and the comparison with the preserved prediction.
+
+The active code occupies a compact bar with **Copy** and **Manage**. Closing a session does not delete records. Missing-evidence and interrupted-attempt warnings stay visible when the menu is collapsed.
+
+Ramp and rocket are interactive ideal-model demonstrations. Video upload is marked **Coming soon**; they make no inference requests and are never presented as measurements. The rocket illustrates a ballistic phase without propulsion or flight control.
 
 The code identifies a study, not an API token. Recovery needs the same API and persistent private data; it is not cloud synchronization. Incomplete file uploads must be selected again. Tokens are never stored by recovery; new paid work after a reload requires entering the token again.
 
@@ -53,3 +65,10 @@ Edge verified ID recovery, both videos, reload and frozen prediction without Met
 No new Meta calls or CI. Owner manual permissions and usage counters preserved. This is not SAM/Spark training.
 
 Español: [RESEARCH-RECOVERY.es.md](RESEARCH-RECOVERY.es.md).
+
+## Guided V8 design (2026-10-30)
+
+- The pendulum is presented as Prepare, Analyze, Understand, Predict and Compare. Cost and consent precede processing, original source playback is separate from SAM layers, predictions use the actual persisted record, and code-based recovery stays compact. Ramp and rocket are explicitly labeled simulations with video upload disabled.
+- Local verification: Angular development and production builds; 96 focused Edge tests passed (90 existing flow tests plus six additional tests). Non-blocking warnings: 826.82 kB initial bundle and 10.02/10.75/14.44 kB styles versus 500/10 kB warning budgets.
+- Isolated Edge: empty laboratory, ramp and rocket at 1440 px; ramp and rocket at 390 px in English with no horizontal overflow. H.264 recovery could not be validated from the temporary UI origin because API 5391 does not allow that origin in CORS. The owner's API 5391, frontend 4300, and CORS settings were preserved. Recovery was checked by Angular tests, not new provider inference or physical recordings.
+- Meta counter 148→148; no paid calls, CI or GitHub Actions. Git publication and local service deployment are separate tasks.

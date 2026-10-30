@@ -1,5 +1,6 @@
-<section class="master-studio">
-  @if(processingRequired() && !previewLoading() && !processingPending()) {
+<section class="master-studio" [class.guided-studio]="guided()" [class.guided-source]="showGuidedSource()" [class.guided-result]="guided() && analysisVisible()">
+  <div class="player-media">
+  @if(!guided() && processingRequired() && !previewLoading() && !processingPending()) {
     <p class="processing-notice" role="status">
       @if(processingError() && !samVerified()) {
         {{es?'Resultado pendiente de validación. Puedes reproducir el video original; no se muestran gráficos sin verificar.':
@@ -19,7 +20,7 @@
       }
     </p>
   }
-  @if(scene()) {
+  @if(scene() && (!guided() || analysisVisible())) {
     <div class="scene-legend" role="status" style="display:flex;flex-wrap:wrap;gap:14px;font-size:12px;padding:10px 0">
       @for(role of sceneRoles();track role) {
         <span [style.color]="sceneColor(role)">{{sceneLabel(role)}} · {{sceneRolePresent(role)?(es?'visible':'visible'):(es?'sin máscara en este fotograma':'no mask in this frame')}}</span>
@@ -29,14 +30,21 @@
       }
     </div>
   }
+  @if(guided() && analysisVisible()) {
+    <div class="guided-layers" role="group" [attr.aria-label]="es?'Capas visibles':'Visible layers'">
+      <button type="button" [class.enabled]="visibleLayers().tracking" [attr.aria-pressed]="visibleLayers().tracking" (click)="toggleLayer('tracking')">{{es?'Seguimiento':'Tracking'}}</button>
+      <button type="button" class="layer-vectors" [class.enabled]="visibleLayers().vectors" [attr.aria-pressed]="visibleLayers().vectors" (click)="toggleLayer('vectors')">{{es?'Vectores':'Vectors'}}</button>
+      <button type="button" class="layer-trail" [class.enabled]="visibleLayers().trail" [attr.aria-pressed]="visibleLayers().trail" (click)="toggleLayer('trail')">{{es?'Rastro fantasma':'Ghost trail'}}</button>
+    </div>
+  }
   <div class="viewer-frame" [attr.aria-busy]="previewLoading() || processingPending()">
-  @if(previewLoading() || processingPending()) {
+  @if(previewLoading() || (!guided() && processingPending())) {
     <div class="viewer-loading">
       <app-lab-activity [label]="previewLoading()?(es?'Cargando video…':'Loading video…'):(es?'Procesando video…':'Processing video…')"
         [detail]="previewLoading()?(es?'Preparando el video original. El costo se calcula por separado.':'Preparing the original. Cost is calculated separately.'):(es?'Preparando el resultado y las vistas sincronizadas.':'Preparing the result and synchronized views.')"/>
     </div>
   }
-  <div class="views-grid" [class.loading-views]="previewLoading() || processingPending()" [class.is-zoomed]="zoomed()" data-layout="focus-switcher">
+  <div class="views-grid" [class.loading-views]="previewLoading() || (!guided() && processingPending())" [class.is-zoomed]="zoomed()" data-layout="focus-switcher">
     <div class="view-panel" data-view="combined" [class.is-primary]="activeView()==='combined'"
       [style.grid-area]="gridArea('combined')">
       <div class="view-title combined-title">
@@ -49,11 +57,15 @@
             [attr.aria-label]="es?'Ángulo con la vertical':'Angle from vertical'">
             θ{{usesAutomaticSuspension()?' ≈':''}} <strong>{{cordAngleText()}}</strong>
           </span>
-          <span class="angular-velocity-value" [class.value-missing]="angularVelocityAtFrame()===null"
+          <span class="angular-velocity-value" [hidden]="guided() && !visibleLayers().vectors" [class.value-missing]="angularVelocityAtFrame()===null"
             [title]="angularVelocityHint()+' · '+angularVelocityDirection()+(angularVelocityAtFrame()!==null?' · '+angularVelocityText(true)+' °/s':'')"
             [attr.aria-label]="es?'Velocidad angular':'Angular velocity'">
             ω{{usesAutomaticSuspension()?' ≈':''}} <strong>{{angularVelocityText()}}</strong><span class="velocity-unit">rad/s</span>
           </span>
+          @if(guided() && visibleLayers().vectors) {
+            <span class="linear-value">vₜ <strong>{{formatMetric(derivedMotion()?.velocity)}} <small>m/s</small></strong></span>
+            <span class="acceleration-value">a <strong>{{formatMetric(derivedMotion()?.acceleration)}} <small>m/s²</small></strong></span>
+          }
         </span>
         <button class="focus-action" type="button" (click)="selectView('combined')"
           [attr.aria-pressed]="activeView()==='combined'"
@@ -181,7 +193,7 @@
           <option value="2">2×</option>
         </select>
       </label>
-      @if(studyId() && videoSha256() && !playbackLocked()) {
+      @if(studyId() && videoSha256() && !playbackLocked() && (!guided() || analysisVisible())) {
         <button type="button" class="pivot-button" (click)="beginPivotSelection()"
           [disabled]="pivotSaving() || (points()?.length ?? 0)<5">
           {{pivotRevision() ? (es?'Corregir suspensión':'Adjust suspension') : (es?'Marcar suspensión':'Select suspension')}}
@@ -208,7 +220,7 @@
       min="0" [max]="duration() || 1" [step]="frameStepSeconds"
       [value]="currentTime()" (input)="scrub($event)"
       [attr.aria-label]="es?'Posición del fotograma compartido':'Shared video playhead'"/>
-    <div class="timeline-meta">
+    <div class="timeline-meta" [hidden]="guided()">
       <span>{{es?'Fotograma de reproducción':'Playback frame'}}:
         {{frameNumber()}} · {{es?'Vistas sincronizadas':'Views synchronized'}}:
         {{paintedViews()}}/4</span>
@@ -216,17 +228,65 @@
     </div>
   </div>
 
-  @if(studyId() && videoSha256() && !playbackLocked()) {
+  @if(studyId() && videoSha256() && !playbackLocked() && (!guided() || analysisVisible())) {
     <app-knot-review [studyId]="studyId()" [role]="videoRole()" [sha]="videoSha256()"
       [port]="samApiPort()" [language]="language()" (confirmed)="acceptMetaPivot($event)"
       (manual)="beginPivotSelection()"/>
   }
+  @if(guided() && analysisVisible()) {
+    @if(measuredChart(); as chart) {
+      <section class="observed-charts">
+        <div class="observed-chart-title"><strong>{{es?'Así se repite el movimiento':'How the motion repeats'}}</strong><span>{{es?'Datos medidos':'Measured data'}}</span></div>
+        <svg viewBox="0 0 600 180" role="img" [attr.aria-label]="es?'Ángulo y velocidad angular medidos por tiempo':'Measured angle and angular velocity over time'">
+          <path class="chart-grid" d="M48 38H552M48 90H552M48 142H552M48 38V142M552 38V142"/>
+          <text x="48" y="18" class="theta-label">θ (°)</text>
+          <text x="8" y="42">{{formatMetric(chart.angleMax,1)}}</text><text x="30" y="94">0</text><text x="4" y="146">−{{formatMetric(chart.angleMax,1)}}</text>
+          <text x="48" y="165">{{formatMetric(chart.start,1)}}</text><text x="285" y="165">{{formatMetric(chart.start+chart.span/2,1)}}</text><text x="525" y="165">{{formatMetric(chart.end,1)}} s</text>
+          <path class="theta-line" [attr.d]="chart.thetaPath"/>
+          @if(visibleLayers().vectors){
+            <text x="552" y="18" text-anchor="end" class="omega-label">ω (rad/s)</text>
+            <text x="558" y="42">{{formatMetric(chart.omegaMax,2)}}</text><text x="558" y="94">0</text><text x="558" y="146">−{{formatMetric(chart.omegaMax,2)}}</text>
+            <path class="omega-line" [attr.d]="chart.omegaPath"/>
+          }
+          @if(measuredChartMarker(); as point){
+            <line class="chart-playhead" [attr.x1]="point.x" [attr.x2]="point.x" y1="38" y2="142"/>
+            <circle class="theta-dot" [attr.cx]="point.x" [attr.cy]="point.thetaY" r="3"/>
+            @if(visibleLayers().vectors && point.omegaY!==null){<circle class="omega-dot" [attr.cx]="point.x" [attr.cy]="point.omegaY" r="3"/>}
+          }
+        </svg>
+        <p>{{es?'θ: ángulo · ω: velocidad angular. Ejes independientes. Los huecos no se unen; las derivadas pueden mostrar ruido.':'θ: angle · ω: angular velocity. Independent axes. Gaps are not joined; derivatives may contain noise.'}}</p>
+        @if(visibleLayers().vectors){
+          <details class="phase-chart" (toggle)="phaseExpanded.set($any($event.target).open)">
+            <summary>{{es?'Retrato de fase: ángulo y velocidad angular':'Phase portrait: angle and angular velocity'}}</summary>
+            @if(phaseExpanded()){
+              <svg viewBox="0 0 600 170" role="img" [attr.aria-label]="es?'Retrato de fase medido':'Measured phase portrait'">
+                <path class="chart-grid" d="M60 90H540M300 32V148"/>
+                <text x="533" y="108">θ (°)</text><text x="310" y="25">ω (rad/s)</text>
+                <path class="phase-line" [attr.d]="chart.phasePath"/><path class="phase-trail" [attr.d]="phaseTrailPath()"/>
+                @if(measuredChartMarker(); as point){@if(point.omegaY!==null){<circle class="omega-dot" [attr.cx]="point.phaseX" [attr.cy]="point.omegaY" r="4"/>}}
+              </svg>
+              <p>{{es?'Una trayectoria hacia el centro puede indicar amortiguamiento. Una figura deformada también puede deberse al seguimiento o a la cámara.':'A trajectory towards the centre may indicate damping. Distortion may also come from tracking or the camera.'}}</p>
+            }
+          </details>
+        }
+      </section>
+    } @else {<p class="guided-derivation">{{es?'La curva necesita una suspensión y posiciones SAM válidas.':'The curve needs a valid suspension and SAM positions.'}}</p>}
+  }
+  @if(guided() && analysisVisible() && visibleLayers().vectors) {
+    <p class="guided-derivation">vₜ = ωL · a = L√(α² + ω⁴) · L = {{formatMetric(physicalLengthMeters())}} m.
+      {{es?'Longitud ingresada por el usuario; sin calibración métrica del video. Derivadas locales sin suavizado; los huecos no tienen valores.':'User-entered length; no metric video calibration. Local unsmoothed derivatives; gaps have no values.'}}
+    </p>
+    <p class="guided-vector-key"><span>v · {{es?'velocidad':'velocity'}}</span><span>a · {{es?'aceleración total':'total acceleration'}}</span> · {{es?'Flechas con escalas visuales distintas.':'Arrows use different visual scales.'}}</p>
+  }
+  </div>
+  <aside class="player-evidence" [hidden]="guided() && !analysisVisible()">
   @if(periodMeasurement(); as measurement) {
     <app-sam-period-panel [measurement]="measurement" [source]="periodSource()" [language]="language()"/>
   }
   @if(periodSource(); as researchSource) {
     <app-muse-investigator [source]="researchSource" [language]="language()" (frozen)="researchFrozen.emit($event)"/>
   }
+  </aside>
   @if(droppedFrames()>0) {
     <p class="playback-performance" role="status">{{es?'Fotogramas omitidos por el navegador':'Frames dropped by the browser'}}: {{droppedFrames()}}.
       {{es?'El archivo mantiene su resolución y FPS originales.':'The file retains its original resolution and FPS.'}}</p>
@@ -236,7 +296,7 @@
       <a [href]="videoUrl()+'?download=true'" target="_blank" rel="noopener">{{es?'Descargar original':'Download original'}}</a>
     </p>
   }
-  <p class="limitations">
+  <p class="limitations" [hidden]="guided() && !analysisVisible()">
     {{processingRequired() && !samTrack()
       ? (es?'Los vectores y el rastro requieren máscaras válidas de SAM. No se sustituirán por seguimiento local.':
         'Vectors and trails require valid SAM masks. Local tracking is not substituted.')

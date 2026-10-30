@@ -1,0 +1,75 @@
+<section class="simulation-preview">
+  <header class="simulation-heading">
+    <span class="eyebrow">{{es?'EXPLORA EL SIGUIENTE LABORATORIO':'EXPLORE THE NEXT LABORATORY'}}</span>
+    <h1>{{isRamp?(es?'¿Qué cambia al inclinar la rampa?':'What changes when a ramp gets steeper?'):(es?'¿Cómo cambia una trayectoria?':'How does a trajectory change?')}}</h1>
+    <p>{{es?'Modifica una condición y observa su efecto. Todos los datos de esta vista son simulados.':'Change one condition and observe its effect. All data in this view is simulated.'}}</p>
+  </header>
+  <div class="future-upload">
+    <div><strong>{{es?'Análisis de video':'Video analysis'}}</strong><small>{{es?'Disponible próximamente para este experimento. Puedes explorar el modelo interactivo.':'Coming soon for this experiment. Explore the interactive model now.'}}</small></div>
+    <button type="button" disabled>{{es?'Cargar video · Próximamente':'Load video · Coming soon'}}</button>
+  </div>
+  <div class="simulation-layout">
+    <section class="scene-card">
+      <header class="card-heading"><div><strong>{{isRamp?(es?'Bloque en una rampa':'Block on a ramp'):(es?'Cohete · tramo balístico ideal':'Rocket · ideal ballistic phase')}}</strong><small>{{es?'Simulación ilustrativa · no es una grabación':'Illustrative simulation · not a recording'}}</small></div><span class="badge">{{es?'SIMULADO':'SIMULATED'}}</span></header>
+      <div class="layer-controls">
+        <label><input type="checkbox" [ngModel]="vectors()" (ngModelChange)="vectors.set($event)"/>{{es?'Vectores':'Vectors'}}</label>
+        <label><input type="checkbox" [ngModel]="trail()" (ngModelChange)="trail.set($event)"/>{{es?'Rastro fantasma':'Ghost trail'}}</label>
+        <span>{{es?'Trayectoria del modelo':'Model trajectory'}}</span>
+      </div>
+      <div class="simulation-scene">
+        <div class="scene-readout"><span>t = {{time() | number:'1.2-2'}} s</span>@if(vectors()){<span class="velocity">v = {{speed() | number:'1.2-2'}} m/s</span><span class="acceleration">a = {{acceleration() | number:'1.2-2'}} m/s²</span>}</div>
+        <svg viewBox="0 0 640 400" role="img" [attr.aria-label]="isRamp?(es?'Bloque deslizándose por un plano inclinado, con vectores de velocidad y aceleración.':'Block sliding along an incline with velocity and acceleration vectors.'):(es?'Trayectoria balística ilustrativa, sin propulsión.':'Illustrative ballistic trajectory without propulsion.')">
+          <defs><marker id="future-preview-velocity" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7Z" fill="#83b5ff"/></marker><marker id="future-preview-acceleration" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7Z" fill="#f4b86b"/></marker></defs>
+          <g class="scene-grid">@for(x of gridX;track x){<line [attr.x1]="x" y1="40" [attr.x2]="x" y2="376"/>}@for(y of gridY;track y){<line x1="35" [attr.y1]="y" x2="625" [attr.y2]="y"/>}</g>
+          @if(isRamp){
+            <path class="ramp-fill" [attr.d]="'M80 94 L'+rampEnd().x+' '+rampEnd().y+' L'+rampEnd().x+' 354 L80 354 Z'"/>
+            <line class="ramp-edge" x1="80" y1="94" [attr.x2]="rampEnd().x" [attr.y2]="rampEnd().y"/>
+            <text x="88" y="375" class="scene-label">L = 4 m · θ = {{incline() | number:'1.0-0'}}°</text>
+          }@else{
+            <path class="ground" d="M40 324H610 M64 346V76"/>
+            <text x="576" y="346" class="scene-label">x (m)</text><text x="35" y="72" class="scene-label">y (m)</text>
+            <text x="76" y="374" class="scene-label">{{es?'Alcance ideal':'Ideal range'}}: {{range() | number:'1.1-1'}} m</text>
+          }
+          <path class="model-path" [attr.d]="trajectory()"/>
+          @if(trail()){@for(point of ghosts();track $index){<circle class="ghost" [attr.cx]="point.x" [attr.cy]="point.y" r="10" [attr.opacity]="point.opacity"/>}}
+          <g [attr.transform]="'translate('+position().x+' '+position().y+') rotate('+rotation()+')'">
+            @if(isRamp){<rect class="block" x="-15" y="-12" width="30" height="24" rx="4"/><line class="block-detail" x1="-8" y1="-5" x2="7" y2="-5"/>}
+            @else{<path class="rocket" d="M-10 -6H5L16 0 5 6H-10Z M-10 -6 -17 -13 -13 0 -17 13 -10 6"/><circle class="rocket-port" cx="3" cy="0" r="2.5"/>}
+          </g>
+          @if(vectors()){
+            @if(speed()>0.001){<line class="velocity-line" [attr.x1]="position().x" [attr.y1]="position().y" [attr.x2]="velocityTip().x" [attr.y2]="velocityTip().y" marker-end="url(#future-preview-velocity)"/><text class="velocity-label" [attr.x]="velocityTip().x+5" [attr.y]="velocityTip().y-8">v</text>}
+            @if(acceleration()>0.001){<line class="acceleration-line" [attr.x1]="position().x" [attr.y1]="position().y" [attr.x2]="accelerationTip().x" [attr.y2]="accelerationTip().y" marker-end="url(#future-preview-acceleration)"/><text class="acceleration-label" [attr.x]="accelerationTip().x+7" [attr.y]="accelerationTip().y+5">a</text>}
+          }
+        </svg>
+      </div>
+      <div class="scene-legend"><span class="velocity">v · {{es?'Rapidez':'Speed'}}</span><span class="acceleration">a · {{es?'Aceleración':'Acceleration'}}</span><small>{{es?'Flechas con escalas visuales distintas.':'Arrows use different visual scales.'}}</small></div>
+      <div class="playbar"><button type="button" (click)="togglePlay()" [disabled]="reducedMotion() || (isRamp && rampAcceleration()<0.00000001)">{{playing()?(es?'Pausar':'Pause'):(es?'Reproducir':'Play')}}</button><button type="button" class="reset" (click)="reset()" [attr.aria-label]="es?'Reiniciar simulación':'Restart simulation'">↺</button><input type="range" min="0" [max]="duration()" step="0.01" [ngModel]="time()" (ngModelChange)="seek($event)" [attr.aria-label]="es?'Tiempo de la simulación':'Simulation time'"/><span>{{time() | number:'1.1-1'}} / {{duration() | number:'1.1-1'}} s</span></div>
+      @if(reducedMotion()){<p class="motion-note">{{es?'Movimiento reducido activo: explora con el control de tiempo.':'Reduced motion enabled: explore with the time control.'}}</p>}
+      @if(vectors()){
+        <div class="speed-chart"><div><strong>{{es?'Así cambia la rapidez':'How speed changes'}}</strong><small>v (m/s)</small></div><svg viewBox="0 0 640 112" role="img" [attr.aria-label]="es?'Rapidez calculada en función del tiempo':'Calculated speed over time'"><path class="chart-axis" d="M30 22V88H600 M30 30H600"/><path class="speed-line" [attr.d]="speedPath()"/><circle class="speed-dot" [attr.cx]="speedDot().x" [attr.cy]="speedDot().y" r="4"/><text x="8" y="91">0</text><text x="30" y="105">0 s</text><text x="545" y="105">{{duration() | number:'1.1-1'}} s</text><text x="30" y="18">{{maximumSpeed() | number:'1.1-1'}} m/s</text></svg></div>
+      }
+    </section>
+    <aside class="insight-card">
+      <span class="eyebrow">{{es?'EXPLORA UNA CONDICIÓN':'EXPLORE ONE CONDITION'}}</span>
+      <h2>{{isRamp?(es?'La inclinación cambia la aceleración.':'The incline changes acceleration.'):(es?'El impulso inicial cambia el recorrido.':'Initial velocity changes the trajectory.')}}</h2>
+      <p>{{isRamp?(es?'Un bloque parte del reposo sobre una rampa de 4 m. Ajusta la inclinación y la fricción ideal.':'A block starts at rest on a 4 m ramp. Adjust the incline and ideal friction.'):(es?'Esta vista representa la fase balística después de un impulso inicial: gravedad constante, sin motor ni resistencia del aire.':'This view represents the ballistic phase after an initial impulse: constant gravity, no engine or air resistance.')}}</p>
+      @if(isRamp){
+        <label class="parameter">{{es?'Inclinación':'Incline'}}<strong>{{incline()}}°</strong><input type="range" min="5" max="35" step="1" [ngModel]="incline()" (ngModelChange)="setParameter('incline',$event)"/></label>
+        <label class="parameter">{{es?'Fricción ideal μ':'Ideal friction μ'}}<strong>{{friction() | number:'1.2-2'}}</strong><input type="range" min="0" max="0.25" step="0.01" [ngModel]="friction()" (ngModelChange)="setParameter('friction',$event)"/></label>
+        <div class="main-metric"><small>{{es?'Distancia recorrida':'Distance travelled'}}</small><strong>{{current().distance | number:'1.2-2'}} <span>m</span></strong></div>
+        <div class="metric-row"><span>{{es?'Aceleración en la rampa':'Acceleration along ramp'}}</span><strong>{{rampAcceleration() | number:'1.2-2'}} m/s²</strong></div>
+        <div class="metric-row"><span>{{es?'Tiempo al final del tramo':'Time to end of ramp'}}</span><strong>{{rampAcceleration()<0.00000001?'—':(duration() | number:'1.2-2')+' s'}}</strong></div>
+        @if(rampAcceleration()<0.00000001){<p class="model-warning">{{es?'Con estas condiciones, la fricción sostiene el bloque en reposo.':'With these conditions, friction keeps the block at rest.'}}</p>}
+        <details><summary>{{es?'Ver el modelo':'View model'}}</summary><p>a = max(0, g · (sin θ − μ cos θ))<br/>s = ½ a t² · v = a t</p><p>{{es?'Modelo de deslizamiento con un mismo coeficiente ideal para el umbral de reposo y el movimiento. Termina al llegar al borde; no simula la caída posterior.':'Sliding model with the same ideal coefficient for the rest threshold and motion. Ends at the edge; subsequent falling is not simulated.'}}</p></details>
+      }@else{
+        <label class="parameter">{{es?'Ángulo de salida':'Launch angle'}}<strong>{{launchAngle()}}°</strong><input type="range" min="20" max="75" step="1" [ngModel]="launchAngle()" (ngModelChange)="setParameter('launchAngle',$event)"/></label>
+        <label class="parameter">{{es?'Rapidez inicial':'Initial speed'}}<strong>{{launchSpeed()}} m/s</strong><input type="range" min="10" max="40" step="1" [ngModel]="launchSpeed()" (ngModelChange)="setParameter('launchSpeed',$event)"/></label>
+        <div class="main-metric"><small>{{es?'Altura actual':'Current height'}}</small><strong>{{current().y | number:'1.2-2'}} <span>m</span></strong></div>
+        <div class="metric-row"><span>{{es?'Altura máxima ideal':'Ideal maximum height'}}</span><strong>{{maximumHeight() | number:'1.2-2'}} m</strong></div>
+        <div class="metric-row"><span>{{es?'Tiempo de vuelo':'Flight time'}}</span><strong>{{flightTime() | number:'1.2-2'}} s</strong></div>
+        <details><summary>{{es?'Ver el modelo':'View model'}}</summary><p>x = v₀ cos θ · t<br/>y = v₀ sin θ · t − ½ g t²<br/>a = (0, −g)</p><p>{{es?'Salida y llegada a la misma altura. Es una visualización educativa; no modela propulsión, guiado, masa variable ni una trayectoria orbital.':'Launch and landing at equal height. Educational visualization; propulsion, guidance, changing mass and orbital trajectories are not modelled.'}}</p></details>
+      }
+      <div class="preview-scope"><strong>{{es?'Una vista de lo que viene':'A preview of what comes next'}}</strong><p>{{es?'En el futuro, SAM seguirá el objeto en tu video y Muse Spark ayudará a interpretar las medidas. Aquí los valores vienen de las fórmulas indicadas.':'In the future, SAM will track the object in your video and Muse Spark will help interpret the measurements. Here values come from the displayed formulas.'}}</p><small>{{es?'Sin intervalo estadístico: son datos calculados, no una medición.':'No statistical interval: calculated data, not a measurement.'}}</small></div>
+    </aside>
+  </div>
+</section>

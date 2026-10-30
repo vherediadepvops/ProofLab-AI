@@ -5,12 +5,24 @@ Implementación local del 30/10/2026. No requiere nuevas inferencias para revisa
 ## Uso
 
 1. Abre **Laboratorio**. Una visita nueva o una recarga empieza sin sesión activa; no se crea un ID automáticamente.
-2. Pulsa **Generar código de recuperación** para crear una sesión vacía. Copia el código y guárdalo. Esto habilita la configuración y la carga de video.
+2. Pulsa **Generar código** para crear una sesión vacía. Copia el código y guárdalo. Esto habilita la configuración y la carga de video.
 3. Los cambios de longitud, ángulo, masa y segunda prueba se guardan con el mismo código antes de cargar el primer video. La interfaz indica «Guardando parámetros» o permite reintentar si falla la conexión. Al registrar el video, estos parámetros quedan protegidos.
-4. **Video de prueba** y la primera carga propia conservan el código generado. Una Nueva prueba posterior crea otra investigación; la anterior continúa recuperable mediante su propio código.
-5. Para recuperar, pega el código en **¿Ya tienes un código?**, al lado del botón de generación, y pulsa **Buscar**. Inicio conserva únicamente «Abrir laboratorio»; la recuperación se realiza en Laboratorio. Se aceptan mayúsculas y espacios al principio/final.
+4. **Usar video de ejemplo** y la primera carga propia conservan el código generado. Cargar otro video 1 o elegir **Gestionar → Nueva investigación** crea otra investigación; la anterior continúa recuperable mediante su código.
+5. Para recuperar, abre **Recuperar** (sin sesión) o **Gestionar** (con una sesión activa), pega el código y pulsa **Buscar**. Inicio conserva únicamente «Abrir laboratorio»; la recuperación se realiza en Laboratorio. Se aceptan mayúsculas y espacios al principio/final.
 6. La barra «Recuperando sesión» permanece hasta cargar la configuración, el video y los resultados guardados. Un ID desconocido muestra «No se encontró ninguna sesión»; un fallo de conexión muestra un mensaje diferente para reintentar.
 7. Se recuperan ambos videos, resultados verificables y predicción congelada. Si una operación sigue en curso, se consulta cada 2,5 s sin reenviarla. Una etapa interrumpida requiere revisar su estado antes de continuar manualmente.
+
+## Recorrido guiado
+
+- **Preparar:** configura la medida física y carga el video 1. Se reproduce el original sin capas de análisis.
+- **Analizar:** revisa la cotización real antes de pulsar Procesar. El modo predeterminado reutiliza caché verificada; las opciones avanzadas conservan análisis nuevo y segmentado. El progreso aparece junto al costo y el video permanece limpio.
+- **Entender:** revisa las capas de SAM, las medidas calculadas y el intervalo estadístico del 95 % disponible. Confirma el seguimiento para continuar. La consulta científica a Muse mantiene su costo y consentimiento propios.
+- **Predecir:** consulta o revisa la predicción que el servidor registra con la respuesta de Muse. El segundo video se habilita después de ese registro; no se simula un congelado adicional en el navegador.
+- **Comprobar:** revisa las mediciones del video 2 y el contraste contra la predicción conservada.
+
+El código activo ocupa una barra compacta con **Copiar** y **Gestionar**. Cerrar sesión no elimina registros. Los avisos de evidencia faltante o intentos interrumpidos permanecen visibles aunque el menú esté cerrado.
+
+Rampa y cohete son demostraciones interactivas de modelos ideales. Su carga de video figura como **Próximamente**; no realizan inferencias ni se presentan como mediciones. La trayectoria del cohete ilustra una fase balística, sin propulsión ni control de vuelo.
 
 El código identifica una investigación y sus dos pruebas, no el token temporal. Recuperar requiere la misma API y sus datos persistentes; no es sincronización en la nube. Una carga de archivo incompleta requiere seleccionar nuevamente el archivo. Los tokens nunca se guardan en recuperación; para nuevas llamadas tras recargar hay que introducirlos otra vez.
 
@@ -52,3 +64,10 @@ Las verificaciones históricas de geometría anteriores se conservan debajo; no 
 - Cero llamadas Meta y cero CI en este cambio. Permisos manuales y contador del propietario conservados. No es entrenamiento de SAM/Spark.
 
 English: [RESEARCH-RECOVERY.en.md](RESEARCH-RECOVERY.en.md).
+
+## Diseño guiado V8 (30/10/2026)
+
+- Péndulo distribuido en Preparar, Analizar, Entender, Predecir y Comprobar. Costo y consentimiento antes de procesar, fuente original separada de capas SAM, predicción vinculada a su registro real y recuperación compacta por código. Rampa y cohete son simulaciones etiquetadas, con carga de video deshabilitada.
+- Verificación local: compilaciones Angular de desarrollo y producción; 96 pruebas enfocadas correctas en Edge (90 del flujo existente y 6 nuevas). Advertencias no bloqueantes: bundle inicial 826,82 kB y estilos de 10,02/10,75/14,44 kB respecto al aviso de 500/10 kB.
+- Edge aislado: vistas de inicio, rampa y cohete a 1440 px; rampa y cohete a 390 px en inglés, sin desbordamiento horizontal. La recuperación del H.264 no se pudo verificar desde el origen temporal, no autorizado por CORS de la API 5391. Se preservaron la configuración de CORS, la API 5391 y el frontend 4300 del propietario. El flujo recuperable se comprobó mediante pruebas Angular, no mediante una nueva inferencia ni una nueva filmación.
+- Contador Meta 148→148; ninguna llamada pagada, CI ni acción GitHub Actions. Publicación Git y actualización del servicio local se consideran tareas separadas.

@@ -287,7 +287,9 @@ describe('One-clock three-view pendulum laboratory',()=>{
         y:py+radius*Math.cos(theta)/1920*270,approximateRadiusPixels:8};
     });
     component.samTrack.set({frameWidth:640,frameHeight:360,
-      source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',points,masks:[]});
+      source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',points,masks:points.map((p,i)=>({
+        frameIndex:i,timeSeconds:p.timeSeconds,left:0,top:0,right:4,bottom:4,
+        maskPath:'M0 0L1 0L1 1Z',centroidXpx:p.x,centroidYpx:p.y,foregroundPixels:2}))});
     component.pivotRevision.set(revision);
     for(const canvas of Array.from(root.querySelectorAll('canvas')))
       spyOn(canvas.getContext('2d')!,'drawImage').and.stub();
@@ -321,7 +323,9 @@ describe('One-clock three-view pendulum laboratory',()=>{
         y:60+radius*Math.cos(theta)/1920*270,approximateRadiusPixels:8};
     });
     const sam={frameWidth:1080,frameHeight:1920,
-      source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE' as const,objectId:'bob',points,masks:[]};
+      source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE' as const,objectId:'bob',points,masks:points.map((p,i)=>({
+        frameIndex:i,timeSeconds:p.timeSeconds,left:0,top:0,right:4,bottom:4,
+        maskPath:'M0 0L1 0L1 1Z',centroidXpx:p.x,centroidYpx:p.y,foregroundPixels:2}))};
     component.samTrack.set(sam);
     const canvas=root.querySelector<HTMLCanvasElement>('[data-view="vectors"] canvas')!;
     const ctx=canvas.getContext('2d')!;

@@ -1,75 +1,118 @@
-<section class="zone1-focus">
-  <header class="focus-heading">
-    <div>
-      <span class="focus-eyebrow">PROOFLAB AI <span class="separator">/</span> {{es ? 'LABORATORIO DE PÉNDULO' : 'PENDULUM LAB'}}</span>
-      <h1>{{es ? 'Investiga un fenómeno con un video' : 'Investigate a phenomenon with video'}}</h1>
-      <p>{{es
-        ? 'Configura tu péndulo y observa el mismo movimiento desde cuatro perspectivas sincronizadas.'
-        : 'Configure your pendulum and inspect the same motion in four synchronized views.'}}</p>
+<section class="zone1-focus journey-v8">
+  <section class="experiment-selector" [attr.aria-label]="es?'Elige tu experimento':'Choose your experiment'">
+    <div class="experiment-selector-heading"><span>{{es?'ELIGE TU EXPERIMENTO':'CHOOSE YOUR EXPERIMENT'}}</span><small>{{es?'Un laboratorio, distintas preguntas.':'One laboratory, different questions.'}}</small></div>
+    <div class="experiment-options" role="group">
+      <button type="button" [class.active]="experiment()==='pendulum'" [attr.aria-pressed]="experiment()==='pendulum'" [disabled]="flowBusy()" (click)="chooseExperiment('pendulum')"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="5" transform="rotate(-38 12 12)"/><path d="M8 3c4-1 9 4 10 9s-1 9-4 9"/></svg><span><strong>{{es?'Péndulo':'Pendulum'}}</strong><small>{{es?'Experimento actual':'Current experiment'}}</small></span></button>
+      <button type="button" [class.active]="experiment()==='ramp'" [attr.aria-pressed]="experiment()==='ramp'" [disabled]="flowBusy()" (click)="chooseExperiment('ramp')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8v13h18ZM3 21h18"/><rect x="9" y="5" width="7" height="6" rx="1" transform="rotate(36 12.5 8)"/></svg><span><strong>{{es?'Rampa':'Ramp'}}</strong><small>{{es?'Simulación interactiva':'Interactive simulation'}}</small></span></button>
+      <button type="button" [class.active]="experiment()==='rocket'" [attr.aria-pressed]="experiment()==='rocket'" [disabled]="flowBusy()" (click)="chooseExperiment('rocket')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16c-2-5 1-11 7-13 3 6 1 12-4 15ZM9 10 4 14l5 1m7-3 2 6-5-1M8 18l-3 4"/><circle cx="13" cy="9" r="1.6"/></svg><span><strong>{{es?'Cohete':'Rocket'}}</strong><small>{{es?'Simulación interactiva':'Interactive simulation'}}</small></span></button>
     </div>
-    <span class="token-status">{{es?'SAM · CRÉDITOS POR FOTOGRAMA':'SAM · CREDITS PER FRAME'}}</span>
-  </header>
-  <section class="recovery-entry" [attr.aria-label]="es?'Recuperación de sesión':'Session recovery'" [attr.aria-busy]="generatingCode() || recoveryLoading()">
-    <div class="recovery-intro"><strong>{{es?'Tu código de recuperación':'Your recovery code'}}</strong>
-      <p>{{es?'Este código te permite recuperar la sesión y los últimos cambios guardados si pierdes la conexión o cierras la página. Cópialo y guárdalo.':'Use this code to recover your session and the latest saved changes if you lose connection or close the page. Copy and save it.'}}</p>
-    </div>
-    <div class="recovery-actions">
-      @if(session(); as research){
-        <div class="research-id"><span>{{es?'Sesión activa':'Active session'}}</span><code>{{research.id}}</code>
-          <button class="secondary-button" type="button" (click)="copyStudyId()">{{copiedId()?(es?'Copiado':'Copied'):(es?'Copiar código':'Copy code')}}</button></div>
-      } @else {
-        <button class="primary-button generate-recovery" type="button" (click)="generateRecoveryCode()" [disabled]="recoveryControlsBusy()">{{es?'Generar código de recuperación':'Generate recovery code'}}</button>
-      }
-      <form class="recovery-search" (ngSubmit)="resumeResearch(recoveryCode())">
-        <label for="lab-recovery-code">{{es?'¿Ya tienes un código?':'Already have a code?'}}</label>
-        <div><input id="lab-recovery-code" name="recoveryCode" type="text" [ngModel]="recoveryCode()" (ngModelChange)="recoveryCode.set($event)"
-          [disabled]="recoveryControlsBusy()" maxlength="64" autocomplete="off" spellcheck="false" [placeholder]="es?'Pega tu código de recuperación':'Paste your recovery code'"/>
-          <button class="secondary-button search-recovery" type="submit" [disabled]="!validRecoveryCode() || recoveryControlsBusy()">{{es?'Buscar':'Search'}}</button></div>
-      </form>
-    </div>
-    @if(generatingCode() || recoveryLoading()){
-      <app-lab-activity [label]="generatingCode()?(es?'Generando código…':'Generating code…'):(es?'Recuperando sesión…':'Recovering session…')"
-        [detail]="generatingCode()?(es?'Guardando tu nueva sesión.':'Saving your new session.'):(es?'Cargando configuración, videos y resultados guardados.':'Loading saved settings, videos and results.')"/>
-    } @else if(recoveryMessage()) {<p class="recovery-status" [class.recovery-error]="recoveryFailure()" role="status">{{recoveryMessage()}}</p>}
-    @if(!session() && !recoveryLoading() && !generatingCode()) {<small>{{es?'Genera un código o recupera una sesión para habilitar el laboratorio.':'Generate a code or recover a session to enable the laboratory.'}}</small>}
   </section>
-  @if(session()) {
 
-  <section class="focus-config" aria-label="Parámetros físicos del péndulo">
-    <div class="focus-section-title">
-      <span class="section-index">01</span>
-      <div>
-        <h2>{{es ? 'Configura el péndulo' : 'Configure the pendulum'}}</h2>
-        <p>{{es ? 'Sistema sexagesimal para el ángulo · modelo matemático local' :
-          'Sexagesimal angle in degrees · local mathematical model'}}</p>
+  <div [hidden]="experiment()!=='pendulum'">
+    <section class="recovery-entry compact-recovery" [attr.aria-label]="es?'Código de investigación':'Research code'" [attr.aria-busy]="generatingCode() || recoveryLoading()">
+      <div class="recovery-bar">
+        <div class="recovery-title"><span class="recovery-dot" aria-hidden="true"></span><div><strong>{{es?'Investigación':'Research'}}</strong><small>{{session()?(es?'Guardada en este servidor':'Saved on this server'):(es?'Genera o recupera tu código':'Generate or recover your code')}}</small></div></div>
+        @if(session(); as research){
+          <div class="research-id"><label class="visually-hidden" for="active-recovery-code">{{es?'Código de recuperación':'Recovery code'}}</label><input id="active-recovery-code" type="text" [value]="research.id" readonly spellcheck="false"/>
+            <button class="secondary-button copy-recovery" type="button" (click)="copyStudyId()">{{copiedId()?(es?'Copiado':'Copied'):(es?'Copiar':'Copy')}}</button></div>
+        } @else {
+          <button class="primary-button generate-recovery" type="button" (click)="generateRecoveryCode()" [disabled]="recoveryControlsBusy()">{{es?'Generar código':'Generate code'}}</button>
+        }
+        <button id="manage-recovery" type="button" class="secondary-button manage-recovery" [attr.aria-expanded]="recoveryMenuOpen()" aria-controls="recovery-drawer" [disabled]="recoveryControlsBusy()" (click)="toggleRecoveryMenu()">{{session()?(es?'Gestionar':'Manage'):(es?'Recuperar':'Recover')}} <span aria-hidden="true">{{recoveryMenuOpen()?'▴':'▾'}}</span></button>
       </div>
-    </div>
+      <div id="recovery-drawer" class="recovery-drawer" [hidden]="!recoveryMenuOpen()" (keydown.escape)="closeRecoveryMenu($event)">
+        <div class="recovery-actions">
+          <form class="recovery-search" (ngSubmit)="resumeResearch(recoveryCode())">
+            <label for="lab-recovery-code">{{session()?(es?'Retomar otra investigación':'Resume another study'):(es?'¿Ya tienes un código?':'Already have a code?')}}</label>
+            <div><input id="lab-recovery-code" name="recoveryCode" type="text" [ngModel]="recoveryCode()" (ngModelChange)="recoveryCode.set($event)"
+              [disabled]="recoveryControlsBusy()" maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" [placeholder]="es?'Pega tu código de 32 caracteres':'Paste your 32-character code'"/>
+              <button class="secondary-button search-recovery" type="submit" [disabled]="!validRecoveryCode() || recoveryControlsBusy()">{{es?'Buscar':'Search'}}</button></div>
+          </form>
+          @if(session()){<div class="recovery-session-actions"><button type="button" class="secondary-button" (click)="createNewResearch()" [disabled]="flowBusy()">{{es?'Nueva investigación':'New research'}}</button><button type="button" class="secondary-button" (click)="closeResearch()" [disabled]="flowBusy()">{{es?'Cerrar sesión':'Close session'}}</button></div>}
+        </div>
+        <p class="recovery-help">{{es?'Copia y guarda el código: reúne tus videos, resultados y predicción. La recuperación usa el mismo servidor y sus archivos guardados.':'Copy and save the code: it links your videos, results and prediction. Recovery uses the same server and its saved files.'}}</p>
+        <details><summary>{{es?'¿Qué se recupera?':'What is recovered?'}}</summary><p class="recovery-help">{{es?'Configuración, videos y evidencia verificada. Recuperar no repite solicitudes a Meta. Los intentos interrumpidos requieren revisión; el token se introduce de nuevo en Configuración.':'Settings, videos and verified evidence. Recovery does not repeat Meta requests. Interrupted attempts need review; re-enter your token in Settings.'}}</p></details>
+      </div>
+      @if(generatingCode() || recoveryLoading()){
+        <app-lab-activity [label]="generatingCode()?(es?'Generando código…':'Generating code…'):(es?'Recuperando sesión…':'Recovering session…')"
+          [detail]="generatingCode()?(es?'Guardando tu nueva sesión.':'Saving your new session.'):(es?'Cargando configuración, videos y resultados guardados.':'Loading saved settings, videos and results.')"/>
+      } @else if(recoveryMessage()) {<p class="recovery-status" [class.recovery-error]="recoveryFailure()" [class.recovery-warning]="recoveryWarning()" [class.visually-hidden]="!recoveryFailure() && !recoveryWarning()" role="status">{{recoveryMessage()}}</p>}
+    </section>
 
-    <div class="parameter-grid">
-      <label>
-        <span>{{es ? 'Longitud de la cuerda (cm)' : 'String length (cm)'}}</span>
-        <input id="focus-length" type="number" min="10" max="500" step="5"
-          [ngModel]="baselineLength() * 100"
-          (ngModelChange)="baselineLength.set(+$event / 100);updateDraft()"
-          [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/>
-      </label>
-      <label>
-        <span>{{es ? 'Ángulo inicial (°)' : 'Initial angle (°)'}}</span>
-        <input id="focus-angle" type="number" min="1" max="85" step="1"
-          [ngModel]="initialAngleDegrees()"
-          (ngModelChange)="initialAngleDegrees.set(+$event);updateDraft()"
-          [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/>
-      </label>
-      <label>
-        <span>{{es ? 'Masa de la plomada (g)' : 'Bob mass (g)'}}</span>
-        <input id="focus-mass" type="number" min="10" max="5000" step="10"
-          [ngModel]="massGrams()"
-          (ngModelChange)="massGrams.set(+$event);updateDraft()"
-          [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/>
-      </label>
-    </div>
+    <header class="focus-heading"><div><span class="focus-eyebrow">{{es?'DEL MOVIMIENTO A LA EVIDENCIA':'FROM MOTION TO EVIDENCE'}}</span><h1>{{es?'¿Qué cambia al alargar el péndulo?':'What changes when the pendulum gets longer?'}}</h1><p>{{es?'Observa, mide y pon a prueba una predicción. Un paso a la vez.':'Observe, measure and test a prediction. One step at a time.'}}</p></div></header>
+    @if(session(); as s) {
+      <nav class="journey-steps" [attr.aria-label]="es?'Etapas del experimento':'Experiment stages'">
+        @for(step of flowSteps; track step.id){<button type="button" class="journey-step" [class.active]="flowStep()===step.id" [class.complete]="step.id<flowStep()" [attr.aria-current]="flowStep()===step.id?'step':null" [disabled]="!canVisitStep(step.id)" (click)="setJourneyStep(step.id)"><span class="step-index">{{stepLabel(step.id)}}</span><span><strong>{{es?step.es:step.en}}</strong><small>{{es?step.subEs:step.subEn}}</small></span></button>}
+      </nav>
 
-    <details class="theory-preview" open>
+      <div class="video-toolbar" [hidden]="flowStep()!==1 && !(flowStep()===4 && !!frozenForStudy())" [attr.aria-busy]="videoLoading()">
+        <div class="current-video"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H5v18h14V8ZM14 3v6h5M8 13h8M8 17h5"/></svg><div>
+          <strong>{{flowStep()===1?(es?'Tu primer video':'Your first video'):(es?'La segunda prueba':'The second trial')}}</strong>
+          <small>{{flowStep()===1?(s.baseline?s.baseline.originalFilename:(es?'Carga tu grabación o usa el video de ejemplo.':'Upload your recording or use the example video.')):(s.followup?s.followup.originalFilename:(es?'Predicción guardada. Ahora carga un video de '+((nextResearchLength()??0)*100).toFixed(0)+' cm.':'Prediction saved. Now upload a video at '+((nextResearchLength()??0)*100).toFixed(0)+' cm.'))}}</small>
+        </div></div>
+        <div class="video-toolbar-actions">
+          @if(flowStep()===1){
+            <button class="secondary-button demo-video" type="button" (click)="loadDemo()" [disabled]="videoActionsBusy() || !!s.baseline">{{es?'Usar video de ejemplo':'Use example video'}}</button>
+            <label class="file-action upload-new-video"><span aria-hidden="true">↑</span> {{es?'Cargar video 1':'Upload video 1'}}<input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2" [disabled]="videoActionsBusy()" (change)="uploadNewTrial($event)"/></label>
+          } @else if(!s.followup){
+            <label class="file-action upload-followup"><span aria-hidden="true">↑</span> {{es?'Cargar video 2':'Upload video 2'}}<input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2" [disabled]="flowBusy()" (change)="uploadFocused($event,'followup')"/></label>
+          }
+        </div>
+      </div>
+
+      <div class="journey-stage-heading"><div><h2>{{stageTitle()}}</h2><p>{{stageDescription()}}</p></div><span class="trial-badge"><span aria-hidden="true">●</span> {{activeTrial()==='followup'?(es?'Prueba 2':'Trial 2'):(es?'Prueba 1':'Trial 1')}}</span></div>
+      <div class="journey-layout" [class.result-layout]="presentation()!=='source'">
+        <section class="focus-video" [attr.aria-busy]="videoLoading() || resultState()==='loading'">
+          @if(sourcePending()) {<app-lab-activity [label]="es?'Cargando video…':'Loading video…'" [detail]="es?'Preparando tu grabación original.':'Preparing your original recording.'"/>}
+          @if(s.baseline) {
+        @if(activeTrial() === 'followup' && s.followup) {
+          @if(s.followup; as clip) {
+              <app-pendulum-master-player [videoUrl]="reviewVideo('followup')"
+                [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'" [processedAnalysisId]="processedAnalysis('followup')" [processedAdaptiveBatchId]="processedAdaptiveBatch('followup')"
+                [presentation]="presentation()" [physicalLengthMeters]="currentPhysicalLength()" [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
+                [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
+                (processingFinished)="onProcessingFinished($event)" (previewStateChanged)="onPreviewState($event)"
+                [processingPending]="resultState()==='loading'" [processingError]="resultState()==='error'"
+                [initialAngleDegrees]="s.angleDegrees ?? 15"
+                [name]="clip.originalFilename"
+                [originalWidth]="clip.media.width" [originalHeight]="clip.media.height"
+                [originalFps]="clip.media.nominalFramesPerSecond" [originalCodec]="clip.media.codec"
+                [points]="clip.tracking.pixelSamples ?? null" [language]="language()"/>
+
+          }
+        } @else {
+            <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
+              [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'" (researchFrozen)="onResearchFrozen($event)" [processedAnalysisId]="processedAnalysis('baseline')" [processedAdaptiveBatchId]="processedAdaptiveBatch('baseline')"
+              [presentation]="presentation()" [physicalLengthMeters]="currentPhysicalLength()" [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
+                [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
+                (processingFinished)="onProcessingFinished($event)" (previewStateChanged)="onPreviewState($event)"
+                [processingPending]="resultState()==='loading'" [processingError]="resultState()==='error'"
+              [initialAngleDegrees]="s.angleDegrees ?? 15"
+              [name]="s.baseline.originalFilename"
+              [originalWidth]="s.baseline.media.width" [originalHeight]="s.baseline.media.height"
+              [originalFps]="s.baseline.media.nominalFramesPerSecond" [originalCodec]="s.baseline.media.codec"
+              [points]="s.baseline.tracking.pixelSamples ?? null" [language]="language()"/>
+
+        }
+
+          } @else {
+            <div class="empty-source"><span class="empty-play" aria-hidden="true">▷</span><h3>{{es?'Aquí aparecerá tu video original.':'Your original video will appear here.'}}</h3><p>{{es?'Cárgalo arriba o elige el video de ejemplo. Las capas y los gráficos se muestran después de analizar.':'Upload it above or choose the example video. Overlays and charts appear after analysis.'}}</p><span class="source-clean-label">{{es?'VISTA PREVIA · SIN ANALIZAR':'PREVIEW · NOT ANALYZED'}}</span></div>
+          }
+        </section>
+
+        <section class="focus-config" [hidden]="flowStep()!==1" [attr.aria-label]="es?'Parámetros físicos del péndulo':'Physical pendulum parameters'">
+          <span class="card-eyebrow">{{es?'TU EXPERIMENTO':'YOUR EXPERIMENT'}}</span><h2>{{es?'La longitud, bien medida.':'Measure the length carefully.'}}</h2>
+          <p>{{es?'Mide desde el punto de suspensión hasta el centro del objeto. Esta medida física la proporcionas tú.':'Measure from the suspension point to the object’s center. You provide this physical measurement.'}}</p>
+          <div class="parameter-grid">
+            <label class="length-field"><span>{{es?'Longitud del péndulo (cm)':'Pendulum length (cm)'}}</span><input id="focus-length" type="number" min="10" max="500" step="1" [ngModel]="baselineLength()*100" (ngModelChange)="baselineLength.set(+$event/100);updateDraft()" [disabled]="!!s.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/></label>
+          </div>
+          <div class="length-guide"><svg viewBox="0 0 310 150" role="img" [attr.aria-label]="es?'La longitud llega al centro del objeto':'Length reaches the object’s center'"><path d="M112 17h86" stroke="#8ba4bb" stroke-width="5"/><path d="M155 17v105" stroke="#becddd" stroke-width="1.3"/><circle cx="155" cy="122" r="12" fill="#c89f6a" stroke="#876547" stroke-width="4"/><circle cx="155" cy="122" r="2" fill="#fff1d6"/><path d="M181 17h10m-5 0v105m-5 0h10" stroke="#7eafff" fill="none"/><text x="196" y="76" fill="#9ec7ff" font-size="13">L</text></svg><small>{{es?'Suspensión → centro del objeto.':'Suspension → object’s center.'}}</small></div>
+          <details class="parameter-details"><summary>{{es?'Otros parámetros':'Other parameters'}}</summary><div class="parameter-grid compact-parameters">
+            <label><span>{{es?'Ángulo inicial (°)':'Initial angle (°)'}}</span><input id="focus-angle" type="number" min="1" max="85" step="1" [ngModel]="initialAngleDegrees()" (ngModelChange)="initialAngleDegrees.set(+$event);updateDraft()" [disabled]="!!s.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/></label>
+            <label><span>{{es?'Masa del objeto (g)':'Object mass (g)'}}</span><input id="focus-mass" type="number" min="10" max="5000" step="10" [ngModel]="massGrams()" (ngModelChange)="massGrams.set(+$event);updateDraft()" [disabled]="!!s.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/></label>
+          </div><div class="second-config"><label class="check-label"><input type="checkbox" [ngModel]="includeSecondTrial()" (ngModelChange)="includeSecondTrial.set($event);updateDraft()" [disabled]="!!s.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/><span>{{es?'Vista teórica de una segunda longitud':'Theoretical preview of a second length'}}</span></label>
+          @if(includeSecondTrial()){<div class="second-inline"><select [ngModel]="followUpMode()" (ngModelChange)="followUpMode.set($event);updateDraft()" [disabled]="!!s.baseline || flowBusy()" [attr.aria-label]="es?'Longitud de la vista teórica':'Theoretical preview length'"><option value="recommended">{{es?'Propuesta local (sin IA)':'Local preset (not AI)'}}</option><option value="manual">{{es?'Longitud libre':'Custom length'}}</option></select>@if(followUpMode()==='manual'){<label class="followup-label"><span>{{es?'Segunda longitud (cm)':'Second length (cm)'}}</span><input type="number" min="10" max="500" step="1" [ngModel]="manualFollowUpLength()*100" (ngModelChange)="manualFollowUpLength.set(+$event/100);updateDraft()" [disabled]="!!s.baseline || flowBusy()"/></label>}@else{<span class="length-hint">{{recommendedFollowUpLength*100 | number:'1.0-0'}} cm</span>}</div>}</div></details>
+    <details class="theory-preview">
       <summary>
         <strong>{{es ? 'Predicción teórica del péndulo' : 'Theoretical pendulum prediction'}}</strong>
         <span>{{es ? 'MODELO IDEAL · SIN SAM NI META' : 'IDEAL MODEL · NO SAM OR META'}}</span>
@@ -145,230 +188,35 @@
       }
     </details>
 
-    <div class="config-bottom">
-      <div class="second-config">
-        <label class="check-label">
-          <input type="checkbox" [ngModel]="includeSecondTrial()"
-            (ngModelChange)="includeSecondTrial.set($event);updateDraft()"
-            [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/>
-          <span>{{es ? 'Agregar una segunda prueba' : 'Add a second experiment'}}</span>
-        </label>
-        @if(includeSecondTrial()) {
-          <div class="second-inline">
-            <select [ngModel]="followUpMode()"
-              (ngModelChange)="followUpMode.set($event);updateDraft()"
-              [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"
-              [attr.aria-label]="es ? 'Selección de longitud del segundo experimento' : 'Second experiment length mode'">
-              <option value="recommended">{{es ? 'Propuesta local (sin IA)' : 'Local preset (not AI)'}}</option>
-              <option value="manual">{{es ? 'Longitud libre' : 'Custom length'}}</option>
-            </select>
-            @if(followUpMode() === 'manual') {
-              <label class="followup-label">
-                <span>{{es ? 'Segunda longitud (cm)' : 'Second length (cm)'}}</span>
-                <input type="number" min="10" max="500" step="5"
-                  [ngModel]="manualFollowUpLength() * 100"
-                  (ngModelChange)="manualFollowUpLength.set(+$event / 100);updateDraft()"
-                  [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/>
-              </label>
-            } @else {
-              <span class="length-hint">{{recommendedFollowUpLength * 100 | number:'1.0-0'}} cm</span>
-            }
-          </div>
-        }
+          @if(s.baseline){<p class="focus-note">{{es?'Parámetros protegidos con este código. Para cambiar el montaje, inicia otra investigación desde Gestionar.':'Parameters are locked to this code. Start another study from Manage to change the setup.'}}</p>}
+          @if(modelError()){<p class="focus-error" role="alert">{{modelError()}}</p>}
+          @if(draftSaving()){<p class="focus-note" role="status">{{es?'Guardando parámetros…':'Saving parameters…'}}</p>}
+          @if(draftError()){<p class="focus-error" role="alert">{{draftError()}} <button type="button" class="secondary-button" (click)="updateDraft()">{{es?'Reintentar guardado':'Retry saving'}}</button></p>}
+          <button type="button" class="primary-button stage-next" (click)="setJourneyStep(2)" [disabled]="!canVisitStep(2)">{{es?'Revisar costo y analizar':'Review cost and analyze'}} <span aria-hidden="true">→</span></button>
+        </section>
+
+        <section class="processing-panel" [hidden]="!showProcessing()">
+          <span class="card-eyebrow">{{es?'CÓMO SE OBTIENE EL RESULTADO':'HOW THE RESULT IS OBTAINED'}}</span><h2>{{es?'Procesamiento automático':'Automatic processing'}}</h2><p>{{es?'Primero revisamos la evidencia guardada. El modo con caché reutiliza lo válido y solicita a Meta lo que falta.':'Saved evidence is checked first. Cache mode reuses valid results and requests missing stages from Meta.'}}</p>
+          <app-sam-video-replay [guided]="true" [language]="language()" [sourcePending]="sourcePending()" [recoveryRunning]="recovering()" [mediaReady]="previewState()==='ready'" [validationState]="resultState()" [studyId]="s.id" [videoRole]="(activeTrial()==='followup' && s.followup?.sha256)?'followup':'baseline'" [videoSha256]="(activeTrial()==='followup' && s.followup?.sha256?s.followup?.sha256:s.baseline?.sha256)??''" (processingReset)="onProcessingReset()" (processingStarted)="onProcessingStarted()" (processingFailed)="onProcessingFinished(false)" (cacheUpdated)="acceptProcessed($event)"/>
+          <div class="process-roles"><p><strong>Muse Spark</strong><span>{{es?'Localiza el objeto y revisa el montaje.':'Locates the object and reviews the setup.'}}</span></p><p><strong>SAM</strong><span>{{es?'Segmenta y sigue el movimiento.':'Segments and tracks motion.'}}</span></p><p><strong>ProofLab</strong><span>{{es?'Calcula medidas a partir de posiciones y tiempos.':'Calculates measurements from positions and times.'}}</span></p></div>
+          <p class="focus-note">{{es?'La consulta científica a Muse Spark se autoriza después, con su propio costo visible.':'The scientific Muse Spark consultation is authorized later with its own visible cost.'}}</p>
+          @if(hasVerifiedResult(activeTrial())){<button class="primary-button stage-next" type="button" (click)="setJourneyStep(activeTrial()==='followup'?5:3)" [disabled]="flowBusy()">{{es?'Ver resultados':'View results'}} <span aria-hidden="true">→</span></button>}
+        </section>
       </div>
 
-      <div class="study-actions">
-        @if(session(); as s) {
-          <span class="study-state">{{es ? 'Investigación activa' : 'Active study'}}
-            <span class="state-dot"></span>
-          </span>
-
-        } @else {
-          <span class="study-hint">{{es
-            ? 'Elige Video de prueba o Nueva prueba para empezar.'
-            : 'Choose Test video or New trial to begin.'}}</span>
-        }
+      <div class="verification-strip" [hidden]="flowStep()!==3">
+        @if(!s.humanReview){<label class="check-label"><input type="checkbox" [ngModel]="checkedVideo()" (ngModelChange)="checkedVideo.set($event)" [disabled]="flowBusy() || !playbackReady()"/><span>{{es?'Revisé el seguimiento y confirmo que corresponde al objeto.':'I reviewed the tracking and confirm it follows the object.'}}</span></label>}
+        @else{<p class="review-confirmed">✓ {{es?'Revisión del seguimiento guardada.':'Tracking review saved.'}}</p>}
+        <button type="button" class="primary-button" (click)="continueToPrediction()" [disabled]="flowBusy() || !hasVerifiedResult('baseline') || (!s.humanReview && (!checkedVideo() || s.baseline?.spectral?.periodSeconds===null))">{{es?'Ver la siguiente prueba':'View the next trial'}} <span aria-hidden="true">→</span></button>
+        @if(!s.humanReview && s.baseline?.spectral?.periodSeconds===null){<p class="focus-note">{{es?'La revisión no puede registrarse todavía: falta un período local confiable. Revisa el seguimiento y sus límites.':'Review cannot be registered yet: a reliable local period is missing. Check tracking and its limits.'}}</p>}
       </div>
-    </div>
-    @if(modelError()) {<p class="focus-error" role="alert">{{modelError()}}</p>}
-    @if(draftSaving()){<p class="focus-note" role="status">{{es?'Guardando parámetros…':'Saving parameters…'}}</p>}
-    @if(draftError()){<p class="focus-error" role="alert">{{draftError()}} <button type="button" class="secondary-button" (click)="updateDraft()">{{es?'Reintentar guardado':'Retry saving'}}</button></p>}
-  </section>
-
-  <div class="video-toolbar" [attr.aria-busy]="videoLoading()">
-    <div class="current-video">
-      <span class="video-file-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg></span>
-      <div><span class="video-caption">{{es?'Tu experimento':'Your experiment'}}</span>
-        <strong>{{session()?.baseline ? (activeTrial()==='followup' ? session()?.followup?.originalFilename : session()?.baseline?.originalFilename) : (es?'Elige cómo empezar':'Choose how to start')}}</strong>
-        <small>{{choosingUpload()?(es?'Selecciona un archivo o cancela para volver.':'Choose a file or cancel to return.'):(es?'Usa la grabación de prueba o carga tu propio video.':'Use the test recording or upload your own video.')}}</small>
-      </div>
-    </div>
-    <div class="video-toolbar-actions">
-      @if(choosingUpload()) {
-        <label class="file-action upload-new-video">
-          <span aria-hidden="true">↑</span> {{es?'Subir video':'Upload video'}}
-          <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
-            [disabled]="videoActionsBusy()" (change)="uploadNewTrial($event)"/>
-        </label>
-        <button class="secondary-button cancel-trial" type="button" (click)="cancelNewTrial()" [disabled]="videoActionsBusy()">
-          {{es?'Cancelar':'Cancel'}}
-        </button>
-      } @else {
-        <button class="secondary-button demo-video" type="button" (click)="loadDemo()" [disabled]="videoActionsBusy() || !!session()?.baseline">
-          <span aria-hidden="true">▷</span> {{es?'Video de prueba':'Test video'}}
-        </button>
-        <button class="secondary-button new-trial" type="button" (click)="beginNewTrial()" [disabled]="videoActionsBusy()">
-          <span aria-hidden="true">＋</span> {{es?'Nueva prueba':'New trial'}}
-        </button>
-      }
-    </div>
-  </div>
-  <app-sam-video-replay [language]="language()" [sourcePending]="sourcePending()" [recoveryRunning]="recovering()"
-    [mediaReady]="previewState()==='ready'" [validationState]="resultState()"
-    [studyId]="session()?.id ?? ''"
-    [videoRole]="(activeTrial()==='followup' && session()?.followup?.sha256) ? 'followup' : 'baseline'"
-    [videoSha256]="(activeTrial()==='followup' && session()?.followup?.sha256
-      ? session()?.followup?.sha256 : session()?.baseline?.sha256) ?? ''"
-    (processingReset)="onProcessingReset()" (processingStarted)="onProcessingStarted()"
-    (processingFailed)="onProcessingFinished(false)"
-    (cacheUpdated)="acceptProcessed($event)"/>
-
-  <section class="focus-video" [attr.aria-busy]="videoLoading() || resultState()==='loading'">
-    <div class="video-heading">
-      <div class="focus-section-title">
-        <span class="section-index">02</span>
-        <div>
-          <h2>{{session()?.baseline
-            ? (es ? 'Cuatro perspectivas sincronizadas' : 'Four synchronized perspectives')
-            : (es ? 'Video y tres vistas sincronizadas' : 'Video and three synchronized views')}}</h2>
-          <p>{{es
-            ? 'Una sola línea de tiempo controla el video original, los vectores y el rastro. Selecciona cualquier miniatura para ampliarla.'
-            : 'One timeline controls source video, vectors and trail. Select any thumbnail to expand it.'}}</p>
-        </div>
-      </div>
-      @if(session()?.followup && session()?.baseline) {
-        <div class="trial-tabs" role="group" [attr.aria-label]="es ? 'Seleccionar experimento' : 'Select experiment'">
-          <button type="button" [class.current]="activeTrial() === 'baseline'" (click)="selectTrial('baseline')" [disabled]="videoActionsBusy()">
-            {{es ? 'Prueba 1' : 'Trial 1'}}
-          </button>
-          <button type="button" [class.current]="activeTrial() === 'followup'" (click)="selectTrial('followup')" [disabled]="videoActionsBusy()">
-            {{es ? 'Prueba 2' : 'Trial 2'}}
-          </button>
-        </div>
-      }
-    </div>
-
-    @if(sourcePending()) {
-      <app-lab-activity [label]="es?'Cargando video…':'Loading video…'"
-        [detail]="es?'Preparando el video original. El costo se consultará en su propia tarjeta.':
-          'Preparing the original video. The cost will be checked in its own card.'"/>
-    }
-    @if(session(); as s) {
-      @if(!s.baseline) {
-        <p class="focus-note">{{es?'Sube tu primera grabación desde la tarjeta Tu experimento.':'Upload your first recording from the Your experiment card.'}}</p>
-      } @else {
-        @if(activeTrial() === 'followup' && s.followup) {
-          @if(s.followup; as clip) {
-              <app-pendulum-master-player [videoUrl]="reviewVideo('followup')"
-                [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'" [processedAnalysisId]="processedAnalysis('followup')" [processedAdaptiveBatchId]="processedAdaptiveBatch('followup')"
-                [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
-                [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
-                (processingFinished)="onProcessingFinished($event)" (previewStateChanged)="onPreviewState($event)"
-                [processingPending]="resultState()==='loading'" [processingError]="resultState()==='error'"
-                [initialAngleDegrees]="s.angleDegrees ?? 15"
-                [name]="clip.originalFilename"
-                [originalWidth]="clip.media.width" [originalHeight]="clip.media.height"
-                [originalFps]="clip.media.nominalFramesPerSecond" [originalCodec]="clip.media.codec"
-                [points]="clip.tracking.pixelSamples ?? null" [language]="language()"/>
-
-          }
-        } @else {
-            <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
-              [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'" (researchFrozen)="onResearchFrozen($event)" [processedAnalysisId]="processedAnalysis('baseline')" [processedAdaptiveBatchId]="processedAdaptiveBatch('baseline')"
-              [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
-                [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
-                (processingFinished)="onProcessingFinished($event)" (previewStateChanged)="onPreviewState($event)"
-                [processingPending]="resultState()==='loading'" [processingError]="resultState()==='error'"
-              [initialAngleDegrees]="s.angleDegrees ?? 15"
-              [name]="s.baseline.originalFilename"
-              [originalWidth]="s.baseline.media.width" [originalHeight]="s.baseline.media.height"
-              [originalFps]="s.baseline.media.nominalFramesPerSecond" [originalCodec]="s.baseline.media.codec"
-              [points]="s.baseline.tracking.pixelSamples ?? null" [language]="language()"/>
-
-        }
-
-        @if(!s.humanReview) {
-          <div class="verification-strip">
-            <label class="check-label">
-              <input type="checkbox" [ngModel]="checkedVideo()"
-                (ngModelChange)="checkedVideo.set($event)" [disabled]="busy() || !playbackReady()"/>
-              <span>{{es
-                ? 'He revisado el video y confirmo que la trayectoria sigue la plomada'
-                : 'I reviewed the video and confirm the trajectory follows the bob'}}</span>
-            </label>
-            <button class="secondary-button" type="button" (click)="confirm()"
-              [disabled]="busy() || !playbackReady() || !checkedVideo() || s.baseline.spectral.periodSeconds === null">
-              {{es ? 'Confirmar revisión' : 'Confirm review'}}
-            </button>
-            @if(s.baseline.spectral.periodSeconds === null) {
-              <p class="focus-note">{{es
-                ? 'Sin período local confiable: aún no se puede registrar una revisión para continuar.'
-                : 'No reliable local period: review cannot advance yet.'}}</p>
-            }
-          </div>
-        }
-
-        @if(frozenForStudy()) {
-          <div class="next-trial-strip">
-            @if(!s.followup) {
-              <span>🔒 {{es?'Predicción de Muse guardada · segunda longitud:':'Muse prediction saved · second length:'}}
-                {{(nextResearchLength() ?? 0)*100 | number:'1.0-0'}} cm</span>
-              <label class="file-action">{{es?'Subir segundo video':'Upload video 2'}}
-                <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2"
-                  [disabled]="!!stageBusy() || busy() || connection.busy()" (change)="uploadFocused($event,'followup')"/>
-              </label>
-            } @else {
-              <span>{{hasFollowupResult() ? (es?'Segundo video con resultado guardado. Revisa sus mediciones y el contraste.':'Video 2 has a saved result. Review its measurements and comparison.') : (es?'Segundo video guardado. Procésalo con SAM para medirlo.':'Video 2 saved. Process it with SAM to measure it.')}}</span>
-            }
-          </div>
-        }
-      }
-
-      @if(!s.baseline) {
-        <div class="placeholder-grid" aria-label="Tres vistas del video pendientes">
-          <div class="placeholder-panel">
-            <span>01 · {{es ? 'VIDEO ORIGINAL' : 'SOURCE VIDEO'}}</span>
-            <div class="placeholder-screen">▶</div>
-          </div>
-          <div class="placeholder-panel">
-            <span>02 · {{es ? 'VECTORES' : 'VECTORS'}}</span>
-            <div class="placeholder-screen">↗</div>
-          </div>
-          <div class="placeholder-panel">
-            <span>03 · {{es ? 'RASTRO FANTASMA' : 'GHOST TRAIL'}}</span>
-            <div class="placeholder-screen">⌁</div>
-          </div>
-        </div>
-      }
+      @if(flowStep()===4 && !frozenForStudy()){<p class="prediction-guide">{{es?'La consulta a Muse Spark registra una predicción válida antes de habilitar Cargar video 2. Si recomienda repetir la grabación o declara el resultado inconcluso, revisa su explicación.':'A Muse Spark consultation records a valid prediction before enabling Upload video 2. If it recommends another recording or an inconclusive result, review its explanation.'}}</p>}
+      @if(flowStep()===4 && !!frozenForStudy()){<p class="prediction-guide">🔒 {{es?'Predicción guardada antes del segundo video. Segunda longitud:':'Prediction saved before video 2. Second length:'}} {{(nextResearchLength()??0)*100 | number:'1.0-0'}} cm.</p>}
+      @if(error()){<p class="focus-error" role="alert">{{error()}}</p>}
+      <p class="focus-disclaimer">{{es?'Muse Spark orienta e interpreta · SAM sigue el objeto · ProofLab calcula las medidas.':'Muse Spark guides and interprets · SAM tracks the object · ProofLab calculates measurements.'}}</p>
     } @else {
-      <div class="placeholder-grid" aria-label="Tres vistas del video pendientes">
-        <div class="placeholder-panel"><span>01 · {{es ? 'VIDEO ORIGINAL' : 'SOURCE VIDEO'}}</span>
-          <div class="placeholder-screen">▶</div></div>
-        <div class="placeholder-panel"><span>02 · {{es ? 'VECTORES' : 'VECTORS'}}</span>
-          <div class="placeholder-screen">↗</div></div>
-        <div class="placeholder-panel"><span>03 · {{es ? 'RASTRO FANTASMA' : 'GHOST TRAIL'}}</span>
-          <div class="placeholder-screen">⌁</div></div>
-      </div>
-      <p class="focus-note">{{es
-        ? 'Carga el video, revisa el costo y pulsa Procesar para activar la reproducción y los gráficos.'
-        : 'Upload a video, review the cost and press Process to enable playback and overlays.'}}</p>
+      <div class="research-empty"><span aria-hidden="true">⌁</span><h2>{{es?'Tu laboratorio comienza con un código.':'Your laboratory begins with a code.'}}</h2><p>{{es?'Genera uno para preparar la primera prueba o recupera una investigación guardada.':'Generate one to prepare the first trial or recover a saved study.'}}</p></div>
     }
-
-    @if(error()) {<p class="focus-error" role="alert">{{error()}}</p>}
-  </section>
-
-  <p class="focus-disclaimer">{{es
-    ? 'SAM detecta; ProofLab calcula vectores y rastro · video original sin reducir resolución ni FPS · reproducción después de Procesar'
-    : 'SAM detects; ProofLab computes vectors and trails · original resolution and FPS preserved · playback after Process'}}</p>
-  }
+  </div>
+  @if(experiment()!=='pendulum'){<app-experiment-simulator [kind]="simulationKind()" [language]="language()" [active]="active() && experiment()!=='pendulum'"/>}
 </section>

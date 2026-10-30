@@ -221,7 +221,7 @@
         @if(metaTestError()) { <div class="alert" role="alert">{{metaTestError()}}</div> }
       }
       @if(labOpened() || workspace() === 'pendulum') {
-        <section class="laboratory-view" [hidden]="workspace() !== 'pendulum'"><app-pendulum-zone-one [language]="language()" /></section>
+        <section class="laboratory-view" [hidden]="workspace() !== 'pendulum'"><app-pendulum-zone-one [language]="language()" [active]="workspace()==='pendulum'" /></section>
       }
       @if(workspace() === 'math') {
         <app-research-workflow [language]="language()" />

@@ -85,18 +85,18 @@ interface SamAdaptiveReport {
   standalone:true,
   imports:[LabActivity],
   template:`
-    <section class="sam-stage3" [attr.aria-busy]="sourcePending() || checking() || processing()">
+    <section class="sam-stage3" [class.guided]="guided()" [attr.aria-busy]="sourcePending() || checking() || processing()">
       <header class="sam-heading">
-        <h2>{{es?'Etapa 3 · SAM 3.1':'Stage 3 · SAM 3.1'}}</h2>
+        <h2>{{guided()?(es?'Costo antes de analizar':'Cost before analysis'):(es?'Etapa 3 · SAM 3.1':'Stage 3 · SAM 3.1')}}</h2>
         @if(studyId() && videoSha256()) {
-          <label class="sam-api-selector">
+          <details class="sam-mode-options" [open]="!guided()"><summary>{{es?'Opciones de procesamiento':'Processing options'}}</summary><label class="sam-api-selector">
             <span>{{es?'Modo de análisis':'Analysis mode'}}</span>
             <select class="sam-mode" [value]="mode()" (change)="selectMode($event)" [disabled]="processing() || sending() || connection.busy()">
               <option value="api-meta">API Meta</option>
-              <option value="api-meta-cache">{{es?'API Meta + caché':'API Meta + cache'}}</option>
+              <option value="api-meta-cache">{{guided()?(es?'Automático · reutilizar caché':'Automatic · reuse cache'):(es?'API Meta + caché':'API Meta + cache')}}</option>
               <option value="api-meta-adaptive">{{es?'API Meta · segmentos':'Meta API · segments'}}</option>
             </select>
-          </label>
+          </label></details>
         }
       </header>
       @if(studyId() && videoSha256()) {
@@ -383,6 +383,35 @@ interface SamAdaptiveReport {
     .sam-progress{margin-top:16px}.sam-empty{display:flex;align-items:center;gap:20px}
     .sam-empty>app-lab-activity,.sam-empty-caption{flex:1;min-width:0}.sam-empty-caption{display:flex;align-items:center;gap:16px;color:#94abc4;font-size:12px}
     @media(max-width:700px){.sam-heading{align-items:flex-start;flex-wrap:wrap}.sam-stage3{padding:12px}.sam-actions{padding:14px}.sam-quote{gap:12px}.sam-buttons{width:100%;margin-left:0}.sam-buttons button{flex:1}.sam-video-meta{width:100%}.sam-price{flex:1}.sam-price strong{font-size:23px}}
+
+    .sam-mode-options>summary{display:none}
+    .guided.sam-stage3{padding:0;margin:18px 0 0;background:transparent;border:0;box-shadow:none}
+    .guided .sam-heading{display:block;margin-bottom:12px}
+    .guided .sam-heading h2{font-size:12px;color:#cce7dd;margin-bottom:9px}
+    .guided .sam-mode-options>summary{display:block;color:#8da9c7;cursor:pointer;font-size:10px;list-style:revert}
+    .guided .sam-api-selector{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px;font-size:10px}
+    .guided .sam-api-selector select{max-width:100%;border:1px solid #344e69;border-radius:6px;background:#0a1725;color:#bcd6ee;font-size:11px;padding:7px}
+    .guided .sam-actions{border:1px solid #376b58;border-radius:10px;background:#102921;padding:17px}
+    .guided .sam-quote{display:block}
+    .guided .sam-status{display:inline-flex;margin-bottom:12px;font-size:10px;color:#bbd6c7;background:transparent}
+    .guided .sam-price{display:grid;gap:7px}
+    .guided .sam-price-line{display:block}
+    .guided .sam-price strong{font-size:31px;line-height:1.25;white-space:normal;overflow-wrap:anywhere;color:#e8fff3;letter-spacing:-.5px}
+    .guided .sam-price small{display:block;color:#a3c5b4;font-size:10px;line-height:1.65;margin-top:4px}
+    .guided .sam-video-meta{display:block;font-size:10px;margin-top:11px;color:#a4bfad}
+    .guided .sam-buttons{display:flex;margin:16px 0 0;gap:8px;flex-wrap:wrap}
+    .guided .sam-buttons .sam-submit{flex:1;min-width:150px;order:-1;min-height:41px}
+    .guided .sam-submit:enabled{background:#6ee5c1;border-color:#6ee5c1;color:#08251f;animation:none;box-shadow:none}
+    .guided .sam-submit:enabled:hover{background:#88edce}
+    .guided .sam-refresh{font-size:10px;border-color:#385b4b;background:transparent;color:#a8ccbb}
+    .guided .sam-message{font-size:11px;line-height:1.65;color:#b2cebf}
+    .guided .sam-message.warning,.guided .sam-consent{color:#ead19e}
+    .guided .sam-technical{border-color:#2f455e;margin-top:14px;color:#9eb9d4}
+    .guided .sam-technical summary{font-size:10px}
+    .guided .sam-detail-body{font-size:10px;line-height:1.7}
+    .guided .sam-stages{border-color:#345449}
+    .guided .sam-stage-row>div{font-size:10px}
+    .guided .sam-stage-help{font-size:9px;line-height:1.65}
   `]
 
 })
@@ -391,6 +420,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly connection=inject(LabConnection);
   readonly localApiPort=this.connection.port;
   constructor(){this.connection.changed.pipe(takeUntilDestroyed()).subscribe(()=>{this.resetServerCheck();this.scheduleCheck();});}
+  readonly guided=input(false);
   readonly sourcePending=input(false);
   readonly recoveryRunning=input(false);
   readonly mediaReady=input(true);

@@ -157,6 +157,79 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly videoSha256 = input('');
   readonly videoRole = input<'baseline'|'followup'>('baseline');
   readonly initialAngleDegrees = input(15);
+  readonly phaseExpanded=signal(false);
+  readonly measuredChart=computed(()=>{
+    const track=this.playbackSamTrack(),pivot=this.measurementPivot();
+    const image=this.decodedSize()??(track?{width:track.frameWidth,height:track.frameHeight}:null);
+    if(!this.samVerified() || !track || !pivot || !image)return null;
+    const points:{index:number;time:number;theta:number;omega:number|null}[]=[];
+    for(let i=0;i<track.points.length;i++){
+      const point=track.points[i],mask=track.masks[i];if(!mask)continue;
+      const angle=measureCordAngle(point.x,point.y,pivot,image);if(!angle)continue;
+      const frame=samAngularFrameAt(track,pivot,point.timeSeconds,image,1e-7);
+      const value=frame?.isValid?frame.angularVelocityRadiansPerSecond:null;
+      points.push({index:mask.frameIndex,time:point.timeSeconds,theta:angle.angleDegrees,
+        omega:value!=null && Number.isFinite(value)?value:null});
+    }
+    if(points.length<2)return null;
+    const start=points[0].time,end=points[points.length-1].time,span=end-start;
+    if(span<=0)return null;
+    const angleMax=Math.max(1,...points.map(p=>Math.abs(p.theta)))*1.08;
+    const omegaMax=Math.max(.01,...points.map(p=>Math.abs(p.omega??0)))*1.08;
+    const path=(kind:'theta'|'omega'|'phase')=>{
+      let result='',lastIndex=-2,lastTime=-1;
+      for(const point of points){
+        const value=kind==='theta'?point.theta:point.omega;
+        if(value==null){lastIndex=-2;continue;}
+        const x=kind==='phase'?300+point.theta/angleMax*240:48+(point.time-start)/span*504;
+        const y=90-value/(kind==='theta'?angleMax:omegaMax)*52;
+        const join=point.index===lastIndex+1 && point.time>lastTime && point.time-lastTime<=.2;
+        result+=(join?'L':'M')+x.toFixed(2)+','+y.toFixed(2)+' ';
+        lastIndex=point.index;lastTime=point.time;
+      }
+      return result.trim();
+    };
+    return {points,start,end,span,angleMax,omegaMax,thetaPath:path('theta'),omegaPath:path('omega'),phasePath:path('phase')};
+  });
+  readonly measuredChartMarker=computed(()=>{
+    const chart=this.measuredChart(),angle=this.currentCordAngle(),omega=this.angularVelocityAtFrame();
+    if(!chart || !angle || !this.analysisVisible())return null;
+    const time=this.currentKinematics()?.timeSeconds??this.currentTime();
+    if(time<chart.start || time>chart.end)return null;
+    return {x:48+(time-chart.start)/chart.span*504,thetaY:90-angle.angleDegrees/chart.angleMax*52,
+      omegaY:omega==null?null:90-omega/chart.omegaMax*52,
+      phaseX:300+angle.angleDegrees/chart.angleMax*240};
+  });
+  phaseTrailPath():string {
+    if(!this.phaseExpanded())return '';
+    const chart=this.measuredChart(),time=this.currentTime();if(!chart)return '';
+    let path='',lastIndex=-2,lastTime=-1;
+    for(const p of chart.points){
+      if(p.time<time-1 || p.time>time || p.omega==null){lastIndex=-2;continue;}
+      const join=p.index===lastIndex+1 && p.time>lastTime && p.time-lastTime<=.2;
+      path+=(join?'L':'M')+(300+p.theta/chart.angleMax*240).toFixed(2)+','+(90-p.omega/chart.omegaMax*52).toFixed(2)+' ';
+      lastIndex=p.index;lastTime=p.time;
+    }
+    return path.trim();
+  }
+  readonly presentation=input<'legacy'|'source'|'understand'|'predict'|'compare'>('legacy');
+  readonly physicalLengthMeters=input<number|null>(null);
+  readonly visibleLayers=signal({tracking:true,vectors:true,trail:true});
+  guided():boolean{return this.presentation()!=='legacy';}
+  analysisVisible():boolean{return this.presentation()!=='source' && this.samVerified() && !this.processingPending();}
+  showGuidedSource():boolean{return this.guided() && (!this.analysisVisible() || this.pivotMode());}
+  pausePlayback():void{this.masterVideo?.nativeElement.pause();this.playing.set(false);}
+  toggleLayer(layer:'tracking'|'vectors'|'trail'):void{
+    this.visibleLayers.update(value=>({...value,[layer]:!value[layer]}));
+    this.paintFrame(this.frameTime());
+  }
+  readonly derivedMotion=computed(()=>{
+    const length=this.physicalLengthMeters(),omega=this.angularVelocityAtFrame();
+    const frame=this.currentKinematics(),alpha=frame?.angularAccelerationRadiansPerSecondSquared;
+    if(!this.samVerified() || !frame?.isValid || length==null || !Number.isFinite(length) || length<=0 || omega==null)return null;
+    return {length,velocity:length*omega,speed:length*Math.abs(omega),
+      acceleration:alpha!=null && Number.isFinite(alpha)?length*Math.hypot(alpha,omega*omega):null};
+  });
   readonly samRefreshNonce = input(0);
   readonly processingRequired=input(false);
   readonly processingError=input(false);
@@ -178,7 +251,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     this.previewStateChanged.emit('error');
   }
   readonly samVerified=signal(false);
-  playbackLocked():boolean {return this.processingRequired() && !this.samVerified() && !this.processingError();}
+  playbackLocked():boolean {
+    // Original playback is independent of authenticated overlay eligibility.
+    return !this.guided() && this.processingRequired() && !this.samVerified() && !this.processingError();
+  }
   private setVerified(value:boolean):void {
     this.samVerified.set(value);this.processingReady.emit(value);
   }
@@ -269,7 +345,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       if(view==='original')void this.selectPivot(event);
       return;
     }
-    this.selectView(view);
+    if(!this.guided())this.selectView(view);
   }
 
   onPanStart(event:PointerEvent):void {
@@ -327,6 +403,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   ngOnChanges(changes:SimpleChanges):void{
+    if(changes['presentation'] && this.presentation()==='source')this.pivotMode.set(false);
     if(changes['videoUrl']) {
       this.previewLoading.set(true);this.error.set('');
       this.decodedMediaTime=null;this.pendingDecodedPaint=false;this.decodedSize.set(null);this.droppedFrames.set(0);
@@ -335,7 +412,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const key=this.studyId()+'|'+this.videoRole()+'|'+this.videoSha256()+'|'+
       this.samApiPort()+'|'+this.processingRequired()+'|'+this.processedAnalysisId()+'|'+this.processedAdaptiveBatchId();
     if(this.revisionKey===key && !changes['samRefreshNonce']){
-      if(changes['language'])this.paintFrame(this.frameTime());
+      if(changes['language'] || changes['presentation'] || changes['physicalLengthMeters'] || changes['processingPending'])this.paintFrame(this.frameTime());
       return;
     }
     this.revisionKey=key;
@@ -455,7 +532,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   beginPivotSelection():void{
-    if(this.playbackLocked() || !this.http || !/^[a-f0-9]{32}$/i.test(this.studyId()) ||
+    if(this.playbackLocked() || (this.guided() && !this.analysisVisible()) || !this.http || !/^[a-f0-9]{32}$/i.test(this.studyId()) ||
        !/^[a-f0-9]{64}$/i.test(this.videoSha256()) ||
        (this.points()?.length??0)<5 || this.pivotSaving())return;
     this.masterVideo?.nativeElement.pause();
@@ -717,7 +794,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const frame=this.currentKinematics(),angle=this.currentCordAngle();
     // The visible angle and derivative must refer to the same SAM observation.
     // Never substitute local tracking, ideal speed or a stale neighbouring frame.
-    if(this.playbackLocked() || !this.samTrack() || !angle || !frame?.isValid ||
+    if(this.playbackLocked() || (this.guided() && !this.samVerified()) || !this.samTrack() || !angle || !frame?.isValid ||
         Math.abs(frame.bobXpx-angle.bobXpx)>1e-6 ||
         Math.abs(frame.bobYpx-angle.bobYpx)>1e-6)return null;
     const velocity=frame.angularVelocityRadiansPerSecond;
@@ -882,6 +959,36 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     ctx.restore();
   }
 
+  private paintGuidedVectors(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
+    frame:KinematicFrame|null,pivot:ImagePivot,geometry:ImageSize):void {
+    if(!this.samVerified() || !frame?.isValid || !this.visibleLayers().vectors)return;
+    const v=vectorAt(frame,pivot,geometry);if(!v)return;
+    const bx=frame.bobXpx*canvas.width/480,by=frame.bobYpx*canvas.height/270;
+    const sx=canvas.width/geometry.width,sy=canvas.height/geometry.height;
+    const unit=Math.min(canvas.width,canvas.height)/480,peak=this.maximumObservedAngularSpeed();
+    const omega=Math.abs(frame.angularVelocityRadiansPerSecond!);
+    const length=peak>0?90*unit*omega/peak:0;
+    this.drawArrow(ctx,bx,by,v.vx*sx,v.vy*sy,'#8bb7ff',.22,unit,length);
+    this.drawArrow(ctx,bx,by,(v.atx+v.arx)*sx,(v.aty+v.ary)*sy,'#ffbc73',.035,unit);
+    const metric=this.derivedMotion();
+    const speed=metric?metric.speed:Math.hypot(v.vx,v.vy);
+    const acceleration=metric?metric.acceleration:Math.hypot(v.atx+v.arx,v.aty+v.ary);
+    const bounds=this.readoutBounds.get(canvas);
+    const fit=bounds?Math.min(bounds.width/canvas.width,bounds.height/canvas.height):0;
+    const textUnit=Math.min(canvas.width/150,fit>0?1/fit:unit);
+    const labels=[{text:'v = '+this.formatMetric(speed)+' '+(metric?'m/s':'px/s'),color:'#a7c8ff',offset:-22},
+      {text:'a = '+this.formatMetric(acceleration)+' '+(metric?'m/s²':'px/s²'),color:'#ffd09b',offset:22}];
+    ctx.save();ctx.font='600 '+(11*textUnit)+'px system-ui';ctx.textBaseline='middle';
+    for(const label of labels){
+      const width=ctx.measureText(label.text).width;
+      const x=Math.max(5*textUnit,Math.min(canvas.width-width-5*textUnit,bx+14*textUnit));
+      const y=Math.max(10*textUnit,Math.min(canvas.height-10*textUnit,by+label.offset*textUnit));
+      ctx.lineWidth=3*textUnit;ctx.strokeStyle='rgba(4,12,21,.92)';ctx.strokeText(label.text,x,y);
+      ctx.fillStyle=label.color;ctx.fillText(label.text,x,y);
+    }
+    ctx.restore();
+  }
+
   /** Draw candidate geometric measurements; never paint metric XY. */
   private paintAngular(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
       frame:KinematicFrame|null,pivot:ImagePivot,showArrows:boolean,
@@ -951,7 +1058,13 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
 
-    if(this.playbackLocked()){
+    const duration=this.duration();
+    this.currentTime.set(Math.max(0,Math.min(duration||time,time)));
+    this.lastPaintedTime.set(time);
+    this.frameNumber.set(Math.round(time*this.sourceFps()));
+    this.paintedViews.set(4); // one master video + three derived canvases
+    this.didPaint=true;
+    if(this.playbackLocked() || (this.guided() && !this.analysisVisible())){
       this.currentKinematics.set(null);this.currentCordAngle.set(null);
       this.overlayStatus.set(this.samStatus());
       this.paintedViews.set(4);
@@ -982,7 +1095,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     if(sam && mask) {
       try{
         this.paintSamMask(ctxs[0]!,canvases[0]!,sam,mask);
-        this.paintSamMask(ctxs[2]!,canvases[2]!,sam,mask);
+        if(!this.guided() || this.visibleLayers().tracking)this.paintSamMask(ctxs[2]!,canvases[2]!,sam,mask);
       }catch{
         this.currentCordAngle.set(null);
         this.overlayStatus.set('SAM_MASK_PATH_INVALID_NO_FABRICATED_OVERLAY');
@@ -994,7 +1107,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       const mark=nearestSamMask(track,time,Math.min(.055,.5/this.sourceFps()));
       if(mark) {
         this.paintSamMask(ctxs[0]!,canvases[0]!,track,mark,role);
-        this.paintSamMask(ctxs[2]!,canvases[2]!,track,mark,role);
+        if(!this.guided() || this.visibleLayers().tracking)this.paintSamMask(ctxs[2]!,canvases[2]!,track,mark,role);
       }
     }
     // A SAM frame with no nearby authentic mask is NOT an observation:
@@ -1019,7 +1132,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       const length=magnitude<3?0:Math.min(94,magnitude*.12);
       const angle=Math.atan2(vy,vx);
       if(!pivot){
-      for(const ctx of [ctxs[0]!,ctxs[2]!]){
+      for(const ctx of (this.guided()?[ctxs[0]!]:[ctxs[0]!,ctxs[2]!])){
       ctx.lineWidth=Math.max(2,canvas.width/275);
       ctx.strokeStyle='#46e0e2';
       ctx.fillStyle='#46e0e2';
@@ -1042,7 +1155,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       const ghostCanvas=canvases[1]!;
       const fx=ghostCanvas.width/480,fy=ghostCanvas.height/270;
       const trailUnit=Math.min(ghostCanvas.width,ghostCanvas.height)/480;
-      for(const ghostCtx of [ctxs[1]!,ctxs[2]!]){
+      for(const ghostCtx of (!this.guided() || this.visibleLayers().trail?[ctxs[1]!,ctxs[2]!]:[ctxs[1]!])){
       for(let i=0;i<trail.length;i++){
         const item=trail[i];
         const ratio=(i+1)/trail.length;
@@ -1071,19 +1184,17 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     if(pivot){
       this.paintAngular(ctxs[0]!,canvases[0]!,frame,pivot,true,geometry);
       this.paintAngular(ctxs[1]!,canvases[1]!,frame,pivot,false,geometry);
-      this.paintAngular(ctxs[2]!,canvases[2]!,frame,pivot,true,geometry);
+      if(!this.guided())this.paintAngular(ctxs[2]!,canvases[2]!,frame,pivot,true,geometry);
+      else {
+        if(this.visibleLayers().tracking)this.paintAngular(ctxs[2]!,canvases[2]!,frame,pivot,false,geometry);
+        this.paintGuidedVectors(ctxs[2]!,canvases[2]!,frame,pivot,geometry);
+      }
     }
     const cordAngle=this.currentCordAngle();
-    if(pivot && cordAngle)this.paintCordAngle(ctxs[2]!,canvases[2]!,cordAngle,pivot);
+    if(pivot && cordAngle && (!this.guided() || this.visibleLayers().tracking))this.paintCordAngle(ctxs[2]!,canvases[2]!,cordAngle,pivot);
     if(sam){
       this.paintFrameReadout(ctxs[0]!,canvases[0]!);
-      this.paintFrameReadout(ctxs[2]!,canvases[2]!);
+      if(!this.guided())this.paintFrameReadout(ctxs[2]!,canvases[2]!);
     }
-    const duration=this.duration();
-    this.currentTime.set(Math.max(0,Math.min(duration||time,time)));
-    this.lastPaintedTime.set(time);
-    this.frameNumber.set(Math.round(time*this.sourceFps()));
-    this.paintedViews.set(4); // one master video + three derived canvases
-    this.didPaint=true;
   }
 }

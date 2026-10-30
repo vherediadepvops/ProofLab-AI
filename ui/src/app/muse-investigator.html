@@ -1,6 +1,6 @@
 <section class="muse-card">
-  <header><div><span class="eyebrow">{{es?'ETAPA 5 · MUSE SPARK':'STAGE 5 · MUSE SPARK'}}</span>
-    <h3>{{es?'Bitácora de investigación':'Research lab log'}}</h3></div>
+  <header><div><span class="eyebrow">Muse Spark</span>
+    <h3>{{isFollowup?(es?'Contraste de la predicción':'Prediction comparison'):(es?'Interpretación y próxima prueba':'Interpretation and next experiment')}}</h3></div>
     @if(state()?.prediction){<span class="lock">🔒 {{es?'Predicción congelada':'Prediction frozen'}}</span>}
   </header>
   <p class="intro">{{es?'Muse Spark interpreta las mediciones de SAM, la geometría y la incertidumbre para clasificar el movimiento y decidir si conviene otra prueba.':
@@ -16,7 +16,7 @@
       @if(prediction(); as p){<p>🔒 {{es?'Predicción guardada':'Stored prediction'}}: {{p.periodSeconds.toFixed(3)}} s · ±{{p.tolerancePercent}} % · {{(p.nextLengthMeters*100).toFixed(0)}} cm</p>}
       @if(contrast()?.evaluation; as result){
         <div class="decision"><strong>{{contrastVerdict()}}</strong><span>Muse Spark</span></div>
-        <p>{{text(result.answer.justification)}}</p><p>{{text(result.answer.limitations)}}</p><p>{{text(result.answer.nextStep)}}</p>
+        <p>{{text(result.answer.justification)}}</p><p class="limitations"><strong>{{es?'Límites:':'Limits:'}}</strong> {{text(result.answer.limitations)}}</p><p><strong>{{es?'Siguiente paso:':'Next step:'}}</strong> {{text(result.answer.nextStep)}}</p>
         @if(!contrastMatches()){<p class="warning">{{es?'Este contraste pertenece a un análisis anterior.':'This comparison belongs to an earlier analysis.'}}</p>}
         <button type="button" class="report" (click)="downloadReport('contrast')" [disabled]="downloading()">{{downloading()?(es?'Preparando descarga…':'Preparing download…'):(es?'Descargar contraste y fuentes':'Download comparison and sources')}}</button>
       } @else {
@@ -54,13 +54,13 @@
         <p class="fine">{{es?'Banda práctica fijada antes de subir el video 2; no es un intervalo de confianza.':
           'Practical band fixed before video 2 is uploaded; not a confidence interval.'}}</p>
       }
-      <div class="narrative">
+      <details class="narrative"><summary>{{es?'Hipótesis y protocolo de la prueba':'Hypothesis and experiment protocol'}}</summary>
         <h4>{{es?'Hipótesis falsable':'Falsifiable hypothesis'}}</h4><p>{{text(evaluation.answer.hypothesis)}}</p>
         <h4>{{es?'Protocolo':'Protocol'}}</h4><p>{{text(evaluation.answer.protocol)}}</p>
         <h4>{{es?'Criterio de contraste':'Comparison criterion'}}</h4><p>{{text(evaluation.answer.falsification)}}</p>
-      </div>
-      <details><summary>{{es?'Límites y procedencia':'Limits and provenance'}}</summary>
-        <p>{{text(evaluation.answer.limitations)}}</p>
+      </details>
+      <p class="limitations"><strong>{{es?'Límites de la interpretación:':'Interpretation limits:'}}</strong> {{text(evaluation.answer.limitations)}}</p>
+      <details><summary>{{es?'Procedencia y costo':'Provenance and cost'}}</summary>
         <p class="fine">{{es?'Respuesta real registrada':'Recorded provider response'}}: {{evaluation.responseId}}</p>
         <p class="fine">{{es?'Costo por tokens estimado, no factura':'Estimated token cost, not an invoice'}}: US$ {{evaluation.tokenCostEstimateUsd.toFixed(4)}}</p>
         @if(s.prediction; as frozen){
@@ -105,9 +105,12 @@
         <strong>{{number(c.difference.estimateSeconds)}} s</strong><span>± {{number(c.difference.marginSeconds)}} s · IC 95 %</span>
         <span>{{es?'Diferencia relativa':'Relative difference'}}: {{number(c.relativeDifferencePercent,3)}} %</span></div>}
     </div>
+    <p class="statistics-scope">{{es?'Solo repetibilidad. La incertidumbre total y el p-valor global no están disponibles; no se declara la hipótesis aceptada al 95 %.':'Repeatability only. Total uncertainty and a global p-value are unavailable; the hypothesis is not declared 95% accepted.'}}</p>
+    <details class="statistics-method"><summary>{{es?'Supuestos y alcance de estos intervalos':'Assumptions and scope of these intervals'}}</summary>
     <p class="fine">{{es?'Margen = t × u; no es la tolerancia de la hipótesis. Intervalos exploratorios, condicionados a ciclos aproximadamente independientes y normales. En la diferencia se propaga solo repetibilidad, suponiendo longitudes exactas y videos independientes.':'Margin = t × u; it is not the hypothesis tolerance. Exploratory intervals assume approximately independent, normally distributed cycles. The difference propagates repeatability only, treating lengths as exact and videos as independent.'}}</p>
     <p class="fine">{{es?'Incertidumbre total y p-valor global: no disponibles. Faltan errores de longitud, seguimiento, suspensión, cámara y reloj. No se declara la hipótesis aceptada al 95 %. El criterio congelado conserva su tolerancia práctica original.':'Total uncertainty and global p-value: unavailable. Length, tracking, suspension, camera and clock errors remain unquantified. The hypothesis is not declared 95% accepted. The frozen criterion retains its original practical tolerance.'}}</p>
     <p class="fine">{{es?'95 % corresponde a α = 0,05 (5 %) en un contraste bilateral compatible. No es la probabilidad de que la hipótesis sea verdadera. No se ha realizado un contraste global con ese nivel.':'95% corresponds to α = 0.05 (5%) for a matching two-sided test. This is not the probability that the hypothesis is true. No global test at this level has been performed.'}}</p>
+    </details>
   }
   @if(downloadError()){<p class="warning" role="alert">{{es?'No se pudo descargar el archivo. Tus resultados siguen guardados.':'Could not download the file. Your results remain saved.'}}</p>}
   @if(error()){<p class="warning" role="alert">{{error()}}</p>

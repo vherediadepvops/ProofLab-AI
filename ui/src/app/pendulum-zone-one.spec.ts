@@ -122,7 +122,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     const {fixture,root,component,http}=await init(false);
     const figure=root.querySelector('.theory-preview') as HTMLDetailsElement;
     const slider=root.querySelector('#theory-position-slider') as HTMLInputElement;
-    expect(figure?.open).toBeTrue();
+    expect(figure?.open).toBeFalse();
     expect(root.textContent).toContain('Predicción teórica del péndulo');
     expect(component.theoreticalPreview()?.angleDegrees).toBe(0);
     expect(component.theoreticalPreview()?.maximumAngularSpeed).toBeCloseTo(1.156,2);
@@ -164,23 +164,21 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     await verifyHttp(http);
   });
 
-  it('shows only the requested configuration and three video view placeholders',async()=>{
+  it('starts the guided layout with one clean source placeholder and direct upload',async()=>{
     const {root,component,http}=await init(false);
-    expect(root.textContent).toContain('Configura el péndulo');
-    expect(root.textContent).toContain('Video y tres vistas sincronizadas');
+    expect(root.querySelectorAll('.journey-step').length).toBe(5);
     expect(root.querySelectorAll('.parameter-grid input').length).toBe(3);
     expect(root.querySelector('#focus-length')).not.toBeNull();
     expect(root.querySelector('#focus-angle')).not.toBeNull();
     expect(root.querySelector('#focus-mass')).not.toBeNull();
-    expect(root.querySelectorAll('.placeholder-panel').length).toBe(3);
-    expect(root.querySelectorAll('.video-toolbar .upload-new-video input[type=file]').length).toBe(0);
-    expect(root.querySelector('.demo-video')?.textContent).toContain('Video de prueba');
-    expect(root.textContent).toContain('Investigación activa');
-    expect(root.querySelector('button.primary-button')).toBeNull();
+    expect(root.querySelectorAll('.empty-source').length).toBe(1);
+    expect(root.querySelectorAll('.video-toolbar .upload-new-video input[type=file]').length).toBe(1);
+    expect(root.querySelector('.demo-video')?.textContent).toContain('Usar video de ejemplo');
+    expect(root.querySelector('#recovery-drawer')?.hasAttribute('hidden')).toBeTrue();
     expect(root.querySelector('.model-charts')).toBeNull();
-    expect(root.querySelector('.model-chart')).toBeNull();
-    expect(root.querySelector('.technical-protocol')).toBeNull();
     expect(component.includeSecondTrial()).toBeFalse();
+    expect(component.flowStep()).toBe(1);
+    expect(component.presentation()).toBe('source');
     expect(root.querySelector('app-pendulum-director')).toBeNull();
     await verifyHttp(http);
   });
@@ -197,7 +195,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     http.expectOne(theoryUrl).flush(theory());await Promise.resolve();await Promise.resolve();
     const request=http.expectOne(studyUrl);expect(request.request.method).toBe('POST');request.flush(session);await creating;
     fixture.detectChanges();expect(component.session()?.id).toBe(session.id);
-    expect(root.querySelector('.generate-recovery')).toBeNull();expect(root.querySelector('.research-id code')?.textContent).toBe(session.id);
+    expect(root.querySelector('.generate-recovery')).toBeNull();expect((root.querySelector('#active-recovery-code') as HTMLInputElement)?.value).toBe(session.id);
     expect((root.querySelector('#focus-length') as HTMLInputElement).disabled).toBeFalse();
     expect(root.querySelector('.demo-video')).not.toBeNull();await verifyHttp(http);
   });
@@ -257,7 +255,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.querySelector('app-sam-video-replay')).toBeNull();expect(localStorage.getItem('prooflab-director-current')).toBeNull();http.verify();
   });
 
-  it('quotes cache automatically, locks playback until Process, and never POSTs for reuse',async()=>{
+  it('quotes cache while preserving original playback and never POSTs for reuse',async()=>{
     const {root,component,fixture,http}=await init();
     component.session.set({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});
     fixture.detectChanges();await Promise.resolve();
@@ -282,15 +280,15 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.querySelector('app-assembly-review')).toBeNull();
     await fixture.whenStable();fixture.detectChanges();
     const play=root.querySelector('.play-main') as HTMLButtonElement;
-    expect(play.disabled).toBeTrue();
+    expect(play.disabled).toBeFalse();
     expect(controls.textContent).toContain('US$ 0.00');
     expect(controls.textContent).toContain('US$ 0.3656');
     http.expectNone(samUrl+'/evidence');
-    component.onPreviewState('ready');fixture.detectChanges();
+    component.onPreviewState('ready');component.setJourneyStep(2);fixture.detectChanges();
     (controls.querySelector('.sam-submit') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(component.resultState()).toBe('loading');
-    expect(root.querySelector('.viewer-loading')).not.toBeNull();
+    expect(root.querySelector('app-sam-video-replay [aria-busy="true"]')).not.toBeNull();
     expect((controls.querySelector('.sam-submit') as HTMLButtonElement).disabled).toBeTrue();
     const evidence=http.expectOne(samUrl+'/evidence');
     expect(evidence.request.method).toBe('GET');
@@ -317,7 +315,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     await verifyHttp(http);fixture.destroy();
   });
 
-  it('fills the four-perspective viewer with one video and a default combined primary',async()=>{
+  it('keeps one original decoder and hides analysis behind guided presentation',async()=>{
     const {root,component,fixture,http}=await init();
     component.session.set({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});
     fixture.detectChanges();
@@ -327,18 +325,18 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(manual).not.toBeNull();
     expect(manual?.querySelector('input[type=password]')).toBeNull();
     expect((manual!.compareDocumentPosition(player!) &
-      Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy(); // manual controls above video
+      Node.DOCUMENT_POSITION_PRECEDING)).toBeTruthy(); // original video precedes its cost card
     expect(root.textContent).toContain('Abrir configuración');
-    expect(root.textContent).toContain('Cuatro perspectivas sincronizadas');
+    expect(component.presentation()).toBe('source');
     expect(root.querySelectorAll('.view-panel').length).toBe(4);
     expect(root.querySelector('[data-view="combined"]')?.classList.contains('is-primary')).toBeTrue();
     expect(root.querySelectorAll('video').length).toBe(1);
     expect(root.querySelectorAll('canvas').length).toBe(3);
     expect(root.querySelectorAll('.placeholder-panel').length).toBe(0);
     expect(player?.textContent).toContain('Rastro fantasma');
-    expect(root.textContent).toContain('He revisado el video');
+    expect(root.textContent).toContain('Revisé el seguimiento');
     expect(root.querySelector('.viewer-loading')?.textContent).toContain('Cargando video');
-    expect((root.querySelector('.play-main') as HTMLButtonElement).disabled).toBeTrue();
+    expect((root.querySelector('.play-main') as HTMLButtonElement).disabled).toBeFalse();
     expect(root.querySelectorAll('.model-chart').length).toBe(0);
     await verifyHttp(http);
   });
@@ -372,7 +370,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       followup:second,step:'READY_TO_COMPARE',
       humanReview:{bobConfirmed:true,reviewedAtUtc:'2026-10-27T20:03:00Z'}});
     fixture.detectChanges();
-    expect(root.querySelectorAll('.trial-tabs button').length).toBe(2);
+    expect(root.querySelectorAll('.journey-step').length).toBe(5);
     expect(root.querySelectorAll('video').length).toBe(1);
     component.activeTrial.set('followup');
     fixture.detectChanges();
@@ -400,8 +398,8 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     const original={...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'};
     component.session.set(original);fixture.detectChanges();component.onPreviewState('ready');await verifyHttp(http);
     component.choosingUpload.set(false);fixture.detectChanges();
-    expect(root.querySelectorAll('.video-toolbar .new-trial').length).toBe(1);
-    expect(root.querySelectorAll('.video-toolbar input[type=file]').length).toBe(0);
+    expect(root.querySelectorAll('.video-toolbar .new-trial').length).toBe(0);
+    expect(root.querySelectorAll('.video-toolbar input[type=file]').length).toBe(1);
     const file=new File([new Uint8Array(15000)],'new-trial.mp4',{type:'video/mp4'});
     const input={files:[file],value:'chosen'};
     const nextId='f'.repeat(32);
@@ -459,19 +457,15 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     await verifyHttp(http);fixture.destroy();
   });
 
-  it('replaces source actions with Upload and Cancel in the same card and restores on cancel',async()=>{
+  it('keeps direct upload available and preserves the study when the file picker is cancelled',async()=>{
     const {component,fixture,root,http}=await init(false);
-    (root.querySelector('.new-trial') as HTMLButtonElement).click();fixture.detectChanges();
     expect(root.querySelector('.video-toolbar .upload-new-video input[type=file]')).not.toBeNull();
-    expect(root.querySelector('.cancel-trial')).not.toBeNull();
-    expect(root.querySelector('.demo-video')).toBeNull();
-    expect(root.querySelector('.new-trial')).toBeNull();
-    expect(root.querySelector('.focus-video input[type=file]')).toBeNull();
-    (root.querySelector('.cancel-trial') as HTMLButtonElement).click();fixture.detectChanges();
-    expect(root.querySelector('.upload-new-video')).toBeNull();
     expect(root.querySelector('.demo-video')).not.toBeNull();
-    expect(root.querySelector('.new-trial')).not.toBeNull();
+    expect(root.querySelector('.focus-video input[type=file]')).toBeNull();
+    await component.uploadNewTrial({target:{files:[],value:''}} as unknown as Event);
+    fixture.detectChanges();
     expect(component.session()?.id).toBe(session.id);
+    expect(root.querySelector('.upload-new-video')).not.toBeNull();
     http.expectNone(r=>r.method==='POST');await verifyHttp(http);fixture.destroy();
   });
 
@@ -523,7 +517,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       const failureEvents=spyOn(replay.processingFailed,'emit').and.callThrough();
       const pending=replay.process();fixture.detectChanges();
       expect(component.resultState()).toBe('loading');
-      expect(root.querySelector('.viewer-loading')?.textContent).toContain('Procesando video');
+      expect(root.querySelector('app-sam-video-replay [aria-busy="true"]')).not.toBeNull();
       const request=http.expectOne(groundUrl);
       if(failure==='HTTP_ERROR')request.flush({}, {status:502,statusText:'Synthetic failure'});
       else if(failure==='NO_INFERENCE')request.flush({error:'GROUNDING_NO_INFERENCE_SENT_REVIEW_COST'},
@@ -584,6 +578,41 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     component.updateDraft();http.expectOne(theoryUrl).flush(theory());await Promise.resolve();http.expectOne(studyUrl+'/'+session.id+'/draft').flush({...session,baselineLengthMeters:.8,massGrams:400});
     for(let i=0;i<6;i++)await Promise.resolve();expect(component.draftError()).toBe('');expect(component.session()?.id).toBe(session.id);expect(component.videoActionsBusy()).toBeFalse();
     http.expectNone(studyUrl);http.verify();fixture.destroy();
+  });
+
+  it('gates the five stages on verified evidence and saved human review',async()=>{
+    const {component,http,fixture}=await init(false);
+    component.session.set({...session,baseline:video});component.onPreviewState('ready');
+    expect(component.canVisitStep(2)).toBeTrue();expect(component.canVisitStep(3)).toBeFalse();
+    component.setJourneyStep(3);expect(component.flowStep()).toBe(1);
+    component.acceptProcessed({studyId:session.id,videoRole:'baseline',sourceSha256:video.sha256,analysisId:'f'.repeat(32),port:5391});
+    component.onPlaybackReady(true);component.setJourneyStep(3);
+    expect(component.flowStep()).toBe(3);expect(component.canVisitStep(4)).toBeFalse();
+    component.checkedVideo.set(true);
+    const next=component.continueToPrediction();
+    http.expectOne(studyUrl+'/'+session.id+'/review-baseline').flush({...session,baseline:video,humanReview:{bobConfirmed:true,reviewedAtUtc:'2026-10-30T00:00:00Z'}});
+    await next;expect(component.flowStep()).toBe(4);expect(component.canVisitStep(5)).toBeFalse();
+    http.expectNone(r=>r.url.includes('/muse/evaluate')||r.url.includes('/sam/baseline/manual'));
+    await verifyHttp(http);fixture.destroy();
+  });
+  it('does not upload video two before a registered prediction',async()=>{
+    const {component,http,fixture}=await init(false);
+    component.session.set({...session,baseline:video});component.onPreviewState('ready');
+    const input=document.createElement('input');input.type='file';
+    Object.defineProperty(input,'files',{value:[new File(['source'],'second.mp4',{type:'video/mp4'})]});
+    await component.uploadFocused({target:input} as unknown as Event,'followup');
+    expect(component.session()?.followup).toBeNull();expect(component.previewState()).toBe('ready');
+    http.expectNone(r=>r.method==='POST');await verifyHttp(http);fixture.destroy();
+  });
+  it('retains recovery warnings outside a collapsed management drawer',async()=>{
+    const {component,http,fixture,root}=await init(false,false);
+    component.recoveryMenuOpen.set(true);const pending=component.resumeResearch(session.id);
+    http.expectOne(studyUrl+'/'+session.id+'/recovery').flush({session,operations:[],selections:[],unavailable:['saved-evidence']});
+    await pending;http.expectOne(theoryUrl).flush(theory());fixture.detectChanges();
+    expect(component.recoveryMenuOpen()).toBeFalse();
+    expect(root.querySelector('.recovery-warning')).not.toBeNull();
+    expect(root.querySelector('.recovery-warning')?.classList.contains('visually-hidden')).toBeFalse();
+    http.expectNone(r=>r.method==='POST');await verifyHttp(http);fixture.destroy();
   });
 
 });
