@@ -146,7 +146,8 @@ public sealed partial class AssemblyLocator
         if(evidence.ResponseSha256!=scene.ResponseSha256 || AssemblyPolicy.Ground(evidence)?.Key!=scene.Key)
             throw new InvalidDataException("Suspension scene mismatch.");
         return new(video.Sha256,scene.Key,evidence.CacheKey,evidence.ResponseSha256,evidence.Model,
-            scene.Width,scene.Height,evidence.Proposal.Suspension.Points);
+            scene.Width,scene.Height,evidence.Proposal.Suspension.Points,
+            evidence.Derivation==ObjectReviewPolicy.Protocol?ObjectReviewPolicy.Protocol:null);
     }
     public Task<SamSceneDefinition?> TrackingAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,false);
     public Task<SamSceneDefinition?> TrackingForQuoteAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,true);

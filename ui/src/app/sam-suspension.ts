@@ -50,7 +50,8 @@ export function resolveSamSuspension(
   const x=quantile(anchors.map(p=>p.x*e.width/1000),.5);
   const y=quantile(anchors.map(p=>p.y*e.height/1000),.5);
   const spread=Math.max(...anchors.map(p=>Math.hypot(p.x*e.width/1000-x,p.y*e.height/1000-y)));
-  if(spread>Math.max(3,Math.min(e.width,e.height)*.04))
+  const visuallyRefined=e.refinement==='SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2';
+  if(spread>Math.max(3,Math.min(e.width,e.height)*(visuallyRefined?.005:.04)))
     return none('SUSPENSION_MOVES_OR_IS_AMBIGUOUS');
   const all=track.masks.map(m=>({x:m.centroidXpx,y:m.centroidYpx}));
   if(all.length<20||all.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)))
@@ -75,7 +76,8 @@ export function resolveSamSuspension(
   for(const p of points){const u=p.x-mx,v=p.y-my,q=u*u+v*v;
     xx+=u*u;xy+=u*v;yy+=v*v;xq+=u*q;yq+=v*q;}
   const det=xx*yy-xy*xy;
-  if(det>1e-5*(xx+yy)**2){
+  // A visually refined exit must not be replaced by a better-looking circle fit.
+  if(!visuallyRefined && det>1e-5*(xx+yy)**2){
     const fx=mx+(xq*yy-yq*xy)/(2*det),fy=my+(yq*xx-xq*xy)/(2*det);
     const fit=quality(fx,fy);
     if(Number.isFinite(fx)&&Number.isFinite(fy)&&fx>=0&&fx<e.width&&fy>=0&&fy<e.height&&

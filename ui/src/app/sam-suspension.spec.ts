@@ -23,6 +23,17 @@ function experiment(width=1080,height=1920,offset=0) {
   return {archive,track,cx,cy,radius};
 }
 describe('Automatic Spark/SAM suspension estimates',()=>{
+  it('preserves a visually localized exit instead of moving it to a fitted circle center',()=>{
+    const {archive,track,cx,cy}=experiment(1080,1920,3);
+    archive.suspension!.refinement='SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2';
+    const result=resolveSamSuspension(archive,track);
+    expect(result.method).toBe('SPARK');
+    expect(result.pivot!.pivotXpx/480*1080).toBeCloseTo(cx+3,8);
+    expect(result.pivot!.pivotYpx/270*1920).toBeCloseTo(cy+3,8);
+    archive.suspension!.points[0].x+=10;
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
+
   for(const [w,h] of [[1080,1920],[3840,2160]]) {
     it('recovers known native geometry and measured angular velocity at '+w+'x'+h,()=>{
       const {archive,track,cx,cy}=experiment(w,h,8);

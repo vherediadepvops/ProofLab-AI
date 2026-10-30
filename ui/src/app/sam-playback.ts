@@ -4,6 +4,7 @@ import type { CandidatePixelPoint } from './pendulum-master-sync';
 import { originalImageOffset, type ImagePivot, type ImageSize, type KinematicFrame } from './pendulum-kinematics';
 
 export interface SamSuspensionEvidence {
+  refinement?:string|null;
   sourceSha256:string;sceneKey:string;evidenceKey:string;responseSha256:string;model:string;
   width:number;height:number;
   points:{frame:number;visible:boolean;x:number;y:number;confidence:number}[];

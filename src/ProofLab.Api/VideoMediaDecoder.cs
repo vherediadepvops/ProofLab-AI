@@ -400,6 +400,32 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
         return marked;
     }
 
+    public async Task<byte[]> CropSuspensionAsync(string path,KnotFrame frame,SuspensionCrop crop,string destination,CancellationToken ct)
+    {
+        if(ffmpeg is null)throw new InvalidOperationException("FFmpeg unavailable.");
+        var original=await File.ReadAllBytesAsync(path,ct);
+        if(JpegSize(original)!=(frame.Width,frame.Height) ||
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(original)).ToLowerInvariant()!=frame.Sha256 ||
+            crop.Left<0 || crop.Top<0 || crop.Width<2 || crop.Height<2 ||
+            crop.Left+crop.Width>frame.Width || crop.Top+crop.Height>frame.Height)
+            throw new InvalidDataException("Invalid crop source or bounds.");
+        int w=(int)Math.Round(960d*crop.Width/Math.Max(crop.Width,crop.Height));
+        int h=(int)Math.Round(960d*crop.Height/Math.Max(crop.Width,crop.Height));
+        var filters=new List<string>{FormattableString.Invariant($"crop={crop.Width}:{crop.Height}:{crop.Left}:{crop.Top}:exact=1"),
+            FormattableString.Invariant($"scale={w}:{h}:flags=lanczos"),"drawgrid=w=iw/10:h=ih/10:t=1:c=white@0.12"};
+        var font=OperatingSystem.IsWindows()?"fontfile='C\\:/Windows/Fonts/arial.ttf':":"";
+        for(int n=1;n<10;n++) {
+            filters.Add(FormattableString.Invariant($"drawtext={font}text='{n*100}':fontsize=14:fontcolor=white:box=1:boxcolor=black@0.6:x=2:y=h*{n}/10"));
+            filters.Add(FormattableString.Invariant($"drawtext={font}text='{n*100}':fontsize=14:fontcolor=white:box=1:boxcolor=black@0.6:x=w*{n}/10:y=2"));
+        }
+        using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await RunTextAsync(NewProcess(ffmpeg,"-v","error","-nostdin","-protocol_whitelist","file,pipe","-threads","1","-i",path,
+            "-vf",string.Join(',',filters),"-frames:v","1","-q:v","2","-update","1","-n",destination),deadline.Token);
+        var bytes=await File.ReadAllBytesAsync(destination,ct);
+        if(bytes.Length is <100 or >8_000_000 || JpegSize(bytes)!=(w,h))throw new InvalidDataException("Invalid suspension crop.");
+        return bytes;
+    }
+
     private static (int Width,int Height) JpegSize(byte[] data) {
         if(data.Length<4 || data[0]!=255 || data[1]!=216)throw new InvalidDataException("Invalid reference JPEG.");
         int i=2;

@@ -101,6 +101,9 @@ public sealed class AssemblyTests
     }
     private sealed class FramesStub:IKnotFrames {
         public int Calls, BatchCalls;
+        public async Task<byte[]> CropSuspensionAsync(string p,KnotFrame f,SuspensionCrop crop,string dest,CancellationToken ct) {
+            var bytes=Encoding.UTF8.GetBytes(new string('c',200));await File.WriteAllBytesAsync(dest,bytes,ct);return bytes;
+        }
         public async Task<byte[]> MarkObjectAsync(string p,KnotFrame f,AssemblyObservation box,string dest,CancellationToken ct) {
             var bytes=Encoding.UTF8.GetBytes(new string('m',200));await File.WriteAllBytesAsync(dest,bytes,ct);return bytes;
         }
@@ -125,6 +128,7 @@ public sealed class AssemblyTests
             ReviewCalls++;
             var text=JsonSerializer.Serialize(new {observations=refs.Select(r=>new {frame=WrongReviewOrdinal?99:r.Ordinal,decision=ReviewUncertain?"UNCERTAIN":"CORRECTED",visible=!ReviewUncertain,
                 x1=ReviewUncertain?0:400,y1=ReviewUncertain?0:700,x2=ReviewUncertain?0:450,y2=ReviewUncertain?0:800,confidence=ReviewUncertain?0:GroundingConfidence,visual_reason="The suspended body below the cord, not the cord."}),
+                suspension=new {camera="STATIC",points=refs.Where(r=>r.SuspensionCrop is not null).Select(r=>new {frame=r.Ordinal,visible=true,x=500,y=333.25,confidence=.95,visual_reason="Visible fixed cord exit."})},
                 target=new {status=GroundingStatus,justification=new {es="Cuerpo suspendido revisado.",en="Reviewed suspended body."}}});
             return Task.FromResult(new KnotProviderResult(Envelope(text),"synthetic-not-provider",1000,100));
         }
@@ -397,6 +401,7 @@ public sealed class AssemblyTests
         Assert.Equal(q.Scene.Prompt,samTransport.Prompt);Assert.Equal(q.Scene.Key,result.Receipt.Scene!.Key);
         var archive=await sam.ReadArchiveAsync("s","baseline",Ct);
         Assert.NotNull(archive!.Suspension);Assert.Equal(q.Scene.EvidenceKey,archive.Suspension.EvidenceKey);
+        Assert.Equal(ObjectReviewPolicy.Protocol,archive.Suspension.Refinement);
         Assert.Equal(AssemblyPolicy.GroundingOrigin,result.Receipt.Scene.Origin);Assert.Null(result.Receipt.Scene.PivotX);
         Assert.Equal(1,samTransport.Calls);Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Transport.ReviewCalls);Assert.Equal(3,f.Runtime.Reservations);
     }
@@ -534,6 +539,22 @@ public sealed class AssemblyTests
         Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(2,f.Transport.ReviewCalls);
         Assert.True(File.Exists(Directory.GetFiles(f.Root,"object-review-stages.json",SearchOption.AllDirectories).Single()));
         Assert.All(result.Scene!.Seeds,seed=>Assert.Equal(1344,seed.Y1));
+    }
+    [Fact] public async Task SuspensionCropReceiptSurvivesReloadButRejectsChangedPixels() {
+        using var f=new Fixture();var locator=f.Open();
+        var result=await locator.GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var attempt=JsonSerializer.Deserialize<ObjectReviewAttempt>(await File.ReadAllTextAsync(
+            Path.Combine(f.GroundFolder,"object-review-attempt.json")),new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        var cropped=attempt.References.Where(r=>r.SuspensionCrop is not null).ToArray();
+        Assert.Equal(3,cropped.Length);
+        Assert.Equal(ObjectReviewPolicy.SuspensionOrdinals(attempt.References),cropped.Select(r=>r.Ordinal));
+        var restored=await f.Open().TrackingAsync("s","baseline",Ct);
+        Assert.Equal(result.Scene!.Key,restored!.Key);
+        var suspension=await f.Open().SuspensionAsync("s","baseline",restored,Ct);
+        Assert.Equal(ObjectReviewPolicy.Protocol,suspension!.Refinement);
+        await File.WriteAllTextAsync(Path.Combine(f.GroundFolder,$"suspension-{cropped[0].Ordinal}.jpg"),"tampered");
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().TrackingAsync("s","baseline",Ct));
+        Assert.Equal(1,f.Transport.ReviewCalls);
     }
     [Fact] public async Task TamperedReviewedBoxIsRejectedBeforeSam() {
         using var f=new Fixture();var locator=f.Open();await locator.GroundAsync("s","baseline",f.GroundRequest(),Ct);

@@ -9,7 +9,7 @@ public sealed partial class AssemblyLocator
         var evidencePath=Path.Combine(root,"reviewed-evidence.json");
         if(!File.Exists(evidencePath))return null;
         var attempt=await Read<ObjectReviewAttempt>(Path.Combine(root,"object-review-attempt.json"),ct);
-        if(attempt.Protocol!=ObjectReviewPolicy.Protocol || attempt.SourceSha256!=draft.VideoSha256 ||
+        if(attempt.Protocol is not (ObjectReviewPolicy.Protocol or ObjectReviewPolicy.LegacyProtocol) || attempt.SourceSha256!=draft.VideoSha256 ||
             attempt.DraftResponseSha256!=draft.ResponseSha256 || attempt.EvidenceKey!=draft.CacheKey ||
             attempt.References.Length is <2 or >16 || attempt.References.Select(x=>x.Ordinal).Distinct().Count()!=attempt.References.Length)
             throw new InvalidDataException("Visual review provenance changed.");
@@ -18,6 +18,15 @@ public sealed partial class AssemblyLocator
                 r.Candidate!=draft.Proposal.Observations.Single(o=>o.Frame==r.Ordinal && o.Role=="object") ||
                 await FileHash(Path.Combine(root,$"review-{r.Ordinal}.jpg"),ct)!=r.MarkedSha256)
                 throw new InvalidDataException("Visual review image or candidate changed.");
+        }
+        var cropped=attempt.References.Where(r=>r.SuspensionCrop is not null).ToArray();
+        if((attempt.Protocol==ObjectReviewPolicy.Protocol && cropped.Length!=3) ||
+            (attempt.Protocol==ObjectReviewPolicy.LegacyProtocol && cropped.Length!=0))throw new InvalidDataException("Crop protocol mismatch.");
+        foreach(var r in cropped) {
+            var expected=ObjectReviewPolicy.Crop(r.Frame,ObjectReviewPolicy.CoarseSuspension(draft,r.Ordinal));
+            if(r.SuspensionCrop! with {Sha256=""}!=expected ||
+                await FileHash(Path.Combine(root,$"suspension-{r.Ordinal}.jpg"),ct)!=r.SuspensionCrop.Sha256)
+                throw new InvalidDataException("Suspension crop geometry or pixels changed.");
         }
         var rawPath=Path.Combine(root,"object-review-response.json");
         if(new FileInfo(rawPath).Length>300000)throw new InvalidDataException("Review response too large.");
@@ -48,6 +57,18 @@ public sealed partial class AssemblyLocator
                 await frames.MarkObjectAsync(Path.Combine(root,$"frame-{ordinal}.jpg"),frame,candidate,dest,ct);
             images.Add(marked);references.Add(new(ordinal,frame,candidate,Convert.ToHexString(SHA256.HashData(marked)).ToLowerInvariant()));
         }
+        var cropBytes=new List<byte[]>();
+        foreach(var ordinal in ObjectReviewPolicy.SuspensionOrdinals(references.ToArray())) {
+            var frame=draft.Frames[ordinal];
+            var crop=ObjectReviewPolicy.Crop(frame,ObjectReviewPolicy.CoarseSuspension(draft,ordinal));
+            var dest=Path.Combine(root,$"suspension-{ordinal}.jpg");
+            var bytes=File.Exists(dest)?await File.ReadAllBytesAsync(dest,ct):
+                await frames.CropSuspensionAsync(Path.Combine(root,$"frame-{ordinal}.jpg"),frame,crop,dest,ct);
+            var index=references.FindIndex(r=>r.Ordinal==ordinal);
+            references[index]=references[index] with {SuspensionCrop=crop with {Sha256=Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()}};
+            cropBytes.Add(bytes);
+        }
+        images.AddRange(cropBytes);
         ct.ThrowIfCancellationRequested();runtime.ReserveOrThrow(token);
         await Save(Path.Combine(root,"object-review-attempt.json"),new ObjectReviewAttempt(ObjectReviewPolicy.Protocol,video.Sha256,
             draft.ResponseSha256,draft.CacheKey,references.ToArray(),DateTimeOffset.UtcNow,ObjectReviewPolicy.EstimatedCostUsd),CancellationToken.None);
