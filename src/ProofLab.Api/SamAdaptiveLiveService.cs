@@ -58,17 +58,49 @@ public sealed class SamAdaptiveLiveService(
     private static Task WriteJson(string path,object value,CancellationToken ct)=>
         WriteImmutable(path,JsonSerializer.Serialize(value,JsonOptions),ct);
     private static string PlanKey(string sourceSha,string sceneKey,string ptsSha,
-        SamAdaptiveSegmentPlan plan)=>Hash(
+        SamAdaptiveSegmentPlan plan,string? recoveryFromBatchId=null)=>Hash(
             Protocol+"\n"+sourceSha+"\n"+sceneKey+"\n"+ptsSha+"\n"+
             plan.RequestedTargetCoreFrames.ToString(CultureInfo.InvariantCulture)+"\n"+
             plan.MaxInFlight.ToString(CultureInfo.InvariantCulture)+"\n"+
             plan.PartCount.ToString(CultureInfo.InvariantCulture)+"\n"+
             plan.BilledFrames.ToString(CultureInfo.InvariantCulture)+"\n"+
-            plan.EstimatedSamCostUsd.ToString("R",CultureInfo.InvariantCulture));
+            plan.EstimatedSamCostUsd.ToString("R",CultureInfo.InvariantCulture)+
+            (recoveryFromBatchId is null?"":"\nCONTINUOUS_RECOVERY_FROM_FRAME_ZERO_V2:"+recoveryFromBatchId));
+
+    private static bool Recoverable(SamAdaptiveLiveReport report,string sourceSha,string sceneKey)=>
+        report.SourceSha256==sourceSha && report.SparkSceneKey==sceneKey &&
+        report.Parts>1 && report.CompletedParts==report.Parts && report.FailedParts==0 &&
+        report.DerivedFramesWithMasks>0 && report.DerivedSeamsVerified==false &&
+        report.Status=="PROVIDER_PARTS_COMPLETE_SEAM_OR_DETECTION_INCONCLUSIVE";
+
+    private async Task<string?> RecoveryForQuote(string sourceSha,string sceneKey,CancellationToken ct)
+    {
+        var directory=Path.Combine(StoreRoot,"batches");
+        if(!Directory.Exists(directory))return null;
+        SamAdaptiveLiveReport? newest=null;
+        foreach(var folder in Directory.EnumerateDirectories(directory))
+        {
+            var id=Path.GetFileName(folder);
+            if(!ValidBatchId(id))continue;
+            var report=await ReadReportAsync(id,ct);
+            if(report is not null && report.BatchId==id && Recoverable(report,sourceSha,sceneKey) &&
+               (newest is null || report.RecordedAtUtc>newest.RecordedAtUtc))
+                newest=report;
+        }
+        return newest?.BatchId;
+    }
+    private async Task ValidateRecovery(string batchId,string sourceSha,string sceneKey,CancellationToken ct)
+    {
+        var report=await ReadReportAsync(batchId,ct);
+        if(report is null || !Recoverable(report,sourceSha,sceneKey))
+            throw new InvalidOperationException("Continuous recovery requires a completed inconclusive batch for this exact source and Spark scene.");
+    }
+    private static SamAdaptiveSegmentPlan ContinuousPlan(int frames,int target)=>
+        SamAdaptiveSegmentPlan.Create(frames,target,1,alignToTwoFrameIntraKeyframes:true,maximumPartCount:1);
 
     private async Task<(SamVideoSource Source,SamSceneDefinition Scene,
         double[] Pts,SamAdaptiveSegmentPlan Plan,string Key)> Context(
-        string studyId,string role,int target,int inFlight,CancellationToken ct)
+        string studyId,string role,int target,int inFlight,CancellationToken ct,string? recoveryFromBatchId=null)
     {
         if(inFlight is <1 or >MaximumLiveConcurrentRequests)
             throw new ArgumentException("Live SAM batch concurrency must be between one and twelve.");
@@ -87,9 +119,13 @@ public sealed class SamAdaptiveLiveService(
         var decision=SamAdaptiveGroundedPlan.Select(
             pts.Length,scene,target,inFlight,budgetUsd:0.50);
         var plan=decision.Plan;
+        if(recoveryFromBatchId is not null) {
+            await ValidateRecovery(recoveryFromBatchId,source.Sha256,scene.Key,ct);
+            plan=ContinuousPlan(pts.Length,target);
+        }
         var ptsSha=plan.VerifySourcePts(pts);
         return (source,scene,pts,plan,
-            PlanKey(source.Sha256.ToLowerInvariant(),scene.Key,ptsSha,plan));
+            PlanKey(source.Sha256.ToLowerInvariant(),scene.Key,ptsSha,plan,recoveryFromBatchId));
     }
 
     public async Task<SamAdaptiveLiveQuote> PreflightAsync(
@@ -111,10 +147,11 @@ public sealed class SamAdaptiveLiveService(
             AssemblyPolicy.Validate(scene,source.Sha256,pts.Length);
             grounded=SamAdaptiveGroundedPlan.Select(pts.Length,scene,targetCoreFrames,maxInFlight);
         }
-        var plan=grounded?.Plan??ideal;
+        var recovery=scene is null?null:await RecoveryForQuote(source.Sha256,scene.Key,ct);
+        var plan=recovery is null?grounded?.Plan??ideal:ContinuousPlan(pts.Length,targetCoreFrames);
         var ptsSha=plan.VerifySourcePts(pts);
         return new(Protocol,source.Sha256.ToLowerInvariant(),scene?.Key??"",
-            ptsSha,PlanKey(source.Sha256,scene?.Key??"PENDING_SPARK",ptsSha,plan),
+            ptsSha,PlanKey(source.Sha256,scene?.Key??"PENDING_SPARK",ptsSha,plan,recovery),
             Guid.NewGuid().ToString("N"),pts.Length,plan.PartCount,
             plan.MaxInFlight,plan.SubmittedFrames,plan.BilledFrames,
             plan.EstimatedSamCostUsd,0.50,null,access.ManualTokenCallsPermitted,
@@ -122,11 +159,30 @@ public sealed class SamAdaptiveLiveService(
             scene is null?"SAM_UPPER_BOUND_PENDING_SPARK_NO_INFERENCE_SENT":
                 "VERIFIED_SPARK_SEEDS; SOURCE_FRAMES; NO_AUTOMATIC_RETRY",
             grounded?.IdealParts??ideal.PartCount,grounded?.VerifiedSparkSeedCount??0,
-            grounded?.ReducedForSparseSparkSeeds??false);
+            recovery is null && (grounded?.ReducedForSparseSparkSeeds??false),recovery);
     }
 
     private static string Prompt(SamSceneDefinition scene,SamAdaptiveWindow window) =>
         SamAdaptiveGroundedPlan.BuildPrompt(scene,window);
+
+
+    private async Task<string[]> Prompts(SamSceneDefinition scene,SamAdaptiveSegmentPlan plan,
+        string ptsSha,string? recoveryId,CancellationToken ct)
+    {
+        if(recoveryId is null)return plan.Windows.Select(w=>Prompt(scene,w)).ToArray();
+        var dir=BatchDir(recoveryId);
+        var prior=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(
+            Path.Combine(dir,"batch-context.json"),ct);
+        if(prior.Scene.Key!=scene.Key || prior.RecoveryFromBatchId is not null)
+            throw new InvalidDataException("Recovery source scene changed.");
+        var previousPlan=SamAdaptiveGroundedPlan.Select(plan.SourceFrames,prior.Scene,
+            prior.TargetCoreFrames,prior.MaxInFlight).Plan;
+        var receipt=await SamVideoArchive.ReadJsonAsync<SamAdaptivePartReceipt>(
+            Path.Combine(dir,"part-00","receipt.json"),ct);
+        var raw=await File.ReadAllTextAsync(Path.Combine(dir,"part-00","response.json"),ct);
+        return [SamAdaptiveRecoveryPrompt.Build(scene,plan.Windows.Single(),
+            previousPlan.Windows[0],ptsSha,receipt,raw)];
+    }
 
     public async Task<SamAdaptiveLiveReport> RunOnceAsync(
         string studyId,string role,SamAdaptiveLiveRunRequest request,CancellationToken ct)
@@ -145,12 +201,12 @@ public sealed class SamAdaptiveLiveService(
         try
         {
             var (source,scene,pts,plan,key)=await Context(
-                studyId,role,request.TargetCoreFrames,request.MaxInFlight,ct);
+                studyId,role,request.TargetCoreFrames,request.MaxInFlight,ct,request.RecoveryFromBatchId);
             var exact=await PreflightAsync(studyId,role,
                 request.TargetCoreFrames,request.MaxInFlight,ct);
             if(request.VideoSha256!=source.Sha256.ToLowerInvariant() ||
                request.SceneKey!=scene.Key ||
-               request.PlanSha256!=key ||
+               request.PlanSha256!=key || request.RecoveryFromBatchId!=exact.RecoveryFromBatchId ||
                !double.IsFinite(request.MaximumSamCostUsd) ||
                request.MaximumSamCostUsd<exact.TotalSamEstimatedUsd ||
                request.MaximumSamCostUsd>0.500000001)
@@ -187,11 +243,10 @@ public sealed class SamAdaptiveLiveService(
             // Resolve and validate EVERY Spark-grounded prompt BEFORE
             // consuming a trial slot or reserving any potentially billable
             // provider request. A missing source-frame seed aborts the batch.
-            var prompts=plan.Windows.Select(window=>Prompt(scene,window))
-                .ToArray();
+            var prompts=await Prompts(scene,plan,plan.VerifySourcePts(pts),request.RecoveryFromBatchId,ct);
             ct.ThrowIfCancellationRequested();
             await WriteJson(Path.Combine(folder,"batch-context.json"),
-                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,request.MaxInFlight),
+                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,request.MaxInFlight,request.RecoveryFromBatchId),
                 CancellationToken.None);
             await WriteJson(Path.Combine(folder,"batch-started.json"),new{
                 batchId,createdAtUtc=created,sourceSha256=source.Sha256,
@@ -300,6 +355,9 @@ public sealed class SamAdaptiveLiveService(
                     Directory.CreateDirectory(path);
                     try{await WriteJson(Path.Combine(path,"failure.json"),
                         new{part=window.Part,status=failure,
+                            protocolCode=(e as SamVideoSseException)?.Code,
+                            providerEvent=(e as SamVideoSseException)?.ProviderEvent,
+                            providerReason=(e as SamVideoSseException)?.ProviderReason,
                             recordedAtUtc=DateTimeOffset.UtcNow,
                             noAutomaticRetry=true},CancellationToken.None);}
                     catch(IOException){} // no second inference
@@ -388,10 +446,15 @@ public sealed class SamAdaptiveLiveService(
         AssemblyPolicy.Validate(scene,source.Sha256,pts.Length);
         var plan=SamAdaptiveGroundedPlan.Select(pts.Length,scene,
             context.TargetCoreFrames,context.MaxInFlight).Plan;
+        if(context.RecoveryFromBatchId is not null) {
+            await ValidateRecovery(context.RecoveryFromBatchId,source.Sha256,scene.Key,ct);
+            plan=ContinuousPlan(pts.Length,context.TargetCoreFrames);
+        }
         var ptsSha=plan.VerifySourcePts(pts);
         if(scene.Key!=report.SparkSceneKey || plan.PartCount!=report.Parts ||
-           PlanKey(source.Sha256,scene.Key,ptsSha,plan)!=report.PlanSha256)
+           PlanKey(source.Sha256,scene.Key,ptsSha,plan,context.RecoveryFromBatchId)!=report.PlanSha256)
             throw new InvalidDataException("Batch plan identity mismatch.");
+        var prompts=await Prompts(scene,plan,ptsSha,context.RecoveryFromBatchId,ct);
         var outputs=new List<SamAdaptivePartOutput>();
         foreach(var w in plan.Windows) {
             var part=Path.Combine(folder,"part-"+w.Part.ToString("D2",CultureInfo.InvariantCulture));
@@ -402,7 +465,7 @@ public sealed class SamAdaptiveLiveService(
                receipt.SparkSceneKey!=scene.Key || receipt.SourcePtsSha256!=ptsSha ||
                receipt.InputStart!=w.InputStart || receipt.InputEndExclusive!=w.InputEndExclusive ||
                receipt.CoreStart!=w.CoreStart || receipt.CoreEndExclusive!=w.CoreEndExclusive ||
-               receipt.ResponseSha256!=Hash(raw) || receipt.PromptSha256!=Hash(Prompt(scene,w)) ||
+               receipt.ResponseSha256!=Hash(raw) || receipt.PromptSha256!=Hash(prompts[w.Part]) ||
                receipt.Status!="COMPLETED_PROVIDER_STREAM_PENDING_HUMAN_VISUAL_REVIEW")
                 throw new InvalidDataException("Part receipt mismatch.");
             outputs.Add(new(w.Part,w.InputStart,w.InputEndExclusive,

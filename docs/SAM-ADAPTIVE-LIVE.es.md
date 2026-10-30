@@ -48,3 +48,22 @@ Las cuatro respuestas SAM terminaron, sin pérdidas de fotogramas. Los mínimos 
 La espera anterior de Spark (72,3 s de interfaz) incluía subida 15,136 s, conteo de tokens 6,420 s, inferencia 25,880 s y limpieza 4,903 s; el resto corresponde a preparación y tareas del flujo. Las tres referencias nativas ahora se extraen en una pasada. Comparación local sobre el mismo MOV: 9,275 s antes y 5,524 s después, con SHA-256 de cada JPEG, índice, dimensiones y tiempo idénticos. Esto reduce esa fase local un 40%; no prueba una reducción equivalente de la latencia total de Meta.
 
 Se registran tiempos privados por remux/verificación, extracción de referencias, subida, conteo, inferencia y limpieza. Se mantiene el envío del video completo, la calidad original, el presupuesto y el nivel de razonamiento. La prueba 4 reutilizó Spark y realizó cuatro llamadas SAM (US$0,3718 estimados, no factura).
+
+
+## Recuperación continua de uniones inconclusas (30/10 UTC, 29/10 Lima)
+
+Cuando todas las respuestas de un lote terminaron pero sus uniones no superaron la verificación, la cotización ofrece **una solicitud SAM sobre el video completo**. Se reutiliza Spark del mismo SHA y escena. El usuario debe pulsar Procesar otra vez; no se reintenta ni se consume un crédito automáticamente.
+
+La recuperación utiliza una caja auténtica del fotograma original 0 del primer segmento previo, además de las tres referencias de Spark. Se verifican recibo, hash de respuesta, identidad de escena, dimensiones, tiempos y prompt original. Esa caja no se extrapola desde otro instante y su procedencia sigue siendo SAM. Si no hay una referencia inicial verificable, se detiene antes de enviar. No se altera el lote fallido ni se debilita el umbral IoU.
+
+El video completo se remultiplexa sin recodificar y se comprueban todos sus hashes de píxel y PTS. En 80CM_1.MOV el archivo enviado ocupa 44.847.804 bytes, frente al intermedio segmentado de 491.210.226 bytes. El original se conserva.
+
+**Autorización nueva de esta corrección: 5 llamadas; utilizadas 2 SAM, 0 Spark; quedan 3.** Los presupuestos de sesiones anteriores no se suman.
+- Intento 1: 1.661 deltas, interrupción del proveedor antes de un resultado completo; 194,760 s. No se usa como evidencia.
+- Intento 2, con referencia auténtica en el fotograma 0: 1.845/1.845 máscaras, sin cortes; preparación 33,314 s, solicitud SAM 183,775 s, validación 0,138 s, total 217,393 s.
+- Estimación por llamada: US$0,369; potencial total US$0,738. El intento fallido puede haber sido facturado. No hay factura verificada.
+- El reproductor decodificó 1.845 máscaras sin advertencias y produjo 1.845 ángulos y 1.843 velocidades angulares. Los extremos carecen de vecinos para derivación central. Suspensión estimada por Spark; sin calibración métrica ni revisión humana certificada.
+
+El corte del primer intento coincide con el tramo hacia adelante desde la referencia 184. La documentación indica que SAM propaga después hacia atrás. La prueba desde el fotograma 0 terminó, pero esto no demuestra por sí solo la causa interna del fallo de Meta. Los nuevos diagnósticos conservan tipo de evento y motivos categóricos permitidos sin texto sensible.
+
+103 pruebas .NET y 73 Angular en Edge correctas. La recuperación corrige continuidad; **no se presenta como una mejora de velocidad**. El modo segmentado conserva su camino paralelo para lotes coherentes y las mismas comprobaciones.

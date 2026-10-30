@@ -56,7 +56,7 @@ interface SamAdaptiveQuote {
   remainingTrialSlots:number|null;canRunWithManualToken:boolean;
   existingSparkSceneVerified:boolean;requiresNewSparkCall:boolean;
   idealPartsWithoutSparkCoverage:number;verifiedSparkSeedCount:number;
-  reducedForSparseSparkSeeds:boolean;
+  reducedForSparseSparkSeeds:boolean;recoveryFromBatchId?:string|null;
 }
 interface SamAdaptivePartProgress {
   part:number;state:string;events:number;deltas:number;outputChars:number;elapsedMs?:number;
@@ -116,7 +116,11 @@ interface SamAdaptiveReport {
                   @if(aq.requiresNewSparkCall) {
                     <small class="sam-meta-estimate">{{es?'Incluye Spark hasta US$ ':'Includes Spark up to US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{es?'segmentos máximos; se ajustan tras localizar el objeto':'maximum segments; adjusted after locating the object'}}</small>
                   }
-                  @if(aq.reducedForSparseSparkSeeds) {
+                  @if(aq.recoveryFromBatchId) {
+                    <small class="sam-meta-estimate">{{es?
+                      'Recuperación de continuidad: 1 solicitud SAM sobre el video completo, sin cortes. Spark guardado; requiere pulsar Procesar.':
+                      'Continuity recovery: 1 SAM request for the complete video, without cuts. Saved Spark; press Process to submit.'}}</small>
+                  } @else if(aq.reducedForSparseSparkSeeds) {
                     <small class="sam-meta-estimate">{{es?
                       'Spark verificó '+aq.verifiedSparkSeedCount+' posiciones. El plan de '+aq.idealPartsWithoutSparkCoverage+
                         ' segmentos se redujo a '+aq.parts+' para evitar inferencias sin referencia.':
@@ -441,10 +445,12 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
        ms:p?.preparationElapsedMs??(sparkDone?Math.max(0,now-this.sparkFinishedAt):0)}];
     for(let i=0;i<(this.adaptiveQuote()?.parts??0);i++){
       const part=p?.perPart.find(x=>x.part===i);
-      rows.push({key:'sam-'+i,label:'SAM · '+(this.es?'segmento ':'segment ')+(i+1),
+      rows.push({key:'sam-'+i,label:this.adaptiveQuote()?.recoveryFromBatchId?
+        (this.es?'SAM · video completo':'SAM · full video'):'SAM · '+(this.es?'segmento ':'segment ')+(i+1),
         state:part?.state??'NOT_STARTED',ms:part?.elapsedMs??0});
     }
-    rows.push({key:'join',label:this.es?'Unión y verificación':'Join and verification',
+    rows.push({key:'join',label:this.adaptiveQuote()?.recoveryFromBatchId?
+      (this.es?'Verificación':'Verification'):(this.es?'Unión y verificación':'Join and verification'),
       state:phase==='COMPLETED'?'COMPLETED':phase==='FAILED'?'FAILED':
         phase==='VALIDATING'?'IN_PROGRESS':'NOT_STARTED',ms:p?.validationElapsedMs??0});
     rows.push({key:'view',label:this.es?'Gráficos y reproducción':'Overlays and playback',
@@ -605,6 +611,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       if(result)return result.completedParts===result.parts ?
         (this.es?'Lote terminado':'Batch completed') :
         (this.es?'Lote incompleto':'Incomplete batch');
+      if(this.adaptiveQuote()?.recoveryFromBatchId)return this.es?'Recuperación lista':'Recovery ready';
       if(this.adaptiveQuote())return this.es?'Plan dinámico listo':'Adaptive plan ready';
       return this.es?'Sin plan dinámico':'No adaptive plan';
     }
@@ -799,7 +806,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       q.simultaneousRequests>=1 && q.simultaneousRequests<=12 &&
       Number.isFinite(q.totalSamEstimatedUsd) && q.totalSamEstimatedUsd>0 &&
       q.totalSamEstimatedUsd<=.50 &&
-      (q.requiresNewSparkCall!==q.existingSparkSceneVerified);
+      (q.requiresNewSparkCall!==q.existingSparkSceneVerified) &&
+      (!q.recoveryFromBatchId || (/^[a-f0-9]{32}$/.test(q.recoveryFromBatchId) &&
+        q.parts===1 && q.simultaneousRequests===1 && q.existingSparkSceneVerified && !q.requiresNewSparkCall));
   }
   private async checkAdaptive():Promise<void> {
     if(!this.http || !this.studyId() || !this.videoSha256() ||
@@ -889,7 +898,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         modelApiToken:token,videoSha256:sha,sceneKey:quote.sparkSceneKey,
         planSha256:quote.planSha256,clientBatchId:quote.suggestedBatchId,
         maximumSamCostUsd:quote.totalSamEstimatedUsd,
-        targetCoreFrames:53,maxInFlight:quote.simultaneousRequests,
+        targetCoreFrames:53,maxInFlight:quote.simultaneousRequests,recoveryFromBatchId:quote.recoveryFromBatchId??null,
         confirmPrivateVideoTransfer:true,confirmUpToManyBillableSamCalls:true,confirmNoAutomaticRetry:true
       },{headers:{'X-ProofLab-Manual-Action':'sam-adaptive-batch'}}).pipe(timeout(35*60*1000)));
       if(!current())return;

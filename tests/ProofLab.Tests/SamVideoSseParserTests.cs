@@ -137,6 +137,19 @@ public sealed class SamVideoSseParserTests
         Assert.DoesNotContain("PRIVATE", error.Message);
     }
 
+    [Theory]
+    [InlineData("max_output_tokens","max_output_tokens")]
+    [InlineData("PRIVATE_TOKEN_IN_UNKNOWN_REASON","unspecified")]
+    public async Task IncompleteRetainsOnlyAllowlistedReason(string reason,string expected)
+    {
+        var stream=Event(new {type="response.incomplete",
+            response=new {incomplete_details=new {reason}}});
+        var error=await Assert.ThrowsAsync<SamVideoSseException>(()=>ParseAsync(stream));
+        Assert.Equal("response.incomplete",error.ProviderEvent);
+        Assert.Equal(expected,error.ProviderReason);
+        Assert.DoesNotContain("PRIVATE",error.ToString());
+    }
+
     [Fact]
     public async Task BoundedOutputRejectsLargeMaskBeforeAppend()
     {

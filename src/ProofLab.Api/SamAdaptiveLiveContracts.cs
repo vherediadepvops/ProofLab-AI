@@ -11,6 +11,7 @@ public sealed class SamAdaptiveLiveRunRequest
     public double MaximumSamCostUsd { get; init; }
     public int TargetCoreFrames { get; init; }=53;
     public int MaxInFlight { get; init; }=4;
+    public string? RecoveryFromBatchId { get; init; }
     public bool ConfirmPrivateVideoTransfer { get; init; }
     public bool ConfirmUpToManyBillableSamCalls { get; init; }
     public bool ConfirmNoAutomaticRetry { get; init; }
@@ -27,9 +28,9 @@ public sealed record SamAdaptiveLiveQuote(
     string Provenance,
     int IdealPartsWithoutSparkCoverage,
     int VerifiedSparkSeedCount,
-    bool ReducedForSparseSparkSeeds);
+    bool ReducedForSparseSparkSeeds,string? RecoveryFromBatchId=null);
 
-public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight);
+public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight,string? RecoveryFromBatchId=null);
 
 public sealed record SamAdaptiveDerivation(string BatchId,bool NativeProviderResult,
     bool SeamsVerified,string SourcePtsSha256,string[] PartResponseSha256);

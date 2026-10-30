@@ -100,9 +100,80 @@ public sealed class SamAdaptiveLiveIntegrationTests
         await Assert.ThrowsAsync<ArgumentException>(()=>
             f.Service.PreflightAsync("study","baseline",53,13,default));
     }
+
+    private static async Task<string> SaveInconclusive(Fixture f,string? source=null,bool partial=false){
+        var request=Request(await f.Quote());
+        var completed=await f.Service.RunOnceAsync("study","baseline",request,default);
+        f.Transport.Calls=0;f.Runtime.Reserved=0;
+        var id=completed.BatchId;var dir=Path.Combine(f.Store,"batches",id);
+        var r=completed with {
+            Status="PROVIDER_PARTS_COMPLETE_SEAM_OR_DETECTION_INCONCLUSIVE",
+            SourceSha256=source??Sha,CompletedParts=partial?3:4,FailedParts=partial?1:0,
+            DerivedSeamsVerified=false,Note="Synthetic seam disagreement"
+        };
+        await File.WriteAllTextAsync(Path.Combine(dir,"batch-report.json"),
+            JsonSerializer.Serialize(r,new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        return id;
+    }
+    [Fact]
+    public async Task InconsistentSeamsQuoteOneContinuousCallAndPreserveThePriorEvidence(){
+        using var f=new Fixture();var prior=await SaveInconclusive(f);
+        var path=Path.Combine(f.Store,"batches",prior,"batch-report.json");
+        var original=await File.ReadAllTextAsync(path);
+        var q=await f.Quote();
+        Assert.Equal(prior,q.RecoveryFromBatchId);Assert.Equal(1,q.Parts);Assert.Equal(1,q.SimultaneousRequests);
+        Assert.False(q.RequiresNewSparkCall);Assert.Equal(0,f.Transport.Calls);
+        Assert.Equal(667,q.SubmittedFrames);Assert.Equal(.1334,q.TotalSamEstimatedUsd,6);
+        var request=Request(q);var result=await f.Service.RunOnceAsync("study","baseline",request,default);
+        Assert.True(result.DerivedSeamsVerified);Assert.Equal(667,result.DerivedFramesWithMasks);
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reserved);
+        var playback=await f.Service.ReadPlaybackAsync("study","baseline",request.ClientBatchId,default);
+        Assert.Single(playback.Derivation!.PartResponseSha256);
+        Assert.StartsWith("<0f>1<|box;",f.Transport.LastPrompt);
+        Assert.Contains("<67f>1<|box;",f.Transport.LastPrompt);
+        Assert.Equal(f.Runtime.Pts,playback.Receipt.FramePtsSeconds);
+        Assert.Equal(original,await File.ReadAllTextAsync(path));
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.RunOnceAsync("study","baseline",request,default));
+        Assert.Equal(1,f.Transport.Calls);
+    }
+    [Theory]
+    [InlineData(true,false)]
+    [InlineData(false,true)]
+    public async Task OtherVideoOrIncompleteProviderWorkDoesNotOfferSeamRecovery(bool otherVideo,bool partial){
+        using var f=new Fixture();await SaveInconclusive(f,otherVideo?new string('f',64):null,partial);
+        var q=await f.Quote();Assert.Null(q.RecoveryFromBatchId);Assert.Equal(4,q.Parts);
+        Assert.Equal(0,f.Transport.Calls);
+    }
+    [Fact]
+    public async Task StaleQuoteStopsBeforeAnyRecoveryCall(){
+        using var f=new Fixture();var stale=Request(await f.Quote());await SaveInconclusive(f);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.RunOnceAsync("study","baseline",stale,default));
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
+    }
+    [Fact]
+    public async Task ContinuousProviderFailureIsNotRetriedAutomatically(){
+        using var f=new Fixture();await SaveInconclusive(f);f.Transport.Fail=true;
+        var request=Request(await f.Quote());
+        var report=await f.Service.RunOnceAsync("study","baseline",request,default);
+        Assert.Equal(1,report.FailedParts);Assert.Equal(1,f.Transport.Calls);
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Service.ReadPlaybackAsync("study","baseline",request.ClientBatchId,default));
+        Assert.Equal(1,f.Transport.Calls);
+    }
+
+
+    [Fact]
+    public async Task ChangedRecoveryReferenceNeverConsumesAnotherProviderCall(){
+        using var f=new Fixture();var prior=await SaveInconclusive(f);
+        var path=Path.Combine(f.Store,"batches",prior,"part-00","response.json");
+        await File.AppendAllTextAsync(path," ");
+        var request=Request(await f.Quote());
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Service.RunOnceAsync("study","baseline",request,default));
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
+    }
+
     private static SamAdaptiveLiveRunRequest Request(SamAdaptiveLiveQuote q,double? maximum=null)=>new(){
         MaxInFlight=q.SimultaneousRequests,ModelApiToken=Token,VideoSha256=q.SourceSha256,SceneKey=q.SparkSceneKey,PlanSha256=q.PlanSha256,
-        ClientBatchId=q.SuggestedBatchId,MaximumSamCostUsd=maximum??q.TotalSamEstimatedUsd,
+        ClientBatchId=q.SuggestedBatchId,MaximumSamCostUsd=maximum??q.TotalSamEstimatedUsd,RecoveryFromBatchId=q.RecoveryFromBatchId,
         ConfirmPrivateVideoTransfer=true,ConfirmUpToManyBillableSamCalls=true,ConfirmNoAutomaticRetry=true
     };
     private static SamSceneDefinition Scene(){
@@ -156,10 +227,10 @@ public sealed class SamAdaptiveLiveIntegrationTests
         }
     }
     private sealed class Transport:ISamVideoTransport{
-        public int Calls,Active,MaximumActive;public bool Fail;
+        public int Calls,Active,MaximumActive;public bool Fail;public string LastPrompt="";
         public async Task<SamApiCompletedResult> UploadAndSegmentAsync(string path,string prompt,
             Func<SamVideoSseProgress,ValueTask>? progress,CancellationToken ct,string? token=null){
-            Interlocked.Increment(ref Calls);var active=Interlocked.Increment(ref Active);
+            LastPrompt=prompt;Interlocked.Increment(ref Calls);var active=Interlocked.Increment(ref Active);
             int before;do{before=MaximumActive;if(before>=active)break;}
                 while(Interlocked.CompareExchange(ref MaximumActive,active,before)!=before);
             try{

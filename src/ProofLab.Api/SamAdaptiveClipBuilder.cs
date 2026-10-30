@@ -192,6 +192,9 @@ public sealed class SamAdaptiveClipBuilder(
             throw new InvalidOperationException(
                 "Adaptive output is not a fresh directory. No overwrites or paid retry.");
         Directory.CreateDirectory(folder);
+        if(plan.PartCount==1)
+            return await PrepareContinuousAsync(source,originalPts,plan,folder,
+                originalSha,originalDisplay,ptsSha,timer,ct);
         var intra=Path.Combine(folder,"source-intra2.mp4");
         // Force an IDR at each exact source-frame boundary, instead of bloating
         // the lossless intermediate with an intra frame every two frames.
@@ -309,6 +312,50 @@ public sealed class SamAdaptiveClipBuilder(
         }
         // Prevent untrusted/large extra files from crossing into Meta transfer
         // (source-intra2 is local only and never uploaded).
+        return manifest;
+    }
+
+    // A continuous recovery needs no artificial IDRs or large lossless encode:
+    // copy the original video stream, retain rotation, verify every pixel and PTS.
+    private async Task<SamAdaptiveClipManifest> PrepareContinuousAsync(
+        SamVideoSource source,IReadOnlyList<double> originalPts,SamAdaptiveSegmentPlan plan,
+        string folder,string originalSha,SamOrientedFrameGeometry display,string ptsSha,
+        Stopwatch timer,CancellationToken ct)
+    {
+        var window=plan.Windows.Single();
+        if(window.InputStart!=0 || window.CoreStart!=0 ||
+           window.InputEndExclusive!=originalPts.Count || window.CoreEndExclusive!=originalPts.Count)
+            throw new InvalidDataException("Continuous recovery must cover the whole original.");
+        var path=Path.Combine(folder,"part-00.mp4");
+        await decoder.CreateSamCompatibleMp4Async(source.Path,path,ct);
+        if((await ReadGeometry(path,ct)).Display!=display)
+            throw new InvalidDataException("Continuous copy changed displayed dimensions.");
+        var pts=await decoder.ReadVideoFramePtsAsync(path,ct);
+        if(pts.Length!=originalPts.Count)
+            throw new InvalidDataException("Continuous copy lost source frames.");
+        var worst=0d;
+        for(var i=0;i<pts.Length;i++) {
+            var delta=Math.Abs(pts[i]-originalPts[i]);
+            if(!double.IsFinite(delta) || delta>0.005)
+                throw new InvalidDataException("Continuous copy changed source timestamps.");
+            worst=Math.Max(worst,delta);
+        }
+        var hashes=await Task.WhenAll(FrameHashes(source.Path,ct),FrameHashes(path,ct));
+        if(hashes[0].Length!=originalPts.Count || !hashes[0].SequenceEqual(hashes[1]))
+            throw new InvalidDataException("Continuous copy changed original pixels.");
+        string clipSha;
+        await using(var stream=File.OpenRead(path))
+            clipSha=Convert.ToHexString(await SHA256.HashDataAsync(stream,ct)).ToLowerInvariant();
+        var frameHash=Convert.ToHexString(SHA256.HashData(
+            Encoding.UTF8.GetBytes(string.Join("\n",hashes[0])))).ToLowerInvariant();
+        var clip=new SamAdaptiveClip(0,0,originalPts.Count,0,originalPts.Count,
+            originalPts.Count,"part-00.mp4",new FileInfo(path).Length,clipSha,
+            frameHash,worst,plan.BilledFrames);
+        var manifest=new SamAdaptiveClipManifest(originalSha,ptsSha,originalPts.Count,
+            plan.SubmittedFrames,plan.BilledFrames,plan.EstimatedSamCostUsd,
+            "SAM_CONTINUOUS_ORIGINAL_REMUX_PTS_PIXEL_SHA_V1",[clip],timer.ElapsedMilliseconds);
+        await File.WriteAllTextAsync(Path.Combine(folder,"clip-manifest.json"),
+            JsonSerializer.Serialize(manifest,new JsonSerializerOptions{WriteIndented=true}),ct);
         return manifest;
     }
 }

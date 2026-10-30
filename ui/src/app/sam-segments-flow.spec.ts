@@ -109,6 +109,24 @@ describe('Integrated manual Meta segments',()=>{
   expect(r.request.body.maxInFlight).toBe(12);
   r.flush({...done,derivedSeamsVerified:false});await p; // mismatched part count is rejected before polling
  });
+ it('quotes continuous recovery before a click and sends exactly one SAM request using saved Spark',async()=>{
+  const x=setup(),prior='9'.repeat(32);
+  await check(x,{...exact,parts:1,simultaneousRequests:1,totalSamEstimatedUsd:.1334,recoveryFromBatchId:prior},located);
+  expect(x.f.nativeElement.textContent).toContain('1 solicitud SAM');
+  expect(x.c.canProcess()).toBeTrue();x.h.expectNone(r=>r.method==='POST');
+  const p=x.c.process();x.h.expectNone(url+'/spark-once');
+  const r=x.h.expectOne(url+'/manual-batch');
+  expect(r.request.body.recoveryFromBatchId).toBe(prior);expect(r.request.body.maxInFlight).toBe(1);
+  r.flush({...done,parts:1});await tick();
+  x.h.expectOne(url+'/batches/'+batch+'/progress').flush({
+   batchId:batch,parts:1,started:1,completed:1,failed:0,phase:'COMPLETED',
+   preparationElapsedMs:1200,validationElapsedMs:100,totalElapsedMs:10000,
+   perPart:[{part:0,state:'COMPLETED',elapsedMs:8700}]});
+  await p;x.f.componentRef.setInput('validationState','ready');x.f.detectChanges();
+  expect(x.c.processing()).toBeFalse();
+  expect(x.c.stageRows().filter(r=>r.key.startsWith('sam-')).length).toBe(1);
+  expect(x.c.stageRows().find(r=>r.key==='sam-0')?.label).toContain('video completo');
+ });
  it('keeps Process disabled for an invalid or missing cost',async()=>{
   const x=setup();await check(x,{...quote,totalSamEstimatedUsd:Number.NaN});
   expect(x.c.canProcess()).toBeFalse();await x.c.process();x.h.expectNone(r=>r.method==='POST');

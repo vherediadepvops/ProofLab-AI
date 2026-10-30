@@ -163,7 +163,7 @@ public static class AssemblyPolicy
         if(value.Length is <20 or >5000)return false;
         const string box=@"[1-5]<\|box;x1=\d{1,4};y1=\d{1,4};x2=\d{1,4};y2=\d{1,4};w=\d{1,4};h=\d{1,4}\|>";
         return System.Text.RegularExpressions.Regex.IsMatch(value,
-            @"^<\d{1,4}f>"+box+@"(,"+box+@")*( <\d{1,4}f>"+box+@"(,"+box+@")*){0,2}$",
+            @"^<\d{1,4}f>"+box+@"(,"+box+@")*( <\d{1,4}f>"+box+@"(,"+box+@")*){0,3}$",
             System.Text.RegularExpressions.RegexOptions.CultureInvariant,TimeSpan.FromMilliseconds(100));
     }
     public static string Key(string sha)=>KnotPolicy.Hash(Protocol+"\n"+Model+"\n"+Prompt+"\n"+sha.ToLowerInvariant());

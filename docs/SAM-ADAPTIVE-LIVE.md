@@ -44,3 +44,22 @@ All four SAM requests completed with all 1845 frames covered. Minimum seam IoUs 
 The previous Spark UI total of 72.3 s included upload 15.136 s, token counting 6.420 s, inference 25.880 s and cleanup 4.903 s; the remainder includes local preparation and workflow overhead. Native references now use one decode pass. An offline comparison on the same MOV measured 9.275 s versus 5.524 s, with identical JPEG hashes, frame indices, dimensions and timestamps. This is a 40% reduction for that local phase, not a demonstrated end-to-end provider speedup.
 
 Private timings now separate remux/timestamp validation, anchors, upload, token counting, inference and cleanup. Full video, original quality, budgets and reasoning effort are preserved. Test 4 reused Spark and made four SAM calls (estimated USD0.3718, not an invoice).
+
+
+## Continuous recovery after inconclusive seams (2026-10-30 UTC / 29 Lima)
+
+When all provider parts completed but seam verification failed, the quote offers **one full-video SAM request**. It reuses Spark for the same source SHA and scene. A new manual Process click is required; no automatic paid retry occurs.
+
+The recovery adds the first prior segment's authentic source-frame-zero SAM box to the unchanged Spark references. Receipt, response hash, scene identity, dimensions, source PTS and original prompt are verified. A later box is never moved to frame zero and this extra observation retains SAM provenance. Missing or inconsistent evidence aborts before dispatch. Prior receipts and IoU thresholds stay unchanged.
+
+The full source is remuxed without re-encoding, with every decoded pixel hash and PTS verified. For 80CM_1.MOV the upload is 44,847,804 bytes versus the 491,210,226-byte segmented intermediate. Original media remains intact.
+
+**New authorization for this correction: 5 calls; used 2 SAM and 0 Spark; 3 remain.** Earlier session budgets are not pooled.
+- Attempt 1 stopped after 1661 deltas with a provider termination; 194.760 s, not usable evidence.
+- Attempt 2, with an authenticated frame-zero anchor: all 1845 masks; preparation 33.314 s, SAM request 183.775 s, validation 0.138 s, total 217.393 s.
+- Each call was estimated at USD0.369; potential combined USD0.738. The failed call may have incurred a charge. No verified invoice.
+- The production playback parser decoded all 1845 masks without warnings, producing 1845 angles and 1843 angular velocities; endpoint derivatives need neighboring frames. Spark-estimated suspension remains uncalibrated and pending human review.
+
+Attempt 1's delta count matches the forward span from anchor 184. Meta documents backward propagation afterward. Starting at frame zero completed, but that does not establish Meta's internal failure cause. New diagnostics retain only event type and allowlisted categorical reasons, never sensitive provider text.
+
+103 targeted .NET tests and 73 Angular tests in Edge passed. This fixes continuity and **is not claimed as a speed improvement**. Consistent segmented runs retain the parallel path and unchanged validation.

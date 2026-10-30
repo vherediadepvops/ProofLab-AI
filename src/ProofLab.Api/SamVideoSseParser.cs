@@ -14,9 +14,11 @@ public sealed record SamVideoSseResult(
     string OutputText, string ProviderResponseId, int? BilledFrames,
     int Events, int DeltaEvents);
 
-public sealed class SamVideoSseException(string code) : FormatException(code)
+public sealed class SamVideoSseException(string code,string? providerEvent=null,string? providerReason=null) : FormatException(code)
 {
     public string Code { get; } = code;
+    public string? ProviderEvent { get; } = providerEvent;
+    public string? ProviderReason { get; } = providerReason;
 }
 
 /// <summary>
@@ -28,6 +30,25 @@ public static class SamVideoSseParser
 {
     public const int MaximumOutputChars = 85_000_000;
     private const int MaximumEventChars = 90_000_000;
+
+    private static string SafeTerminationReason(JsonElement message)
+    {
+        // Only known categorical codes are retained; never free-text provider messages.
+        var container=message.TryGetProperty("response",out var response) &&
+            response.ValueKind==JsonValueKind.Object?response:message;
+        string? reason=null;
+        if(container.TryGetProperty("incomplete_details",out var details) &&
+           details.ValueKind==JsonValueKind.Object && details.TryGetProperty("reason",out var why) &&
+           why.ValueKind==JsonValueKind.String)reason=why.GetString();
+        else if(container.TryGetProperty("error",out var error) && error.ValueKind==JsonValueKind.Object &&
+                error.TryGetProperty("code",out var code) && code.ValueKind==JsonValueKind.String)reason=code.GetString();
+        else if(container.TryGetProperty("code",out var direct) && direct.ValueKind==JsonValueKind.String)reason=direct.GetString();
+        return reason switch {
+            "server_error" or "internal_error" or "internal_server_error" or "rate_limit_exceeded" or
+            "max_output_tokens" or "content_filter" or "invalid_request_error" or "timeout" => reason,
+            _ => "unspecified"
+        };
+    }
 
     public static async Task<SamVideoSseResult> ReadAsync(
         TextReader reader, Func<SamVideoSseProgress, ValueTask>? progress,
@@ -194,7 +215,7 @@ public static class SamVideoSseParser
                         // Raw provider errors may include sensitive data.
                         // Their category is sufficient for a private audit.
                         await Report("SSE_PROVIDER_TERMINATED");
-                        throw new SamVideoSseException("SAM_SSE_PROVIDER_TERMINATED");
+                        throw new SamVideoSseException("SAM_SSE_PROVIDER_TERMINATED",type.GetString(),SafeTerminationReason(message));
 
                     default:
                         if (events == 1 || events % 100 == 0)
