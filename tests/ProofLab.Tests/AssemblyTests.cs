@@ -41,6 +41,10 @@ public sealed class AssemblyTests
         return new(AssemblyPolicy.Key(Sha),Sha,AssemblyPolicy.Model,AssemblyPolicy.Protocol,frames,Sha,
             "synthetic-not-provider",DateTimeOffset.UtcNow,AssemblyPolicy.Parse(output??Points(),frames),1000,100);
     }
+    [Fact] public void HistoricalOwnerGroundingKeySurvivesCheckoutLineEndings() {
+        Assert.Equal("0b590dffdd6aede99cd45c45aa59c09f009cfb2cbfca5f13470d8b341be430fb",
+            AssemblyPolicy.VideoGroundingKey("865ee836529e3a37de1a74f8d57d533558a2247abc71f8c5545a57f763b4d546"));
+    }
     [Fact] public void CoinOrAnyObjectUsesGeometryAndStableSeparateIds() {
         var d=AssemblyPolicy.Approve(Evidence(),["object","cord","knot","support"]);
         AssemblyPolicy.Validate(d,Sha,60);
@@ -97,6 +101,9 @@ public sealed class AssemblyTests
     }
     private sealed class FramesStub:IKnotFrames {
         public int Calls, BatchCalls;
+        public async Task<byte[]> MarkObjectAsync(string p,KnotFrame f,AssemblyObservation box,string dest,CancellationToken ct) {
+            var bytes=Encoding.UTF8.GetBytes(new string('m',200));await File.WriteAllBytesAsync(dest,bytes,ct);return bytes;
+        }
         public async Task<KnotFrame[]> ExtractBatchAsync(string p,string root,(int Index,double Time)[] samples,CancellationToken ct) {
             BatchCalls++;var result=new KnotFrame[samples.Length];
             for(var i=0;i<samples.Length;i++)result[i]=await ExtractAsync(p,Path.Combine(root,$"frame-{i}.jpg"),samples[i].Index,samples[i].Time,ct);
@@ -113,6 +120,14 @@ public sealed class AssemblyTests
         public string GroundingStatus="CLEAR_SINGLE_OBJECT";
         public bool NoInference;public int VideoCalls;
         public double GroundingConfidence=.95;
+        public int ReviewCalls;public bool ReviewUncertain;public bool WrongReviewOrdinal;
+        public Task<KnotProviderResult> ReviewObjectAsync(ObjectReviewImage[] refs,byte[][] images,string token,CancellationToken ct) {
+            ReviewCalls++;
+            var text=JsonSerializer.Serialize(new {observations=refs.Select(r=>new {frame=WrongReviewOrdinal?99:r.Ordinal,decision=ReviewUncertain?"UNCERTAIN":"CORRECTED",visible=!ReviewUncertain,
+                x1=ReviewUncertain?0:400,y1=ReviewUncertain?0:700,x2=ReviewUncertain?0:450,y2=ReviewUncertain?0:800,confidence=ReviewUncertain?0:GroundingConfidence,visual_reason="The suspended body below the cord, not the cord."}),
+                target=new {status=GroundingStatus,justification=new {es="Cuerpo suspendido revisado.",en="Reviewed suspended body."}}});
+            return Task.FromResult(new KnotProviderResult(Envelope(text),"synthetic-not-provider",1000,100));
+        }
         public async Task<AssemblyVideoProviderResult> LocateVideoGroundingAsync(string path,AssemblyVideoInput input,
             KnotFrame[] anchors,byte[][] images,string token,double cost,Func<AssemblyVideoInput,Task> uploaded,CancellationToken ct) {
             VideoCalls++;
@@ -144,7 +159,7 @@ public sealed class AssemblyTests
         public string Folder=>Path.Combine(Root,".private","physics","assembly",AssemblyPolicy.Key(Sha));
         public AssemblyLocator Open()=>new(new Env(Root),Runtime,Frames,Transport);
         public KnotRunRequest Request()=>new(Sha,AssemblyPolicy.Key(Sha),Token,true,true,.05);
-        public AssemblyGroundingRunRequest GroundRequest()=>new(Sha,AssemblyPolicy.VideoGroundingKey(Sha),Token,true,true,.25,ConfirmVideoTransfer:true);
+        public AssemblyGroundingRunRequest GroundRequest()=>new(Sha,AssemblyPolicy.VideoGroundingKey(Sha),Token,true,true,.35,ConfirmVideoTransfer:true);
         public string GroundFolder=>Directory.GetDirectories(Path.Combine(Root,".private","physics","assembly",
             AssemblyPolicy.VideoGroundingKey(Sha),"runs")).OrderBy(Directory.GetCreationTimeUtc).Last();
         public string LegacyGroundFolder=>Path.Combine(Root,".private","physics","assembly",AssemblyPolicy.GroundingKey(Sha));
@@ -324,7 +339,7 @@ public sealed class AssemblyTests
         Assert.Equal(result.Scene!.Key,cached.Scene!.Key);
         Assert.Equal(result.Scene.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
         Assert.Null(await f.Open().ApprovedAsync("s","baseline",Ct));
-        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reservations);Assert.Equal(50,f.Frames.Calls);
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(2,f.Runtime.Reservations);Assert.Equal(50,f.Frames.Calls);
         foreach(var file in Directory.GetFiles(f.GroundFolder,"*.json"))
             Assert.DoesNotContain(Token,await File.ReadAllTextAsync(file));
     }
@@ -334,7 +349,7 @@ public sealed class AssemblyTests
         Assert.Equal("AMBIGUOUS",q.Status);Assert.False(q.CacheHit);Assert.False(q.CanRun);Assert.Null(q.Scene);
         var cached=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
         Assert.Equal("AMBIGUOUS",cached.Status);Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
-        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reservations);
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(2,f.Runtime.Reservations);
     }
     [Fact] public async Task GroundingCannotBypassUncertainHistoricalAttempt() {
         using var f=new Fixture();f.Transport.Fail=true;
@@ -383,7 +398,7 @@ public sealed class AssemblyTests
         var archive=await sam.ReadArchiveAsync("s","baseline",Ct);
         Assert.NotNull(archive!.Suspension);Assert.Equal(q.Scene.EvidenceKey,archive.Suspension.EvidenceKey);
         Assert.Equal(AssemblyPolicy.GroundingOrigin,result.Receipt.Scene.Origin);Assert.Null(result.Receipt.Scene.PivotX);
-        Assert.Equal(1,samTransport.Calls);Assert.Equal(1,f.Transport.Calls);Assert.Equal(2,f.Runtime.Reservations);
+        Assert.Equal(1,samTransport.Calls);Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Transport.ReviewCalls);Assert.Equal(3,f.Runtime.Reservations);
     }
     [Fact] public async Task AutomaticTransportRequiresAmbiguityDecisionInStrictSchema() {
         using var http=new HttpStub(r=>{
@@ -426,8 +441,8 @@ public sealed class AssemblyTests
         Assert.NotNull(second.Evidence.VideoInput);Assert.Equal(Sha,second.Evidence.VideoInput.SourceSha256);
         Assert.Equal(second.Scene.Key,(await locator.TrackingAsync("s","baseline",Ct))!.Key);
         var history=await locator.TrackingHistoryAsync("s","baseline",Ct);
-        Assert.Equal(2,history.Length);Assert.Contains(history,s=>s.Key==first.Scene.Key);
-        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(2,f.Runtime.Reservations);
+        Assert.Equal(4,history.Length);Assert.Contains(history,s=>s.Key==first.Scene.Key);
+        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(2,f.Transport.ReviewCalls);Assert.Equal(4,f.Runtime.Reservations);
         var cached=await locator.GroundAsync("s","baseline",f.GroundRequest() with {ModelApiToken="",ConfirmPaidCall=false},Ct);
         Assert.True(cached.CacheHit);Assert.Equal(second.Scene.Key,cached.Scene!.Key);
         Assert.Equal(2,f.Transport.VideoCalls);
@@ -450,9 +465,9 @@ public sealed class AssemblyTests
         Assert.Equal("NEEDS_LOCALIZATION",q.Status);Assert.False(q.PriorAttempt);
         f.Transport.NoInference=false;
         await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
-        Assert.Equal(2,f.Runtime.Reservations);Assert.Equal(2,f.Transport.VideoCalls);
+        Assert.Equal(3,f.Runtime.Reservations);Assert.Equal(2,f.Transport.VideoCalls);
     }
-    [Fact] public async Task PreservedHistoricalResponseRecoversWithoutAnotherInference() {
+    [Fact] public async Task PreservedHistoricalResponseStaysReadableButCannotSeedANewSamCall() {
         using var f=new Fixture();Directory.CreateDirectory(f.LegacyGroundFolder);
         var anchors=new List<KnotFrame>();
         foreach(var (index,time) in new[]{(6,.1),(30,.5),(54,.9)})
@@ -468,14 +483,10 @@ public sealed class AssemblyTests
         },options));
         await File.WriteAllTextAsync(Path.Combine(f.LegacyGroundFolder,"response.json"),raw);
         var q=await f.Open().GroundingQuoteAsync("s","baseline",Ct);
-        Assert.Equal("READY",q.Status);Assert.True(q.CacheHit);Assert.False(q.PriorAttempt);
-        Assert.Equal(AssemblyPolicy.GroundingProtocol,q.EvidenceProtocol);
-        Assert.Equal(AssemblyPolicy.VideoGroundingProtocol,q.Protocol);
-        Assert.NotNull(q.Evidence!.Derivation);
-        Assert.False(File.Exists(Path.Combine(f.LegacyGroundFolder,"recovered-evidence.v2.json")));
-        var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest() with {ModelApiToken="",ConfirmPaidCall=false},Ct);
-        Assert.Equal(q.Scene!.Key,result.Scene!.Key);
-        Assert.True(File.Exists(Path.Combine(f.LegacyGroundFolder,"recovered-evidence.v2.json")));
+        Assert.Equal("NEEDS_LOCALIZATION",q.Status);Assert.False(q.CacheHit);Assert.False(q.PriorAttempt);
+        Assert.Equal(2,q.RequiredSparkCalls);Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
+        var history=await f.Open().TrackingHistoryAsync("s","baseline",Ct);
+        Assert.Single(history);Assert.Equal(AssemblyPolicy.GroundingKey(Sha),history[0].EvidenceKey);
         Assert.Equal(raw,await File.ReadAllTextAsync(Path.Combine(f.LegacyGroundFolder,"response.json")));
         Assert.Equal(0,f.Transport.VideoCalls);Assert.Equal(0,f.Runtime.Reservations);
         var freshQuote=await f.Open().GroundingQuoteAsync("s","baseline",Ct,"api-meta");
@@ -508,6 +519,50 @@ public sealed class AssemblyTests
         using var timing=JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"preparation-timing.json")));
         Assert.Equal(50,timing.RootElement.GetProperty("referenceFrames").GetInt32());
         Assert.True(timing.RootElement.GetProperty("totalMs").GetInt64()>=0);
+    }
+
+    [Fact] public async Task UnreviewedDraftCannotSeedSamAndOnlyReviewIsCharged() {
+        using var f=new Fixture();var locator=f.Open();
+        await locator.GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        foreach(var name in new[]{"reviewed-evidence.json","object-review-attempt.json","object-review-response.json"})
+            File.Delete(Path.Combine(f.GroundFolder,name));
+        Assert.Null(await locator.TrackingAsync("s","baseline",Ct));
+        var q=await locator.GroundingQuoteAsync("s","baseline",Ct);
+        Assert.Equal("NEEDS_LOCALIZATION",q.Status);Assert.Equal(1,q.RequiredSparkCalls);Assert.Equal(.10,q.MaximumEstimatedCostUsd);
+        var result=await locator.GroundAsync("s","baseline",f.GroundRequest() with {MaximumEstimatedCostUsd=q.MaximumEstimatedCostUsd},Ct);
+        Assert.Equal("READY",result.Status);Assert.Equal(1,result.RequiredSparkCalls);
+        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(2,f.Transport.ReviewCalls);
+        Assert.True(File.Exists(Directory.GetFiles(f.Root,"object-review-stages.json",SearchOption.AllDirectories).Single()));
+        Assert.All(result.Scene!.Seeds,seed=>Assert.Equal(1344,seed.Y1));
+    }
+    [Fact] public async Task TamperedReviewedBoxIsRejectedBeforeSam() {
+        using var f=new Fixture();var locator=f.Open();await locator.GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var p=Path.Combine(f.GroundFolder,"reviewed-evidence.json");
+        await File.WriteAllTextAsync(p,(await File.ReadAllTextAsync(p)).Replace("\"y1\":700","\"y1\":100"));
+        await Assert.ThrowsAsync<InvalidDataException>(()=>locator.TrackingAsync("s","baseline",Ct));
+    }
+    [Fact] public async Task UncertainVisualReviewOverridesAConfidentDraft() {
+        using var f=new Fixture();f.Transport.ReviewUncertain=true;
+        var q=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        Assert.Equal("AMBIGUOUS",q.Status);Assert.Null(q.Scene);
+        Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
+        Assert.All(q.Evidence!.Proposal.Observations,o=>Assert.False(o.Visible));
+        Assert.Equal(2,f.Runtime.Reservations);
+    }
+    [Fact] public async Task WrongReviewFrameCannotSeedSamEvenWithHighConfidence() {
+        using var f=new Fixture();f.Transport.WrongReviewOrdinal=true;
+        await Assert.ThrowsAsync<FormatException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
+        Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
+        Assert.True(File.Exists(Path.Combine(f.GroundFolder,"object-review-response.json")));
+        Assert.False(File.Exists(Path.Combine(f.GroundFolder,"reviewed-evidence.json")));
+        Assert.Equal(1,f.Transport.ReviewCalls);
+    }
+    [Fact] public async Task IncompleteVisualReviewNeverFallsBackToDraftBoxes() {
+        using var f=new Fixture();var locator=f.Open();await locator.GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        File.Delete(Path.Combine(f.GroundFolder,"reviewed-evidence.json"));
+        Assert.Null(await locator.TrackingAsync("s","baseline",Ct));
+        var quote=await locator.GroundingQuoteAsync("s","baseline",Ct);
+        Assert.True(quote.PriorAttempt);Assert.False(quote.CanRun);Assert.Equal(1,f.Transport.ReviewCalls);
     }
 
 }

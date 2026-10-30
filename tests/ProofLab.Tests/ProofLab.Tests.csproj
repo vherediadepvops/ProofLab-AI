@@ -64,7 +64,7 @@
     <Compile Include="..\..\src\ProofLab.Api\KnotContracts.cs" Link="KnotContracts.cs" />
     <Compile Include="..\..\src\ProofLab.Api\KnotMetaTransport.cs" Link="KnotMetaTransport.cs" />
     <Compile Include="..\..\src\ProofLab.Api\PendulumKnotLocator.cs" Link="PendulumKnotLocator.cs" />
-    <Compile Include="..\..\src\ProofLab.Api\AssemblyProgress.cs" Link="AssemblyProgress.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\ObjectVisualReview.cs" Link="ObjectVisualReview.cs" /><Compile Include="..\..\src\ProofLab.Api\AssemblyObjectReview.cs" Link="AssemblyObjectReview.cs" /><Compile Include="..\..\src\ProofLab.Api\AssemblyProgress.cs" Link="AssemblyProgress.cs" />
     <Compile Include="..\..\src\ProofLab.Api\AssemblyDenseGrounding.cs" Link="AssemblyDenseGrounding.cs" />
     <Compile Include="..\..\src\ProofLab.Api\AssemblyContracts.cs" Link="AssemblyContracts.cs" />
     <Compile Include="..\..\src\ProofLab.Api\AssemblyMetaTransport.cs" Link="AssemblyMetaTransport.cs" />

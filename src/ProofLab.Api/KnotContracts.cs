@@ -20,6 +20,8 @@ public sealed record KnotProviderResult(string Raw, string ProviderResponseId, i
 
 public interface IKnotFrames
 {
+    Task<byte[]> MarkObjectAsync(string path,KnotFrame frame,AssemblyObservation candidate,string destination,CancellationToken ct)=>
+        throw new NotSupportedException("Target review annotation is unavailable.");
     Task<KnotFrame> ExtractAsync(string path, string destination, int index, double time, CancellationToken ct);
     async Task<KnotFrame[]> ExtractBatchAsync(string path,string directory,
         (int Index,double Time)[] samples,CancellationToken ct)

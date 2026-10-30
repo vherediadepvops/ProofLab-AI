@@ -36,7 +36,7 @@ interface GroundingQuote {
   cacheHit:boolean;priorAttempt:boolean;canRun:boolean;
   mode:SamMode;freshRequired:boolean;protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2';
   status:'NEEDS_LOCALIZATION'|'READY'|'AMBIGUOUS'|'NOT_VISIBLE'|'PRIOR_ATTEMPT';
-  scene:GroundingScene|null;
+  scene:GroundingScene|null;requiredSparkCalls?:number;visualReviewEstimatedCostUsd?:number;
 }
 interface SuspensionReviewQuote {
   analysisId:string;required:boolean;priorAttempt:boolean;canRun:boolean;
@@ -465,8 +465,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
          phase==='FAILED'&&!p.started?'FAILED':'COMPLETED',
        ms:p?.preparationElapsedMs??(sparkDone?Math.max(0,now-this.sparkFinishedAt):0)}];
     if(this.sparkWasNeeded){
-      const names=[['prepare','Preparar video','Prepare video'],['references','Extraer 50 imágenes','Extract 50 images'],['upload','Subir video a Spark','Upload video to Spark'],['inference','Respuesta de Spark','Spark response'],['verify','Validar respuesta','Validate response']];
-      rows.splice(0,1,...names.map(([key,es,en])=>{const s=this.sparkStages().find(x=>x.key===key);return {key:'spark-'+key,label:this.es?es:en,state:s?.state??'NOT_STARTED',ms:s?.elapsedMs??0,percent:s?.percent};}));
+      const names=[['prepare','Preparar video','Prepare video'],['references','Extraer 50 imágenes','Extract 50 images'],['upload','Subir video a Spark','Upload video to Spark'],['inference','Respuesta de Spark','Spark response'],['verify','Validar respuesta','Validate response'],['target-review','Verificar objeto con Spark','Verify object with Spark']];
+      const reviewOnly=this.sparkStages().some(s=>s.key==='target-review') && !this.sparkStages().some(s=>s.key==='inference');
+      rows.splice(0,1,...names.filter(([key])=>!reviewOnly || key==='prepare' || key==='target-review').map(([key,es,en])=>{const s=this.sparkStages().find(x=>x.key===key);return {key:'spark-'+key,label:this.es?es:en,state:s?.state??'NOT_STARTED',ms:s?.elapsedMs??0,percent:s?.percent};}));
     }
     if(this.mode()!=='api-meta-adaptive'){
       rows.splice(rows.length-1,1,{key:'sam',label:this.samWasReused?(this.es?'SAM · caché':'SAM · cache'):(this.es?'SAM · video completo':'SAM · full video'),
@@ -682,8 +683,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private validGrounding(quote:GroundingQuote|null):quote is GroundingQuote {
     return !!quote && quote.videoSha256===this.videoSha256() &&
       /^[a-f0-9]{64}$/i.test(quote.cacheKey) &&
-      Number.isFinite(quote.maximumEstimatedCostUsd) && quote.maximumEstimatedCostUsd>0 &&
-      quote.maximumEstimatedCostUsd>=.025 && quote.maximumEstimatedCostUsd<=1 &&
+      Number.isFinite(quote.maximumEstimatedCostUsd) && quote.maximumEstimatedCostUsd>=0 &&
+      (quote.maximumEstimatedCostUsd>=.025 || quote.cacheHit) && quote.maximumEstimatedCostUsd<=1.1 &&
       quote.mode===this.mode() && quote.protocol==='ASSEMBLY_FULL_VIDEO_GROUNDING_V2' &&
       typeof quote.freshRequired==='boolean' &&
       ['NEEDS_LOCALIZATION','READY','AMBIGUOUS','NOT_VISIBLE','PRIOR_ATTEMPT'].includes(quote.status) &&
@@ -748,7 +749,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       ready.creditsConfirmedByOwner && ready.ownerApprovedPaidRequests &&
       (ready.manualRequestsUnlimited===true || ready.remainingRequests>=this.requiredCalls());
   }
-  private requiredCalls():number {return (this.groundingRequired()?2:1)+(this.reviewBudget()>0?1:0);}
+  private requiredCalls():number {return (this.groundingRequired()?(this.groundingQuote()?.requiredSparkCalls??1)+1:1)+(this.reviewBudget()>0?1:0);}
   reviewOnlyRequired():boolean {
     const r=this.suspensionReviewQuote();
     return this.cachedResultAvailable() && !!r && r.analysisId===this.cacheStatus()?.analysisId &&
@@ -772,9 +773,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.mode()==='api-meta-adaptive'){
       const q=this.adaptiveQuote();
       return q?(this.es?
-        'Procesar autoriza '+(q.requiresNewSparkCall?'localizar el objeto con Spark y después hasta ':'reutilizar Spark y enviar ')+
+        'Procesar autoriza '+(q.requiresNewSparkCall?'localizar y verificar el objeto con Spark y después hasta ':'reutilizar Spark y enviar ')+
         q.parts+' solicitudes SAM, hasta '+q.simultaneousRequests+' simultáneas, dentro del costo total mostrado. Sin reintentos automáticos.':
-        'Process authorizes '+(q.requiresNewSparkCall?'Spark localization followed by up to ':'reusing Spark and sending ')+
+        'Process authorizes '+(q.requiresNewSparkCall?'Spark localization and visual verification followed by up to ':'reusing Spark and sending ')+
         q.parts+' SAM requests, up to '+q.simultaneousRequests+' concurrent, within the displayed total. No automatic retries.'):
         (this.es?'Esperando el presupuesto de segmentos.':'Waiting for the segment quote.');
     }
@@ -784,8 +785,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const previous=this.mode()==='api-meta' && this.cacheStatus()?.previousAttemptStatus
       ? (this.es?'Hay un intento anterior registrado. Este clic inicia un análisis nuevo y puede generar otro cobro. ':'A previous attempt is recorded. This click starts a new analysis and may incur another charge. '):'';
     if(this.groundingRequired())return previous+(this.es?
-      'Al pulsar Procesar autorizas enviar el video completo y sus imágenes de referencia a Spark; después, el video a SAM, con el costo combinado estimado mostrado, incluida una revisión de suspensión si hace falta. Si Spark no localiza el objeto, SAM no se envía.':
-      'Pressing Process authorizes the complete video and its reference images to Spark, then the video to SAM, at the displayed combined estimated cost, including a suspension review if needed. If Spark cannot locate the object, SAM is not sent.');
+      'Al pulsar Procesar autorizas enviar el video completo y sus imágenes de referencia a Spark y una segunda consulta para verificar visualmente las cajas; después, el video a SAM, con el costo combinado estimado mostrado, incluida una revisión de suspensión si hace falta. Si Spark no localiza el objeto, SAM no se envía.':
+      'Pressing Process authorizes the complete video and its reference images to Spark and a second call to visually verify the boxes, then the video to SAM, at the displayed combined estimated cost, including a suspension review if needed. If Spark cannot locate the object, SAM is not sent.');
     return previous+(this.es?'Al pulsar Procesar autorizas enviar este video a Meta y usar los créditos del costo mostrado.':
       'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.');
   }
@@ -831,7 +832,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         'Procesar está bloqueado: falta habilitar créditos y autorización de esta sesión en el servidor.':
         (this.tokenEntered()?'Key registered. ':'')+'Process is blocked: server credit and spending authorization for this session is missing.';
     if(!ready.manualRequestsUnlimited && ready.remainingRequests<=0)return this.es?'Se agotó el cupo de solicitudes autorizadas de esta sesión.':'This session has no authorized requests remaining.';
-    if(!ready.manualRequestsUnlimited && ready.remainingRequests<(this.groundingRequired()?2:1))
+    if(!ready.manualRequestsUnlimited && ready.remainingRequests<this.requiredCalls())
       return this.es?'El servidor necesita habilitar los envíos de Spark y SAM para este proceso.':
         'The server must permit the Spark and SAM requests for this process.';
     if(!this.tokenEntered())return this.es?'Configura y confirma tu token en Configuración.':'Configure and confirm your key in Settings.';

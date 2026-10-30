@@ -6,7 +6,7 @@ namespace ProofLab.Api;
 
 public sealed partial class AssemblyLocator
 {
-    private sealed record FullRun(string Root,AssemblyVideoAttempt Attempt,AssemblyEvidence? Evidence,bool NoInference);
+    private sealed record FullRun(string Root,AssemblyVideoAttempt Attempt,AssemblyEvidence? Evidence,bool NoInference,AssemblyEvidence? Reviewed=null);
     private string VideoRoot(string sha)=>Folder(AssemblyPolicy.VideoGroundingKey(sha));
     private static bool ValidSha(string value)=>value is {Length:64} && value.All(Uri.IsHexDigit);
     private static string PtsHash(double[] pts)=>KnotPolicy.Hash(string.Join("\n",pts.Select(p=>p.ToString("R",CultureInfo.InvariantCulture))));
@@ -102,7 +102,7 @@ public sealed partial class AssemblyLocator
                 if(noInference && (evidence is not null || File.Exists(Path.Combine(root,"response.json"))))
                     throw new InvalidDataException("Conflicting full-video attempt outcome.");
             }
-            records.Add(new(root,attempt,evidence,noInference));
+            records.Add(new(root,attempt,evidence,noInference,evidence is null?null:await ReadObjectReview(root,evidence,ct)));
         }
         return records.OrderByDescending(r=>r.Attempt.CreatedAtUtc).ThenByDescending(r=>r.Attempt.RunId).ToArray();
     }
@@ -123,6 +123,8 @@ public sealed partial class AssemblyLocator
         foreach(var run in records.Runs) {
             var scene=run.Evidence is null?null:AssemblyPolicy.Ground(run.Evidence);
             if(scene is not null)scenes.Add(scene);
+            var verified=run.Reviewed is null?null:AssemblyPolicy.Ground(run.Reviewed);
+            if(verified is not null)scenes.Add(verified);
         }
         var reviewed=await ApprovedCore(id,role,ct,quote);if(reviewed is not null)scenes.Add(reviewed);
         var legacy=records.Legacy is null?null:AssemblyPolicy.Ground(records.Legacy);if(legacy is not null)scenes.Add(legacy);
@@ -135,9 +137,12 @@ public sealed partial class AssemblyLocator
         var (video,_,_)=await Source(id,role,ct,true);
         if(scene.VideoSha256!=video.Sha256)throw new InvalidDataException("Suspension source mismatch.");
         var records=await GroundingRecords(video.Sha256,ct);
-        var evidence=records.Runs.Select(r=>r.Evidence).Append(records.Legacy)
-            .FirstOrDefault(e=>e?.CacheKey==scene.EvidenceKey);
-        if(evidence is null)return null;
+        var evidence=records.Runs.SelectMany(r=>new[]{r.Reviewed,r.Evidence}).Append(records.Legacy)
+            .FirstOrDefault(e=>e?.CacheKey==scene.EvidenceKey && e.ResponseSha256==scene.ResponseSha256);
+        if(evidence is null) {
+            if(records.Runs.Any(r=>r.Evidence?.CacheKey==scene.EvidenceKey))throw new InvalidDataException("Suspension response mismatch.");
+            return null;
+        }
         if(evidence.ResponseSha256!=scene.ResponseSha256 || AssemblyPolicy.Ground(evidence)?.Key!=scene.Key)
             throw new InvalidDataException("Suspension scene mismatch.");
         return new(video.Sha256,scene.Key,evidence.CacheKey,evidence.ResponseSha256,evidence.Model,
@@ -149,10 +154,9 @@ public sealed partial class AssemblyLocator
     {
         var (video,_,_)=await Source(id,role,ct,quote);
         var records=await GroundingRecords(video.Sha256,ct);
-        var latest=records.Runs.FirstOrDefault(r=>r.Evidence is not null)?.Evidence;
-        if(latest is not null)return AssemblyPolicy.Ground(latest);
-        return await ApprovedCore(id,role,ct,quote) ??
-            (records.Legacy is null?null:AssemblyPolicy.Ground(records.Legacy));
+        var latest=records.Runs.FirstOrDefault(r=>r.Evidence is not null);
+        if(latest is not null)return latest.Reviewed is null?null:AssemblyPolicy.Ground(latest.Reviewed);
+        return await ApprovedCore(id,role,ct,quote);
     }
     public Task<AssemblyGroundingQuote> GroundingQuoteAsync(string id,string role,CancellationToken ct,string? mode=null)=>
         VideoQuote(id,role,ct,true,AssemblyPolicy.Mode(mode));
@@ -161,20 +165,25 @@ public sealed partial class AssemblyLocator
         var (video,_,_)=await Source(id,role,ct,quote);
         var records=await GroundingRecords(video.Sha256,ct);
         var key=AssemblyPolicy.VideoGroundingKey(video.Sha256);
-        var budget=AssemblyPolicy.VideoBudget(configuration);
+        var budget=AssemblyPolicy.VideoBudget(configuration)+ObjectReviewPolicy.EstimatedCostUsd;
         bool fresh=mode=="api-meta";
-        if(records.Pending)return new(key,video.Sha256,budget,false,true,false,"PRIOR_ATTEMPT",null,null,mode,fresh);
+        var latest=records.Runs.FirstOrDefault(r=>r.Evidence is not null);
+        var reviewPending=latest is not null && File.Exists(Path.Combine(latest.Root,"object-review-attempt.json")) && latest.Reviewed is null;
+        if(records.Pending || reviewPending)return new(key,video.Sha256,budget,false,true,false,"PRIOR_ATTEMPT",null,null,mode,fresh);
         if(fresh)return new(key,video.Sha256,budget,false,false,runtime.ManualTokenCallsPermitted,
-            "NEEDS_LOCALIZATION",null,null,mode,true);
-        var evidence=records.Runs.FirstOrDefault(r=>r.Evidence is not null)?.Evidence;
-        var reviewed=evidence is null?await ApprovedCore(id,role,ct,quote):null;
-        evidence??=reviewed is null?records.Legacy:null;
-        var scene=reviewed ?? (evidence is null?null:AssemblyPolicy.Ground(evidence));
-        var status=scene is not null?"READY":evidence is not null?AssemblyPolicy.GroundingStatus(evidence):"NEEDS_LOCALIZATION";
-        return new(key,video.Sha256,budget,scene is not null || evidence is not null,false,
-            scene is not null || (status=="NEEDS_LOCALIZATION" && runtime.ManualTokenCallsPermitted),
-            status,scene,evidence,mode,false,EvidenceProtocol:evidence?.Protocol ?? (reviewed is null?null:AssemblyPolicy.Protocol));
+            "NEEDS_LOCALIZATION",null,null,mode,true,RequiredSparkCalls:2,VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd);
+        var evidence=latest?.Reviewed;
+        var human=latest is null?await ApprovedCore(id,role,ct,quote):null;
+        var scene=human ?? (evidence is null?null:AssemblyPolicy.Ground(evidence));
+        if(scene is not null || evidence is not null)return new(key,video.Sha256,0,true,false,scene is not null,
+            scene is not null?"READY":AssemblyPolicy.GroundingStatus(evidence!),scene,evidence,mode,false,
+            EvidenceProtocol:evidence?.Protocol ?? AssemblyPolicy.Protocol,RequiredSparkCalls:0);
+        var draft=latest?.Evidence;
+        return new(key,video.Sha256,draft is null?budget:ObjectReviewPolicy.EstimatedCostUsd,false,false,
+            runtime.ManualTokenCallsPermitted,"NEEDS_LOCALIZATION",null,draft,mode,false,
+            RequiredSparkCalls:draft is null?2:1,VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd);
     }
+
     private sealed record PreparedManifest(string RelativeDirectory,string SourceSha256,string PtsSha256,string Mp4Sha256,long Bytes,KnotFrame[] Frames);
     private sealed record PreparedInput(string Path,string Directory,string Sha256,long Bytes,KnotFrame[] Frames,bool Reused);
     private async Task<PreparedInput> PreparedVideo(string root,SamVideoSource video,double[] pts,CancellationToken ct) {
@@ -228,7 +237,7 @@ public sealed partial class AssemblyLocator
             var initial=await VideoQuote(id,role,ct,false,mode);
             if(initial.PriorAttempt)throw new InvalidOperationException("Previous grounding attempt requires reconciliation.");
             if(mode=="api-meta-cache" && initial.CacheHit) {
-                if(initial.Evidence is {Derivation:not null} recovered) {
+                if(initial.Evidence is {Derivation:not null,Protocol:AssemblyPolicy.GroundingProtocol} recovered) {
                     var recoveredPath=Path.Combine(legacy,"recovered-evidence.v2.json");
                     if(!File.Exists(recoveredPath))await Save(recoveredPath,recovered,ct);
                 }
@@ -243,6 +252,16 @@ public sealed partial class AssemblyLocator
             if(pts.Length<3 || pts.Any(p=>!double.IsFinite(p)||p<0) ||
                 pts.Zip(pts.Skip(1),(a,b)=>b<=a).Any(v=>v))
                 throw new InvalidDataException("Invalid source frame timestamps.");
+            if(mode=="api-meta-cache" && initial.Evidence is {} draft) {
+                AssemblyProgress.Done("prepare");
+                var savedRoot=Path.Combine(root,"runs",draft.RunId!);
+                var reviewed=await ReviewObject(savedRoot,draft,video,pts,input.ModelApiToken,ct);
+                var verified=AssemblyPolicy.Ground(reviewed);
+                await Save(Path.Combine(savedRoot,"object-review-stages.json"),progress.Read(),CancellationToken.None);
+                return new(key,video.Sha256,initial.MaximumEstimatedCostUsd,false,false,verified is not null,
+                    AssemblyPolicy.GroundingStatus(reviewed),verified,reviewed,mode,false,RequiredSparkCalls:1,
+                    VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd);
+            }
             var runId=Guid.NewGuid().ToString("N");var runRoot=Path.Combine(root,"runs",runId);
             Directory.CreateDirectory(runRoot);
             var preparationClock=Stopwatch.StartNew();
@@ -263,7 +282,7 @@ public sealed partial class AssemblyLocator
             using var deadline=new CancellationTokenSource(TimeSpan.FromMinutes(10));
             try {
                 result=await transport.LocateVideoGroundingAsync(mp4,videoInput,prepared.ToArray(),pixels.ToArray(),
-                    input.ModelApiToken,initial.MaximumEstimatedCostUsd,
+                    input.ModelApiToken,AssemblyPolicy.VideoBudget(configuration),
                     uploaded=>Save(Path.Combine(runRoot,"video-input.json"),uploaded,CancellationToken.None),deadline.Token);
             } catch(AssemblyNoInferenceSentException) {
                 await Save(Path.Combine(runRoot,"outcome.json"),new AssemblyGroundingOutcome("NO_INFERENCE_SENT",DateTimeOffset.UtcNow),CancellationToken.None);
@@ -277,12 +296,14 @@ public sealed partial class AssemblyLocator
             var evidence=new AssemblyEvidence(attempt.Key,video.Sha256,AssemblyPolicy.Model,AssemblyPolicy.VideoGroundingProtocol,
                 prepared.ToArray(),KnotPolicy.Hash(response.Raw),response.ProviderResponseId,DateTimeOffset.UtcNow,
                 proposal,response.InputTokens,response.OutputTokens,result.VideoInput,runId);
-            var scene=AssemblyPolicy.Ground(evidence);
             await Save(Path.Combine(runRoot,"evidence.json"),evidence,CancellationToken.None);
             AssemblyProgress.Done("verify");
+            evidence=await ReviewObject(runRoot,evidence,video,pts,input.ModelApiToken,deadline.Token);
+            var scene=AssemblyPolicy.Ground(evidence);
             await Save(Path.Combine(runRoot,"stages.json"),progress.Read(),CancellationToken.None);
             return new(key,video.Sha256,initial.MaximumEstimatedCostUsd,false,false,scene is not null,
-                AssemblyPolicy.GroundingStatus(evidence),scene,evidence,mode,false,EvidenceProtocol:evidence.Protocol);
+                AssemblyPolicy.GroundingStatus(evidence),scene,evidence,mode,false,EvidenceProtocol:evidence.Protocol,RequiredSparkCalls:2,
+                VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd);
         } finally {gate.Release();}
     }
 }

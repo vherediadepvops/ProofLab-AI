@@ -34,7 +34,7 @@ describe('Integrated manual Meta segments',()=>{
   f.componentRef.setInput('autoCheck',false);f.componentRef.setInput('studyId',id);
   f.componentRef.setInput('videoSha256',sha);f.detectChanges();
   const c=f.componentInstance;
-  spyOn<any>(c,'pollSpark').and.callFake(async()=>{c.sparkStages.set(['prepare','references','upload','inference','verify'].map(key=>({key,state:'COMPLETED',elapsedMs:100,percent:100})));});
+  spyOn<any>(c,'pollSpark').and.callFake(async()=>{c.sparkStages.set(['prepare','references','upload','inference','verify','target-review'].map(key=>({key,state:'COMPLETED',elapsedMs:100,percent:100})));});
   const h=TestBed.inject(HttpTestingController),con=TestBed.inject(LabConnection);
   c.mode.set('api-meta-adaptive');
   const field=document.createElement('input');field.type='password';con.register(field);
@@ -84,7 +84,7 @@ describe('Integrated manual Meta segments',()=>{
   expect(rows.find(r=>r.key==='join')?.ms).toBe(300);
   expect(rows.every(r=>r.state==='COMPLETED')).toBeTrue();
   expect(x.c.canProcess()).toBeFalse(); // consumed batch identity requires a new read-only quote
-  expect(x.f.nativeElement.querySelectorAll('.stage-track').length).toBe(12);
+  expect(x.f.nativeElement.querySelectorAll('.stage-track').length).toBe(13);
  });
  it('reuses a verified scene without Spark or an independent three-trial quota',async()=>{
   const x=setup();await check(x,exact,located);

@@ -445,7 +445,7 @@ describe('SAM guided manual processing and parallel quotes',()=>{
   it('rejects stale protocol and mismatched mode on a paid preflight',async()=>{
     const ctx=setup();token(ctx);
     for(const bad of [{...needsGrounding,protocol:'ASSEMBLY_THREE_FRAME_V1'},
-      {...needsGrounding,mode:'api-meta'}, {...needsGrounding,maximumEstimatedCostUsd:1.01}]){
+      {...needsGrounding,mode:'api-meta'}, {...needsGrounding,maximumEstimatedCostUsd:1.11}]){
       await quote(ctx,{grounding:bad,readiness:{...ready,...unlimited}});
       expect(ctx.c.canProcess()).toBeFalse();await ctx.c.process();ctx.h.expectNone(r=>r.method==='POST');
     }

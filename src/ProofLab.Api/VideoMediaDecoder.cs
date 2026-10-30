@@ -374,6 +374,32 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
         finally {DecoderLimit.Release();}
     }
 
+    public async Task<byte[]> MarkObjectAsync(string path,KnotFrame frame,AssemblyObservation candidate,string destination,CancellationToken ct)
+    {
+        if(ffmpeg is null)throw new InvalidOperationException("FFmpeg unavailable.");
+        var original=await File.ReadAllBytesAsync(path,ct);
+        if(JpegSize(original)!=(frame.Width,frame.Height) ||
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(original)).ToLowerInvariant()!=frame.Sha256)
+            throw new InvalidDataException("Target reference geometry or hash changed.");
+        int Px(double x,int size)=>(int)Math.Round(x*size/1000);
+        var filters=new List<string>{"drawgrid=w=iw/10:h=ih/10:t=1:c=white@0.22"};
+        // Annotation coordinates are derived from normalized ORIGINAL image geometry.
+        // No resize, rotation, crop, model-dependent color or object template.
+        if(candidate.Visible)filters.Add(FormattableString.Invariant($"drawbox=x={Px(candidate.X1,frame.Width)}:y={Px(candidate.Y1,frame.Height)}:w={Math.Max(1,Px(candidate.X2-candidate.X1,frame.Width))}:h={Math.Max(1,Px(candidate.Y2-candidate.Y1,frame.Height))}:color=red@0.85:t=2"));
+        var font=OperatingSystem.IsWindows()?"fontfile='C\\:/Windows/Fonts/arial.ttf':":"";
+        var size=Math.Max(12,Math.Min(frame.Width,frame.Height)/55);
+        for(int n=1;n<10;n++) {
+            filters.Add(FormattableString.Invariant($"drawtext={font}text='{n*100}':fontsize={size}:fontcolor=white:box=1:boxcolor=black@0.6:x=2:y=h*{n}/10"));
+            filters.Add(FormattableString.Invariant($"drawtext={font}text='{n*100}':fontsize={size}:fontcolor=white:box=1:boxcolor=black@0.6:x=w*{n}/10:y=2"));
+        }
+        using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        await RunTextAsync(NewProcess(ffmpeg,"-v","error","-nostdin","-protocol_whitelist","file,pipe","-threads","1",
+            "-i",path,"-vf",string.Join(',',filters),"-frames:v","1","-q:v","2","-update","1","-n",destination),deadline.Token);
+        var marked=await File.ReadAllBytesAsync(destination,ct);
+        if(marked.Length is <100 or >8_000_000 || JpegSize(marked)!=(frame.Width,frame.Height))throw new InvalidDataException("Invalid annotated reference.");
+        return marked;
+    }
+
     private static (int Width,int Height) JpegSize(byte[] data) {
         if(data.Length<4 || data[0]!=255 || data[1]!=216)throw new InvalidDataException("Invalid reference JPEG.");
         int i=2;

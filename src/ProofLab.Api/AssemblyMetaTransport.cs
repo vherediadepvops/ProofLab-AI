@@ -8,7 +8,7 @@ namespace ProofLab.Api;
 
 /// <summary>One explicit inference, no optional token-count round trip or file deletion.
 /// Estimates are not a provider-enforced billing ceiling; actual usage is retained.</summary>
-public sealed class AssemblyMetaTransport(IHttpClientFactory clients,ILogger<AssemblyMetaTransport>? logger=null) : IAssemblyTransport
+public sealed partial class AssemblyMetaTransport(IHttpClientFactory clients,ILogger<AssemblyMetaTransport>? logger=null) : IAssemblyTransport
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string,string> UploadedFiles=new();
     private static void CheckImages(byte[][] images,string token) {

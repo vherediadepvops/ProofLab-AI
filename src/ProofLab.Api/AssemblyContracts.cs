@@ -21,7 +21,7 @@ public sealed record AssemblyQuote(string CacheKey,string VideoSha256,double Max
 public sealed record AssemblyGroundingQuote(string CacheKey,string VideoSha256,double MaximumEstimatedCostUsd,
     bool CacheHit,bool PriorAttempt,bool CanRun,string Status,SamSceneDefinition? Scene,AssemblyEvidence? Evidence,
     string Mode="api-meta-cache",bool FreshRequired=false,string Protocol=AssemblyPolicy.VideoGroundingProtocol,
-    string? EvidenceProtocol=null);
+    string? EvidenceProtocol=null,int RequiredSparkCalls=1,double VisualReviewEstimatedCostUsd=0);
 public sealed record AssemblyGroundingRunRequest(string VideoSha256,string CacheKey,string ModelApiToken,
     bool ConfirmImageTransfer,bool ConfirmPaidCall,double MaximumEstimatedCostUsd,
     string? Mode=null,bool ConfirmVideoTransfer=false);
@@ -59,6 +59,8 @@ public interface IAssemblyScenes {
     Task<SamSceneDefinition?> ApprovedForQuoteAsync(string studyId,string role,CancellationToken ct)=>ApprovedAsync(studyId,role,ct);
 }
 public interface IAssemblyTransport {
+    Task<KnotProviderResult> ReviewObjectAsync(ObjectReviewImage[] references,byte[][] images,string token,CancellationToken ct)=>
+        throw new NotSupportedException("Visual target review is unavailable.");
     Task<AssemblyVideoProviderResult> ReviewSuspensionAsync(string path,AssemblyVideoInput video,
         KnotFrame[] anchors,byte[][] images,string diagnostics,string token,double maximumCostUsd,
         Func<AssemblyVideoInput,Task> uploaded,Func<string,Task> captured,CancellationToken ct)=>
@@ -155,7 +157,11 @@ public static partial class AssemblyPolicy
         Math.Floor((budget-MaximumOutputTokens*OutputUsdPerMillion/1_000_000)*1_000_000/InputUsdPerMillion));
     public static double MaximumTokenCost(int inputTokens)=>inputTokens*InputUsdPerMillion/1_000_000+
         MaximumOutputTokens*OutputUsdPerMillion/1_000_000;
-    public static string VideoGroundingKey(string sha)=>KnotPolicy.Hash(VideoGroundingProtocol+"\n"+Model+"\n"+VideoGroundingPrompt+"\n"+sha.ToLowerInvariant());
+    // Historical Windows provider receipts used CRLF inside raw-string prompts.
+    // Canonicalize explicitly so Git checkout line endings cannot orphan those receipts.
+    private static string PromptKey(string protocol,string prompt,string sha)=>KnotPolicy.Hash(
+        protocol+"\n"+Model+"\n"+prompt.Replace("\r\n","\n").Replace("\n","\r\n")+"\n"+sha.ToLowerInvariant());
+    public static string VideoGroundingKey(string sha)=>PromptKey(VideoGroundingProtocol,VideoGroundingPrompt,sha);
     public static string VideoRunKey(string sha,string runId)=>KnotPolicy.Hash(VideoGroundingKey(sha)+"\n"+runId);
     public static bool IsSamPrompt(string value)
     {
@@ -166,8 +172,8 @@ public static partial class AssemblyPolicy
             @"^<\d{1,4}f>"+box+@"(,"+box+@")*( <\d{1,4}f>"+box+@"(,"+box+@")*){0,49}$",
             System.Text.RegularExpressions.RegexOptions.CultureInvariant,TimeSpan.FromMilliseconds(100));
     }
-    public static string Key(string sha)=>KnotPolicy.Hash(Protocol+"\n"+Model+"\n"+Prompt+"\n"+sha.ToLowerInvariant());
-    public static string GroundingKey(string sha)=>KnotPolicy.Hash(GroundingProtocol+"\n"+Model+"\n"+GroundingPrompt+"\n"+sha.ToLowerInvariant());
+    public static string Key(string sha)=>PromptKey(Protocol,Prompt,sha);
+    public static string GroundingKey(string sha)=>PromptKey(GroundingProtocol,GroundingPrompt,sha);
     public static AssemblyProposal ParseGrounding(string text,KnotFrame[] frames)
     {
         var proposal=frames.Length==50?ParseDense(text,frames):Parse(text,frames);
