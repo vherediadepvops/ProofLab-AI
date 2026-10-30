@@ -531,7 +531,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           !spark.priorAttempt && spark.status==='NEEDS_LOCALIZATION' &&
           spark.maximumEstimatedCostUsd>0 && Number.isFinite(spark.maximumEstimatedCostUsd))) &&
         quote.canRunWithManualToken &&
-        quote.parts>0 && quote.parts<=50 && quote.simultaneousRequests<=4 &&
+        quote.parts>0 && quote.parts<=50 && quote.simultaneousRequests<=12 &&
         quote.totalSamEstimatedUsd>0 && quote.totalSamEstimatedUsd<=0.50 &&
         ready.creditsConfirmedByOwner && ready.ownerApprovedPaidRequests &&
         ready.paidRequestsSwitchEnabled===true && ready.manualTokenCallsPermitted===true &&
@@ -796,7 +796,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private validAdaptiveQuote(q:SamAdaptiveQuote,sha:string):boolean {
     return q.sourceSha256===sha && /^[a-f0-9]{32}$/.test(q.suggestedBatchId) &&
       /^[a-f0-9]{64}$/.test(q.planSha256) && q.parts>=1 && q.parts<=50 &&
-      q.simultaneousRequests>=1 && q.simultaneousRequests<=4 &&
+      q.simultaneousRequests>=1 && q.simultaneousRequests<=12 &&
       Number.isFinite(q.totalSamEstimatedUsd) && q.totalSamEstimatedUsd>0 &&
       q.totalSamEstimatedUsd<=.50 &&
       (q.requiresNewSparkCall!==q.existingSparkSceneVerified);
@@ -812,7 +812,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       const root='http://127.0.0.1:'+this.localApiPort();
       const [quote,preflight,access,spark]=await Promise.all([
         firstValueFrom(this.http.get<SamAdaptiveQuote>(
-          this.adaptiveUrl()+'/preflight?targetCoreFrames=53&maxInFlight=4').pipe(timeout(90000))),
+          this.adaptiveUrl()+'/preflight?targetCoreFrames=53').pipe(timeout(90000))),
         firstValueFrom(this.http.get<SamPreflight>(this.url()+'/preflight').pipe(timeout(90000))),
         firstValueFrom(this.http.get<SamReadiness>(root+'/api/meta/readiness').pipe(timeout(10000))),
         firstValueFrom(this.http.get<GroundingQuote>(this.adaptiveUrl()+'/spark-quote').pipe(timeout(90000)))
@@ -865,7 +865,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         if(located.videoSha256!==sha || located.status!=='READY' || !located.scene ||
           located.scene.videoSha256!==sha)throw Error('SPARK_TARGET_INCONCLUSIVE');
         const exact=await firstValueFrom(this.http.get<SamAdaptiveQuote>(
-          url+'/preflight?targetCoreFrames=53&maxInFlight=4').pipe(timeout(90000)));
+          url+'/preflight?targetCoreFrames=53').pipe(timeout(90000)));
         if(!current())return;
         if(!this.validAdaptiveQuote(exact,sha) || exact.requiresNewSparkCall ||
           exact.sparkSceneKey!==located.scene.key || exact.totalSamEstimatedUsd>approvedSam+1e-9)

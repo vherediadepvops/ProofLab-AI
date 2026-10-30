@@ -21,7 +21,7 @@ public sealed class SamAdaptiveLiveService(
     IWebHostEnvironment environment,IConfiguration config)
 {
     public const string Protocol="PROOFLAB_SAM_ADAPTIVE_SSE_SOURCE_PTS_V1";
-    public const int MaximumLiveConcurrentRequests=4;
+    public const int MaximumLiveConcurrentRequests=12;
     private readonly SemaphoreSlim gate=new(1,1);
     private static readonly JsonSerializerOptions JsonOptions=new(JsonSerializerDefaults.Web)
         {WriteIndented=true};
@@ -71,7 +71,7 @@ public sealed class SamAdaptiveLiveService(
         string studyId,string role,int target,int inFlight,CancellationToken ct)
     {
         if(inFlight is <1 or >MaximumLiveConcurrentRequests)
-            throw new ArgumentException("Live SAM batches begin with at most four parallel calls.");
+            throw new ArgumentException("Live SAM batch concurrency must be between one and twelve.");
         var source=await runtime.GetVerifiedSourceAsync(studyId,role,ct);
         if(source.Codec is not ("h264" or "hevc" or "mpeg4"))
             throw new ArgumentException("Unrecognized source video codec.");
@@ -99,10 +99,11 @@ public sealed class SamAdaptiveLiveService(
         // Exact grounded parts are quoted again after localization, before SAM.
         var source=await runtime.GetQuoteSourceAsync(studyId,role,ct);
         if(source.Codec is not ("h264" or "hevc" or "mpeg4") ||
-           maxInFlight is <1 or >MaximumLiveConcurrentRequests)
+           maxInFlight is <0 or >MaximumLiveConcurrentRequests)
             throw new ArgumentException("Unsupported video or concurrency.");
         var pts=await runtime.ReadSourceFramePtsAsync(source,ct);
         var scene=await scenes.TrackingForQuoteAsync(studyId,role,ct);
+        if(maxInFlight==0)maxInFlight=Math.Clamp(config.GetValue<int?>("SamAdaptive:Concurrency")??8,1,MaximumLiveConcurrentRequests);
         var ideal=SamAdaptiveSegmentPlan.Create(pts.Length,targetCoreFrames,maxInFlight,
             alignToTwoFrameIntraKeyframes:true);
         SamAdaptiveGroundingDecision? grounded=null;

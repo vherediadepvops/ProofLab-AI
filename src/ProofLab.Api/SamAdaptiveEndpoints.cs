@@ -37,7 +37,7 @@ public static class SamAdaptiveEndpoints
             try
             {
                 return Results.Ok(await service.PreflightAsync(
-                    id,role,targetCoreFrames??53,maxInFlight??4,ct));
+                    id,role,targetCoreFrames??53,maxInFlight??0,ct));
             }
             catch(ArgumentException){return Results.BadRequest(new{
                 error="Unsafe adaptive plan parameters."});}

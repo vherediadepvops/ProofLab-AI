@@ -220,13 +220,20 @@ public sealed class SamAdaptiveClipBuilder(
             !intraInfo.KeyFrames[w.InputStart]))
             throw new InvalidDataException("A requested segment does not start on an intra keyframe.");
 
-        var sourceHashes=await FrameHashes(source.Path,ct);
-        var encodedHashes=await FrameHashes(intra,ct);
+        var hashSets=await Task.WhenAll(FrameHashes(source.Path,ct),FrameHashes(intra,ct));
+        var sourceHashes=hashSets[0];
+        var encodedHashes=hashSets[1];
         if(sourceHashes.Length!=originalPts.Count ||
            !sourceHashes.SequenceEqual(encodedHashes))
             throw new InvalidDataException("Lossless intermediate changed original pixels.");
-        var clips=new List<SamAdaptiveClip>(plan.PartCount);
-        foreach(var w in plan.Windows)
+        var clips=new SamAdaptiveClip[plan.PartCount];
+        // Bounded parallel jobs: one shared intermediate, never N full transcodes.
+        var configuredJobs=configuration.GetValue<int?>("SamAdaptive:PreparationConcurrency")??4;
+        var jobs=Math.Clamp(configuredJobs,1,4);
+        if((long)originalGeometry.Width*originalGeometry.Height>=8_000_000)jobs=Math.Min(jobs,2);
+        await Parallel.ForEachAsync(plan.Windows,new ParallelOptions {
+            MaxDegreeOfParallelism=jobs,CancellationToken=ct
+        },async (w,ct)=>
         {
             var name="part-"+w.Part.ToString("D2",Inv)+".mp4";
             var path=Path.Combine(folder,name);
@@ -272,10 +279,10 @@ public sealed class SamAdaptiveClipBuilder(
                     .ToLowerInvariant();
             var hashesSha=Convert.ToHexString(SHA256.HashData(
                 Encoding.UTF8.GetBytes(string.Join("\n",expectedHashes)))).ToLowerInvariant();
-            clips.Add(new(w.Part,w.InputStart,w.InputEndExclusive,
+            clips[w.Part]=new(w.Part,w.InputStart,w.InputEndExclusive,
                 w.CoreStart,w.CoreEndExclusive,w.InputFrames,
-                name,info.Length,sha,hashesSha,worst,w.BilledFrames));
-        }
+                name,info.Length,sha,hashesSha,worst,w.BilledFrames);
+        });
         timer.Stop();
         var manifest=new SamAdaptiveClipManifest(originalSha,ptsSha,
             originalPts.Count,plan.SubmittedFrames,plan.BilledFrames,

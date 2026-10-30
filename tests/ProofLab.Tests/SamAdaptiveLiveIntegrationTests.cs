@@ -77,8 +77,31 @@ public sealed class SamAdaptiveLiveIntegrationTests
         Assert.InRange(f.Transport.Calls,1,4);Assert.Equal(f.Transport.Calls,report.StartedParts);
         await Assert.ThrowsAsync<InvalidDataException>(()=>f.Service.ReadPlaybackAsync("study","baseline",request.ClientBatchId,default));
     }
+    [Theory]
+    [InlineData(4)]
+    [InlineData(8)]
+    [InlineData(12)]
+    public async Task DenseAuthenticSeedsUseRequestedConcurrencyWithoutExceedingIt(int width)
+    {
+        using var f=new Fixture();
+        var planned=SamAdaptiveSegmentPlan.Create(667,alignToTwoFrameIntraKeyframes:true);
+        var draft=Scene() with {Seeds=planned.Windows.Select(w=>
+            new SamSceneSeed((w.CoreStart+w.CoreEndExclusive)/2,"object",20,30,40,50)).ToArray()};
+        f.Scenes.Scene=draft with{Key=AssemblyPolicy.DefinitionKey(draft)};
+        var quote=await f.Service.PreflightAsync("study","baseline",53,width,default);
+        Assert.Equal(13,quote.Parts);Assert.Equal(width,quote.SimultaneousRequests);
+        var request=Request(quote);
+        var report=await f.Service.RunOnceAsync("study","baseline",request,default);
+        Assert.True(report.DerivedSeamsVerified);
+        Assert.Equal(13,f.Transport.Calls);
+        Assert.InRange(f.Transport.MaximumActive,2,width);
+        var automatic=await f.Service.PreflightAsync("study","baseline",53,0,default);
+        Assert.Equal(8,automatic.SimultaneousRequests);
+        await Assert.ThrowsAsync<ArgumentException>(()=>
+            f.Service.PreflightAsync("study","baseline",53,13,default));
+    }
     private static SamAdaptiveLiveRunRequest Request(SamAdaptiveLiveQuote q,double? maximum=null)=>new(){
-        ModelApiToken=Token,VideoSha256=q.SourceSha256,SceneKey=q.SparkSceneKey,PlanSha256=q.PlanSha256,
+        MaxInFlight=q.SimultaneousRequests,ModelApiToken=Token,VideoSha256=q.SourceSha256,SceneKey=q.SparkSceneKey,PlanSha256=q.PlanSha256,
         ClientBatchId=q.SuggestedBatchId,MaximumSamCostUsd=maximum??q.TotalSamEstimatedUsd,
         ConfirmPrivateVideoTransfer=true,ConfirmUpToManyBillableSamCalls=true,ConfirmNoAutomaticRetry=true
     };

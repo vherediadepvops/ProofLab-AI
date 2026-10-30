@@ -58,7 +58,7 @@ describe('Integrated manual Meta segments',()=>{
   expect(locate.request.body.confirmVideoTransfer).toBeTrue();
   await x.c.process();x.h.expectNone(r=>r.method==='POST');
   locate.flush(located);await tick();
-  x.h.expectOne(url+'/preflight?targetCoreFrames=53&maxInFlight=4').flush(exact);await tick();
+  x.h.expectOne(url+'/preflight?targetCoreFrames=53').flush(exact);await tick();
   const sam=x.h.expectOne(url+'/manual-batch');
   expect(sam.request.body.sceneKey).toBe(scene);expect(sam.request.body.maximumSamCostUsd).toBe(.14);
   sam.flush(done);await finalProgress(x);await p;
@@ -89,7 +89,7 @@ describe('Integrated manual Meta segments',()=>{
  it('stops before SAM if the exact quote exceeds the approved estimate',async()=>{
   const x=setup();await check(x);const p=x.c.process();
   x.h.expectOne(url+'/spark-once').flush(located);await tick();
-  x.h.expectOne(url+'/preflight?targetCoreFrames=53&maxInFlight=4').flush({...exact,totalSamEstimatedUsd:.21});
+  x.h.expectOne(url+'/preflight?targetCoreFrames=53').flush({...exact,totalSamEstimatedUsd:.21});
   await p;expect(x.c.error()).toContain('actualiza el costo');x.h.expectNone(r=>r.method==='POST');
  });
  it('does not publish an incomplete or unverified seam result',async()=>{
@@ -101,6 +101,13 @@ describe('Integrated manual Meta segments',()=>{
   const x=setup();await check(x);const p=x.c.process(),r=x.h.expectOne(url+'/spark-once');
   x.f.componentRef.setInput('videoSha256','f'.repeat(64));x.f.detectChanges();
   r.flush(located);await p;x.h.expectNone(req=>req.method==='POST'||req.url.includes('/preflight?'));
+ });
+ it('uses the quoted server concurrency instead of fixing four requests',async()=>{
+  const x=setup();await check(x,{...exact,parts:19,simultaneousRequests:12},located);
+  expect(x.c.canProcess()).toBeTrue();
+  const p=x.c.process(),r=x.h.expectOne(url+'/manual-batch');
+  expect(r.request.body.maxInFlight).toBe(12);
+  r.flush({...done,derivedSeamsVerified:false});await p; // mismatched part count is rejected before polling
  });
  it('keeps Process disabled for an invalid or missing cost',async()=>{
   const x=setup();await check(x,{...quote,totalSamEstimatedUsd:Number.NaN});
