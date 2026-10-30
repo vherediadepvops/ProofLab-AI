@@ -103,8 +103,8 @@ interface SamAdaptiveReport {
             <div class="sam-price">
               @if(preflight(); as pf) {
                 <div class="sam-price-line">
-                  <strong [class.paid-cost]="!freeCacheAvailable()" [class.free-cost]="freeCacheAvailable()">{{freeCacheAvailable()?'US$ 0.00':((groundingRequired() || reviewBudget()>0 || reviewOnlyRequired() || adaptiveQuote()?.requiresNewSparkCall)?(es?'Hasta US$ ':'Up to US$ '):'US$ ')+costLabel(displayedCost())}}</strong>
-                  <small>{{freeCacheAvailable()?(es?'desde caché · sin cobro':'from cache · no charge'):((groundingRequired() || reviewBudget()>0 || reviewOnlyRequired() || adaptiveQuote()?.requiresNewSparkCall)?(es?'Máximo autorizado · no es una factura':'Authorized maximum · not an invoice'):(es?'Usará créditos · estimado':'Uses credits · estimate'))}}</small>
+                  <strong [class.paid-cost]="!freeCacheAvailable()" [class.free-cost]="freeCacheAvailable()">{{freeCacheAvailable()?'US$ 0.00':((groundingRequired() || reviewBudget()>0 || reviewOnlyRequired() || adaptiveQuote()?.requiresNewSparkCall)?(es?'Estimado US$ ':'Estimated US$ '):'US$ ')+costLabel(displayedCost())}}</strong>
+                  <small>{{freeCacheAvailable()?(es?'desde caché · sin cobro':'from cache · no charge'):((groundingRequired() || reviewBudget()>0 || reviewOnlyRequired() || adaptiveQuote()?.requiresNewSparkCall)?(es?'Costo estimado · no es una factura':'Estimated cost · not an invoice'):(es?'Usará créditos · estimado':'Uses credits · estimate'))}}</small>
                 </div>
                 @if(!freeCacheAvailable() && groundingRequired()) {
                   <small class="sam-meta-estimate">SAM {{es?'estimado':'estimate'}} US$ {{costLabel(pf.estimatedCostUsd)}} + Spark {{es?'hasta':'up to'}} US$ {{groundingQuote()!.maximumEstimatedCostUsd.toFixed(2)}}</small>
@@ -114,7 +114,7 @@ interface SamAdaptiveReport {
                     {{aq.simultaneousRequests}} {{es?'simultáneas':'concurrent'}} ·
                     {{es?'cuadros facturables':'billable frames'}}: {{aq.billableFrames}}</small>
                   @if(aq.requiresNewSparkCall) {
-                    <small class="sam-meta-estimate">{{es?'Incluye Spark hasta US$ ':'Includes Spark up to US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{es?'segmentos máximos; se ajustan tras localizar el objeto':'maximum segments; adjusted after locating the object'}}</small>
+                    <small class="sam-meta-estimate">{{es?'Incluye Spark estimado US$ ':'Includes Spark estimated US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{es?'segmentos máximos; se ajustan tras localizar el objeto':'maximum segments; adjusted after locating the object'}}</small>
                   }
                   @if(aq.recoveryFromBatchId) {
                     <small class="sam-meta-estimate">{{es?
@@ -153,15 +153,15 @@ interface SamAdaptiveReport {
           } @else if(processing() && mode()!=='api-meta-adaptive') {
             <app-lab-activity class="sam-progress" [label]="processingLabel()" [detail]="processingDetail()"/>
           }
-          @if(mode()==='api-meta-adaptive' && stageTraceStarted()) {
+          @if(stageTraceStarted()) {
             <div class="sam-stages" aria-label="Process timing">
               @for(row of stageRows();track row.key) {
                 <div class="sam-stage-row" [class.stage-error]="row.state==='FAILED'">
-                  <div><span>{{row.label}}</span><small>{{stageStateLabel(row.state)}} · {{(row.ms/1000).toFixed(1)}} s</small></div>
+                  <div><span>{{row.label}}</span><small>{{stageStateLabel(row.state)}} · {{(row.ms/1000).toFixed(1)}} s @if(row.percent!==undefined && row.percent!==null){ · {{row.percent.toFixed(0)}}% }</small></div>
                   <div class="stage-track" role="progressbar" [attr.aria-label]="row.label"
-                    [attr.aria-valuenow]="row.state==='COMPLETED'?100:null"
+                    [attr.aria-valuenow]="row.percent ?? (row.state==='COMPLETED'?100:null)"
                     [attr.aria-valuetext]="stageStateLabel(row.state)">
-                    <i [class.stage-active]="row.state==='IN_PROGRESS'" [class.stage-done]="row.state==='COMPLETED'"></i>
+                    <i [style.width.%]="row.percent ?? null" [class.stage-active]="row.state==='IN_PROGRESS' && row.percent==null" [class.stage-done]="row.state==='COMPLETED'"></i>
                   </div>
                 </div>
               }
@@ -292,7 +292,7 @@ interface SamAdaptiveReport {
                 <rect x="0" y="0" [attr.width]="r.frameWidth" [attr.height]="r.frameHeight" fill="#101b2a"/>
                 @for(d of frame.detections; track d.objectId) {
                   <path [attr.d]="d.maskPath"
-                    [attr.transform]="'translate('+d.left+' '+d.top+')'"
+                    [attr.transform]="'translate('+d.left+' '+d.top+') scale('+(d.maskScaleX??1)+' '+(d.maskScaleY??1)+')'"
                     fill="rgba(15,225,180,.48)" stroke="#42ffe0" stroke-width=".6"/>
                   <rect [attr.x]="d.left" [attr.y]="d.top"
                     [attr.width]="d.right-d.left" [attr.height]="d.bottom-d.top"
@@ -417,6 +417,17 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private traceTicker:ReturnType<typeof setInterval>|null=null;
   private traceStartedAt=0;
   private sparkFinishedAt=0;
+  readonly sparkStages=signal<{key:string;state:string;elapsedMs:number;percent:number|null}[]>([]);
+  private sparkPoll:ReturnType<typeof setInterval>|null=null;
+  private async pollSpark():Promise<void> {
+    if(!this.http || !this.stageTraceStarted() || !this.sparkWasNeeded)return;
+    const url=this.groundingUrl(),started=this.traceStartedAt;
+    try {const p=await firstValueFrom(this.http.get<{startedAtUtc:string;stages:{key:string;state:string;elapsedMs:number;percent:number|null}[]}>(url+'/progress').pipe(timeout(5000)));
+      if(url===this.groundingUrl() && started===this.traceStartedAt && Date.parse(p.startedAtUtc)>=started-1000)this.sparkStages.set(p.stages);
+    }catch{/* Read-only progress cannot cause another provider call. */}
+  }
+  private stopSparkPoll():void {if(this.sparkPoll!==null)clearInterval(this.sparkPoll);this.sparkPoll=null;}
+
   private viewStartedAt=0;
   private viewFinishedAt=0;
   private traceFailed=false;
@@ -425,7 +436,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.traceTicker!==null)clearInterval(this.traceTicker);
     this.traceStartedAt=Date.now();this.traceClock.set(this.traceStartedAt);
     this.sparkFinishedAt=0;this.viewStartedAt=0;this.viewFinishedAt=0;this.traceFailed=false;
-    this.sparkWasNeeded=!!this.adaptiveQuote()?.requiresNewSparkCall;
+    this.sparkWasNeeded=this.mode()==='api-meta-adaptive'?!!this.adaptiveQuote()?.requiresNewSparkCall:this.groundingRequired();
+    this.stopSparkPoll();this.sparkStages.set([]);
+    if(this.sparkWasNeeded)this.sparkPoll=setInterval(()=>{void this.pollSpark();},1000);
     this.stageTraceStarted.set(true);
     this.traceTicker=setInterval(()=>this.traceClock.set(Date.now()),250);
   }
@@ -433,16 +446,24 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     return state==='COMPLETED'?(this.es?'Listo':'Done'):state==='FAILED'?(this.es?'Falló':'Failed'):
       state==='IN_PROGRESS'?(this.es?'En curso':'Running'):(this.es?'Pendiente':'Pending');
   }
-  stageRows():{key:string;label:string;state:string;ms:number}[] {
+  stageRows():{key:string;label:string;state:string;ms:number;percent?:number|null}[] {
     const p=this.adaptiveProgress(),now=this.traceClock(),phase=p?.phase;
     const sparkDone=!!this.sparkFinishedAt;
-    const rows=[{key:'spark',label:this.sparkWasNeeded?'Spark':(this.es?'Spark · reutilizado':'Spark · reused'),
+    const rows:{key:string;label:string;state:string;ms:number;percent?:number|null}[]=[{key:'spark',label:this.sparkWasNeeded?'Spark':(this.es?'Spark · reutilizado':'Spark · reused'),
       state:sparkDone?'COMPLETED':this.traceFailed?'FAILED':'IN_PROGRESS',
       ms:this.sparkWasNeeded?Math.max(0,(this.sparkFinishedAt||now)-this.traceStartedAt):0},
       {key:'preparation',label:this.es?'Preparación del video':'Video preparation',
        state:!sparkDone?'NOT_STARTED':phase==='PREPARING'||!p?(this.traceFailed?'FAILED':'IN_PROGRESS'):
          phase==='FAILED'&&!p.started?'FAILED':'COMPLETED',
        ms:p?.preparationElapsedMs??(sparkDone?Math.max(0,now-this.sparkFinishedAt):0)}];
+    if(this.sparkWasNeeded){
+      const names=[['prepare','Preparar video','Prepare video'],['references','Extraer 50 imágenes','Extract 50 images'],['upload','Subir video a Spark','Upload video to Spark'],['inference','Respuesta de Spark','Spark response'],['verify','Validar respuesta','Validate response']];
+      rows.splice(0,1,...names.map(([key,es,en])=>{const s=this.sparkStages().find(x=>x.key===key);return {key:'spark-'+key,label:this.es?es:en,state:s?.state??'NOT_STARTED',ms:s?.elapsedMs??0,percent:s?.percent};}));
+    }
+    if(this.mode()!=='api-meta-adaptive'){
+      rows.splice(rows.length-1,1,{key:'sam',label:'SAM',state:!sparkDone?'NOT_STARTED':this.viewStartedAt?'COMPLETED':this.traceFailed?'FAILED':'IN_PROGRESS',ms:sparkDone?Math.max(0,(this.viewStartedAt||now)-this.sparkFinishedAt):0});
+      return rows;
+    }
     for(let i=0;i<(this.adaptiveQuote()?.parts??0);i++){
       const part=p?.perPart.find(x=>x.part===i);
       rows.push({key:'sam-'+i,label:this.adaptiveQuote()?.recoveryFromBatchId?
@@ -514,6 +535,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     });
   }
   ngOnDestroy():void {
+    this.stopSparkPoll();
     this.disposed=true;this.serial++;this.offlineSerial++;
     if(this.adaptivePollHandle!==null)clearInterval(this.adaptivePollHandle);
     if(this.traceTicker!==null)clearInterval(this.traceTicker);this.traceTicker=null;
@@ -746,8 +768,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const previous=this.mode()==='api-meta' && this.cacheStatus()?.previousAttemptStatus
       ? (this.es?'Hay un intento anterior registrado. Este clic inicia un análisis nuevo y puede generar otro cobro. ':'A previous attempt is recorded. This click starts a new analysis and may incur another charge. '):'';
     if(this.groundingRequired())return previous+(this.es?
-      'Al pulsar Procesar autorizas enviar el video completo y sus imágenes de referencia a Spark; después, el video a SAM, hasta el máximo combinado mostrado, incluida una revisión de suspensión si hace falta. Si Spark no localiza el objeto, SAM no se envía.':
-      'Pressing Process authorizes the complete video and its reference images to Spark, then the video to SAM, up to the displayed combined maximum, including a suspension review if needed. If Spark cannot locate the object, SAM is not sent.');
+      'Al pulsar Procesar autorizas enviar el video completo y sus imágenes de referencia a Spark; después, el video a SAM, con el costo combinado estimado mostrado, incluida una revisión de suspensión si hace falta. Si Spark no localiza el objeto, SAM no se envía.':
+      'Pressing Process authorizes the complete video and its reference images to Spark, then the video to SAM, at the displayed combined estimated cost, including a suspension review if needed. If Spark cannot locate the object, SAM is not sent.');
     return previous+(this.es?'Al pulsar Procesar autorizas enviar este video a Meta y usar los créditos del costo mostrado.':
       'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.');
   }
@@ -881,6 +903,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           throw Error('SEGMENT_QUOTE_CHANGED');
         quote=exact;this.adaptiveQuote.set(exact);this.groundingQuote.set(located);
       }
+      void this.pollSpark();this.stopSparkPoll();
       this.sparkFinishedAt=Date.now();this.traceClock.set(Date.now());
       this.processingPhase.set('sam');
       let polling=false;
@@ -927,6 +950,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         this.failProcessing();
       }
     }finally{
+      void this.pollSpark();this.stopSparkPoll();
       if(this.adaptivePollHandle!==null)clearInterval(this.adaptivePollHandle);
       this.adaptivePollHandle=null;this.sending.set(false);
       if(!opened || !current())this.finishProcessing();
@@ -994,7 +1018,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const serial=++this.serial;
     const current=()=>serial===this.serial && !this.disposed && sha===this.videoSha256() &&
       samUrl===this.url() && mode===this.mode();
-    this.sending.set(true);this.error.set('');
+    this.sending.set(true);this.error.set('');this.startStageTrace();
     try {
       let scene=ground.scene;
       if(this.groundingRequired()) {
@@ -1036,6 +1060,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         this.cacheStatus.set(nextStatus);this.preflight.set(nextQuote);
       }
       if(!current() || !scene || scene.videoSha256!==sha)throw new Error('GROUNDING_RESULT_MISMATCH');
+      void this.pollSpark();this.stopSparkPoll();this.sparkFinishedAt=Date.now();
       this.processingPhase.set('sam');
       const state=await firstValueFrom(this.http.post<SamCacheStatus>(samUrl+'/manual-one-shot',{
         mode,sceneKey:scene.key,modelApiToken:oneTimeToken,videoSha256:sha,
@@ -1048,7 +1073,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       this.cacheStatus.set(state);
       await this.reviewAfterSam(state,oneTimeToken,samUrl,quote.suspensionReviewMaximumCostUsd??0,current);
       if(!current())return;
-      this.openResult(state);this.processingPhase.set('validating');
+      this.viewStartedAt=Date.now();this.openResult(state);this.processingPhase.set('validating');
     }catch(e){
       if(current()){
         const changed=e instanceof Error && e.message.startsWith('POST_GROUNDING_');
@@ -1069,6 +1094,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         this.cacheStatus.set(null);this.groundingQuote.set(null);this.suspensionReviewQuote.set(null);this.failProcessing();
       }
     }finally{
+      void this.pollSpark();this.stopSparkPoll();
       if(!this.processing() || this.disposed || !current())this.finishProcessing();
       this.sending.set(false);
       if(serial===this.serial){

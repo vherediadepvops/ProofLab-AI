@@ -33,7 +33,9 @@ describe('Integrated manual Meta segments',()=>{
   const f=TestBed.createComponent(SamVideoReplay);
   f.componentRef.setInput('autoCheck',false);f.componentRef.setInput('studyId',id);
   f.componentRef.setInput('videoSha256',sha);f.detectChanges();
-  const c=f.componentInstance,h=TestBed.inject(HttpTestingController),con=TestBed.inject(LabConnection);
+  const c=f.componentInstance;
+  spyOn<any>(c,'pollSpark').and.callFake(async()=>{c.sparkStages.set(['prepare','references','upload','inference','verify'].map(key=>({key,state:'COMPLETED',elapsedMs:100,percent:100})));});
+  const h=TestBed.inject(HttpTestingController),con=TestBed.inject(LabConnection);
   c.mode.set('api-meta-adaptive');
   const field=document.createElement('input');field.type='password';con.register(field);
   field.value='LLM_SYNTHETIC_LOCAL_TEST_KEY_1234567890';con.confirmToken();
@@ -47,6 +49,16 @@ describe('Integrated manual Meta segments',()=>{
    else if(r.request.url.endsWith('/readiness'))r.flush(access);else r.flush(media);}
   await p;x.f.detectChanges();
  }
+ it('reads byte progress without any provider POST and ignores stale runs',async()=>{
+  const x=setup();await check(x);(x.c as any).startStageTrace();
+  (x.c as any).pollSpark.and.callThrough();
+  const current=(x.c as any).pollSpark();
+  x.h.expectOne(root+'/assembly/baseline/grounding/progress').flush({startedAtUtc:new Date().toISOString(),stages:[{key:'upload',state:'IN_PROGRESS',elapsedMs:1000,percent:43}]});await current;
+  expect(x.c.stageRows().find(r=>r.key==='spark-upload')?.percent).toBe(43);
+  const stale=(x.c as any).pollSpark();
+  x.h.expectOne(root+'/assembly/baseline/grounding/progress').flush({startedAtUtc:'2000-01-01T00:00:00Z',stages:[]});await stale;
+  expect(x.c.sparkStages().length).toBe(1);x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
  it('quotes on the selected normal server, includes Spark and needs only the explicit click',async()=>{
   const x=setup();await check(x);
   expect(x.c.localApiPort()).toBe(5391);expect(x.c.canProcess()).toBeTrue();
@@ -72,7 +84,7 @@ describe('Integrated manual Meta segments',()=>{
   expect(rows.find(r=>r.key==='join')?.ms).toBe(300);
   expect(rows.every(r=>r.state==='COMPLETED')).toBeTrue();
   expect(x.c.canProcess()).toBeFalse(); // consumed batch identity requires a new read-only quote
-  expect(x.f.nativeElement.querySelectorAll('.stage-track').length).toBe(8);
+  expect(x.f.nativeElement.querySelectorAll('.stage-track').length).toBe(12);
  });
  it('reuses a verified scene without Spark or an independent three-trial quota',async()=>{
   const x=setup();await check(x,exact,located);

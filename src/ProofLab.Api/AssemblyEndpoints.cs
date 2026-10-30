@@ -30,6 +30,11 @@ public static class AssemblyEndpoints
     public static void MapAssemblyEndpoints(this WebApplication app)
     {
         const string path="/api/science/director/pendulum/sessions/{id}/assembly/{role}";
+        app.MapGet(path+"/grounding/progress",(string id,string role,HttpContext c)=> {
+            c.Response.Headers.CacheControl="no-store";
+            if(!Local(c))return Results.StatusCode(403);
+            var progress=AssemblyProgress.Read(id,role);return progress is null?Results.NotFound():Results.Ok(progress);
+        });
         app.MapGet(path+"/grounding/preflight",(string id,string role,string? mode,AssemblyLocator locator,
             HttpContext c,CancellationToken ct)=> {
             c.Response.Headers.CacheControl="no-store";

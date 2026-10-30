@@ -48,6 +48,7 @@ public sealed class SamAdaptiveSegmentPlan
     public double UnsplitSamCostUsd => Math.Max(MinimumBilledFrames,SourceFrames)*SamUsdPerFrame;
     public bool BudgetReducedPartCount { get; }
     public bool IntraKeyframeAligned { get; }
+    public bool OriginalPacketCopy { get; private set; }
     public IReadOnlyList<SamAdaptiveWindow> Windows { get; }
 
     private SamAdaptiveSegmentPlan(int sourceFrames,int target,int maxInFlight,
@@ -103,6 +104,40 @@ public sealed class SamAdaptiveSegmentPlan
         }
         throw new InvalidOperationException(
             "Even the unsplit video exceeds the owner-approved SAM cost cap.");
+    }
+
+    public static SamAdaptiveSegmentPlan RestoreNative(int frames,int target,int maxInFlight,
+        IReadOnlyList<SamAdaptiveWindow> windows) {
+        if(frames is <50 or >MaximumSourceFrames || target is <50 or >500 || maxInFlight is <1 or >8 ||
+           windows.Sum(w=>w.BilledFrames)*SamUsdPerFrame>DefaultMaximumSamUsd+1e-10 || windows.Count is <1 or >8 || windows[0].CoreStart!=0 || windows[^1].CoreEndExclusive!=frames ||
+           windows.Where((w,i)=>w.Part!=i || w.InputStart<0 || w.InputStart>w.CoreStart || w.InputEndExclusive<w.CoreEndExclusive ||
+             w.InputEndExclusive>frames || w.CoreFrames<50 || (i>0&&w.CoreStart!=windows[i-1].CoreEndExclusive)).Any())
+            throw new InvalidDataException("Invalid native segment windows.");
+        return new(frames,target,maxInFlight,.50,windows,false,true){OriginalPacketCopy=true};
+    }
+    public static SamAdaptiveSegmentPlan Native(int frames,int[] keyFrames,int[] safeEnds,
+        int[]? seeds,int target=53,int maxInFlight=8,int maximumParts=8) {
+        if(frames is <50 or >MaximumSourceFrames || maximumParts is <1 or >8 || maxInFlight is <1 or >8 || target is <50 or >500 || !keyFrames.Contains(0) || !safeEnds.Contains(frames))throw new ArgumentException("Invalid native source plan.");
+        var keys=keyFrames.Where(x=>x>=50&&x+52<=frames).Distinct().Order().ToArray();
+        for(var count=Math.Min(Math.Min(maximumParts,8),Math.Min(frames/50,keys.Length+1));count>=1;count--) {
+            var starts=new List<int>{0};
+            for(var i=1;i<count;i++) {
+                var candidates=keys.Where(k=>k>=starts[^1]+50 && frames-(k+2)>=50*(count-i)).ToArray();
+                if(candidates.Length==0)break;
+                starts.Add(candidates.MinBy(k=>Math.Abs(k-(double)i*frames/count)));
+            }
+            if(starts.Count!=count)continue;
+            var windows=starts.Select((start,i)=> {
+                var coreStart=i==0?0:start+2;
+                var coreEnd=i==count-1?frames:starts[i+1]+2;
+                var inputEnd=i==count-1?frames:safeEnds.FirstOrDefault(e=>e>=coreEnd+2,frames);
+                return new SamAdaptiveWindow(i,coreStart,coreEnd,start,inputEnd);
+            }).ToArray();
+            if(windows.Any(w=>w.CoreFrames<50) || windows.Sum(w=>w.BilledFrames)*SamUsdPerFrame>.50+1e-10 ||
+               (seeds is not null && windows.Any(w=>!seeds.Any(f=>f>=w.InputStart && f<w.InputEndExclusive))))continue;
+            return RestoreNative(frames,target,maxInFlight,windows);
+        }
+        throw new InvalidDataException("No valid native stream-copy plan fits this source.");
     }
 
     private static IReadOnlyList<SamAdaptiveWindow> CreateWindows(

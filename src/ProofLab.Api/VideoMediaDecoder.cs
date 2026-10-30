@@ -343,7 +343,7 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
     public async Task<KnotFrame[]> ExtractBatchAsync(string path,string directory,
         (int Index,double Time)[] samples,CancellationToken ct)
     {
-        if(ffmpeg is null || ffprobe is null || samples.Length is <1 or >3 ||
+        if(ffmpeg is null || ffprobe is null || samples.Length is <1 or >50 ||
            samples.Any(s=>s.Index<0 || s.Index>=15000 || !double.IsFinite(s.Time) || s.Time<0) ||
            samples.Zip(samples.Skip(1),(a,b)=>b.Index<=a.Index || b.Time<=a.Time).Any(x=>x))
             throw new ArgumentException("Invalid original reference frames.");
@@ -363,12 +363,7 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
                 var destination=Path.Combine(directory,$"frame-{i}.jpg");
                 var bytes=await File.ReadAllBytesAsync(destination,deadline.Token);
                 if(bytes.Length is <100 or >8_000_000)throw new ArgumentException("Original frame exceeds image limit.");
-                var probe=await RunTextAsync(NewProcess(ffprobe,"-v","error",
-                    "-protocol_whitelist","file,pipe","-select_streams","v:0",
-                    "-show_entries","stream=width,height","-of","json","-i",destination),deadline.Token);
-                using var doc=JsonDocument.Parse(probe);
-                var stream=doc.RootElement.GetProperty("streams")[0];
-                var width=stream.GetProperty("width").GetInt32();var height=stream.GetProperty("height").GetInt32();
+                var (width,height)=JpegSize(bytes);
                 if(width is <2 or >8192 || height is <2 or >8192)
                     throw new ArgumentException("Unsafe image geometry.");
                 result[i]=new(samples[i].Index,samples[i].Time,width,height,
@@ -377,6 +372,24 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
             return result;
         }
         finally {DecoderLimit.Release();}
+    }
+
+    private static (int Width,int Height) JpegSize(byte[] data) {
+        if(data.Length<4 || data[0]!=255 || data[1]!=216)throw new InvalidDataException("Invalid reference JPEG.");
+        int i=2;
+        while(i+3<data.Length) {
+            if(data[i++]!=255)throw new InvalidDataException("Invalid JPEG marker.");
+            while(i<data.Length&&data[i]==255)i++;
+            if(i>=data.Length)break;
+            int marker=data[i++];if(marker is 216 or 217)continue;
+            if(i+1>=data.Length)break;
+            int length=(data[i]<<8)|data[i+1];if(length<2||i+length>data.Length)break;
+            if(marker is 192 or 193 or 194 or 195 or 197 or 198 or 199 or 201 or 202 or 203 or 205 or 206 or 207) {
+                if(length<8)break;return ((data[i+5]<<8)|data[i+6],(data[i+3]<<8)|data[i+4]);
+            }
+            i+=length;
+        }
+        throw new InvalidDataException("JPEG geometry missing.");
     }
 
     private static Process NewProcess(string binary, params string[] args)

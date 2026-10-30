@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 namespace ProofLab.Api;
 
 public sealed partial class AssemblyLocator(IWebHostEnvironment environment,
-    ISamVideoRuntime runtime, IKnotFrames frames, IAssemblyTransport transport,IConfiguration? configuration=null) : IAssemblyScenes
+    ISamVideoRuntime runtime, IKnotFrames frames, IAssemblyTransport transport,IConfiguration? configuration=null, ISamAdaptiveClipBuilder? adaptiveClips=null) : IAssemblyScenes
 {
     private static readonly JsonSerializerOptions Json=new(JsonSerializerDefaults.Web);
     private readonly SemaphoreSlim gate=new(1,1);

@@ -120,6 +120,11 @@ public sealed class AssemblyTests
             var receipt=input with {ProviderFileId="file-synthetic-"+VideoCalls};
             await uploaded(receipt);
             var result=await LocateGroundingAsync(images,token,ct);
+            if(anchors.Length==50)result=result with {Raw=Envelope(JsonSerializer.Serialize(new {
+                arrangement="simple_pendulum",samples=Enumerable.Range(0,50).Select(i=>new double[]{i,1,400,200,450,800,GroundingConfidence}),
+                points=new[]{new double[]{0,1,500,133.3,.95},new double[]{25,1,500,133.3,.95},new double[]{49,1,500,133.3,.95}},
+                target=new {status=GroundingStatus,justification=new {es="Objeto visible.",en="Visible object."}}
+            }))};
             return new(result,receipt);
         }
         public async Task<KnotProviderResult> LocateGroundingAsync(byte[][] images,string key,CancellationToken ct) {
@@ -129,7 +134,7 @@ public sealed class AssemblyTests
         public async Task<KnotProviderResult> LocateAsync(byte[][] images,string key,CancellationToken ct) {
             Calls++;if(Wait is not null)await Wait();
             if(Fail)throw new HttpRequestException("Synthetic failure");
-            Assert.Equal(Token,key);Assert.Equal(3,images.Length);
+            Assert.Equal(Token,key);Assert.True(images.Length is 3 or 50);
             return new(Envelope(Points()),"synthetic-not-provider",1000,100);
         }
     }
@@ -197,14 +202,13 @@ public sealed class AssemblyTests
         public int Calls;public HttpClient CreateClient(string name)=>new(this,false);
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r,CancellationToken c){Calls++;return Task.FromResult(reply(r));}
     }
-    [Fact] public async Task ExcessiveTokenPreflightCannotReachInference() {
+    [Fact] public async Task ImageTransportSkipsOptionalTokenCount() {
         using var http=new HttpStub(r=>{
-            Assert.EndsWith("/responses/input_tokens",r.RequestUri!.AbsoluteUri);
-            return new(System.Net.HttpStatusCode.OK){Content=new StringContent("{\"input_tokens\":40000}")};
+            Assert.EndsWith("/responses",r.RequestUri!.AbsoluteUri);
+            return new(System.Net.HttpStatusCode.OK){Content=new StringContent(Envelope(Points()))};
         });
-        await Assert.ThrowsAsync<InvalidOperationException>(()=>new AssemblyMetaTransport(http)
-            .LocateAsync(Enumerable.Range(0,3).Select(_=>new byte[200]).ToArray(),Token,Ct));
-        Assert.Equal(1,http.Calls);
+        var result=await new AssemblyMetaTransport(http).LocateAsync(Enumerable.Range(0,3).Select(_=>new byte[200]).ToArray(),Token,Ct);
+        Assert.Equal(1,http.Calls);Assert.Equal(1000,result.InputTokens);
     }
     [Fact] public async Task RealTransportContractUsesOneBoundedInferenceWithoutTools() {
         using var http=new HttpStub(r=>{
@@ -219,7 +223,7 @@ public sealed class AssemblyTests
         });
         var result=await new AssemblyMetaTransport(http).LocateAsync(
             Enumerable.Range(0,3).Select(_=>new byte[200]).ToArray(),Token,Ct);
-        Assert.Equal(2,http.Calls);Assert.Equal(1000,result.InputTokens);
+        Assert.Equal(1,http.Calls);Assert.Equal(1000,result.InputTokens);
         Assert.Equal(Points(),AssemblyMetaTransport.OutputText(result.Raw));
     }
     private sealed class SamTransport:ISamVideoTransport {
@@ -320,7 +324,7 @@ public sealed class AssemblyTests
         Assert.Equal(result.Scene!.Key,cached.Scene!.Key);
         Assert.Equal(result.Scene.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
         Assert.Null(await f.Open().ApprovedAsync("s","baseline",Ct));
-        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reservations);Assert.Equal(3,f.Frames.Calls);
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reservations);Assert.Equal(50,f.Frames.Calls);
         foreach(var file in Directory.GetFiles(f.GroundFolder,"*.json"))
             Assert.DoesNotContain(Token,await File.ReadAllTextAsync(file));
     }
@@ -396,7 +400,7 @@ public sealed class AssemblyTests
         var result=await new AssemblyMetaTransport(http).LocateGroundingAsync(
             Enumerable.Range(0,3).Select(_=>new byte[200]).ToArray(),Token,Ct);
         AssemblyMetaTransport.ValidateReceipt(result.Raw,result.ProviderResponseId,result.InputTokens,result.OutputTokens);
-        Assert.Equal(2,http.Calls);
+        Assert.Equal(1,http.Calls);
     }
 
     [Fact] public void ConfidenceInAnAbsentEntityNeverCreatesOrRejectsAnObjectBox() {
@@ -499,10 +503,10 @@ public sealed class AssemblyTests
     [Fact] public async Task FullVideoUsesOneNativeAnchorBatchAndRecordsLocalTiming() {
         using var f=new Fixture();
         var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
-        Assert.Equal(1,f.Frames.BatchCalls);Assert.Equal(3,f.Frames.Calls);
-        Assert.Equal(new[]{60,300,539},result.Evidence!.Frames.Select(x=>x.Index));
+        Assert.Equal(1,f.Frames.BatchCalls);Assert.Equal(50,f.Frames.Calls);
+        Assert.Equal(Enumerable.Range(0,50).Select(i=>(int)Math.Round(599*i/49d)),result.Evidence!.Frames.Select(x=>x.Index));
         using var timing=JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"preparation-timing.json")));
-        Assert.Equal(3,timing.RootElement.GetProperty("referenceFrames").GetInt32());
+        Assert.Equal(50,timing.RootElement.GetProperty("referenceFrames").GetInt32());
         Assert.True(timing.RootElement.GetProperty("totalMs").GetInt64()>=0);
     }
 

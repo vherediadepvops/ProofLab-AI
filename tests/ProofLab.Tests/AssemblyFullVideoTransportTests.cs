@@ -29,7 +29,7 @@ public sealed class AssemblyFullVideoTransportTests
         public byte[][] Images { get; }
         public KnotFrame[] Anchors { get; }
         public AssemblyVideoInput Input { get; }
-        public Clip()
+        public Clip(int count=3)
         {
             Root = Path.Combine(parent, Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Root);
@@ -37,13 +37,14 @@ public sealed class AssemblyFullVideoTransportTests
             Bytes = Enumerable.Range(0, 131073).Select(i => (byte)(i * 17 % 251)).ToArray();
             Encoding.ASCII.GetBytes("SYNTHETIC_MP4_NOT_A_REAL_VIDEO").CopyTo(Bytes, 0);
             File.WriteAllBytes(PathName, Bytes);
-            Images = Enumerable.Range(0, 3).Select(i => Enumerable.Repeat((byte)(i + 21), 200 + i * 17).ToArray()).ToArray();
+            Images = Enumerable.Range(0, count).Select(i => Enumerable.Repeat((byte)(i + 21), 200 + i * 17).ToArray()).ToArray();
             Anchors = new[] {
                 new KnotFrame(30, .5, 1080, 1920, Hash(Images[0])),
                 new KnotFrame(300, 5, 1080, 1920, Hash(Images[1])),
                 new KnotFrame(570, 9.5, 1080, 1920, Hash(Images[2]))
             };
-            Input = new(new string('a', 64), Hash(Bytes), Bytes.LongLength, "", 600, new string('b', 64));
+            if(count==50)Anchors=Enumerable.Range(0,50).Select(i=>new KnotFrame(i*12,i*.2,1080,1920,Hash(Images[i]))).ToArray();
+            Input = new(new string('a', 64), Hash(Bytes), Bytes.LongLength, "", 600, new string('b', 64),count==50?"FULL_VIDEO_REMUX_WITH_50_NATIVE_ANCHORS":"FULL_VIDEO_REMUX_WITH_3_NATIVE_ANCHORS");
         }
         private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         public void Dispose()
@@ -160,17 +161,16 @@ public sealed class AssemblyFullVideoTransportTests
             result.Response.InputTokens, result.Response.OutputTokens);
         Assert.DoesNotContain(Token, JsonSerializer.Serialize(result));
         Assert.DoesNotContain(clip.PathName, inference.Json!);
-        Assert.True(http.Events.IndexOf("uploaded-callback") < http.Events.IndexOf("POST /v1/responses/input_tokens"));
+        Assert.True(http.Events.IndexOf("uploaded-callback") < http.Events.IndexOf("POST /v1/responses"));
     }
 
     [Fact]
-    public async Task CountsExactInferencePayloadAndUsesBoundedStrictSchemaWithoutTools()
+    public async Task SkipsOptionalTokenCountAndRetainsUploadedFileWithStrictSchema()
     {
         using var clip = new Clip(); using var http = new FakeHttp();
         await Send(clip, http);
-        var count = Assert.Single(http.Requests, r => r.Path == "/v1/responses/input_tokens");
+        Assert.DoesNotContain(http.Requests, r => r.Path == "/v1/responses/input_tokens" || r.Method=="DELETE");
         var infer = Assert.Single(http.Requests, r => r.Method == "POST" && r.Path == "/v1/responses");
-        Assert.Equal(count.Json, infer.Json);
         using var doc = JsonDocument.Parse(infer.Json!); var root = doc.RootElement;
         Assert.Equal(AssemblyPolicy.Model, root.GetProperty("model").GetString());
         Assert.Equal(AssemblyPolicy.MaximumOutputTokens, root.GetProperty("max_output_tokens").GetInt32());
@@ -186,37 +186,21 @@ public sealed class AssemblyFullVideoTransportTests
     }
 
     [Fact]
-    public async Task MaximumAllowedInputFitsVisibleCeilingAndOneMoreTokenStopsInference()
-    {
-        using var clip = new Clip();
-        var limit = AssemblyPolicy.VideoInputLimit(.25);
-        Assert.True(AssemblyPolicy.MaximumTokenCost(limit) <= .25);
-        Assert.True(AssemblyPolicy.MaximumTokenCost(limit + 1) > .25);
-        using (var allowed = new FakeHttp { CountTokens = limit })
-        {
-            await Send(clip, allowed);
-            Assert.Single(allowed.Requests, r => r.Method == "POST" && r.Path == "/v1/responses");
-        }
-        using var rejected = new FakeHttp { CountTokens = limit + 1 };
-        await Assert.ThrowsAsync<AssemblyNoInferenceSentException>(() => Send(clip, rejected));
-        Assert.DoesNotContain(rejected.Requests, r => r.Path == "/v1/responses");
-        Assert.Single(rejected.Requests, r => r.Path == "/v1/responses/input_tokens");
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    public async Task InvalidCountNeverSubmitsInference(int count)
-    {
-        using var clip = new Clip(); using var http = new FakeHttp { CountTokens = count };
-        await Assert.ThrowsAsync<AssemblyNoInferenceSentException>(() => Send(clip, http));
-        Assert.DoesNotContain(http.Requests, r => r.Path == "/v1/responses");
+    public async Task SendsFiftyLabeledImagesAndFullVideoWithoutCountOrDelete() {
+        using var clip=new Clip(50);using var http=new FakeHttp();
+        await Send(clip,http);
+        Assert.Equal(new[]{"POST /v1/files","uploaded-callback","POST /v1/responses"},http.Events);
+        using var doc=JsonDocument.Parse(http.Requests.Single(r=>r.Path=="/v1/responses").Json!);
+        var input=doc.RootElement.GetProperty("input")[0].GetProperty("content").EnumerateArray().ToArray();
+        Assert.Equal(50,input.Count(x=>x.GetProperty("type").GetString()=="input_image"));
+        Assert.Single(input,x=>x.GetProperty("type").GetString()=="input_file");
+        Assert.Equal("low",doc.RootElement.GetProperty("reasoning").GetProperty("effort").GetString());
+        Assert.True(doc.RootElement.GetProperty("text").GetProperty("format").GetProperty("strict").GetBoolean());
     }
 
     [Theory]
     [InlineData("/v1/files")]
-    [InlineData("/v1/responses/input_tokens")]
-    public async Task UploadOrCountingFailureIsExplicitlyNotSubmittedAndNeverRetries(string path)
+    public async Task UploadFailureIsExplicitlyNotSubmittedAndNeverRetries(string path)
     {
         using var clip = new Clip(); using var http = new FakeHttp { FailPath = path };
         var error = await Assert.ThrowsAsync<AssemblyNoInferenceSentException>(() => Send(clip, http));
@@ -241,6 +225,6 @@ public sealed class AssemblyFullVideoTransportTests
         var error = await Assert.ThrowsAnyAsync<HttpRequestException>(() => Send(clip, http));
         Assert.DoesNotContain(Token, error.ToString());
         Assert.Single(http.Requests, r => r.Method == "POST" && r.Path == "/v1/responses");
-        Assert.Single(http.Requests, r => r.Path == "/v1/responses/input_tokens");
+        Assert.DoesNotContain(http.Requests, r => r.Path == "/v1/responses/input_tokens");
     }
 }

@@ -21,6 +21,8 @@ export interface SamVideoDetection {
   centroidYpx: number | null;
   foregroundPixels: number;
   maskPath: string;
+  maskScaleX?: number;
+  maskScaleY?: number;
   boxConfidence: number | null;
   maskConfidence: number | null;
 }
@@ -144,7 +146,7 @@ export async function decodeSamVideoResponse(raw: string): Promise<SamVideoEvide
     if (!box || b.left!==box.left || b.top!==box.top ||
         b.right!==box.right || b.bottom!==box.bottom)
       throw new Error('SAM_VIDEO_BOX_MASK_MISMATCH');
-    if (mask.mask.width!==b.right-b.left || mask.mask.height!==b.bottom-b.top ||
+    if (mask.mask.width<1 || mask.mask.height<1 || b.right<=b.left || b.bottom<=b.top ||
         b.left<0 || b.top<0 || b.right>size.width || b.bottom>size.height)
       throw new Error('SAM_VIDEO_MASK_BOUNDS_INVALID');
     decodedPixels+=mask.mask.width*mask.mask.height;
@@ -161,12 +163,15 @@ export async function decodeSamVideoResponse(raw: string): Promise<SamVideoEvide
     vectorChars+=path.length;
     if (vectorChars>MAX_VECTOR_CHARS)
       throw new Error('SAM_VIDEO_VECTOR_BUDGET_EXCEEDED');
+    // SAM may encode a smaller raster inside its original-pixel bounding box.
+    // Keep the exact contour and map both centroid and area into source pixels.
+    const scaleX=(b.right-b.left)/mask.mask.width,scaleY=(b.bottom-b.top)/mask.mask.height;
     const detection:SamVideoDetection={
       frameIndex:frame,objectId:mask.objectId,
       left:b.left,top:b.top,right:b.right,bottom:b.bottom,
-      centroidXpx:pixels?b.left+sx/pixels:null,
-      centroidYpx:pixels?b.top+sy/pixels:null,
-      foregroundPixels:pixels,maskPath:path,
+      centroidXpx:pixels?b.left+sx/pixels*scaleX:null,
+      centroidYpx:pixels?b.top+sy/pixels*scaleY:null,
+      foregroundPixels:pixels*scaleX*scaleY,maskPath:path,maskScaleX:scaleX,maskScaleY:scaleY,
       boxConfidence:box.confidence??null,maskConfidence:mask.confidence??null
     };
     ids.add(mask.objectId);

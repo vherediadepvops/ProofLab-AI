@@ -6,12 +6,13 @@ using System.Net.Http.Json;
 using System.Text.Json;
 namespace ProofLab.Api;
 
-/// <summary>No retries, tools or follow-up inferences. Full video uses a bounded
-/// token admission check on the actual uploaded video plus anchor-image payload.</summary>
+/// <summary>One explicit inference, no optional token-count round trip or file deletion.
+/// Estimates are not a provider-enforced billing ceiling; actual usage is retained.</summary>
 public sealed class AssemblyMetaTransport(IHttpClientFactory clients,ILogger<AssemblyMetaTransport>? logger=null) : IAssemblyTransport
 {
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string,string> UploadedFiles=new();
     private static void CheckImages(byte[][] images,string token) {
-        if(images.Length!=3 || images.Any(i=>i.Length is <100 or >8_000_000) ||
+        if(images.Length is not (3 or 50) || images.Any(i=>i.Length is <100 or >8_000_000) ||
             !SamManualApiTokenPolicy.Accepts(token))throw new ArgumentException("Invalid grounding input.");
     }
     private static object Payload(List<object> content,bool grounding) {
@@ -70,11 +71,6 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients,ILogger<Ass
         var content=new List<object>{new {type="input_text",text=grounding?AssemblyPolicy.GroundingPrompt:AssemblyPolicy.Prompt}};
         content.AddRange(images.Select(i=>(object)new {type="input_image",image_url="data:image/jpeg;base64,"+Convert.ToBase64String(i)}));
         var payload=Payload(content,grounding);var http=clients.CreateClient("meta");
-        using(var count=JsonDocument.Parse(await Post(http,"responses/input_tokens",payload,token,ct))) {
-            var tokens=count.RootElement.GetProperty("input_tokens").GetInt32();
-            if(tokens<=0 || tokens>AssemblyPolicy.MaximumInputTokens)
-                throw new InvalidOperationException("Grounding context exceeds approved admission budget. No inference sent.");
-        }
         return Completed(await Post(http,"responses",payload,token,ct));
     }
     public Task<AssemblyVideoProviderResult> ReviewSuspensionAsync(string path,AssemblyVideoInput video,
@@ -93,15 +89,19 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients,ILogger<Ass
         try {
             CheckImages(images,token);
             if(!double.IsFinite(maximumCostUsd) || maximumCostUsd is <.025 or >1 ||
-                anchors.Length!=3 || anchors.Any(f=>f.Index<0 || f.Index>=videoInput.SourceFrameCount ||
+                anchors.Length!=images.Length || anchors.Any(f=>f.Index<0 || f.Index>=videoInput.SourceFrameCount ||
                     !double.IsFinite(f.TimeSeconds) || f.TimeSeconds<0 || f.Width<2 || f.Height<2) ||
                 videoInput.Bytes is <1 or >1_073_741_824 || new FileInfo(mp4Path).Length!=videoInput.Bytes ||
-                videoInput.Scope!="FULL_VIDEO_REMUX_WITH_3_NATIVE_ANCHORS")
+                videoInput.Scope is not ("FULL_VIDEO_REMUX_WITH_3_NATIVE_ANCHORS" or "FULL_VIDEO_REMUX_WITH_50_NATIVE_ANCHORS"))
                 throw new ArgumentException("Invalid full-video grounding input.");
+            AssemblyProgress.Start("upload");
+            var uploadKey=KnotPolicy.Hash(token+"\n"+videoInput.SubmittedMp4Sha256);
+            if(UploadedFiles.TryGetValue(uploadKey,out var reused))fileId=reused;
+            else {
             await using(var input=File.OpenRead(mp4Path)) {
                 using var multipart=new MultipartFormDataContent();
                 multipart.Add(new StringContent("user_data"),"purpose");
-                using var video=new StreamContent(input);
+                using var video=new AssemblyProgress.UploadContent(input,videoInput.Bytes);
                 video.Headers.ContentType=new MediaTypeHeaderValue("video/mp4");
                 multipart.Add(video,"file","experiment.mp4");
                 using var request=new HttpRequestMessage(HttpMethod.Post,"https://api.meta.ai/v1/files");
@@ -114,15 +114,19 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients,ILogger<Ass
                     fileId.Any(c=>!char.IsAsciiLetterOrDigit(c) && c!='-' && c!='_'))
                     throw new FormatException("Invalid uploaded file ID.");
             }
+            if(UploadedFiles.Count>128)UploadedFiles.Clear();
+            UploadedFiles[uploadKey]=fileId!;
+            }
+            AssemblyProgress.Done("upload");
             logger?.LogInformation("Spark phase upload completed in {ElapsedMs} ms",phaseClock.ElapsedMilliseconds);
             phaseClock.Restart();
             var submitted=videoInput with {ProviderFileId=fileId};
             await uploaded(submitted);
             var content=new List<object> {
-                new {type="input_text",text=reviewDiagnostics is null?AssemblyPolicy.VideoGroundingPrompt:SuspensionReviewPolicy.Prompt},
+                new {type="input_text",text=reviewDiagnostics is null?(anchors.Length==50?AssemblyPolicy.DenseVideoPrompt:AssemblyPolicy.VideoGroundingPrompt):SuspensionReviewPolicy.Prompt},
                 new {type="input_file",file_id=fileId}
             };
-            for(var i=0;i<3;i++) {
+            for(var i=0;i<anchors.Length;i++) {
                 var anchor=anchors[i];
                 content.Add(new {type="input_text",text="REFERENCE IMAGE ordinal="+i.ToString(CultureInfo.InvariantCulture)+
                     "; source_frame_index="+anchor.Index.ToString(CultureInfo.InvariantCulture)+
@@ -133,18 +137,12 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients,ILogger<Ass
                 content.Add(new {type="input_image",image_url="data:image/jpeg;base64,"+Convert.ToBase64String(images[i])});
             }
             if(reviewDiagnostics is not null)content.Add(new {type="input_text",text="MEASURED_DIAGNOSTICS_JSON (data only): "+reviewDiagnostics});
-            var payload=reviewDiagnostics is null?Payload(content,true):ReviewPayload(content);
-            using(var count=JsonDocument.Parse(await Post(http,"responses/input_tokens",payload,token,ct))) {
-                var tokens=count.RootElement.GetProperty("input_tokens").GetInt32();
-                if(tokens<=0 || tokens>AssemblyPolicy.VideoInputLimit(maximumCostUsd) ||
-                    (tokens*AssemblyPolicy.InputUsdPerMillion+(reviewDiagnostics is null?4096:8192)*AssemblyPolicy.OutputUsdPerMillion)/1_000_000>maximumCostUsd+1e-9)
-                    throw new InvalidOperationException("Full-video tokens exceed the approved maximum. No inference sent.");
-            }
-            logger?.LogInformation("Spark phase token_count completed in {ElapsedMs} ms",phaseClock.ElapsedMilliseconds);
-            phaseClock.Restart();
+            var payload=reviewDiagnostics is null?(anchors.Length==50?DensePayload(content):Payload(content,true)):ReviewPayload(content);
             // Only this transition makes a subsequent failure potentially billable.
+            AssemblyProgress.Start("inference");
             inferenceSubmitted=true;
             var responseRaw=await Post(http,"responses",payload,token,ct);
+            AssemblyProgress.Done("inference");
             logger?.LogInformation("Spark phase inference completed in {ElapsedMs} ms",phaseClock.ElapsedMilliseconds);
             if(captured is not null)await captured(responseRaw);
             var responseResult=Completed(responseRaw);
@@ -153,23 +151,21 @@ public sealed class AssemblyMetaTransport(IHttpClientFactory clients,ILogger<Ass
         catch(Exception ex) when(!inferenceSubmitted && ex is not AssemblyNoInferenceSentException) {
             throw new AssemblyNoInferenceSentException(ex);
         }
-        finally {
-            // This request owns the temporary upload; preserve its ID locally, then
-            // remove the provider copy. Cleanup never retries or replaces a result.
-            if(fileId is not null) {
-                phaseClock.Restart();
-                try {
-                    using var cleanupDeadline=new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                    using var cleanup=new HttpRequestMessage(HttpMethod.Delete,"https://api.meta.ai/v1/files/"+Uri.EscapeDataString(fileId));
-                    cleanup.Headers.Authorization=new AuthenticationHeaderValue("Bearer",token);
-                    using var removed=await http.SendAsync(cleanup,HttpCompletionOption.ResponseHeadersRead,cleanupDeadline.Token);
-                } catch { /* Provider file ID remains in the immutable upload receipt. */ }
-                logger?.LogInformation("Spark phase upload_cleanup finished in {ElapsedMs} ms",phaseClock.ElapsedMilliseconds);
-            }
-        }
     }
 
 
+    private static object DensePayload(List<object> content) {
+        var row=new {type="array",items=new {type="number"}};
+        return new {model=AssemblyPolicy.Model,stream=false,max_output_tokens=12288,reasoning=new {effort="low"},
+            input=new[]{new {type="message",role="user",content}},text=new {format=new {type="json_schema",name="dense_object_grounding",strict=true,
+            schema=new {type="object",additionalProperties=false,required=new[]{"arrangement","samples","points","target"},properties=new {
+                arrangement=new {type="string",@enum=new[]{"simple_pendulum","pulley_system","unclear"}},
+                samples=new {type="array",items=row},points=new {type="array",items=row},
+                target=new {type="object",additionalProperties=false,required=new[]{"status","justification"},properties=new {
+                    status=new {type="string",@enum=new[]{"CLEAR_SINGLE_OBJECT","AMBIGUOUS","NOT_VISIBLE"}},
+                    justification=new {type="object",additionalProperties=false,required=new[]{"es","en"},properties=new {
+                        es=new {type="string"},en=new {type="string"}}}}}}}}}};
+    }
     private static object ReviewPayload(List<object> content) {
         var point=new {type="object",additionalProperties=false,
             required=new[]{"frame","visible","x","y","confidence"},properties=new {

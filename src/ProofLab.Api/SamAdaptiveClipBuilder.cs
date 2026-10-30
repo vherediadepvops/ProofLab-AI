@@ -7,13 +7,12 @@ using System.Text.Json;
 namespace ProofLab.Api;
 
 /// <summary>
-/// Prepare N EXACT source-frame clips by transcoding ONE private intermediate
-/// with keyframes at planned segment starts, then stream-copying windows starting at
-/// verified intra keyframes. No provider uploads and no local source edits.
+/// Copy original compressed packets into at most eight keyframe-aligned clips.
+/// No re-encoding, provider uploads or original-file edits.
 /// Every decoded frame is compared byte-for-byte (SHA256) to the original.
 /// A failed/incomplete clip disqualifies the entire batch from paid transport.
 /// </summary>
-public sealed class SamAdaptiveClipBuilder(
+public sealed partial class SamAdaptiveClipBuilder(
     VideoMediaDecoder decoder,IConfiguration configuration) : ISamAdaptiveClipBuilder
 {
     public const string Protocol="SAM_ADAPTIVE_PLANNED_IDR_ORIENTED_PTS_PIXEL_SHA_V2";
@@ -114,41 +113,6 @@ public sealed class SamAdaptiveClipBuilder(
         return new(width,height,rotation);
     }
 
-    private sealed record PacketTimeline(double[] Pts,bool[] KeyFrames);
-
-    // The generated intermediate uses -bf 0, i.e. packet/decode/presentation
-    // order are identical. Packet-level FFprobe avoids repeatedly decoding
-    // gigabyte-scale lossless video merely to extract timestamp metadata.
-    private async Task<PacketTimeline> ReadIntraPacketTimeline(
-        string path,CancellationToken ct)
-    {
-        var json=await Call(Ffprobe,new[]{
-            "-v","error","-protocol_whitelist","file,pipe",
-            "-select_streams","v:0",
-            "-show_entries","packet=pts_time,flags",
-            "-of","json","-i",path
-        },1_000_000,ct);
-        using var document=JsonDocument.Parse(json);
-        var packets=document.RootElement.GetProperty("packets");
-        if(packets.ValueKind!=JsonValueKind.Array || packets.GetArrayLength()>2500)
-            throw new InvalidDataException("Unsafe packet timeline.");
-        var times=new List<double>();
-        var keys=new List<bool>();
-        foreach(var packet in packets.EnumerateArray())
-        {
-            var raw=packet.GetProperty("pts_time").GetString();
-            if(!double.TryParse(raw,NumberStyles.Float,Inv,out var time) ||
-               !double.IsFinite(time) || time<0 ||
-               (times.Count>0 && time<=times[^1]))
-                throw new InvalidDataException("Generated video has unsafe packet PTS.");
-            times.Add(time);
-            keys.Add(packet.GetProperty("flags").GetString()?.Contains('K')==true);
-        }
-        if(times.Count<50 || Math.Abs(times[0])>0.005)
-            throw new InvalidDataException("Generated MP4 has bad initial PTS.");
-        return new(times.ToArray(),keys.ToArray());
-    }
-
     private async Task<string[]> FrameHashes(
         string path,CancellationToken ct)
     {
@@ -178,9 +142,7 @@ public sealed class SamAdaptiveClipBuilder(
         var ptsSha=plan.VerifySourcePts(originalPts);
         var originalGeometry=await ReadGeometry(source.Path,ct);
         var originalDisplay=originalGeometry.Display;
-        var actualPts=await decoder.ReadVideoFramePtsAsync(source.Path,ct);
-        if(plan.VerifySourcePts(actualPts)!=ptsSha)
-            throw new InvalidDataException("Original video PTS are not verified.");
+        // Original PTS are already verified and cached by VideoTimingCatalog.
         string originalSha;
         await using(var original=File.OpenRead(source.Path))
             originalSha=Convert.ToHexString(await SHA256.HashDataAsync(original,ct))
@@ -192,127 +154,11 @@ public sealed class SamAdaptiveClipBuilder(
             throw new InvalidOperationException(
                 "Adaptive output is not a fresh directory. No overwrites or paid retry.");
         Directory.CreateDirectory(folder);
-        if(plan.PartCount==1)
-            return await PrepareContinuousAsync(source,originalPts,plan,folder,
-                originalSha,originalDisplay,ptsSha,timer,ct);
-        var intra=Path.Combine(folder,"source-intra2.mp4");
-        // Force an IDR at each exact source-frame boundary, instead of bloating
-        // the lossless intermediate with an intra frame every two frames.
-        var keyframeExpression="expr:"+string.Join("+",plan.Windows.Select(w=>w.InputStart)
-            .Append(0).Distinct().Order().Select(n=>"eq(n,"+n.ToString(Inv)+")"));
-        await Call(Ffmpeg,new[]{
-            "-hide_banner","-loglevel","error","-nostdin",
-            "-protocol_whitelist","file,pipe","-threads","2",
-            "-i",source.Path,"-map","0:v:0","-an","-sn","-dn",
-            "-fps_mode","vfr","-c:v","hevc_nvenc",
-            "-preset","p4","-tune","lossless",
-            "-rc","constqp","-qp","0","-bf","0","-g","2500",
-            "-forced-idr","1","-force_key_frames",keyframeExpression,
-            "-pix_fmt","yuv420p","-tag:v","hvc1",
-            "-movflags","+faststart","-n","-f","mp4",intra
-        },10_000,ct);
-        var intermediate=new FileInfo(intra);
-        if(!intermediate.Exists || intermediate.Length is <10000 or >2_000_000_000)
-            throw new InvalidDataException("Intermediate lossless video invalid or too large.");
-        var intermediateGeometry=await ReadGeometry(intra,ct);
-        if(intermediateGeometry.Display!=originalDisplay)
-            throw new InvalidDataException(
-                "HEVC intermediate changed displayed source dimensions.");
-        var intraInfo=await ReadIntraPacketTimeline(intra,ct);
-        var intraPts=intraInfo.Pts;
-        if(intraPts.Length!=originalPts.Count)
-            throw new InvalidDataException("Lossless intermediate lost source frames.");
-        for(var i=0;i<intraPts.Length;i++)
-            if(Math.Abs(intraPts[i]-originalPts[i])>0.005)
-                throw new InvalidDataException("Lossless intermediate shifted source PTS.");
-
-        // Verify keyframe alignment before copying: a start on any non-keyframe
-        // could introduce silent pre-roll and corrupt global SAM frame IDs.
-        if(plan.Windows.Any(w=>w.InputStart%2!=0 ||
-            !intraInfo.KeyFrames[w.InputStart]))
-            throw new InvalidDataException("A requested segment does not start on an intra keyframe.");
-
-        var hashSets=await Task.WhenAll(FrameHashes(source.Path,ct),FrameHashes(intra,ct));
-        var sourceHashes=hashSets[0];
-        var encodedHashes=hashSets[1];
-        if(sourceHashes.Length!=originalPts.Count ||
-           !sourceHashes.SequenceEqual(encodedHashes))
-            throw new InvalidDataException("Lossless intermediate changed original pixels.");
-        var clips=new SamAdaptiveClip[plan.PartCount];
-        // Bounded parallel jobs: one shared intermediate, never N full transcodes.
-        var configuredJobs=configuration.GetValue<int?>("SamAdaptive:PreparationConcurrency")??4;
-        var jobs=Math.Clamp(configuredJobs,1,4);
-        if((long)originalGeometry.Width*originalGeometry.Height>=8_000_000)jobs=Math.Min(jobs,2);
-        await Parallel.ForEachAsync(plan.Windows,new ParallelOptions {
-            MaxDegreeOfParallelism=jobs,CancellationToken=ct
-        },async (w,ct)=>
-        {
-            var name="part-"+w.Part.ToString("D2",Inv)+".mp4";
-            var path=Path.Combine(folder,name);
-            await Call(Ffmpeg,new[]{
-                "-hide_banner","-loglevel","error","-nostdin",
-                "-protocol_whitelist","file,pipe","-threads","2",
-                "-ss",intraPts[w.InputStart].ToString("R",Inv),
-                "-i",intra,"-map","0:v:0",
-                "-an","-sn","-dn",
-                "-frames:v",w.InputFrames.ToString(Inv),
-                "-c:v","copy","-tag:v","hvc1",
-                "-avoid_negative_ts","make_zero",
-                "-movflags","+faststart",
-                "-n","-f","mp4",path
-            },10_000,ct);
-            var info=new FileInfo(path);
-            if(!info.Exists || info.Length is <10_000 or >240_000_000)
-                throw new InvalidDataException("Segment is invalid or exceeds Meta file size.");
-            var clipGeometry=await ReadGeometry(path,ct);
-            if(clipGeometry.Display!=originalDisplay)
-                throw new InvalidDataException(
-                    "The fragment changed displayed source dimensions.");
-            var clipInfo=await ReadIntraPacketTimeline(path,ct);
-            var clipPts=clipInfo.Pts;
-            if(clipPts.Length!=w.InputFrames)
-                throw new InvalidDataException("Stream-copy produced wrong segment frame count.");
-            var worst=0d;
-            for(var i=0;i<clipPts.Length;i++)
-            {
-                var delta=Math.Abs(clipPts[i]-
-                    (originalPts[w.GlobalFrame(i)]-originalPts[w.InputStart]));
-                if(!double.IsFinite(delta) || delta>0.005)
-                    throw new InvalidDataException("Segment PTS changed from original.");
-                worst=Math.Max(worst,delta);
-            }
-            var observedHashes=await FrameHashes(path,ct);
-            var expectedHashes=sourceHashes.AsSpan(w.InputStart,w.InputFrames).ToArray();
-            if(!observedHashes.SequenceEqual(expectedHashes))
-                throw new InvalidDataException("Segment pixels do not match source frames.");
-            string sha;
-            await using(var stream=File.OpenRead(path))
-                sha=Convert.ToHexString(await SHA256.HashDataAsync(stream,ct))
-                    .ToLowerInvariant();
-            var hashesSha=Convert.ToHexString(SHA256.HashData(
-                Encoding.UTF8.GetBytes(string.Join("\n",expectedHashes)))).ToLowerInvariant();
-            clips[w.Part]=new(w.Part,w.InputStart,w.InputEndExclusive,
-                w.CoreStart,w.CoreEndExclusive,w.InputFrames,
-                name,info.Length,sha,hashesSha,worst,w.BilledFrames);
-        });
-        timer.Stop();
-        var manifest=new SamAdaptiveClipManifest(originalSha,ptsSha,
-            originalPts.Count,plan.SubmittedFrames,plan.BilledFrames,
-            plan.EstimatedSamCostUsd,Protocol,clips,timer.ElapsedMilliseconds);
-        var json=JsonSerializer.Serialize(manifest,new JsonSerializerOptions{
-            WriteIndented=true
-        });
-        await using(var fs=new FileStream(Path.Combine(folder,"clip-manifest.json"),
-            FileMode.CreateNew,FileAccess.Write,FileShare.None,
-            65_536,FileOptions.WriteThrough))
-        {
-            var bytes=Encoding.UTF8.GetBytes(json);
-            await fs.WriteAsync(bytes,ct);
-            await fs.FlushAsync(ct);
+        if(!plan.OriginalPacketCopy) {
+            if(plan.PartCount==1)return await PrepareContinuousAsync(source,originalPts,plan,folder,originalSha,originalDisplay,ptsSha,timer,ct);
+            throw new InvalidDataException("New segmented runs must use original keyframes, never a lossless transcode.");
         }
-        // Prevent untrusted/large extra files from crossing into Meta transfer
-        // (source-intra2 is local only and never uploaded).
-        return manifest;
+        return await PrepareNativeAsync(source,originalPts,plan,folder,originalSha,originalDisplay,ptsSha,timer,ct);
     }
 
     // A continuous recovery needs no artificial IDRs or large lossless encode:

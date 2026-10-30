@@ -18,7 +18,7 @@ public sealed class SamAdaptiveLiveIntegrationTests
         using var f=new Fixture();f.Scenes.Scene=null;
         var upper=await f.Quote();
         Assert.True(upper.RequiresNewSparkCall);Assert.True(upper.CanRunWithManualToken);
-        Assert.Null(upper.RemainingTrialSlots);Assert.Equal(13,upper.Parts);
+        Assert.Null(upper.RemainingTrialSlots);Assert.Equal(8,upper.Parts);
         Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
         f.Scenes.Scene=Scene();
         var exact=await f.Quote();

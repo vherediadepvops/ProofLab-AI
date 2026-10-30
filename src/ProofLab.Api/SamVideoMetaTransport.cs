@@ -68,8 +68,6 @@ public sealed class SamVideoMetaTransport(
         using (var multipart = new MultipartFormDataContent())
         {
             multipart.Add(new StringContent("user_data"), "purpose");
-            multipart.Add(new StringContent("created_at"), "expires_after[anchor]");
-            multipart.Add(new StringContent("86400"), "expires_after[seconds]");
             await using var input = new FileStream(originalPath, FileMode.Open,
                 FileAccess.Read, FileShare.Read, 128 * 1024, useAsync: true);
             using (var part = new StreamContent(input))

@@ -38,6 +38,8 @@ export interface SamPlaybackMask {
   right:number;
   bottom:number;
   maskPath:string;
+  maskScaleX?:number;
+  maskScaleY?:number;
   centroidXpx:number;
   centroidYpx:number;
   foregroundPixels:number;
@@ -103,7 +105,7 @@ export function verifiedSamPlaybackTrack(
     masks.push({
       frameIndex:frame.frameIndex,timeSeconds:r.framePtsSeconds[frame.frameIndex],
       left:d.left,top:d.top,right:d.right,bottom:d.bottom,
-      maskPath:d.maskPath,centroidXpx:d.centroidXpx,
+      maskPath:d.maskPath,maskScaleX:d.maskScaleX,maskScaleY:d.maskScaleY,centroidXpx:d.centroidXpx,
       centroidYpx:d.centroidYpx,foregroundPixels:d.foregroundPixels
     });
   }

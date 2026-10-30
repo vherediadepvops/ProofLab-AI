@@ -35,6 +35,17 @@ describe('Stage 3: offline SAM 3.1 video evidence',()=>{
     expect(result.frames[0].timeSeconds).toBeNull(); // never infer video PTS from frame index
   });
 
+  it('maps a reduced mask raster into its source-pixel bounds without changing its contour',async()=>{
+    const normal=(await decodeSamVideoResponse(response(SYNTHETIC_WIRE))).frames[0].detections[0];
+    const wire=SYNTHETIC_WIRE.replace('x2=270;y2=254;w=320;h=334','x2=330;y2=281;w=400;h=334');
+    const scaled=(await decodeSamVideoResponse(response(wire))).frames[0].detections[0];
+    expect(scaled.maskScaleX).toBe(2);expect(scaled.maskScaleY).toBe(2);
+    expect(scaled.centroidXpx).toBeCloseTo(211+(normal.centroidXpx!-211)*2,8);
+    expect(scaled.centroidYpx).toBeCloseTo(228+(normal.centroidYpx!-228)*2,8);
+    expect(scaled.foregroundPixels).toBe(normal.foregroundPixels*4);
+    expect(scaled.maskPath).toBe(normal.maskPath);
+  });
+
   it('handles out-of-order video frames and gaps without fabricating frames',async()=>{
     const frame7=SYNTHETIC_WIRE.replace('<0f>','<7f>');
     const frame2=SYNTHETIC_WIRE.replace('<0f>','<2f>');

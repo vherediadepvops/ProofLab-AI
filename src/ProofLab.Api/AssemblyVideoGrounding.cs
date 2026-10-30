@@ -16,12 +16,12 @@ public sealed partial class AssemblyLocator
     }
     private static async Task ValidateFrames(string root,KnotFrame[] anchors,CancellationToken ct)
     {
-        if(anchors.Length!=3 || anchors.Select(f=>f.Index).Distinct().Count()!=3 ||
+        if(anchors.Length is not (3 or 50) || anchors.Select(f=>f.Index).Distinct().Count()!=anchors.Length ||
             anchors.Any(f=>f.Index<0 || !double.IsFinite(f.TimeSeconds) || f.TimeSeconds<0 ||
                 f.Width is <2 or >8192 || f.Height is <2 or >8192 ||
                 f.Width!=anchors[0].Width || f.Height!=anchors[0].Height || !ValidSha(f.Sha256)))
             throw new InvalidDataException("Invalid original anchor metadata.");
-        for(var i=0;i<3;i++) {
+        for(var i=0;i<anchors.Length;i++) {
             var path=Path.Combine(root,$"frame-{i}.jpg");
             if(new FileInfo(path).Length is <100 or >8_000_000 || await FileHash(path,ct)!=anchors[i].Sha256)
                 throw new InvalidDataException("Original anchor integrity mismatch.");
@@ -72,7 +72,7 @@ public sealed partial class AssemblyLocator
                 attempt.Protocol!=AssemblyPolicy.VideoGroundingProtocol ||
                 attempt.VideoInput.SourceSha256!=sha || !ValidSha(attempt.VideoInput.SubmittedMp4Sha256) ||
                 !ValidSha(attempt.VideoInput.FramePtsSha256) || attempt.VideoInput.SourceFrameCount<3 ||
-                attempt.VideoInput.Scope!="FULL_VIDEO_REMUX_WITH_3_NATIVE_ANCHORS")
+                attempt.VideoInput.Scope is not ("FULL_VIDEO_REMUX_WITH_3_NATIVE_ANCHORS" or "FULL_VIDEO_REMUX_WITH_50_NATIVE_ANCHORS"))
                 throw new InvalidDataException("Full-video attempt provenance mismatch.");
             AssemblyEvidence? evidence=null;
             if(File.Exists(Path.Combine(root,"evidence.json"))) {
@@ -175,12 +175,45 @@ public sealed partial class AssemblyLocator
             scene is not null || (status=="NEEDS_LOCALIZATION" && runtime.ManualTokenCallsPermitted),
             status,scene,evidence,mode,false,EvidenceProtocol:evidence?.Protocol ?? (reviewed is null?null:AssemblyPolicy.Protocol));
     }
+    private sealed record PreparedManifest(string RelativeDirectory,string SourceSha256,string PtsSha256,string Mp4Sha256,long Bytes,KnotFrame[] Frames);
+    private sealed record PreparedInput(string Path,string Directory,string Sha256,long Bytes,KnotFrame[] Frames,bool Reused);
+    private async Task<PreparedInput> PreparedVideo(string root,SamVideoSource video,double[] pts,CancellationToken ct) {
+        var index=Path.Combine(root,"prepared-fifty-boundaries-v2.json");
+        if(File.Exists(index)) {
+            var saved=await Read<PreparedManifest>(index,ct);
+            if(saved.SourceSha256!=video.Sha256 || saved.PtsSha256!=PtsHash(pts) || saved.Frames.Length!=50 ||
+                saved.RelativeDirectory.Length!=32 || saved.RelativeDirectory.Any(c=>!Uri.IsHexDigit(c)))throw new InvalidDataException("Prepared media identity mismatch.");
+            var dir=Path.Combine(root,"prepared",saved.RelativeDirectory);var mp4=Path.Combine(dir,"full-video.mp4");
+            if(new FileInfo(mp4).Length!=saved.Bytes || await FileHash(mp4,ct)!=saved.Mp4Sha256)throw new InvalidDataException("Prepared video integrity mismatch.");
+            AssemblyProgress.Done("prepare");AssemblyProgress.Start("references");
+            await ValidateFrames(dir,saved.Frames,ct);AssemblyProgress.Done("references");
+            return new(mp4,dir,saved.Mp4Sha256,saved.Bytes,saved.Frames,true);
+        }
+        var relative=Guid.NewGuid().ToString("N");var directory=Path.Combine(root,"prepared",relative);Directory.CreateDirectory(directory);
+        var path=Path.Combine(directory,"full-video.mp4");
+        await runtime.CreateMp4Async(video.Path,path,ct);
+        var actual=await runtime.ReadFramePtsAsync(path,ct);
+        if(actual.Length!=pts.Length || actual.Where((p,i)=>!double.IsFinite(p)||p<0||Math.Abs(p-pts[i])>.005).Any())throw new InvalidDataException("Remux changed original timing.");
+        var bytes=new FileInfo(path).Length;if(bytes is <1 or >1_073_741_824)throw new InvalidDataException("Video outside file limit.");
+        AssemblyProgress.Done("prepare");AssemblyProgress.Start("references");
+        var nativePlan=adaptiveClips is null?null:await adaptiveClips.PlanAsync(video,pts,null,53,8,ct);
+        var indices=AssemblyPolicy.ReferenceIndices(pts.Length,nativePlan);
+        var samples=indices.Select(index=>(index,pts[index])).ToArray();
+        var images=await frames.ExtractBatchAsync(video.Path,directory,samples,ct);
+        await ValidateFrames(directory,images,ct);AssemblyProgress.Done("references");
+        var sha=await FileHash(path,ct);
+        await Save(index,new PreparedManifest(relative,video.Sha256,PtsHash(pts),sha,bytes,images),ct);
+        return new(path,directory,sha,bytes,images,false);
+    }
+
     public Task<AssemblyGroundingQuote> GroundAsync(string id,string role,KnotRunRequest input,CancellationToken ct)=>
         GroundAsync(id,role,new AssemblyGroundingRunRequest(input.VideoSha256,input.CacheKey,input.ModelApiToken,
             input.ConfirmImageTransfer,input.ConfirmPaidCall,input.MaximumEstimatedCostUsd),ct);
     public async Task<AssemblyGroundingQuote> GroundAsync(string id,string role,AssemblyGroundingRunRequest input,CancellationToken ct)
     {
         var mode=AssemblyPolicy.Mode(input.Mode);
+        using var progress=AssemblyProgress.Begin(id,role);
+        AssemblyProgress.Start("prepare");
         await gate.WaitAsync(ct);
         try {
             var (video,_,_)=await Source(id,role,ct);
@@ -213,28 +246,14 @@ public sealed partial class AssemblyLocator
             var runId=Guid.NewGuid().ToString("N");var runRoot=Path.Combine(root,"runs",runId);
             Directory.CreateDirectory(runRoot);
             var preparationClock=Stopwatch.StartNew();
-            var mp4=Path.Combine(runRoot,"full-video.mp4");
-            await runtime.CreateMp4Async(video.Path,mp4,ct);
-            var submittedPts=await runtime.ReadFramePtsAsync(mp4,ct);
-            if(submittedPts.Length!=pts.Length || submittedPts.Any(p=>!double.IsFinite(p)||p<0) ||
-                pts.Where((p,i)=>Math.Abs(submittedPts[i]-p)>.005).Any() ||
-                submittedPts.Zip(submittedPts.Skip(1),(a,b)=>b<=a).Any(v=>v))
-                throw new InvalidDataException("MP4 remux changed source timing. No upload allowed.");
-            var bytes=new FileInfo(mp4).Length;
-            if(bytes is <1 or >1_073_741_824)throw new InvalidDataException("Full video exceeds Files API size limit.");
-            var remuxAndTimingMs=preparationClock.ElapsedMilliseconds;
-            var samples=new[]{.1,.5,.9}.Select(fraction=>{
-                var index=(int)Math.Round((pts.Length-1)*fraction);return(index,pts[index]);
-            }).ToArray();
-            var prepared=await frames.ExtractBatchAsync(video.Path,runRoot,samples,ct);
-            var pixels=await Task.WhenAll(Enumerable.Range(0,prepared.Length).Select(i=>
-                File.ReadAllBytesAsync(Path.Combine(runRoot,$"frame-{i}.jpg"),ct)));
-            await ValidateFrames(runRoot,prepared,ct);
+            var ready=await PreparedVideo(root,video,pts,ct);
+            var mp4=ready.Path;var prepared=ready.Frames;
+            foreach(var i in Enumerable.Range(0,prepared.Length))File.Copy(Path.Combine(ready.Directory,$"frame-{i}.jpg"),Path.Combine(runRoot,$"frame-{i}.jpg"));
+            var pixels=await Task.WhenAll(Enumerable.Range(0,prepared.Length).Select(i=>File.ReadAllBytesAsync(Path.Combine(runRoot,$"frame-{i}.jpg"),ct)));
             await Save(Path.Combine(runRoot,"preparation-timing.json"),new {
-                remuxAndTimingMs,nativeAnchorsMs=preparationClock.ElapsedMilliseconds-remuxAndTimingMs,
-                totalMs=preparationClock.ElapsedMilliseconds,referenceFrames=prepared.Length
+                totalMs=preparationClock.ElapsedMilliseconds,referenceFrames=prepared.Length,reused=ready.Reused
             },ct);
-            var videoInput=new AssemblyVideoInput(video.Sha256,await FileHash(mp4,ct),bytes,"",pts.Length,PtsHash(pts));
+            var videoInput=new AssemblyVideoInput(video.Sha256,ready.Sha256,ready.Bytes,"",pts.Length,PtsHash(pts),"FULL_VIDEO_REMUX_WITH_50_NATIVE_ANCHORS");
             var attempt=new AssemblyVideoAttempt(video.Sha256,AssemblyPolicy.VideoRunKey(video.Sha256,runId),
                 runId,AssemblyPolicy.Model,AssemblyPolicy.VideoGroundingProtocol,DateTimeOffset.UtcNow,
                 initial.MaximumEstimatedCostUsd,prepared.ToArray(),videoInput);
@@ -250,6 +269,7 @@ public sealed partial class AssemblyLocator
                 await Save(Path.Combine(runRoot,"outcome.json"),new AssemblyGroundingOutcome("NO_INFERENCE_SENT",DateTimeOffset.UtcNow),CancellationToken.None);
                 throw;
             }
+            AssemblyProgress.Start("verify");
             var response=result.Response;
             await File.WriteAllTextAsync(Path.Combine(runRoot,"response.json"),response.Raw,CancellationToken.None);
             AssemblyMetaTransport.ValidateReceipt(response.Raw,response.ProviderResponseId,response.InputTokens,response.OutputTokens);
@@ -259,6 +279,8 @@ public sealed partial class AssemblyLocator
                 proposal,response.InputTokens,response.OutputTokens,result.VideoInput,runId);
             var scene=AssemblyPolicy.Ground(evidence);
             await Save(Path.Combine(runRoot,"evidence.json"),evidence,CancellationToken.None);
+            AssemblyProgress.Done("verify");
+            await Save(Path.Combine(runRoot,"stages.json"),progress.Read(),CancellationToken.None);
             return new(key,video.Sha256,initial.MaximumEstimatedCostUsd,false,false,scene is not null,
                 AssemblyPolicy.GroundingStatus(evidence),scene,evidence,mode,false,EvidenceProtocol:evidence.Protocol);
         } finally {gate.Release();}

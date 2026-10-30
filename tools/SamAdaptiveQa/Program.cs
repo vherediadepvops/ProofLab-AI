@@ -5,7 +5,7 @@ using ProofLab.Api;
 var anchorsOnly=args.Length==3 && args[0]=="--verify-anchors";
 if(!anchorsOnly && (args.Length is not (4 or 5) || args[0]!="--verify-clips"))
 {
-    Console.Error.WriteLine("Usage: --verify-clips <source> <SHA256> <private-target> [maximum-parts] OR --verify-anchors <source> <private-target>");
+    Console.Error.WriteLine("Usage: --verify-clips <source> <SHA256> <private-target> [8] OR --verify-anchors <source> <private-target>");
     return 2;
 }
 var input=Path.GetFullPath(args[1]);
@@ -43,16 +43,11 @@ try
             " INDICES="+string.Join(",",actual.Select(f=>f.Index))+" WIDTH="+actual[0].Width+" HEIGHT="+actual[0].Height);
         Console.WriteLine("OFFLINE_ONLY NO_META_CALLS=true");return 0;
     }
-    int? maxParts=null;
-    if(args.Length==5)
-    {
-        if(!int.TryParse(args[4],out var parsed) || parsed is <1 or >50)
-            throw new ArgumentException("Invalid allowed part count.");
-        maxParts=parsed;
-    }
-    var plan=SamAdaptiveSegmentPlan.Create(pts.Length,
-        alignToTwoFrameIntraKeyframes:true,
-        maximumPartCount:maxParts);
+    if(args.Length==5 && args[4]!="8")
+        throw new ArgumentException("Native QA uses at most eight keyframe-aligned parts.");
+    var source=new SamVideoSource(sha,"offline",input,(await decoder.ProbeAsync(input,CancellationToken.None)).Codec,1920,1080,pts[^1]);
+    var builder=new SamAdaptiveClipBuilder(decoder,config);
+    var plan=await builder.PlanAsync(source,pts,null,53,8,CancellationToken.None);
     var manifest=await new SamAdaptiveClipBuilder(decoder,config).PrepareAsync(
         new SamVideoSource(sha,"offline-verified-source",input,"hevc",
             1920,1080,pts[^1]),

@@ -71,7 +71,7 @@ public interface IAssemblyTransport {
         Func<AssemblyVideoInput,Task> uploaded,CancellationToken ct)=>
         throw new NotSupportedException("Full-video object grounding transport is unavailable.");
 }
-public static class AssemblyPolicy
+public static partial class AssemblyPolicy
 {
     public const string Model="muse-spark-1.3";
     public const string Protocol="ASSEMBLY_3_NATIVE_FRAMES_V1";
@@ -160,17 +160,17 @@ public static class AssemblyPolicy
     public static bool IsSamPrompt(string value)
     {
         if(value==PendulumSamCache.Prompt)return true;
-        if(value.Length is <20 or >5000)return false;
+        if(value.Length is <20 or >16000)return false;
         const string box=@"[1-5]<\|box;x1=\d{1,4};y1=\d{1,4};x2=\d{1,4};y2=\d{1,4};w=\d{1,4};h=\d{1,4}\|>";
         return System.Text.RegularExpressions.Regex.IsMatch(value,
-            @"^<\d{1,4}f>"+box+@"(,"+box+@")*( <\d{1,4}f>"+box+@"(,"+box+@")*){0,3}$",
+            @"^<\d{1,4}f>"+box+@"(,"+box+@")*( <\d{1,4}f>"+box+@"(,"+box+@")*){0,49}$",
             System.Text.RegularExpressions.RegexOptions.CultureInvariant,TimeSpan.FromMilliseconds(100));
     }
     public static string Key(string sha)=>KnotPolicy.Hash(Protocol+"\n"+Model+"\n"+Prompt+"\n"+sha.ToLowerInvariant());
     public static string GroundingKey(string sha)=>KnotPolicy.Hash(GroundingProtocol+"\n"+Model+"\n"+GroundingPrompt+"\n"+sha.ToLowerInvariant());
     public static AssemblyProposal ParseGrounding(string text,KnotFrame[] frames)
     {
-        var proposal=Parse(text,frames);
+        var proposal=frames.Length==50?ParseDense(text,frames):Parse(text,frames);
         using var doc=JsonDocument.Parse(text);
         var target=doc.RootElement.GetProperty("target");
         var status=target.GetProperty("status").GetString();
@@ -197,12 +197,12 @@ public static class AssemblyPolicy
             : evidence.Protocol!=VideoGroundingProtocol || evidence.RunId is not {Length:32} ||
                 evidence.RunId.Any(c=>!Uri.IsHexDigit(c)) ||
                 evidence.CacheKey!=VideoRunKey(evidence.VideoSha256,evidence.RunId) ||
-                evidence.VideoInput is not {Scope:"FULL_VIDEO_REMUX_WITH_3_NATIVE_ANCHORS"} ||
+                evidence.VideoInput?.Scope is not ("FULL_VIDEO_REMUX_WITH_3_NATIVE_ANCHORS" or "FULL_VIDEO_REMUX_WITH_50_NATIVE_ANCHORS") ||
                 evidence.VideoInput.SourceSha256!=evidence.VideoSha256))
             throw new InvalidDataException("Wrong automatic grounding provenance.");
         if(GroundingStatus(evidence)!="READY")return null;
         var frames=evidence.Frames;
-        if(frames.Length!=3 || frames.Select(f=>f.Index).Distinct().Count()!=3 ||
+        if(frames.Length is not (3 or 50) || frames.Select(f=>f.Index).Distinct().Count()!=frames.Length ||
             frames.Any(f=>f.Width!=frames[0].Width || f.Height!=frames[0].Height ||
                 f.Width is <2 or >8192 || f.Height is <2 or >8192))
             throw new InvalidDataException("Inconsistent native grounding frames.");
@@ -281,7 +281,7 @@ public static class AssemblyPolicy
             d.Roles.Length is <1 or >5 || d.Roles.Select(r=>r.Role).Distinct().Count()!=d.Roles.Length ||
             !d.Roles.Any(r=>r.Role=="object" && r.Id=="1") ||
             d.Roles.Any(r=>!RoleNames.Contains(r.Role) || r.Id!=(Array.IndexOf(RoleNames,r.Role)+1).ToString(CultureInfo.InvariantCulture)) ||
-            d.Seeds.Length is <1 or >15 || d.Seeds.Select(s=>(s.Frame,s.Role)).Distinct().Count()!=d.Seeds.Length ||
+            d.Seeds.Length is <1 or >50 || d.Seeds.Select(s=>(s.Frame,s.Role)).Distinct().Count()!=d.Seeds.Length ||
             d.Roles.Any(r=>!d.Seeds.Any(s=>s.Role==r.Role)) ||
             d.Seeds.Any(s=>!d.Roles.Any(r=>r.Role==s.Role) || s.Frame<0 || s.Frame>= (frameCount??2500) ||
                 s.X1<0 || s.Y1<0 || s.X2>=d.Width || s.Y2>=d.Height || s.X2<=s.X1 || s.Y2<=s.Y1) ||

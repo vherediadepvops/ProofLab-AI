@@ -30,7 +30,9 @@ describe('SAM guided manual processing and parallel quotes',()=>{
     const f=TestBed.createComponent(SamVideoReplay);
     f.componentRef.setInput('autoCheck',auto);f.componentRef.setInput('studyId',id);
     f.componentRef.setInput('videoSha256',sha);f.detectChanges();
-    const c=f.componentInstance,h=TestBed.inject(HttpTestingController),con=TestBed.inject(LabConnection);
+    const c=f.componentInstance;
+  spyOn<any>(c,'pollSpark').and.callFake(async()=>{c.sparkStages.set(['prepare','references','upload','inference','verify'].map(key=>({key,state:'COMPLETED',elapsedMs:100,percent:100})));});
+  const h=TestBed.inject(HttpTestingController),con=TestBed.inject(LabConnection);
     const field=document.createElement('input');field.type='password';con.register(field);
     return {f,c,h,con,field};
   }
@@ -302,7 +304,7 @@ describe('SAM guided manual processing and parallel quotes',()=>{
       grounding:needsGrounding,readiness:{...ready,...unlimited}});
     expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBe(.75);
     expect(ctx.f.nativeElement.querySelector('.paid-cost').textContent).toContain('0.75');
-    expect(ctx.c.nextActionDescription()).toContain('máximo combinado');
+    expect(ctx.c.nextActionDescription()).toContain('costo combinado estimado');
     ctx.h.expectNone(r=>r.method==='POST');
   });
   it('requires available allowance for both requests on legacy bounded sessions',async()=>{
@@ -408,7 +410,7 @@ describe('SAM guided manual processing and parallel quotes',()=>{
     const ctx=setup();token(ctx);await quote(ctx,{grounding:{...needsGrounding,maximumEstimatedCostUsd:.4},
       readiness:{...ready,...unlimited}});
     expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBeCloseTo(.775,6);
-    expect(ctx.f.nativeElement.querySelector('.paid-cost').textContent).toContain('Hasta US$ 0.78');
+    expect(ctx.f.nativeElement.querySelector('.paid-cost').textContent).toContain('Estimado US$ 0.78');
     expect(ctx.c.nextActionDescription()).toContain('video completo y sus imágenes de referencia a Spark');
     expect(ctx.c.nextActionDescription()).not.toContain('tres fotogramas');
     const p=ctx.c.process(),r=ctx.h.expectOne(groundUrl);

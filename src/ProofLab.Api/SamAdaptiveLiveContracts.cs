@@ -30,7 +30,7 @@ public sealed record SamAdaptiveLiveQuote(
     int VerifiedSparkSeedCount,
     bool ReducedForSparseSparkSeeds,string? RecoveryFromBatchId=null);
 
-public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight,string? RecoveryFromBatchId=null);
+public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight,string? RecoveryFromBatchId=null,SamAdaptiveWindow[]? NativeWindows=null);
 
 public sealed record SamAdaptiveDerivation(string BatchId,bool NativeProviderResult,
     bool SeamsVerified,string SourcePtsSha256,string[] PartResponseSha256);

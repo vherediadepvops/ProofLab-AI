@@ -38,6 +38,13 @@ describe('Automatic Spark/SAM suspension estimates',()=>{
       expect(extreme.angularVelocityRadiansPerSecond!).toBeCloseTo(0,5);
     });
   }
+  it('accepts authenticated dense reference ordinals without changing angular geometry',()=>{
+    const {archive,track}=experiment();const old=resolveSamSuspension(archive,track);
+    archive.suspension!.points.forEach((p,i)=>p.frame=[0,25,49][i]);
+    expect(resolveSamSuspension(archive,track)).toEqual(old);
+    archive.suspension!.points[1].frame=24;
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
   it('rejects substituted source, scene, response or coordinate geometry',()=>{
     for(const change of [{sourceSha256:'e'.repeat(64)},{sceneKey:'e'.repeat(64)},
       {responseSha256:'e'.repeat(64)},{width:777},{model:'other'}]) {

@@ -40,8 +40,10 @@ export function resolveSamSuspension(
     e.model!=='muse-spark-1.3'||e.width!==track.frameWidth||e.height!==track.frameHeight||
     e.width!==s.width||e.height!==s.height)return none('SUSPENSION_PROVENANCE_MISMATCH');
   const anchors=e.points;
+  const ordinalSet=Array.isArray(anchors)?anchors.map(p=>p.frame).sort((a,b)=>a-b).join(','):'';
   if(!Array.isArray(anchors)||anchors.length!==3||new Set(anchors.map(p=>p.frame)).size!==3||
-    anchors.some(p=>![0,1,2].includes(p.frame)||!p.visible||
+    !['0,1,2','0,25,49'].includes(ordinalSet)||
+    anchors.some(p=>!p.visible||
       !Number.isFinite(p.confidence)||p.confidence<.8||p.confidence>1||
       !Number.isFinite(p.x)||!Number.isFinite(p.y)||p.x<0||p.x>=1000||p.y<0||p.y>=1000))
     return none('SPARK_SUSPENSION_UNCERTAIN');

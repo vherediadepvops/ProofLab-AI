@@ -65,7 +65,8 @@ public sealed class SamAdaptiveLiveService(
             plan.PartCount.ToString(CultureInfo.InvariantCulture)+"\n"+
             plan.BilledFrames.ToString(CultureInfo.InvariantCulture)+"\n"+
             plan.EstimatedSamCostUsd.ToString("R",CultureInfo.InvariantCulture)+
-            (recoveryFromBatchId is null?"":"\nCONTINUOUS_RECOVERY_FROM_FRAME_ZERO_V2:"+recoveryFromBatchId));
+            (recoveryFromBatchId is null?"":"\nCONTINUOUS_RECOVERY_FROM_FRAME_ZERO_V2:"+recoveryFromBatchId)+
+            (plan.OriginalPacketCopy?"\nNATIVE_PACKET_COPY_V1:"+JsonSerializer.Serialize(plan.Windows):""));
 
     private static bool Recoverable(SamAdaptiveLiveReport report,string sourceSha,string sceneKey)=>
         report.SourceSha256==sourceSha && report.SparkSceneKey==sceneKey &&
@@ -116,9 +117,7 @@ public sealed class SamAdaptiveLiveService(
            scene.Roles[0].Id!="1")
             throw new InvalidOperationException(
                 "Adaptive SAM v1 supports only one authenticated moving object.");
-        var decision=SamAdaptiveGroundedPlan.Select(
-            pts.Length,scene,target,inFlight,budgetUsd:0.50);
-        var plan=decision.Plan;
+        var plan=await clipBuilder.PlanAsync(source,pts,scene,target,inFlight,ct);
         if(recoveryFromBatchId is not null) {
             await ValidateRecovery(recoveryFromBatchId,source.Sha256,scene.Key,ct);
             plan=ContinuousPlan(pts.Length,target);
@@ -140,15 +139,10 @@ public sealed class SamAdaptiveLiveService(
         var pts=await runtime.ReadSourceFramePtsAsync(source,ct);
         var scene=await scenes.TrackingForQuoteAsync(studyId,role,ct);
         if(maxInFlight==0)maxInFlight=Math.Clamp(config.GetValue<int?>("SamAdaptive:Concurrency")??8,1,MaximumLiveConcurrentRequests);
-        var ideal=SamAdaptiveSegmentPlan.Create(pts.Length,targetCoreFrames,maxInFlight,
-            alignToTwoFrameIntraKeyframes:true);
-        SamAdaptiveGroundingDecision? grounded=null;
-        if(scene is not null) {
-            AssemblyPolicy.Validate(scene,source.Sha256,pts.Length);
-            grounded=SamAdaptiveGroundedPlan.Select(pts.Length,scene,targetCoreFrames,maxInFlight);
-        }
+        var ideal=await clipBuilder.PlanAsync(source,pts,null,targetCoreFrames,maxInFlight,ct);
+        if(scene is not null)AssemblyPolicy.Validate(scene,source.Sha256,pts.Length);
         var recovery=scene is null?null:await RecoveryForQuote(source.Sha256,scene.Key,ct);
-        var plan=recovery is null?grounded?.Plan??ideal:ContinuousPlan(pts.Length,targetCoreFrames);
+        var plan=recovery is null?await clipBuilder.PlanAsync(source,pts,scene,targetCoreFrames,maxInFlight,ct):ContinuousPlan(pts.Length,targetCoreFrames);
         var ptsSha=plan.VerifySourcePts(pts);
         return new(Protocol,source.Sha256.ToLowerInvariant(),scene?.Key??"",
             ptsSha,PlanKey(source.Sha256,scene?.Key??"PENDING_SPARK",ptsSha,plan,recovery),
@@ -158,8 +152,8 @@ public sealed class SamAdaptiveLiveService(
             scene is not null,scene is null,
             scene is null?"SAM_UPPER_BOUND_PENDING_SPARK_NO_INFERENCE_SENT":
                 "VERIFIED_SPARK_SEEDS; SOURCE_FRAMES; NO_AUTOMATIC_RETRY",
-            grounded?.IdealParts??ideal.PartCount,grounded?.VerifiedSparkSeedCount??0,
-            recovery is null && (grounded?.ReducedForSparseSparkSeeds??false),recovery);
+            ideal.PartCount,scene?.Seeds.Count(x=>x.Role=="object")??0,
+            recovery is null && scene is not null && plan.PartCount<ideal.PartCount,recovery);
     }
 
     private static string Prompt(SamSceneDefinition scene,SamAdaptiveWindow window) =>
@@ -175,7 +169,7 @@ public sealed class SamAdaptiveLiveService(
             Path.Combine(dir,"batch-context.json"),ct);
         if(prior.Scene.Key!=scene.Key || prior.RecoveryFromBatchId is not null)
             throw new InvalidDataException("Recovery source scene changed.");
-        var previousPlan=SamAdaptiveGroundedPlan.Select(plan.SourceFrames,prior.Scene,
+        var previousPlan=prior.NativeWindows is not null?SamAdaptiveSegmentPlan.RestoreNative(plan.SourceFrames,prior.TargetCoreFrames,prior.MaxInFlight,prior.NativeWindows):SamAdaptiveGroundedPlan.Select(plan.SourceFrames,prior.Scene,
             prior.TargetCoreFrames,prior.MaxInFlight).Plan;
         var receipt=await SamVideoArchive.ReadJsonAsync<SamAdaptivePartReceipt>(
             Path.Combine(dir,"part-00","receipt.json"),ct);
@@ -246,7 +240,7 @@ public sealed class SamAdaptiveLiveService(
             var prompts=await Prompts(scene,plan,plan.VerifySourcePts(pts),request.RecoveryFromBatchId,ct);
             ct.ThrowIfCancellationRequested();
             await WriteJson(Path.Combine(folder,"batch-context.json"),
-                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,request.MaxInFlight,request.RecoveryFromBatchId),
+                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,request.MaxInFlight,request.RecoveryFromBatchId,plan.OriginalPacketCopy?plan.Windows.ToArray():null),
                 CancellationToken.None);
             await WriteJson(Path.Combine(folder,"batch-started.json"),new{
                 batchId,createdAtUtc=created,sourceSha256=source.Sha256,
@@ -444,7 +438,7 @@ public sealed class SamAdaptiveLiveService(
         var scene=context.Scene;
         var pts=await runtime.ReadSourceFramePtsAsync(source,ct);
         AssemblyPolicy.Validate(scene,source.Sha256,pts.Length);
-        var plan=SamAdaptiveGroundedPlan.Select(pts.Length,scene,
+        var plan=context.NativeWindows is not null?SamAdaptiveSegmentPlan.RestoreNative(pts.Length,context.TargetCoreFrames,context.MaxInFlight,context.NativeWindows):SamAdaptiveGroundedPlan.Select(pts.Length,scene,
             context.TargetCoreFrames,context.MaxInFlight).Plan;
         if(context.RecoveryFromBatchId is not null) {
             await ValidateRecovery(context.RecoveryFromBatchId,source.Sha256,scene.Key,ct);

@@ -794,6 +794,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     ctx.save();
     ctx.scale(canvas.width/track.frameWidth,canvas.height/track.frameHeight);
     ctx.translate(mark.left,mark.top);
+    ctx.scale(mark.maskScaleX??1,mark.maskScaleY??1);
     ctx.fillStyle=this.sceneColor(role)+'20';
     ctx.strokeStyle=this.sceneColor(role)+'aa';
     ctx.lineWidth=2;

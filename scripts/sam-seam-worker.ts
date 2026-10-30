@@ -7,13 +7,19 @@ function raster(record:string) {
   if(!b||!m)throw Error('MASK_FORMAT');
   const [left,top,right,bottom,width,height]=b.slice(1).map(Number);
   const rows=+m[1],cols=+m[2];
-  if(width<1||height<1||width>8192||height>8192||rows!==bottom-top+1||
-     cols!==right-left+1||right>=width||bottom>=height||rows*cols>16_000_000)
+  if(width<1||height<1||width>8192||height>8192||rows<1||cols<1||right<left||bottom<top||
+     right>=width||bottom>=height||rows*cols>16_000_000||(right-left+1)*(bottom-top+1)>16_000_000)
     throw Error('MASK_DIMENSIONS');
   const pixels=decodeMaskToRaster({width:cols,height:rows,payload:m[3],
     encoding:m[3][0]==='~'?'lossless':'one_bit'});
   const set=new Set<number>();
-  for(let i=0;i<pixels.length;i++)if(pixels[i])set.add((top+Math.floor(i/cols))*width+left+i%cols);
+  // Compare both masks in original image coordinates, including reduced rasters.
+  const bw=right-left+1,bh=bottom-top+1;
+  for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
+    const sx=Math.min(cols-1,Math.floor((x+.5)*cols/bw));
+    const sy=Math.min(rows-1,Math.floor((y+.5)*rows/bh));
+    if(pixels[sy*cols+sx])set.add((top+y)*width+left+x);
+  }
   return {set,width,height};
 }
 try {
