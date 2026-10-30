@@ -1,5 +1,23 @@
 # SAM: segmentos originales y referencias Spark
 
+## Flujo vigente: tres partes y un reintento continuo — 30/10/2026
+
+Por autorización expresa del propietario, API Meta · segmentos puede recuperar un fallo finalizado de un lote de dos o tres partes mediante **una sola solicitud adicional con el video completo**. Se reutiliza la misma escena Spark autenticada y sus cajas en sus fotogramas reales. No se vuelve a consultar Spark, no se inventan coordenadas para el fotograma cero, no se recodifica el original ni se relaja la verificación de máscaras/suspensión.
+
+Antes de Procesar se muestra la suma estimada de SAM por partes + posible SAM continuo + Spark si hace falta. El reintento se ejecuta únicamente con ese consentimiento y presupuesto combinado; una ejecución correcta de los segmentos no consume el presupuesto reservado para recuperación. Es una estimación, no un límite de facturación impuesto a Meta.
+
+El servidor espera todas las peticiones iniciadas antes de evaluar la recuperación. Puede recuperar ausencia de detección, uniones inconclusas o errores finalizados de transporte/stream/plazo. No reintenta errores HTTP 4xx (credenciales, cuota/rate limit), preparación local inválida, corrupción de evidencias ni una respuesta Spark incierta. La recuperación es una operación separada con identificador determinista, autorización duradera y recibos vinculados al primer lote. Un clic duplicado o reinicio del servidor no genera otra inferencia automática. Si el reintento termina inconcluso, se conserva ese resultado y no se inicia un tercero.
+
+La tarjeta existente muestra tres etapas adicionales de recuperación: preparar video completo, SAM y verificar resultado, cada una con su tiempo. Si no se necesitan, aparecen como «No necesario». Solo una respuesta que pase la validación alimenta los gráficos; esto no garantiza exactitud física ni éxito ante un video nuevo.
+
+Validación local: 65 pruebas .NET de segmentos y referencias Spark; 15 pruebas Angular ejecutadas en Edge. Transporte y HTTP simulados: recuperación por fallo de parte, detección vacía o falta de solapamientos; éxito inicial sin reintento; fallo del continuo sin tercer envío; presupuesto, duplicados, credenciales y procedencia. Cero llamadas nuevas a Meta. Se conserva la configuración de pagos y el contador del propietario. Sin CI ni nuevas secciones de interfaz.
+
+Código: SamAdaptiveAutomaticRetry.cs, SamAdaptiveLiveService.cs, SamAdaptiveLiveContracts.cs y sam-video-replay.ts. El endpoint manual orquesta ambas fases; el navegador hace un solo POST y lee el progreso del lote inicial, que incluye la recuperación vinculada. ConfirmNoAutomaticRetry sigue describiendo cada petición individual; ConfirmOneContinuousRetry y MaximumCombinedSamCostUsd autorizan explícitamente la única recuperación del flujo.
+
+Comprobación adicional del original 80CM_1.MOV: la recuperación continua conserva 1.845 fotogramas, píxeles idénticos y error máximo de PTS de 0,000 ms; archivo resultante 44.847.804 bytes, preparación local 31,059 s. API5391 cotiza US$0,371 por partes + US$0,369 de recuperación = US$0,740 SAM combinado. Es una comprobación offline, sin resultado nuevo del proveedor. Compilación y publicación locales correctas; se mantiene la advertencia previa del bundle Angular (712,91 kB frente a 500 kB).
+
+## Historial de implementación y campañas
+
 Implementación verificada el 29/10/2026 (America/Lima). El modo **API Meta · segmentos** usa la tarjeta de procesamiento existente.
 
 ## Flujo

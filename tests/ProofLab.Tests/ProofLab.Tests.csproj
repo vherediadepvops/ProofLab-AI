@@ -40,6 +40,7 @@
     <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveMaskStitcher.cs"
              Link="SamAdaptiveMaskStitcher.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveLiveContracts.cs" Link="SamAdaptiveLiveContracts.cs" />
+    <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveAutomaticRetry.cs" Link="SamAdaptiveAutomaticRetry.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveRecoveryPrompt.cs" Link="SamAdaptiveRecoveryPrompt.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveLiveService.cs" Link="SamAdaptiveLiveService.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveClipContracts.cs" Link="SamAdaptiveClipContracts.cs" />

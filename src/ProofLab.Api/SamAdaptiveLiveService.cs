@@ -12,10 +12,11 @@ namespace ProofLab.Api;
 /// Owner-approved, bounded real SAM 3.1 batch experiment.
 /// Spark's existing authenticated scene is reused ONCE across the source;
 /// every SAM fragment has independent HTTPS evidence, billable attempt,
-/// provider response, digest and immutable receipt. No automatic retries.
+/// provider response, digest and immutable receipt. An explicitly preauthorized
+/// workflow may make one separate whole-video fallback; individual requests never retry.
 /// No synthetic composite is indexed as a native single Meta response.
 /// </summary>
-public sealed class SamAdaptiveLiveService(
+public sealed partial class SamAdaptiveLiveService(
     ISamVideoRuntime runtime,IAssemblyScenes scenes,ISamVideoTransport transport,
     ISamAdaptiveClipBuilder clipBuilder,MetaLiveAccess access,
     IWebHostEnvironment environment,IConfiguration config)
@@ -58,7 +59,7 @@ public sealed class SamAdaptiveLiveService(
     private static Task WriteJson(string path,object value,CancellationToken ct)=>
         WriteImmutable(path,JsonSerializer.Serialize(value,JsonOptions),ct);
     private static string PlanKey(string sourceSha,string sceneKey,string ptsSha,
-        SamAdaptiveSegmentPlan plan,string? recoveryFromBatchId=null)=>Hash(
+        SamAdaptiveSegmentPlan plan,string? recoveryFromBatchId=null,string? automaticRetryOfBatchId=null)=>Hash(
             Protocol+"\n"+sourceSha+"\n"+sceneKey+"\n"+ptsSha+"\n"+
             plan.RequestedTargetCoreFrames.ToString(CultureInfo.InvariantCulture)+"\n"+
             plan.MaxInFlight.ToString(CultureInfo.InvariantCulture)+"\n"+
@@ -66,7 +67,8 @@ public sealed class SamAdaptiveLiveService(
             plan.BilledFrames.ToString(CultureInfo.InvariantCulture)+"\n"+
             plan.EstimatedSamCostUsd.ToString("R",CultureInfo.InvariantCulture)+
             (recoveryFromBatchId is null?"":"\nCONTINUOUS_RECOVERY_FROM_FRAME_ZERO_V2:"+recoveryFromBatchId)+
-            (plan.OriginalPacketCopy?"\nNATIVE_PACKET_COPY_V1:"+JsonSerializer.Serialize(plan.Windows):""));
+            (plan.OriginalPacketCopy?"\nNATIVE_PACKET_COPY_V1:"+JsonSerializer.Serialize(plan.Windows):"")+
+            (automaticRetryOfBatchId is null?"":"\nONE_AUTHORIZED_CONTINUOUS_RETRY_V1:"+automaticRetryOfBatchId));
 
     private static bool Recoverable(SamAdaptiveLiveReport report,string sourceSha,string sceneKey)=>
         report.SourceSha256==sourceSha && report.SparkSceneKey==sceneKey &&
@@ -104,7 +106,7 @@ public sealed class SamAdaptiveLiveService(
 
     private async Task<(SamVideoSource Source,SamSceneDefinition Scene,
         double[] Pts,SamAdaptiveSegmentPlan Plan,string Key)> Context(
-        string studyId,string role,int target,int inFlight,CancellationToken ct,string? recoveryFromBatchId=null)
+        string studyId,string role,int target,int inFlight,CancellationToken ct,string? recoveryFromBatchId=null,string? automaticParent=null)
     {
         if(inFlight is <1 or >MaximumLiveConcurrentRequests)
             throw new ArgumentException("Live SAM batch concurrency must be between one and twelve.");
@@ -125,9 +127,13 @@ public sealed class SamAdaptiveLiveService(
             await ValidateRecovery(recoveryFromBatchId,source.Sha256,scene.Key,ct);
             plan=ContinuousPlan(pts.Length,target);
         }
+        if(automaticParent is not null) {
+            await ValidateAutomaticParent(automaticParent,source.Sha256,scene.Key,ct);
+            plan=AutomaticContinuousPlan(pts.Length,target);
+        }
         var ptsSha=plan.VerifySourcePts(pts);
         return (source,scene,pts,plan,
-            PlanKey(source.Sha256.ToLowerInvariant(),scene.Key,ptsSha,plan,recoveryFromBatchId));
+            PlanKey(source.Sha256.ToLowerInvariant(),scene.Key,ptsSha,plan,recoveryFromBatchId,automaticParent));
     }
 
     public async Task<SamAdaptiveLiveQuote> PreflightAsync(
@@ -154,9 +160,11 @@ public sealed class SamAdaptiveLiveService(
             plan.EstimatedSamCostUsd,0.50,null,access.ManualTokenCallsPermitted,
             scene is not null,scene is null,
             scene is null?"SAM_UPPER_BOUND_PENDING_SPARK_NO_INFERENCE_SENT":
-                "VERIFIED_SPARK_SEEDS; SOURCE_FRAMES; NO_AUTOMATIC_RETRY",
+                "VERIFIED_SPARK_SEEDS; SOURCE_FRAMES; OPTIONAL_ONE_CONTINUOUS_RETRY",
             ideal.PartCount,scene?.Seeds.Count(x=>x.Role=="object")??0,
-            recovery is null && scene is not null && plan.PartCount<ideal.PartCount,recovery);
+            recovery is null && scene is not null && plan.PartCount<ideal.PartCount,recovery,
+            recovery is null && plan.PartCount is >1 and <=3?plan.UnsplitSamCostUsd:0,
+            plan.EstimatedSamCostUsd+(recovery is null && plan.PartCount is >1 and <=3?plan.UnsplitSamCostUsd:0));
     }
 
     private static string Prompt(SamSceneDefinition scene,SamAdaptiveWindow window) =>
@@ -183,6 +191,10 @@ public sealed class SamAdaptiveLiveService(
 
     public async Task<SamAdaptiveLiveReport> RunOnceAsync(
         string studyId,string role,SamAdaptiveLiveRunRequest request,CancellationToken ct)
+        => await RunBatchCore(studyId,role,request,ct);
+
+    private async Task<SamAdaptiveLiveReport> RunBatchCore(
+        string studyId,string role,SamAdaptiveLiveRunRequest request,CancellationToken ct,string? automaticParent=null)
     {
         if(!request.ConfirmPrivateVideoTransfer ||
            !request.ConfirmUpToManyBillableSamCalls ||
@@ -198,9 +210,13 @@ public sealed class SamAdaptiveLiveService(
         try
         {
             var (source,scene,pts,plan,key)=await Context(
-                studyId,role,request.TargetCoreFrames,request.MaxInFlight,ct,request.RecoveryFromBatchId);
-            var exact=await PreflightAsync(studyId,role,
-                request.TargetCoreFrames,request.MaxInFlight,ct);
+                studyId,role,request.TargetCoreFrames,request.MaxInFlight,ct,request.RecoveryFromBatchId,automaticParent);
+            var exact=automaticParent is null?await PreflightAsync(studyId,role,
+                request.TargetCoreFrames,request.MaxInFlight,ct):AutomaticQuote(source,scene,pts,plan,automaticParent);
+            if(request.ConfirmOneContinuousRetry && (automaticParent is not null || exact.ContinuousRetryEstimatedUsd<=0 ||
+               !double.IsFinite(request.MaximumCombinedSamCostUsd) ||
+               request.MaximumCombinedSamCostUsd+1e-9<exact.MaximumSamWithRetryEstimatedUsd))
+                throw new InvalidOperationException("One continuous retry requires the combined quote approved before submission.");
             if(request.VideoSha256!=source.Sha256.ToLowerInvariant() ||
                request.SceneKey!=scene.Key ||
                request.PlanSha256!=key || request.RecoveryFromBatchId!=exact.RecoveryFromBatchId ||
@@ -240,10 +256,11 @@ public sealed class SamAdaptiveLiveService(
             // Resolve and validate EVERY Spark-grounded prompt BEFORE
             // consuming a trial slot or reserving any potentially billable
             // provider request. A missing source-frame seed aborts the batch.
-            var prompts=await Prompts(scene,plan,plan.VerifySourcePts(pts),request.RecoveryFromBatchId,ct);
+            var prompts=automaticParent is null?await Prompts(scene,plan,plan.VerifySourcePts(pts),request.RecoveryFromBatchId,ct):
+                new[]{SamAdaptiveGroundedPlan.BuildPrompt(scene,plan.Windows.Single())};
             ct.ThrowIfCancellationRequested();
             await WriteJson(Path.Combine(folder,"batch-context.json"),
-                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,request.MaxInFlight,request.RecoveryFromBatchId,plan.OriginalPacketCopy?plan.Windows.ToArray():null),
+                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,request.MaxInFlight,request.RecoveryFromBatchId,plan.OriginalPacketCopy?plan.Windows.ToArray():null,automaticParent),
                 CancellationToken.None);
             await WriteJson(Path.Combine(folder,"batch-started.json"),new{
                 batchId,createdAtUtc=created,sourceSha256=source.Sha256,
@@ -251,7 +268,9 @@ public sealed class SamAdaptiveLiveService(
                 protocol=Protocol,expectedParts=plan.PartCount,
                 quotedMaximumUsd=exact.TotalSamEstimatedUsd,
                 approvedByOwner=true,model="sam-3.1",
-                noAutomaticRetry=true
+                confirmOneContinuousRetry=request.ConfirmOneContinuousRetry,
+                maximumCombinedSamCostUsd=request.MaximumCombinedSamCostUsd,automaticRetryOfBatchId=automaticParent,
+                noAutomaticRetry=!request.ConfirmOneContinuousRetry
             },CancellationToken.None);
             var results=new PartOutcome[plan.PartCount];
             using var slots=new SemaphoreSlim(plan.MaxInFlight);
@@ -352,6 +371,7 @@ public sealed class SamAdaptiveLiveService(
                     Directory.CreateDirectory(path);
                     try{await WriteJson(Path.Combine(path,"failure.json"),
                         new{part=window.Part,status=failure,
+                            httpStatus=(int?)(e as HttpRequestException)?.StatusCode,
                             protocolCode=(e as SamVideoSseException)?.Code,
                             providerEvent=(e as SamVideoSseException)?.ProviderEvent,
                             providerReason=(e as SamVideoSseException)?.ProviderReason,
@@ -417,7 +437,7 @@ public sealed class SamAdaptiveLiveService(
                 derived?.DerivedResponseSha256,
                 derived?.FramesWithMasks,derived?.SeamsVerified,
                 created,DateTimeOffset.UtcNow,
-                "Each SAM part was independently submitted and archived; no automatic retry or fictitious human/scientific approval.");
+                "Each SAM request was independently archived; no fictitious human/scientific approval. Any authorized whole-video retry has a separate linked receipt.",automaticParent);
             await WriteJson(Path.Combine(folder,"batch-report.json"),
                 report,CancellationToken.None);
             return report;
@@ -449,9 +469,11 @@ public sealed class SamAdaptiveLiveService(
         }
         var ptsSha=plan.VerifySourcePts(pts);
         if(scene.Key!=report.SparkSceneKey || plan.PartCount!=report.Parts ||
-           PlanKey(source.Sha256,scene.Key,ptsSha,plan,context.RecoveryFromBatchId)!=report.PlanSha256)
+           PlanKey(source.Sha256,scene.Key,ptsSha,plan,context.RecoveryFromBatchId,context.AutomaticRetryOfBatchId)!=report.PlanSha256)
             throw new InvalidDataException("Batch plan identity mismatch.");
-        var prompts=await Prompts(scene,plan,ptsSha,context.RecoveryFromBatchId,ct);
+        if(context.AutomaticRetryOfBatchId is not null)await ValidateAutomaticParent(context.AutomaticRetryOfBatchId,source.Sha256,scene.Key,ct);
+        var prompts=context.AutomaticRetryOfBatchId is null?await Prompts(scene,plan,ptsSha,context.RecoveryFromBatchId,ct):
+            new[]{SamAdaptiveGroundedPlan.BuildPrompt(scene,plan.Windows.Single())};
         var outputs=new List<SamAdaptivePartOutput>();
         foreach(var w in plan.Windows) {
             var part=Path.Combine(folder,"part-"+w.Part.ToString("D2",CultureInfo.InvariantCulture));
@@ -562,8 +584,9 @@ public sealed class SamAdaptiveLiveService(
             }
             rows.Add(new(part,state,events,deltas,chars,Math.Max(0,elapsedMs)));
         }
+        var retry=await ReadAutomaticRetryProgress(batchId,ct);
         return new(batchId,total,rows.Count(x=>x.State!="NOT_STARTED"),
             rows.Count(x=>x.State=="COMPLETED"),
-            rows.Count(x=>x.State=="FAILED"),rows,phase,Math.Max(0,preparationMs),Math.Max(0,validationMs),Math.Max(0,(long)(end-created).TotalMilliseconds));
+            rows.Count(x=>x.State=="FAILED"),rows,phase,Math.Max(0,preparationMs),Math.Max(0,validationMs),Math.Max(0,(long)(end-created).TotalMilliseconds),retry.Progress,retry.Id);
     }
 }

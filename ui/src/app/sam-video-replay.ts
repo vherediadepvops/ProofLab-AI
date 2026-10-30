@@ -57,6 +57,7 @@ interface SamAdaptiveQuote {
   existingSparkSceneVerified:boolean;requiresNewSparkCall:boolean;
   idealPartsWithoutSparkCoverage:number;verifiedSparkSeedCount:number;
   reducedForSparseSparkSeeds:boolean;recoveryFromBatchId?:string|null;
+  continuousRetryEstimatedUsd?:number;maximumSamWithRetryEstimatedUsd?:number;
 }
 interface SamAdaptivePartProgress {
   part:number;state:string;events:number;deltas:number;outputChars:number;elapsedMs?:number;
@@ -65,11 +66,13 @@ interface SamAdaptiveProgress {
   batchId:string;parts:number;started:number;completed:number;failed:number;
   perPart:SamAdaptivePartProgress[];
   phase?:string;preparationElapsedMs?:number;validationElapsedMs?:number;totalElapsedMs?:number;
+  continuousRetry?:SamAdaptiveProgress|null;continuousRetryBatchId?:string|null;
 }
 interface SamAdaptiveReport {
   batchId:string;status:string;parts:number;startedParts:number;completedParts:number;
   failedParts:number;skippedParts:number;estimatedSamUsd:number;
   derivedFramesWithMasks:number|null;derivedSeamsVerified:boolean|null;
+  automaticRetryOfBatchId?:string|null;automaticRetryBatchId?:string|null;automaticRetryStatus?:string|null;
 }
 
 /**
@@ -113,6 +116,11 @@ interface SamAdaptiveReport {
                   <small class="sam-meta-estimate">{{aq.parts}} {{es?'solicitudes SAM':'SAM requests'}} ·
                     {{aq.simultaneousRequests}} {{es?'simultáneas':'concurrent'}} ·
                     {{es?'cuadros facturables':'billable frames'}}: {{aq.billableFrames}}</small>
+                  @if((aq.continuousRetryEstimatedUsd??0)>0) {
+                    <small class="sam-meta-estimate">{{es?'Incluye un posible reintento con el video completo':'Includes one possible whole-video retry'}}:
+                      SAM {{costLabel(aq.totalSamEstimatedUsd)}} + {{costLabel(aq.continuousRetryEstimatedUsd!)}} US$.
+                      {{es?'Solo se usa si falla el lote; Spark no se repite.':'Only used if the batch fails; Spark is not repeated.'}}</small>
+                  }
                   @if(aq.requiresNewSparkCall) {
                     <small class="sam-meta-estimate">{{es?'Incluye Spark estimado US$ ':'Includes Spark estimated US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{es?'segmentos máximos; se ajustan tras localizar el objeto':'maximum segments; adjusted after locating the object'}}</small>
                   }
@@ -451,7 +459,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.traceTicker=setInterval(()=>this.traceClock.set(Date.now()),250);
   }
   stageStateLabel(state:string):string {
-    return state==='COMPLETED'?(this.es?'Listo':'Done'):state==='FAILED'?(this.es?'Falló':'Failed'):
+    return state==='SKIPPED'?(this.es?'No necesario':'Not needed'):state==='COMPLETED'?(this.es?'Listo':'Done'):state==='FAILED'?(this.es?'Falló':'Failed'):
       state==='IN_PROGRESS'?(this.es?'En curso':'Running'):(this.es?'Pendiente':'Pending');
   }
   stageRows():{key:string;label:string;state:string;ms:number;percent?:number|null}[] {
@@ -491,6 +499,17 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       (this.es?'Verificación':'Verification'):(this.es?'Unión y verificación':'Join and verification'),
       state:phase==='COMPLETED'?'COMPLETED':phase==='FAILED'?'FAILED':
         phase==='VALIDATING'?'IN_PROGRESS':'NOT_STARTED',ms:p?.validationElapsedMs??0});
+    if((this.adaptiveQuote()?.continuousRetryEstimatedUsd??0)>0 || p?.continuousRetry){
+      const r=p?.continuousRetry,rp=r?.phase,result=this.adaptiveResult();
+      const notNeeded=!!result && !result.automaticRetryOfBatchId && !result.automaticRetryBatchId && !r;
+      const waiting=notNeeded?'SKIPPED':'NOT_STARTED';
+      rows.push({key:'retry-preparation',label:this.es?'Reintento · preparar video completo':'Retry · prepare full video',
+        state:!r?waiting:rp==='PREPARING'?'IN_PROGRESS':rp==='FAILED'&&!r.started?'FAILED':'COMPLETED',ms:r?.preparationElapsedMs??0},
+        {key:'retry-sam',label:this.es?'SAM · reintento único, video completo':'SAM · one retry, full video',
+         state:r?.perPart[0]?.state??(rp==='FAILED'?'FAILED':waiting),ms:r?.perPart[0]?.elapsedMs??0},
+        {key:'retry-validation',label:this.es?'Reintento · verificar resultado':'Retry · verify result',
+         state:!r?waiting:rp==='COMPLETED'?'COMPLETED':rp==='FAILED'?'FAILED':rp==='VALIDATING'?'IN_PROGRESS':'NOT_STARTED',ms:r?.validationElapsedMs??0});
+    }
     rows.push({key:'view',label:this.es?'Gráficos y reproducción':'Overlays and playback',
       state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.viewStartedAt?'IN_PROGRESS':'NOT_STARTED',
       ms:this.viewStartedAt?Math.max(0,(this.viewFinishedAt||now)-this.viewStartedAt):0});
@@ -705,12 +724,17 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   processingLabel():string {
     if(this.processingPhase()==='review')return this.es?'Spark revisando la suspensión…':'Spark is reviewing the suspension…';
     if(this.processingPhase()==='grounding')return this.es?'Spark analizando el video…':'Spark is analyzing the video…';
+    if(this.mode()==='api-meta-adaptive' && this.processingPhase()==='sam' && this.adaptiveProgress()?.continuousRetry)
+      return this.es?'SAM · reintento con el video completo…':'SAM · retrying the full video…';
     if(this.processingPhase()==='sam')return this.es?'SAM siguiendo el objeto…':'SAM is tracking the object…';
     return this.es?'Preparando resultados…':'Preparing results…';
   }
   processingDetail():string {
     if(this.mode()==='api-meta-adaptive' && this.processingPhase()==='sam'){
       const progress=this.adaptiveProgress(),q=this.adaptiveQuote();
+      if(progress?.continuousRetry)return this.es?
+        'El lote no se validó. Se está realizando el único reintento autorizado, sin cortes ni otra consulta Spark.':
+        'The batch was not validated. Running the single authorized retry, without cuts or another Spark call.';
       return this.es?
         'SAM en segmentos con streaming: '+(progress?.completed??0)+'/'+
         (q?.parts??0)+' solicitudes con recibo. No es un porcentaje de tiempo.':
@@ -760,9 +784,12 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     return this.mode()==='api-meta-adaptive'?0:
       (this.preflight()?.suspensionReviewMaximumCostUsd??0);
   }
+  private combinedSamCost(q:SamAdaptiveQuote):number {
+    return q.maximumSamWithRetryEstimatedUsd??q.totalSamEstimatedUsd;
+  }
   displayedCost():number {
     if(this.mode()==='api-meta-adaptive')
-      return (this.adaptiveQuote()?.totalSamEstimatedUsd??0)+
+      return (this.adaptiveQuote()?this.combinedSamCost(this.adaptiveQuote()!):0)+
         (this.adaptiveQuote()?.requiresNewSparkCall?this.groundingQuote()?.maximumEstimatedCostUsd??0:0);
     if(this.reviewOnlyRequired())return this.suspensionReviewQuote()!.maximumEstimatedCostUsd;
     return (this.preflight()?.estimatedCostUsd ?? 0)+this.reviewBudget()+
@@ -774,9 +801,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       const q=this.adaptiveQuote();
       return q?(this.es?
         'Procesar autoriza '+(q.requiresNewSparkCall?'localizar y verificar el objeto con Spark y después hasta ':'reutilizar Spark y enviar ')+
-        q.parts+' solicitudes SAM, hasta '+q.simultaneousRequests+' simultáneas, dentro del costo total mostrado. Sin reintentos automáticos.':
+        q.parts+' solicitudes SAM, hasta '+q.simultaneousRequests+' simultáneas. '+((q.continuousRetryEstimatedUsd??0)>0?'Si el lote falla, autoriza UN reintento con el video completo, incluido en el costo total mostrado.':'Sin reintentos automáticos.'):
         'Process authorizes '+(q.requiresNewSparkCall?'Spark localization and visual verification followed by up to ':'reusing Spark and sending ')+
-        q.parts+' SAM requests, up to '+q.simultaneousRequests+' concurrent, within the displayed total. No automatic retries.'):
+        q.parts+' SAM requests, up to '+q.simultaneousRequests+' concurrent. '+((q.continuousRetryEstimatedUsd??0)>0?'If the batch fails, authorizes ONE full-video retry, included in the displayed total.':'No automatic retries.')):
         (this.es?'Esperando el presupuesto de segmentos.':'Waiting for the segment quote.');
     }
     if(this.reviewOnlyRequired())return this.es?
@@ -840,7 +867,13 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     return this.es?'Confirma la revisión del intento anterior antes de procesar.':'Confirm review of the previous attempt before processing.';
   }
   private validAdaptiveQuote(q:SamAdaptiveQuote,sha:string):boolean {
-    return q.sourceSha256===sha && /^[a-f0-9]{32}$/.test(q.suggestedBatchId) &&
+    const retry=q.continuousRetryEstimatedUsd??0,combined=this.combinedSamCost(q);
+    const validRetry=Number.isFinite(retry) && retry>=0 && retry<=.50 &&
+      Number.isFinite(combined) && Math.abs(combined-q.totalSamEstimatedUsd-retry)<1e-8 &&
+      (retry===0 || (q.parts>=2 && q.parts<=3 && !q.recoveryFromBatchId &&
+        Number.isSafeInteger(q.sourceFrames) && q.sourceFrames>0 &&
+        Math.abs(retry-Math.max(50,q.sourceFrames)*.0002)<1e-8));
+    return validRetry && q.sourceSha256===sha && /^[a-f0-9]{32}$/.test(q.suggestedBatchId) &&
       /^[a-f0-9]{64}$/.test(q.planSha256) && q.parts>=1 && q.parts<=50 &&
       q.simultaneousRequests>=1 && q.simultaneousRequests<=12 &&
       Number.isFinite(q.totalSamEstimatedUsd) && q.totalSamEstimatedUsd>0 &&
@@ -888,7 +921,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private async analyzeAdaptive():Promise<void> {
     if(!this.http || !this.canProcess() || this.mode()!=='api-meta-adaptive')return;
     let quote=this.adaptiveQuote()!;
-    const approvedSam=quote.totalSamEstimatedUsd,spark=this.groundingQuote();
+    const approvedSam=quote.totalSamEstimatedUsd,approvedCombined=this.combinedSamCost(quote),spark=this.groundingQuote();
     const token=this.connection.tokenForManualRequest();
     if(!token)return;
     const sha=this.videoSha256(),url=this.adaptiveUrl(),port=this.localApiPort();
@@ -916,7 +949,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           url+'/preflight?targetCoreFrames=53').pipe(timeout(90000)));
         if(!current())return;
         if(!this.validAdaptiveQuote(exact,sha) || exact.requiresNewSparkCall ||
-          exact.sparkSceneKey!==located.scene.key || exact.totalSamEstimatedUsd>approvedSam+1e-9)
+          exact.sparkSceneKey!==located.scene.key || exact.totalSamEstimatedUsd>approvedSam+1e-9 ||
+          this.combinedSamCost(exact)>approvedCombined+1e-9)
           throw Error('SEGMENT_QUOTE_CHANGED');
         quote=exact;this.adaptiveQuote.set(exact);this.groundingQuote.set(located);
       }
@@ -938,12 +972,16 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         modelApiToken:token,videoSha256:sha,sceneKey:quote.sparkSceneKey,
         planSha256:quote.planSha256,clientBatchId:quote.suggestedBatchId,
         maximumSamCostUsd:quote.totalSamEstimatedUsd,
+        confirmOneContinuousRetry:(quote.continuousRetryEstimatedUsd??0)>0,maximumCombinedSamCostUsd:this.combinedSamCost(quote),
         targetCoreFrames:53,maxInFlight:quote.simultaneousRequests,recoveryFromBatchId:quote.recoveryFromBatchId??null,
         confirmPrivateVideoTransfer:true,confirmUpToManyBillableSamCalls:true,confirmNoAutomaticRetry:true
-      },{headers:{'X-ProofLab-Manual-Action':'sam-adaptive-batch'}}).pipe(timeout(35*60*1000)));
+      },{headers:{'X-ProofLab-Manual-Action':'sam-adaptive-batch'}}).pipe(timeout(70*60*1000)));
       if(!current())return;
-      if(report.batchId!==quote.suggestedBatchId || report.parts!==quote.parts)
-        throw Error('BATCH_ID_MISMATCH');
+      const initial=report.batchId===quote.suggestedBatchId && report.parts===quote.parts && !report.automaticRetryOfBatchId;
+      const fallback=(quote.continuousRetryEstimatedUsd??0)>0 && report.parts===1 &&
+        /^[a-f0-9]{32}$/.test(report.batchId) && report.batchId!==quote.suggestedBatchId &&
+        report.automaticRetryOfBatchId===quote.suggestedBatchId;
+      if(!initial && !fallback)throw Error('BATCH_ID_MISMATCH');
       this.adaptiveResult.set(report);
       await poll();
       if(report.status!=='PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW' ||
@@ -962,6 +1000,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           this.processingPhase()==='grounding'?(this.es?
           'Spark no pudo confirmar el objeto. SAM no se envió; revisa el estado antes de otro intento.':
           'Spark could not confirm the object. SAM was not sent; review the status before another attempt.'):
+          (this.adaptiveResult()?.automaticRetryOfBatchId || this.adaptiveResult()?.automaticRetryBatchId)?(this.es?
+          'El reintento con el video completo también quedó inconcluso. No se harán más envíos automáticos. Puedes reproducir el original; los gráficos quedan pendientes.':
+          'The whole-video retry was also inconclusive. No further automatic requests will be made. Original playback is available; overlays remain pending.'):
           (this.es?'No se pudieron validar todos los segmentos. Puedes reproducir el original; los gráficos quedan pendientes. Consulta las etapas y actualiza el costo para un nuevo intento manual.':
           'Not all segments could be validated. Original playback is available; overlays remain pending. Review the stages and refresh the cost for a new manual attempt.'));
         this.failProcessing();

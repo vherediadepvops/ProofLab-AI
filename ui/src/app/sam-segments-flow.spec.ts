@@ -143,4 +143,58 @@ describe('Integrated manual Meta segments',()=>{
   const x=setup();await check(x,{...quote,totalSamEstimatedUsd:Number.NaN});
   expect(x.c.canProcess()).toBeFalse();await x.c.process();x.h.expectNone(r=>r.method==='POST');
  });
+ it('shows the combined estimate and opens only the linked full-video fallback',async()=>{
+  const x=setup(),child='8'.repeat(32);
+  const q={...exact,parts:3,simultaneousRequests:3,totalSamEstimatedUsd:.1354,
+   continuousRetryEstimatedUsd:.1334,maximumSamWithRetryEstimatedUsd:.2688};
+  await check(x,q,located);
+  expect(x.c.displayedCost()).toBeCloseTo(.2688);
+  expect(x.f.nativeElement.textContent).toContain('posible reintento');
+  expect(x.c.nextActionDescription()).toContain('UN reintento');
+  const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
+  const post=x.h.expectOne(url+'/manual-batch');
+  expect(post.request.body.confirmOneContinuousRetry).toBeTrue();
+  expect(post.request.body.maximumCombinedSamCostUsd).toBeCloseTo(.2688);
+  post.flush({...done,batchId:child,parts:1,automaticRetryOfBatchId:batch});await tick();
+  x.h.expectOne(url+'/batches/'+batch+'/progress').flush({
+   batchId:batch,parts:3,started:3,completed:3,failed:0,phase:'FAILED',perPart:[],
+   continuousRetryBatchId:child,continuousRetry:{batchId:child,parts:1,started:1,completed:1,failed:0,
+    phase:'COMPLETED',preparationElapsedMs:200,validationElapsedMs:100,perPart:[{part:0,state:'COMPLETED',elapsedMs:24000}]}});
+  await p;x.f.componentRef.setInput('validationState','ready');x.f.detectChanges();
+  expect(emit).toHaveBeenCalledWith(jasmine.objectContaining({adaptiveBatchId:child}));
+  expect(x.c.stageRows().find(r=>r.key==='retry-sam')?.ms).toBe(24000);
+  expect(x.c.stageRows().find(r=>r.key==='retry-validation')?.state).toBe('COMPLETED');
+  x.h.expectNone(r=>r.method==='POST'); // server orchestrates; browser never submits a second action
+ });
+ it('marks the reserved fallback unnecessary if the three segments succeed',async()=>{
+  const x=setup(),q={...exact,parts:3,simultaneousRequests:3,totalSamEstimatedUsd:.1354,
+   continuousRetryEstimatedUsd:.1334,maximumSamWithRetryEstimatedUsd:.2688};
+  await check(x,q,located);const p=x.c.process();
+  x.h.expectOne(url+'/manual-batch').flush({...done,parts:3});await finalProgress(x);await p;
+  x.f.componentRef.setInput('validationState','ready');x.f.detectChanges();
+  expect(x.c.stageRows().filter(r=>r.key.startsWith('retry-')).every(r=>r.state==='SKIPPED')).toBeTrue();
+  x.h.expectNone(r=>r.method==='POST');
+ });
+ it('ends inconclusively after a failed fallback without inventing playback evidence',async()=>{
+  const x=setup(),q={...exact,parts:3,simultaneousRequests:3,totalSamEstimatedUsd:.1354,
+   continuousRetryEstimatedUsd:.1334,maximumSamWithRetryEstimatedUsd:.2688};
+  await check(x,q,located);const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
+  x.h.expectOne(url+'/manual-batch').flush({...done,batchId:'8'.repeat(32),parts:1,automaticRetryOfBatchId:batch,
+   status:'PARTIAL_PROVIDER_ATTEMPTS_REQUIRE_MANUAL_RECONCILIATION',derivedFramesWithMasks:0,derivedSeamsVerified:false});
+  await finalProgress(x,true);await p;
+  expect(emit).not.toHaveBeenCalled();expect(x.c.processing()).toBeFalse();
+  expect(x.c.error()).toContain('reintento');x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('rejects a fallback attributed to another initial batch',async()=>{
+  const x=setup(),q={...exact,parts:3,simultaneousRequests:3,totalSamEstimatedUsd:.1354,
+   continuousRetryEstimatedUsd:.1334,maximumSamWithRetryEstimatedUsd:.2688};
+  await check(x,q,located);const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
+  x.h.expectOne(url+'/manual-batch').flush({...done,batchId:'8'.repeat(32),parts:1,automaticRetryOfBatchId:'7'.repeat(32)});
+  await p;expect(emit).not.toHaveBeenCalled();x.f.destroy();
+ });
+ it('rejects an incomplete combined quote before any paid request',async()=>{
+  const x=setup();await check(x,{...exact,parts:3,continuousRetryEstimatedUsd:.1334,maximumSamWithRetryEstimatedUsd:.14},located);
+  expect(x.c.canProcess()).toBeFalse();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+
 });

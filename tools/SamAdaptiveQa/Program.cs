@@ -5,7 +5,7 @@ using ProofLab.Api;
 var anchorsOnly=args.Length==3 && args[0]=="--verify-anchors";
 if(!anchorsOnly && (args.Length is not (4 or 5) || args[0]!="--verify-clips"))
 {
-    Console.Error.WriteLine("Usage: --verify-clips <source> <SHA256> <private-target> [3] OR --verify-anchors <source> <private-target>");
+    Console.Error.WriteLine("Usage: --verify-clips <source> <SHA256> <private-target> [1|3] OR --verify-anchors <source> <private-target>");
     return 2;
 }
 var input=Path.GetFullPath(args[1]);
@@ -43,11 +43,13 @@ try
             " INDICES="+string.Join(",",actual.Select(f=>f.Index))+" WIDTH="+actual[0].Width+" HEIGHT="+actual[0].Height);
         Console.WriteLine("OFFLINE_ONLY NO_META_CALLS=true");return 0;
     }
-    if(args.Length==5 && args[4]!="3")
-        throw new ArgumentException("Native QA uses at most three keyframe-aligned parts.");
+    if(args.Length==5 && args[4] is not ("1" or "3"))
+        throw new ArgumentException("Native QA accepts three segments or one complete-video fallback.");
     var source=new SamVideoSource(sha,"offline",input,(await decoder.ProbeAsync(input,CancellationToken.None)).Codec,1920,1080,pts[^1]);
     var builder=new SamAdaptiveClipBuilder(decoder,config);
-    var plan=await builder.PlanAsync(source,pts,null,53,8,CancellationToken.None);
+    var plan=args.Length==5 && args[4]=="1"?
+        SamAdaptiveSegmentPlan.RestoreNative(pts.Length,53,1,[new(0,0,pts.Length,0,pts.Length)]):
+        await builder.PlanAsync(source,pts,null,53,3,CancellationToken.None);
     var manifest=await new SamAdaptiveClipBuilder(decoder,config).PrepareAsync(
         new SamVideoSource(sha,"offline-verified-source",input,"hevc",
             1920,1080,pts[^1]),

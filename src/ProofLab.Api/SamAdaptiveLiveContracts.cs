@@ -15,6 +15,8 @@ public sealed class SamAdaptiveLiveRunRequest
     public bool ConfirmPrivateVideoTransfer { get; init; }
     public bool ConfirmUpToManyBillableSamCalls { get; init; }
     public bool ConfirmNoAutomaticRetry { get; init; }
+    public bool ConfirmOneContinuousRetry { get; init; }
+    public double MaximumCombinedSamCostUsd { get; init; }
 }
 
 public sealed record SamAdaptiveLiveQuote(
@@ -28,9 +30,10 @@ public sealed record SamAdaptiveLiveQuote(
     string Provenance,
     int IdealPartsWithoutSparkCoverage,
     int VerifiedSparkSeedCount,
-    bool ReducedForSparseSparkSeeds,string? RecoveryFromBatchId=null);
+    bool ReducedForSparseSparkSeeds,string? RecoveryFromBatchId=null,
+    double ContinuousRetryEstimatedUsd=0,double MaximumSamWithRetryEstimatedUsd=0);
 
-public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight,string? RecoveryFromBatchId=null,SamAdaptiveWindow[]? NativeWindows=null);
+public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight,string? RecoveryFromBatchId=null,SamAdaptiveWindow[]? NativeWindows=null,string? AutomaticRetryOfBatchId=null);
 
 public sealed record SamAdaptiveDerivation(string BatchId,bool NativeProviderResult,
     bool SeamsVerified,string SourcePtsSha256,string[] PartResponseSha256);
@@ -55,10 +58,11 @@ public sealed record SamAdaptiveLiveReport(
     int? DerivedFramesWithMasks,
     bool? DerivedSeamsVerified,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset RecordedAtUtc,string Note);
+    DateTimeOffset RecordedAtUtc,string Note,string? AutomaticRetryOfBatchId=null,
+    string? AutomaticRetryBatchId=null,string? AutomaticRetryStatus=null);
 
 public sealed record SamAdaptiveProgress(
     string BatchId,int Parts,int Started,int Completed,int Failed,
     IReadOnlyList<SamAdaptivePartStatus> PerPart,
     string Phase="SAM",long PreparationElapsedMs=0,long ValidationElapsedMs=0,
-    long TotalElapsedMs=0);
+    long TotalElapsedMs=0,SamAdaptiveProgress? ContinuousRetry=null,string? ContinuousRetryBatchId=null);

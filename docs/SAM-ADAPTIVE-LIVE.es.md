@@ -1,5 +1,7 @@
 # SAM por segmentos: estado verificado (29/10/2026)
 
+Estado histórico: el flujo vigente usa hasta tres partes y un único reintento continuo previamente cotizado y autorizado. Ver [flujo actual](SAM-NATIVE-SEGMENTS.es.md). Los cupos/resultados siguientes pertenecen a campañas anteriores.
+
 Integrado en main y disponible en el selector existente «API Meta · segmentos».
 Web local: http://localhost:4300/; API principal: 127.0.0.1:5391.
 La autorización de pagos del propietario permanece activa en todas las ramas; ver [permisos Meta](META-API-CONNECTION.es.md). No existe un cupo fijo de tres lotes manuales.

@@ -117,7 +117,7 @@ public static class SamAdaptiveEndpoints
             {
                 // After the durable batch trial marker, a disconnected
                 // browser must not truncate any potentially billable result.
-                var result=await service.RunOnceAsync(id,role,request,ct);
+                var result=await service.RunWithOneRetryAsync(id,role,request,ct);
                 return Results.Ok(result);
             }
             catch(ArgumentException){return Results.BadRequest(new{

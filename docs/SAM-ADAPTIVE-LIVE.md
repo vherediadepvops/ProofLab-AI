@@ -1,5 +1,7 @@
 # Segmented SAM: verified state (2026-10-29)
 
+Historical record: the current flow uses up to three parts and one prequoted, authorized whole-video fallback. See [current flow](SAM-NATIVE-SEGMENTS.en.md). The allowances/results below describe earlier campaigns.
+
 Integrated in main through the existing “API Meta · segments” selector.
 Local web: http://localhost:4300/; main API: 127.0.0.1:5391.
 Owner payment permissions stay enabled across branches; see [Meta authorization](META-API-CONNECTION.md). There is no fixed three-batch limit for manual requests.

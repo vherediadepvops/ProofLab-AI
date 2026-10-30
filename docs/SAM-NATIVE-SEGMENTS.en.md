@@ -1,5 +1,23 @@
 # SAM: original segments and Spark references
 
+## Current flow: three parts and one continuous retry — 2026-10-30
+
+At the owner's explicit request, Meta API · segments may recover a finalized failed two- or three-part batch with **one additional whole-video SAM request**. It reuses the exact authenticated Spark scene and boxes at their genuine frame indices. No repeated Spark inference, invented frame-zero coordinates, re-encoding, or weakened mask/suspension verification.
+
+Before Process, the card quotes segmented SAM + possible continuous SAM + Spark when needed. Both consent and the combined estimate are checked before the first request; successful segments do not consume the fallback allowance. This is an estimate, not a provider-enforced billing cap.
+
+All started requests drain before recovery. Eligible failures include no detections, inconclusive seams and finalized transport/stream/deadline errors. HTTP 4xx credentials/rate-limit errors, invalid local preparation, corrupted evidence and inconclusive Spark do not trigger recovery. The child has a deterministic ID, durable consent and separate linked receipts. Duplicate clicks and server restarts cannot automatically create more inference. A failed continuous retry remains inconclusive; there is no third attempt.
+
+Three recovery stages appear inside the existing processing card: prepare the complete video, SAM, and verify, with their durations. Unneeded stages show “Not needed”. Only validated results drive overlays; this is not a guarantee of physical accuracy or success on new recordings.
+
+Local validation: 65 .NET segment/Spark-reference tests and 15 Angular tests executed in Edge. Mock transport/HTTP covers failed parts, empty detection and absent overlap recovery; successful initial batches; failed fallback with no third submission; budget, duplicates, credentials and provenance. Zero new Meta calls. Owner payment flags and counter preserved. No CI or new UI sections.
+
+Implementation: SamAdaptiveAutomaticRetry.cs, SamAdaptiveLiveService.cs, SamAdaptiveLiveContracts.cs and sam-video-replay.ts. A single browser POST orchestrates both phases on the server; parent progress contains linked recovery progress. ConfirmNoAutomaticRetry still describes individual requests; ConfirmOneContinuousRetry and MaximumCombinedSamCostUsd explicitly authorize the one workflow fallback.
+
+Additional original 80CM_1.MOV check: the continuous fallback preserves 1,845 frames, identical decoded pixels and maximum PTS error 0.000 ms; output 44,847,804 bytes, local preparation 31.059 s. API5391 quotes USD0.371 segmented + USD0.369 fallback = USD0.740 combined SAM. This was offline verification, not a new provider result. Local build/publish passed; the existing Angular bundle warning remains (712.91 kB against 500 kB).
+
+## Implementation and campaign history
+
 Verified on 2026-10-29 (America/Lima). **Meta API · segments** uses the existing processing card.
 
 ## Flow
