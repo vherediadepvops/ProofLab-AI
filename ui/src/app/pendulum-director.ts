@@ -67,7 +67,7 @@ interface SingleComparison {
   relativePeriodErrorPercent: number;
   status: string; limitationsEs: string; limitationsEn: string;
 }
-interface DirectorSession {
+export interface DirectorSession {
   id: string; baselineLengthMeters: number; createdAtUtc: string;
   step: string; modelStatus: string; baseline: DirectorVideo | null;
   humanReview: { reviewedAtUtc: string; bobConfirmed: boolean } | null;
@@ -78,6 +78,7 @@ interface DirectorSession {
   selectedFollowUpLengthMeters?: number | null;
   singleComparison?: SingleComparison | null;
   modelSha256?: string | null;
+  musePrediction?: import('./muse-investigator').FrozenMusePrediction | null;
 }
 
 @Component({
@@ -299,6 +300,13 @@ export class PendulumDirector implements OnInit {
     try {
       const item = await firstValueFrom(this.http.get<DirectorSession>(
         this.api + '/' + id));
+      this.applyRestoredSession(item);
+    } catch {
+      this.error.set(this.es ? 'No se pudo recuperar la investigación. Revisa el ID y la conexión.' : 'Could not restore the study. Check the ID and connection.');
+    }
+  }
+
+  protected applyRestoredSession(item:DirectorSession):void {
       this.session.set(item);
       this.baselineLength.set(item.baselineLengthMeters);
       this.initialAngleDegrees.set(item.angleDegrees ?? 15);
@@ -308,9 +316,7 @@ export class PendulumDirector implements OnInit {
       this.manualFollowUpLength.set(item.selectedFollowUpLengthMeters ?? .8);
       this.checkedVideo.set(!!item.humanReview);
       void this.refreshTheory();
-    } catch {
-      localStorage.removeItem('prooflab-director-current');
-    }
+      localStorage.setItem('prooflab-director-current',item.id);
   }
 
   async start(): Promise<void> {

@@ -392,6 +392,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly localApiPort=this.connection.port;
   constructor(){this.connection.changed.pipe(takeUntilDestroyed()).subscribe(()=>{this.resetServerCheck();this.scheduleCheck();});}
   readonly sourcePending=input(false);
+  readonly recoveryRunning=input(false);
   readonly mediaReady=input(true);
   readonly validationState=input<'idle'|'loading'|'ready'|'error'>('idle');
   readonly processingStarted=output<void>();
@@ -585,6 +586,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       s.sourceSha256===this.videoSha256() && !!s.analysisId;
   }
   canProcess():boolean {
+    if(this.recoveryRunning())return false;
     if(this.mode()==='api-meta-adaptive') {
       const quote=this.adaptiveQuote(),ready=this.readiness(),spark=this.groundingQuote();
       if(this.adaptiveResult())return false;

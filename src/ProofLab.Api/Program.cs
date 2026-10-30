@@ -38,6 +38,7 @@ builder.Services.AddSingleton<MuseExperimentService>();
 builder.Services.AddSingleton<MuseContrastTransport>();
 builder.Services.AddSingleton<MuseContrastService>();
 builder.Services.AddSingleton<PendulumDirectorWorkflow>();
+builder.Services.AddSingleton<ResearchOperationJournal>();
 builder.Services.AddSingleton<PendulumDirectorKinematicsStore>();
 builder.Services.AddSingleton<ISamVideoTransport, SamVideoMetaTransport>();
 builder.Services.AddSingleton<ISamVideoRuntime, SamVideoRuntime>();
@@ -64,6 +65,7 @@ builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =
 var app = builder.Build();
 
 app.UseCors("HackathonLocal");
+app.UseResearchRecovery();
 app.MapKnotEndpoints();
 app.MapAssemblyEndpoints();
 app.MapSamAdaptiveEndpoints();

@@ -30,6 +30,17 @@ const source:SamPeriodSource={
 };
 
 describe('SAM period from native timestamps',()=>{
+  it('excludes a bad frame explicitly, preserves raw points and uses unaffected cycles',()=>{
+    const input=oscillation();input.centroids[400].x=15;input.centroids[400].y=10;
+    const raw=JSON.stringify(input),r=measureSamPeriod(input);
+    expect(r.geometryExcludedFrames).toEqual([400]);
+    expect(r.issues).toContain('GEOMETRY_EXCLUSIONS');
+    expect(r.usableFrames).toBe(input.centroids.length-1);
+    expect(r.cycles.some(c=>c.startFrame<400&&c.endFrame>=400)).toBeFalse();
+    expect(r.periodSeconds!).toBeCloseTo(1.4,3);expect(r.status).toBe('CANDIDATE');
+    expect(r.rawRadialRmsPixels!).toBeGreaterThan(0);expect(JSON.stringify(input)).toBe(raw);
+  });
+
   for(const fps of [60,120,240])it('recovers a known period at '+fps+' FPS',()=>{
     const r=measureSamPeriod(oscillation(fps));
     expect(r.status).toBe('CANDIDATE');

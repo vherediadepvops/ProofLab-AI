@@ -1,5 +1,5 @@
 /** Deterministic observations only: no theoretical period, length or nominal FPS input. */
-export const SAM_PERIOD_METHOD='SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V1';
+export const SAM_PERIOD_METHOD='SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2';
 export const SAM_PERIOD_POLICY=Object.freeze({
   minimumAmplitudeDegrees:.5,minimumHysteresisDegrees:.05,hysteresisFraction:.08,
   minimumSamplesPerCycle:20,minimumSelectedCycles:3,
@@ -45,6 +45,10 @@ export interface SamPeriodAssessment {
   totalFrames:number;detectedFrames:number;usableFrames:number;missingFrames:number;
   detectionCoverage:number;missingFraction:number;longestMissingRunSeconds:number;
   sourceSpanSeconds:number;medianFrameIntervalSeconds:number|null;
+  geometryExcludedFrames:number[];
+  rawRadialRmsPixels:number|null;
+  geometryResidualLimitPixels:number|null;
+  geometryFilter:'PER_FRAME_RADIAL_MAD_V1';
   equilibriumAngleDegrees:number|null;amplitudeDegrees:number|null;
   radiusMadFraction:number|null;relativePeriodDrift:number|null;
   motion:PendulumMotionAssessment;
@@ -71,6 +75,7 @@ export function measureSamPeriod(input:SamPeriodInput):SamPeriodAssessment {
     completeCycles:0,usedCycles:0,cycles:[],totalFrames:times.length,detectedFrames:0,usableFrames:0,
     missingFrames:times.length,detectionCoverage:0,missingFraction:1,longestMissingRunSeconds:0,
     sourceSpanSeconds:0,medianFrameIntervalSeconds:null,equilibriumAngleDegrees:null,
+    geometryExcludedFrames:[],rawRadialRmsPixels:null,geometryResidualLimitPixels:null,geometryFilter:'PER_FRAME_RADIAL_MAD_V1',
     amplitudeDegrees:null,radiusMadFraction:null,relativePeriodDrift:null,
     motion:{method:SAM_PENDULUM_MOTION_METHOD,status:'INCONCLUSIVE',
       issues:['PERIOD_OR_TRACKING_INCONCLUSIVE'],radialRmsPixels:null,lineRmsPixels:null,
@@ -114,13 +119,26 @@ export function measureSamPeriod(input:SamPeriodInput):SamPeriodAssessment {
     issue('INVALID_GEOMETRY');return r;
   }
   const samples:{frame:number;time:number;angle:number;radius:number;segment:number;x:number;y:number}[]=[];
+  // Keep raw centroids in the exported input. Label spatial outliers explicitly
+  // and break cycles there; never interpolate a gap or replace SAM coordinates.
+  const sourceRadius=(c:PeriodCentroid)=>Math.hypot(
+    (c.x/input.sourceWidth-pivot.x)*input.imageWidth,
+    (c.y/input.sourceHeight-pivot.y)*input.imageHeight);
+  const observedRadii=[...byFrame.values()].map(sourceRadius);
+  const typicalRadius=median(observedRadii);
+  const radialMad=median(observedRadii.map(v=>Math.abs(v-typicalRadius)));
+  const radialLimit=Math.max(4,typicalRadius*.025,radialMad*4.5);
+  r.rawRadialRmsPixels=Math.sqrt(mean(observedRadii.map(v=>(v-typicalRadius)**2)));
+  r.geometryResidualLimitPixels=radialLimit;
   let previousFrame=-2,segment=0;
   for(let i=0;i<times.length;i++) {
     const c=byFrame.get(i);if(!c)continue;
     const dx=(c.x/input.sourceWidth-pivot.x)*input.imageWidth;
     const dy=(c.y/input.sourceHeight-pivot.y)*input.imageHeight;
     const radius=Math.hypot(dx,dy);
-    if(dy<=0||radius<5){issue('GEOMETRY_EXCLUSIONS');continue;}
+    if(dy<=0||radius<5||Math.abs(radius-typicalRadius)>radialLimit){
+      r.geometryExcludedFrames.push(i);issue('GEOMETRY_EXCLUSIONS');continue;
+    }
     // A native timestamp discontinuity also breaks a segment even if the indices touch.
     const timeGap=previousFrame>=0 && times[i]-times[previousFrame]>dt*3;
     if(timeGap && i===previousFrame+1)issue('TIME_GAPS');
@@ -131,7 +149,7 @@ export function measureSamPeriod(input:SamPeriodInput):SamPeriodAssessment {
   r.usableFrames=samples.length;
   if(samples.length<3){issue('INVALID_GEOMETRY');return r;}
   const angles=samples.map(v=>v.angle),radii=samples.map(v=>v.radius),radius=median(radii);
-  r.radiusMadFraction=median(radii.map(v=>Math.abs(v-radius)))/radius;
+  r.radiusMadFraction=radialMad/typicalRadius; // Raw quality, before per-frame exclusions.
   const low=quantile(angles,.05),high=quantile(angles,.95);
   const center=(low+high)/2,amplitude=(high-low)/2;
   r.equilibriumAngleDegrees=center;r.amplitudeDegrees=amplitude;
@@ -216,7 +234,7 @@ export interface SamPeriodSource {
 }
 export function periodReportPayload(source:SamPeriodSource,input:SamPeriodInput,
   assessment=measureSamPeriod(input)) {
-  return {schemaVersion:'PROOFLAB_PERIOD_REPORT_V1',source,method:SAM_PERIOD_METHOD,
+  return {schemaVersion:'PROOFLAB_PERIOD_REPORT_V2',source,method:SAM_PERIOD_METHOD,
     policy:SAM_PERIOD_POLICY,motionPolicy:SAM_PENDULUM_MOTION_POLICY,input,assessment,
     limitations:{
       es:'Estimación local desde centroides SAM y tiempos originales. u = s/√n de ciclos alternos; supone errores aproximadamente independientes. No incluye sesgo de seguimiento, pivote, cámara ni reloj. No es incertidumbre total ni intervalo del 95%. Diagnóstico geométrico local; la clasificación del fenómeno corresponde a una respuesta registrada de Muse Spark. Requiere revisar el objeto, el pivote y la cámara.',

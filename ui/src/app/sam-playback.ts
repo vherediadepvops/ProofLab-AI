@@ -238,6 +238,11 @@ export function samAngularFrameAt(
   };
   if(i===0 || i===points.length-1)return base;
   const prev=points[i-1],next=points[i+1];
+  // Never differentiate across a rejected/missing native frame, even when
+  // the remaining timestamps are less than 0.2 seconds apart.
+  if(!track.masks[i-1] || !track.masks[i] || !track.masks[i+1])return base;
+  if(track.masks[i].frameIndex!==track.masks[i-1].frameIndex+1 ||
+     track.masks[i+1].frameIndex!==track.masks[i].frameIndex+1)return base;
   const dt1=central.timeSeconds-prev.timeSeconds;
   const dt2=next.timeSeconds-central.timeSeconds;
   if(dt1<=0 || dt2<=0 || dt1>.2 || dt2>.2)return base;

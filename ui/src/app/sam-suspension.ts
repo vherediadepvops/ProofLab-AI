@@ -6,6 +6,7 @@ export interface AutomaticSuspension {
   pivot:ImagePivot|null;reason:string;method:'SPARK'|'SPARK_WITH_SAM_ARC'|null;
   spreadPixels:number;radialRmsPixels:number|null;radiusPixels:number|null;samples:number;
   excludedFrameIndices:number[];
+  rejectedAnchorFrames?:number[];
 }
 const none=(reason:string):AutomaticSuspension=>({
   pivot:null,reason,method:null,spreadPixels:0,radialRmsPixels:null,radiusPixels:null,samples:0,excludedFrameIndices:[]
@@ -39,7 +40,11 @@ export function resolveSamSuspension(
     e.evidenceKey!==s.evidenceKey||e.responseSha256!==s.responseSha256||
     e.model!=='muse-spark-1.3'||e.width!==track.frameWidth||e.height!==track.frameHeight||
     e.width!==s.width||e.height!==s.height)return none('SUSPENSION_PROVENANCE_MISMATCH');
-  const anchors=e.points;
+  const originalAnchors=e.points;
+  let anchors=originalAnchors;
+  const visuallyRefined=['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3'].includes(e.refinement??'');
+  const anchorLimit=Math.max(3,Math.min(e.width,e.height)*(visuallyRefined?.005:.04));
+  const rejectedAnchorFrames:number[]=[];
   const ordinalSet=Array.isArray(anchors)?anchors.map(p=>p.frame).sort((a,b)=>a-b).join(','):'';
   if(!Array.isArray(anchors)||anchors.length!==3||new Set(anchors.map(p=>p.frame)).size!==3||
     !['0,1,2','0,25,49'].includes(ordinalSet)||
@@ -47,11 +52,24 @@ export function resolveSamSuspension(
       !Number.isFinite(p.confidence)||p.confidence<.8||p.confidence>1||
       !Number.isFinite(p.x)||!Number.isFinite(p.y)||p.x<0||p.x>=1000||p.y<0||p.y>=1000))
     return none('SPARK_SUSPENSION_UNCERTAIN');
-  const x=quantile(anchors.map(p=>p.x*e.width/1000),.5);
-  const y=quantile(anchors.map(p=>p.y*e.height/1000),.5);
+  // A bounded isolated localization error must not discard the agreeing pair.
+  // Require two independently visible high-confidence anchors within the SAME
+  // tolerance. A large displacement remains camera/identity ambiguity, not an
+  // outlier to hide. This is still an estimate requiring visual review.
+  const distance=(a:typeof anchors[number],b:typeof anchors[number])=>
+    Math.hypot((a.x-b.x)*e.width/1000,(a.y-b.y)*e.height/1000);
+  const candidates=anchors.map(a=>anchors.filter(b=>distance(a,b)<=anchorLimit));
+  const group=candidates.sort((a,b)=>b.length-a.length)[0];
+  if(group.length<2 || Math.max(...anchors.flatMap(a=>anchors.map(b=>distance(a,b))))>anchorLimit*3)
+    return none('SUSPENSION_MOVES_OR_IS_AMBIGUOUS');
+  if(group.length<anchors.length){
+    rejectedAnchorFrames.push(...anchors.filter(a=>!group.includes(a)).map(a=>a.frame));
+    anchors=group;
+  }
+  const x=anchors.reduce((sum,p)=>sum+p.x*e.width/1000,0)/anchors.length;
+  const y=anchors.reduce((sum,p)=>sum+p.y*e.height/1000,0)/anchors.length;
   const spread=Math.max(...anchors.map(p=>Math.hypot(p.x*e.width/1000-x,p.y*e.height/1000-y)));
-  const visuallyRefined=['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3'].includes(e.refinement??'');
-  if(spread>Math.max(3,Math.min(e.width,e.height)*(visuallyRefined?.005:.04)))
+  if(spread>anchorLimit)
     return none('SUSPENSION_MOVES_OR_IS_AMBIGUOUS');
   const all=track.masks.map(m=>({x:m.centroidXpx,y:m.centroidYpx}));
   if(all.length<20||all.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)))
@@ -101,11 +119,11 @@ export function resolveSamSuspension(
     q.p95>Math.max(4,q.radius*.06))return none('TRACK_INCONSISTENT_WITH_SUSPENSION');
   return {pivot:{pivotXpx:cx/e.width*480,pivotYpx:cy/e.height*270},
     reason:'ESTIMATED_NOT_HUMAN_CONFIRMED',method,spreadPixels:spread,
-    radialRmsPixels:q.rms,radiusPixels:q.radius,samples:points.length,
+    radialRmsPixels:q.rms,radiusPixels:q.radius,samples:points.length,rejectedAnchorFrames,
     excludedFrameIndices:all.flatMap((p,i)=>points.includes(p)?[]:[track.masks[i].frameIndex])};
 }
 
-/** Display-only exclusions. Provider masks and scientific reports stay intact. */
+/** Playback-only view; provider masks and raw scientific inputs stay intact. */
 export function suspensionPlaybackTrack(track:SamPlaybackTrack,estimate:AutomaticSuspension|null):SamPlaybackTrack {
   if(!estimate?.pivot || !estimate.excludedFrameIndices.length)return track;
   const excluded=new Set(estimate.excludedFrameIndices);

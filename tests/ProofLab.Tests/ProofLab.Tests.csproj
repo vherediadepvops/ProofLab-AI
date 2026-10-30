@@ -53,6 +53,9 @@
     <Compile Include="..\..\src\ProofLab.Api\SamVideoEvidenceIndex.cs"
              Link="SamVideoEvidenceIndex.cs" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="..\..\src\ProofLab.Api\ResearchOperationJournal.cs" Link="ResearchOperationJournal.cs" />
+    <Compile Include="../../src/ProofLab.Api/ResearchFrozenSource.cs" Link="ResearchFrozenSource.cs" />
+    <Compile Include="../../src/ProofLab.Api/ResearchOperationExecution.cs" Link="ResearchOperationExecution.cs" />
     <Compile Include="..\..\src\ProofLab.Api\MetaLiveAccess.cs" Link="MetaLiveAccess.cs" />
     <!-- Real orchestration and archive code; all external dependencies are
          fake in integration tests. No production transport or credentials. -->

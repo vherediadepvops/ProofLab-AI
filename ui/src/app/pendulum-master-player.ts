@@ -968,7 +968,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       ? {width:video.videoWidth,height:video.videoHeight}
       : {width:480,height:270}; // Legacy saved derivatives retain their own coordinate system.
     const frame=pivot ?
-      (sam?samAngularFrameAt(sam,pivot,time,geometry):
+      (sam?samAngularFrameAt(sam,pivot,time,geometry,Math.min(.055,.5/this.sourceFps())):
         (revision?sampleAtTime(revision.analysis.samples,time):null)) : null;
     this.currentKinematics.set(frame);
     const mask=sam?nearestSamMask(sam,time,Math.min(.055,.5/this.sourceFps())):null;

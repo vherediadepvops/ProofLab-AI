@@ -7,8 +7,12 @@
         ? 'Configura tu péndulo y observa el mismo movimiento desde cuatro perspectivas sincronizadas.'
         : 'Configure your pendulum and inspect the same motion in four synchronized views.'}}</p>
     </div>
+    @if(session(); as research){
+      <div class="research-id"><small>{{es?'ID de investigación':'Research ID'}}</small><code>{{research.id}}</code><button type="button" (click)="copyStudyId()">{{copiedId()?(es?'Copiado':'Copied'):(es?'Copiar':'Copy')}}</button></div>
+    }
     <span class="token-status">{{es?'SAM · CRÉDITOS POR FOTOGRAMA':'SAM · CREDITS PER FRAME'}}</span>
   </header>
+  @if(recoveryMessage()){<p class="recovery-status" role="status">{{recoveryMessage()}} {{recoveringOperation()}}</p>}
 
   <section class="focus-config" aria-label="Parámetros físicos del péndulo">
     <div class="focus-section-title">
@@ -196,13 +200,13 @@
       }
     </div>
   </div>
-  <app-sam-video-replay [language]="language()" [sourcePending]="sourcePending()"
+  <app-sam-video-replay [language]="language()" [sourcePending]="sourcePending()" [recoveryRunning]="recovering()"
     [mediaReady]="previewState()==='ready'" [validationState]="resultState()"
     [studyId]="session()?.id ?? ''"
     [videoRole]="(activeTrial()==='followup' && session()?.followup?.sha256) ? 'followup' : 'baseline'"
     [videoSha256]="(activeTrial()==='followup' && session()?.followup?.sha256
       ? session()?.followup?.sha256 : session()?.baseline?.sha256) ?? ''"
-    (processingReset)="clearProcessed()" (processingStarted)="onProcessingStarted()"
+    (processingReset)="onProcessingReset()" (processingStarted)="onProcessingStarted()"
     (processingFailed)="onProcessingFinished(false)"
     (cacheUpdated)="acceptProcessed($event)"/>
 
@@ -301,7 +305,7 @@
                   [disabled]="!!stageBusy() || busy() || connection.busy()" (change)="uploadFocused($event,'followup')"/>
               </label>
             } @else {
-              <span>{{es?'Segundo video guardado. Procésalo con SAM para medirlo.':'Video 2 saved. Process it with SAM to measure it.'}}</span>
+              <span>{{hasFollowupResult() ? (es?'Segundo video con resultado guardado. Revisa sus mediciones y el contraste.':'Video 2 has a saved result. Review its measurements and comparison.') : (es?'Segundo video guardado. Procésalo con SAM para medirlo.':'Video 2 saved. Process it with SAM to measure it.')}}</span>
             }
           </div>
         }

@@ -38,6 +38,10 @@
           <header class="home-heading">
             <div><p class="eyebrow">PROOFLAB AI</p><h1>{{language()==='es'?'De un video a evidencia científica.':'From video to scientific evidence.'}}</h1><p>{{language()==='es'?'Observa, mide y contrasta tus ideas en un mismo laboratorio.':'Observe, measure and test your ideas in one laboratory.'}}</p></div>
             <button type="button" class="studio-primary" (click)="openWorkspace('pendulum')">{{language()==='es'?'Abrir laboratorio':'Open laboratory'}}<span aria-hidden="true">↗</span></button>
+            <form class="resume-study" (ngSubmit)="resumeResearch()">
+              <label for="resume-study-id">{{language()==='es'?'Retomar investigación por ID':'Resume study by ID'}}</label>
+              <div><input id="resume-study-id" name="studyId" [ngModel]="recoveryId()" (ngModelChange)="recoveryId.set($event)" maxlength="32" autocomplete="off" placeholder="ID · 32 caracteres"/><button type="submit" class="outline" [disabled]="!validRecoveryId()">{{language()==='es'?'Retomar':'Resume'}}</button></div>
+            </form>
           </header>
           <div class="home-section-heading"><h2>{{language()==='es'?'Conoce ProofLab':'Meet ProofLab'}}</h2><span>{{language()==='es'?'Guía en video':'Video guide'}}</span></div>
           <article class="featured-video">
@@ -221,7 +225,7 @@
         @if(metaTestError()) { <div class="alert" role="alert">{{metaTestError()}}</div> }
       }
       @if(labOpened() || workspace() === 'pendulum') {
-        <section class="laboratory-view" [hidden]="workspace() !== 'pendulum'"><app-pendulum-zone-one [language]="language()" /></section>
+        <section class="laboratory-view" [hidden]="workspace() !== 'pendulum'"><app-pendulum-zone-one [language]="language()" [resumeRequest]="resumeRequest()" /></section>
       }
       @if(workspace() === 'math') {
         <app-research-workflow [language]="language()" />

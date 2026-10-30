@@ -76,6 +76,23 @@ public sealed partial class SamAdaptiveLiveService(
         report.DerivedFramesWithMasks>0 && report.DerivedSeamsVerified==false &&
         report.Status=="PROVIDER_PARTS_COMPLETE_SEAM_OR_DETECTION_INCONCLUSIVE";
 
+    // Discovery only: the playback endpoint revalidates every receipt, hash and seam.
+    public async Task<SamAdaptiveLiveReport?> LatestRecoverableResultAsync(string sourceSha,CancellationToken ct)
+    {
+        var dir=Path.Combine(StoreRoot,"batches");if(!Directory.Exists(dir))return null;
+        SamAdaptiveLiveReport? latest=null;
+        foreach(var folder in Directory.EnumerateDirectories(dir)) {
+            var id=Path.GetFileName(folder);if(!ValidBatchId(id))continue;
+            SamAdaptiveLiveReport? report;
+            try {report=await ReadReportAsync(id,ct);} catch(IOException){continue;} catch(JsonException){continue;}
+            if(report is not null && report.SourceSha256==sourceSha && report.BatchId==id &&
+               report.Status=="PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW" &&
+               report.DerivedSeamsVerified==true && report.CompletedParts==report.Parts &&
+               (latest is null || report.RecordedAtUtc>latest.RecordedAtUtc))latest=report;
+        }
+        return latest;
+    }
+
     private async Task<string?> RecoveryForQuote(string sourceSha,string sceneKey,CancellationToken ct)
     {
         var directory=Path.Combine(StoreRoot,"batches");

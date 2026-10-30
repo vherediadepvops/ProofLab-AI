@@ -212,6 +212,15 @@ const COPY = {
   styleUrls: ['./app.scss', './app-studio.scss']
 })
 export class App implements OnInit {
+  readonly recoveryId=signal(localStorage.getItem('prooflab-director-current')??'');
+  readonly resumeRequest=signal<{id:string;nonce:number}|null>(null);
+  resumeResearch():void {
+    const id=this.recoveryId().trim().toLowerCase();
+    if(!/^[a-f0-9]{32}$/.test(id))return;
+    this.resumeRequest.set({id,nonce:Date.now()});this.openWorkspace('pendulum');
+  }
+  validRecoveryId():boolean {return /^[a-f0-9]{32}$/i.test(this.recoveryId().trim());}
+
   private readonly http = inject(HttpClient);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly connection = inject(LabConnection);

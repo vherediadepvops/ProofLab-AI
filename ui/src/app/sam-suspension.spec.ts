@@ -31,7 +31,9 @@ describe('Automatic Spark/SAM suspension estimates',()=>{
     expect(result.pivot!.pivotXpx/480*1080).toBeCloseTo(cx+3,8);
     expect(result.pivot!.pivotYpx/270*1920).toBeCloseTo(cy+3,8);
     archive.suspension!.points[0].x+=10;
-    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    const recovered=resolveSamSuspension(archive,track);
+    expect(recovered.pivot).not.toBeNull();
+    expect(recovered.rejectedAnchorFrames).toEqual([0]);
   });
 
   for(const [w,h] of [[1080,1920],[3840,2160]]) {
@@ -89,6 +91,17 @@ describe('Automatic Spark/SAM suspension estimates',()=>{
     expect(samAngularFrameAt(display,result.pivot!,2.2)).toBeNull();
     expect(JSON.stringify(track)).toBe(raw);
     expect(suspensionPlaybackTrack(track,null)).toBe(track);
+  });
+  it('recovers immediately after an isolated bad frame without differentiating across it',()=>{
+    const {archive,track}=experiment();
+    track.masks[120].centroidXpx=10;track.masks[120].centroidYpx=20;
+    const result=resolveSamSuspension(archive,track),display=suspensionPlaybackTrack(track,result);
+    expect(result.excludedFrameIndices).toEqual([120]);
+    expect(samAngularFrameAt(display,result.pivot!,2,{width:1080,height:1920},.008)).toBeNull();
+    const next=samAngularFrameAt(display,result.pivot!,121/60)!;
+    expect(Number.isFinite(next.angleDegrees)).toBeTrue();
+    expect(next.angularVelocityRadiansPerSecond).toBeNull();
+    expect(samAngularFrameAt(display,result.pivot!,122/60)!.isValid).toBeTrue();
   });
   it('does not accept a minority arc among unrelated detections',()=>{
     const {archive,track}=experiment();

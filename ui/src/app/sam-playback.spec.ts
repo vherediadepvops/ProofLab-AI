@@ -108,7 +108,7 @@ describe('scientific SAM playback archive adapter',()=>{
     const track:SamPlaybackTrack={
       frameWidth:1920,frameHeight:1080,
       source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',
-      objectId:'0',points,masks:[]
+      objectId:'0',points,masks:points.map((p,frameIndex)=>({frameIndex,timeSeconds:p.timeSeconds,centroidXpx:p.x,centroidYpx:p.y,left:0,top:0,right:1,bottom:1,maskPath:'',foregroundPixels:1}))
     };
     const frame=samAngularFrameAt(track,{pivotXpx:240,pivotYpx:20},.12);
     expect(frame?.isValid).toBeTrue();
@@ -133,7 +133,7 @@ describe('scientific SAM playback archive adapter',()=>{
             approximateRadiusPixels:8};
         });
         const track:SamPlaybackTrack={frameWidth:width,frameHeight:height,
-          source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',points,masks:[]};
+          source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',points,masks:points.map((p,frameIndex)=>({frameIndex,timeSeconds:p.timeSeconds,centroidXpx:p.x,centroidYpx:p.y,left:0,top:0,right:1,bottom:1,maskPath:'',foregroundPixels:1}))};
         const frame=samAngularFrameAt(track,pivot,at)!;
         expect(frame.isValid).toBeTrue();
         expect(frame.angleDegrees).toBeCloseTo(degrees,8);
@@ -162,7 +162,7 @@ describe('Angular velocity uses source timestamps',()=>{
           y:135+300*Math.cos(theta)/1920*270,approximateRadiusPixels:8};
       });
       const track:SamPlaybackTrack={frameWidth:1920,frameHeight:1080,
-        source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',points,masks:[]};
+        source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',points,masks:points.map((p,frameIndex)=>({frameIndex,timeSeconds:p.timeSeconds,centroidXpx:p.x,centroidYpx:p.y,left:0,top:0,right:1,bottom:1,maskPath:'',foregroundPixels:1}))};
       const value=samAngularFrameAt(track,pivot,.13,image);
       expect(value?.isValid).toBeTrue();
       expect(value?.angularVelocityRadiansPerSecond).toBeCloseTo(velocity,9);

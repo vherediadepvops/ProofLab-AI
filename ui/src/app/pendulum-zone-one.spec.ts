@@ -7,6 +7,34 @@ import { provideHttpClientTesting, HttpTestingController } from '@angular/common
 import { PendulumZoneOne } from './pendulum-zone-one';
 
 describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
+  it('restores both videos and the frozen prediction by ID using GET only',async()=>{
+    const fixture=TestBed.createComponent(PendulumZoneOne),zone=fixture.componentInstance;
+    const http=TestBed.inject(HttpTestingController),id='d'.repeat(32);
+    const restored={...session,baseline:{...video,sha256:'a'.repeat(64)},followup:{...video,role:'followup',sha256:'b'.repeat(64)},
+      musePrediction:{studyId:id,observationId:'o',responseId:'r',frozenAtUtc:'2026-10-30T00:00:00Z',payloadJson:'{}',sha256:'c'.repeat(64)}};
+    const pending=zone.resumeResearch(id);
+    const request=http.expectOne(studyUrl+'/'+id+'/recovery');expect(request.request.method).toBe('GET');
+    request.flush({session:restored,operations:[],unavailable:[],selections:['baseline','followup'].map((videoRole,i)=>({
+      studyId:id,videoRole,sourceSha256:(i?'b':'a').repeat(64),analysisId:(i?'f':'e').repeat(32),adaptiveBatchId:(i?'f':'e').repeat(32)}))});
+    await pending;
+    http.match(theoryUrl).forEach(r=>r.flush(theory(true)));
+    expect(zone.session()?.id).toBe(id);expect(zone.activeTrial()).toBe('followup');
+    expect(zone.processedAnalysis('followup')).toBe('f'.repeat(32));expect(zone.frozenForStudy()?.sha256).toBe('c'.repeat(64));
+    zone.onPreviewState('ready');zone.onProcessingFinished(true);zone.selectTrial('baseline');
+    expect(zone.processedAnalysis('baseline')).toBe('e'.repeat(32));
+    expect(localStorage.getItem('prooflab-director-current')).toBe(id);http.expectNone(r=>r.method==='POST');http.verify();fixture.destroy();
+  });
+  it('keeps a recovered in-flight operation pending without submitting another request',async()=>{
+    const fixture=TestBed.createComponent(PendulumZoneOne),zone=fixture.componentInstance;
+    const http=TestBed.inject(HttpTestingController),id='d'.repeat(32);
+    const pending=zone.resumeResearch(id);
+    http.expectOne(studyUrl+'/'+id+'/recovery').flush({session:{...session,baseline:video},selections:[],unavailable:[],operations:[
+      {id:'f'.repeat(32),role:'baseline',stage:'sam/manual-one-shot',state:'RUNNING',startedAtUtc:new Date().toISOString(),finishedAtUtc:null}]});
+    await pending;http.match(theoryUrl).forEach(r=>r.flush(theory()));
+    expect(zone.recovering()).toBeTrue();expect(zone.recoveringOperation()).toContain('sam');
+    http.expectNone(r=>r.method==='POST');fixture.destroy();http.verify();
+  });
+
   const theoryUrl='http://127.0.0.1:5391/api/science/pendulum/mathematical-model';
   const studyUrl='http://127.0.0.1:5391/api/science/director/pendulum/sessions';
 
@@ -585,7 +613,9 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       expect(component.videoActionsBusy()).toBeFalse();expect(component.connection.busy()).toBeFalse();
       expect(root.querySelector('.sam-message')?.textContent).toContain('SAM no se envió');
       if(failure==='NO_INFERENCE')expect(root.querySelector('.sam-message')?.textContent).not.toContain('facturada');
-      expect((root.querySelector('.play-main') as HTMLButtonElement).disabled).toBeTrue();
+      // Existing behavior permits viewing the original after an unsuccessful analysis.
+      expect((root.querySelector('.play-main') as HTMLButtonElement).disabled).toBeFalse();
+      expect(player.samVerified()).toBeFalse();
       http.expectNone(r=>r.method==='POST'||r.url.endsWith('/evidence'));
       await verifyHttp(http);fixture.destroy();
     });
