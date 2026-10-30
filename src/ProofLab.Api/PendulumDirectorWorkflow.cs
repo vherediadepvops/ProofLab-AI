@@ -113,8 +113,7 @@ public sealed class PendulumDirectorWorkflow(
         return (record,path);
     }
 
-    public async Task<DirectorSession> StartAsync(
-        DirectorStartRequest input, CancellationToken ct)
+    private static void ValidateDraft(DirectorStartRequest input)
     {
         _ = PendulumMathematicalModel.Predict(
             new PendulumMathematicalRequest(input.BaselineLengthMeters,
@@ -129,6 +128,11 @@ public sealed class PendulumDirectorWorkflow(
             throw new ArgumentException("A manual second length is required.");
         if(!input.IncludeSecondTrial && input.SelectedFollowUpLengthMeters is not null)
             throw new ArgumentException("Second length is not allowed when follow-up is disabled.");
+    }
+
+    public async Task<DirectorSession> StartAsync(DirectorStartRequest input, CancellationToken ct)
+    {
+        ValidateDraft(input);
         var id = Guid.NewGuid().ToString("N");
         var metadata = new DirectorSession(id, input.BaselineLengthMeters,
             DateTimeOffset.UtcNow, "AWAITING_FIRST_VIDEO", NotAi,
@@ -144,6 +148,34 @@ public sealed class PendulumDirectorWorkflow(
             Directory.CreateDirectory(Folder(id));
             await WriteNewAsync(PathFor(id, "session.json"), metadata, ct);
             return metadata;
+        }
+        finally { gate.Release(); }
+    }
+
+    // The recovery code exists before media. Parameters remain a draft until
+    // the first recording is registered; frozen evidence is never rewritten.
+    public async Task<DirectorSession> UpdateDraftAsync(string id, DirectorStartRequest input, CancellationToken ct)
+    {
+        ValidateDraft(input);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var current = await LoadUnlockedAsync(id, ct);
+            if (current.Baseline is not null || current.Proposal is not null || current.MusePrediction is not null)
+                throw new InvalidOperationException("Research parameters are frozen after the first video.");
+            var next = current with {
+                BaselineLengthMeters = input.BaselineLengthMeters, AngleDegrees = input.AngleDegrees,
+                MassGrams = input.MassGrams, IncludeSecondTrial = input.IncludeSecondTrial,
+                FollowUpMode = input.FollowUpMode, SelectedFollowUpLengthMeters =
+                    input.IncludeSecondTrial && input.FollowUpMode == "manual" ? input.SelectedFollowUpLengthMeters : null
+            };
+            next = next with { ModelSha256 = CalculateModelHash(next) };
+            var pending = PathFor(id, "draft-" + Guid.NewGuid().ToString("N") + ".tmp");
+            try {
+                await WriteNewAsync(pending, next, ct);
+                File.Move(pending, PathFor(id, "session.json"), overwrite: true);
+            } finally { if (File.Exists(pending)) File.Delete(pending); }
+            return next;
         }
         finally { gate.Release(); }
     }

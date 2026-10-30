@@ -7,12 +7,33 @@
         ? 'Configura tu péndulo y observa el mismo movimiento desde cuatro perspectivas sincronizadas.'
         : 'Configure your pendulum and inspect the same motion in four synchronized views.'}}</p>
     </div>
-    @if(session(); as research){
-      <div class="research-id"><small>{{es?'ID de investigación':'Research ID'}}</small><code>{{research.id}}</code><button type="button" (click)="copyStudyId()">{{copiedId()?(es?'Copiado':'Copied'):(es?'Copiar':'Copy')}}</button></div>
-    }
     <span class="token-status">{{es?'SAM · CRÉDITOS POR FOTOGRAMA':'SAM · CREDITS PER FRAME'}}</span>
   </header>
-  @if(recoveryMessage()){<p class="recovery-status" role="status">{{recoveryMessage()}} {{recoveringOperation()}}</p>}
+  <section class="recovery-entry" [attr.aria-label]="es?'Recuperación de sesión':'Session recovery'" [attr.aria-busy]="generatingCode() || recoveryLoading()">
+    <div class="recovery-intro"><strong>{{es?'Tu código de recuperación':'Your recovery code'}}</strong>
+      <p>{{es?'Este código te permite recuperar la sesión y los últimos cambios guardados si pierdes la conexión o cierras la página. Cópialo y guárdalo.':'Use this code to recover your session and the latest saved changes if you lose connection or close the page. Copy and save it.'}}</p>
+    </div>
+    <div class="recovery-actions">
+      @if(session(); as research){
+        <div class="research-id"><span>{{es?'Sesión activa':'Active session'}}</span><code>{{research.id}}</code>
+          <button class="secondary-button" type="button" (click)="copyStudyId()">{{copiedId()?(es?'Copiado':'Copied'):(es?'Copiar código':'Copy code')}}</button></div>
+      } @else {
+        <button class="primary-button generate-recovery" type="button" (click)="generateRecoveryCode()" [disabled]="recoveryControlsBusy()">{{es?'Generar código de recuperación':'Generate recovery code'}}</button>
+      }
+      <form class="recovery-search" (ngSubmit)="resumeResearch(recoveryCode())">
+        <label for="lab-recovery-code">{{es?'¿Ya tienes un código?':'Already have a code?'}}</label>
+        <div><input id="lab-recovery-code" name="recoveryCode" type="text" [ngModel]="recoveryCode()" (ngModelChange)="recoveryCode.set($event)"
+          [disabled]="recoveryControlsBusy()" maxlength="64" autocomplete="off" spellcheck="false" [placeholder]="es?'Pega tu código de recuperación':'Paste your recovery code'"/>
+          <button class="secondary-button search-recovery" type="submit" [disabled]="!validRecoveryCode() || recoveryControlsBusy()">{{es?'Buscar':'Search'}}</button></div>
+      </form>
+    </div>
+    @if(generatingCode() || recoveryLoading()){
+      <app-lab-activity [label]="generatingCode()?(es?'Generando código…':'Generating code…'):(es?'Recuperando sesión…':'Recovering session…')"
+        [detail]="generatingCode()?(es?'Guardando tu nueva sesión.':'Saving your new session.'):(es?'Cargando configuración, videos y resultados guardados.':'Loading saved settings, videos and results.')"/>
+    } @else if(recoveryMessage()) {<p class="recovery-status" [class.recovery-error]="recoveryFailure()" role="status">{{recoveryMessage()}}</p>}
+    @if(!session() && !recoveryLoading() && !generatingCode()) {<small>{{es?'Genera un código o recupera una sesión para habilitar el laboratorio.':'Generate a code or recover a session to enable the laboratory.'}}</small>}
+  </section>
+  @if(session()) {
 
   <section class="focus-config" aria-label="Parámetros físicos del péndulo">
     <div class="focus-section-title">
@@ -29,22 +50,22 @@
         <span>{{es ? 'Longitud de la cuerda (cm)' : 'String length (cm)'}}</span>
         <input id="focus-length" type="number" min="10" max="500" step="5"
           [ngModel]="baselineLength() * 100"
-          (ngModelChange)="baselineLength.set(+$event / 100);refreshTheory()"
-          [disabled]="!!session() || videoActionsBusy()"/>
+          (ngModelChange)="baselineLength.set(+$event / 100);updateDraft()"
+          [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/>
       </label>
       <label>
         <span>{{es ? 'Ángulo inicial (°)' : 'Initial angle (°)'}}</span>
         <input id="focus-angle" type="number" min="1" max="85" step="1"
           [ngModel]="initialAngleDegrees()"
-          (ngModelChange)="initialAngleDegrees.set(+$event);refreshTheory()"
-          [disabled]="!!session() || videoActionsBusy()"/>
+          (ngModelChange)="initialAngleDegrees.set(+$event);updateDraft()"
+          [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/>
       </label>
       <label>
         <span>{{es ? 'Masa de la plomada (g)' : 'Bob mass (g)'}}</span>
         <input id="focus-mass" type="number" min="10" max="5000" step="10"
           [ngModel]="massGrams()"
-          (ngModelChange)="massGrams.set(+$event);refreshTheory()"
-          [disabled]="!!session() || videoActionsBusy()"/>
+          (ngModelChange)="massGrams.set(+$event);updateDraft()"
+          [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/>
       </label>
     </div>
 
@@ -128,15 +149,15 @@
       <div class="second-config">
         <label class="check-label">
           <input type="checkbox" [ngModel]="includeSecondTrial()"
-            (ngModelChange)="includeSecondTrial.set($event);refreshTheory()"
-            [disabled]="!!session() || videoActionsBusy()"/>
+            (ngModelChange)="includeSecondTrial.set($event);updateDraft()"
+            [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/>
           <span>{{es ? 'Agregar una segunda prueba' : 'Add a second experiment'}}</span>
         </label>
         @if(includeSecondTrial()) {
           <div class="second-inline">
             <select [ngModel]="followUpMode()"
-              (ngModelChange)="followUpMode.set($event);refreshTheory()"
-              [disabled]="!!session() || videoActionsBusy()"
+              (ngModelChange)="followUpMode.set($event);updateDraft()"
+              [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"
               [attr.aria-label]="es ? 'Selección de longitud del segundo experimento' : 'Second experiment length mode'">
               <option value="recommended">{{es ? 'Propuesta local (sin IA)' : 'Local preset (not AI)'}}</option>
               <option value="manual">{{es ? 'Longitud libre' : 'Custom length'}}</option>
@@ -146,8 +167,8 @@
                 <span>{{es ? 'Segunda longitud (cm)' : 'Second length (cm)'}}</span>
                 <input type="number" min="10" max="500" step="5"
                   [ngModel]="manualFollowUpLength() * 100"
-                  (ngModelChange)="manualFollowUpLength.set(+$event / 100);refreshTheory()"
-                  [disabled]="!!session() || videoActionsBusy()"/>
+                  (ngModelChange)="manualFollowUpLength.set(+$event / 100);updateDraft()"
+                  [disabled]="!!session()?.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/>
               </label>
             } @else {
               <span class="length-hint">{{recommendedFollowUpLength * 100 | number:'1.0-0'}} cm</span>
@@ -170,6 +191,8 @@
       </div>
     </div>
     @if(modelError()) {<p class="focus-error" role="alert">{{modelError()}}</p>}
+    @if(draftSaving()){<p class="focus-note" role="status">{{es?'Guardando parámetros…':'Saving parameters…'}}</p>}
+    @if(draftError()){<p class="focus-error" role="alert">{{draftError()}} <button type="button" class="secondary-button" (click)="updateDraft()">{{es?'Reintentar guardado':'Retry saving'}}</button></p>}
   </section>
 
   <div class="video-toolbar" [attr.aria-busy]="videoLoading()">
@@ -191,7 +214,7 @@
           {{es?'Cancelar':'Cancel'}}
         </button>
       } @else {
-        <button class="secondary-button demo-video" type="button" (click)="loadDemo()" [disabled]="videoActionsBusy()">
+        <button class="secondary-button demo-video" type="button" (click)="loadDemo()" [disabled]="videoActionsBusy() || !!session()?.baseline">
           <span aria-hidden="true">▷</span> {{es?'Video de prueba':'Test video'}}
         </button>
         <button class="secondary-button new-trial" type="button" (click)="beginNewTrial()" [disabled]="videoActionsBusy()">
@@ -347,4 +370,5 @@
   <p class="focus-disclaimer">{{es
     ? 'SAM detecta; ProofLab calcula vectores y rastro · video original sin reducir resolución ni FPS · reproducción después de Procesar'
     : 'SAM detects; ProofLab computes vectors and trails · original resolution and FPS preserved · playback after Process'}}</p>
+  }
 </section>

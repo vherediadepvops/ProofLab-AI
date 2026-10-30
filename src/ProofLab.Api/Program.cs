@@ -390,6 +390,15 @@ app.MapPost("/api/science/director/pendulum/sessions", async (
     try { return Results.Ok(await director.StartAsync(request,ct)); }
     catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
 });
+app.MapPut("/api/science/director/pendulum/sessions/{id}/draft", async (
+    string id, DirectorStartRequest request, PendulumDirectorWorkflow director, CancellationToken ct) =>
+{
+    try { return Results.Ok(await director.UpdateDraftAsync(id, request, ct)); }
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+    catch(InvalidOperationException ex){return Results.Conflict(new {error=ex.Message});}
+    catch(InvalidDataException){return Results.Conflict(new {error="Research integrity mismatch."});}
+});
 app.MapGet("/api/science/director/pendulum/sessions/{id}", async (
     string id, PendulumDirectorWorkflow director, CancellationToken ct) =>
 {

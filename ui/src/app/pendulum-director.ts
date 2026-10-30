@@ -1,3 +1,4 @@
+import { LabConnection } from './lab-connection';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
@@ -90,7 +91,8 @@ export interface DirectorSession {
 })
 export class PendulumDirector implements OnInit {
   private readonly http = inject(HttpClient);
-  private readonly api = 'http://127.0.0.1:5391/api/science/director/pendulum/sessions';
+  private readonly directorConnection=inject(LabConnection);
+  protected get api():string {return 'http://127.0.0.1:'+this.directorConnection.port()+'/api/science/director/pendulum/sessions';}
   readonly language = input<Language>('es');
   readonly baselineLength = signal(0.5);
   readonly initialAngleDegrees = signal(15);
@@ -166,7 +168,7 @@ export class PendulumDirector implements OnInit {
     // A request only to our deterministic .NET engine; never contacts Meta.
     try {
       const response=await firstValueFrom(this.http.post<MathematicalPrediction>(
-        'http://127.0.0.1:5391/api/science/pendulum/mathematical-model',{
+        'http://127.0.0.1:'+this.directorConnection.port()+'/api/science/pendulum/mathematical-model',{
           lengthMeters:this.baselineLength(),
           angleDegrees:this.initialAngleDegrees(),
           massGrams:this.massGrams(),

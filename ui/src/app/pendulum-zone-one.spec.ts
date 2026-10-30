@@ -100,7 +100,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       status:'PERIOD_CANDIDATE_REQUIRES_MANUAL_BOB_VERIFICATION'}
   };
 
-  async function init(chooseUpload=true){
+  async function init(chooseUpload=true,generate=true){
     const fixture=TestBed.createComponent(PendulumZoneOne);
     fixture.detectChanges();
     const http=TestBed.inject(HttpTestingController);
@@ -108,7 +108,12 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     req.flush(theory());
     await Promise.resolve();
     fixture.detectChanges();
-    if(chooseUpload){fixture.componentInstance.newFocusedStudy();fixture.detectChanges();}
+    if(generate){
+      const creating=fixture.componentInstance.generateRecoveryCode();
+      http.expectOne(theoryUrl).flush(theory());await Promise.resolve();await Promise.resolve();
+      http.expectOne(studyUrl).flush(session);await creating;fixture.detectChanges();
+    }
+    if(chooseUpload && generate){fixture.componentInstance.beginNewTrial();fixture.detectChanges();}
     return {fixture,http,component:fixture.componentInstance,
       root:fixture.nativeElement as HTMLElement};
   }
@@ -134,7 +139,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     slider.value='-100';slider.dispatchEvent(new Event('input'));fixture.detectChanges();
     expect(component.theoreticalPreview()?.angleDegrees).toBe(-15);
     expect(component.theoreticalPreview()?.angularSpeed).toBeCloseTo(0,8);
-    expect(component.session()).toBeNull();
+    expect(component.session()?.id).toBe(session.id);
     expect(component.theoryPositionPercent()).toBe(-100);
     http.expectNone(theoryUrl); // A position-only interaction has no requests.
     await verifyHttp(http);
@@ -170,7 +175,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.querySelectorAll('.placeholder-panel').length).toBe(3);
     expect(root.querySelectorAll('.video-toolbar .upload-new-video input[type=file]').length).toBe(0);
     expect(root.querySelector('.demo-video')?.textContent).toContain('Video de prueba');
-    expect(root.textContent).toContain('Elige Video de prueba o Nueva prueba para empezar.');
+    expect(root.textContent).toContain('Investigación activa');
     expect(root.querySelector('button.primary-button')).toBeNull();
     expect(root.querySelector('.model-charts')).toBeNull();
     expect(root.querySelector('.model-chart')).toBeNull();
@@ -180,25 +185,21 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     await verifyHttp(http);
   });
 
-  it('starts one-video research from the compact parameters and then shows the upload',async()=>{
-    const {root,component,fixture,http}=await init();
-    const starting=component.start();
-    const req=http.expectOne(studyUrl);
-    expect(req.request.body).toEqual({
-      baselineLengthMeters:.5,angleDegrees:15,massGrams:300,
-      includeSecondTrial:false,followUpMode:'recommended',
-      selectedFollowUpLengthMeters:null
-    });
-    req.flush(session);
-    await starting;
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(root.querySelectorAll('.video-toolbar .upload-new-video input[type=file]').length).toBe(1);
-    expect(root.textContent).toContain('Sube tu primera grabación');
-    expect((root.querySelector('#focus-length') as HTMLInputElement).disabled).toBeTrue();
-    expect(root.querySelectorAll('.placeholder-panel').length).toBe(3);
-    await verifyHttp(http);
+  it('requires explicit generation before enabling the lab and prevents duplicate creation',async()=>{
+    localStorage.setItem('prooflab-director-current',session.id);
+    const {root,component,fixture,http}=await init(false,false);
+    expect(component.session()).toBeNull();expect(root.querySelector('.focus-config')).toBeNull();
+    expect(root.querySelector('.generate-recovery')).not.toBeNull();expect(root.querySelector('#lab-recovery-code')).not.toBeNull();
+    await component.loadDemo();http.expectNone('demo-video.json');
+    const creating=component.generateRecoveryCode();fixture.detectChanges();
+    expect(root.querySelector('.recovery-entry [role=progressbar]')).not.toBeNull();
+    await component.generateRecoveryCode();
+    http.expectOne(theoryUrl).flush(theory());await Promise.resolve();await Promise.resolve();
+    const request=http.expectOne(studyUrl);expect(request.request.method).toBe('POST');request.flush(session);await creating;
+    fixture.detectChanges();expect(component.session()?.id).toBe(session.id);
+    expect(root.querySelector('.generate-recovery')).toBeNull();expect(root.querySelector('.research-id code')?.textContent).toBe(session.id);
+    expect((root.querySelector('#focus-length') as HTMLInputElement).disabled).toBeFalse();
+    expect(root.querySelector('.demo-video')).not.toBeNull();await verifyHttp(http);
   });
 
   it('wires the immediately visible file input to the upload action',async()=>{
@@ -212,51 +213,17 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     await verifyHttp(http);
   });
 
-  it('uploads directly: freezes the current model before transferring the first video',async()=>{
-    const {root,component,fixture,http}=await init();
-    const actual=new File([new Uint8Array(15000)],'50CM_1.MOV',
-      {type:'video/quicktime'});
-    const input=root.querySelector('.video-toolbar .upload-new-video input[type=file]') as HTMLInputElement;
-    expect(input).not.toBeNull();
-    Object.defineProperty(input,'files',{configurable:true,value:[actual]});
-    const uploading=component.uploadFocused({target:input} as unknown as Event,'baseline');
-    expect(component.registeringAndUploading()).toBeTrue();
-
-    // A new local theory calculation is performed from the selected parameters.
-    const model=http.expectOne(theoryUrl);
-    expect(model.request.body).toEqual({
-      lengthMeters:.5,angleDegrees:15,massGrams:300,followUpLengthMeters:null
-    });
-    http.expectNone(studyUrl);
-    model.flush(theory());
-    await Promise.resolve();await Promise.resolve();
-
-    const registering=http.expectOne(studyUrl);
-    expect(registering.request.body).toEqual({
-      baselineLengthMeters:.5,angleDegrees:15,massGrams:300,
-      includeSecondTrial:false,followUpMode:'recommended',
-      selectedFollowUpLengthMeters:null
-    });
-    http.expectNone(req=>req.url.includes('/video/baseline'));
-    registering.flush(session);
-    await Promise.resolve();await Promise.resolve();
-
-    const transfer=http.expectOne(req=>req.url.includes('/video/baseline') &&
-      req.urlWithParams.includes('filename=50CM_1.MOV'));
-    expect(transfer.request.body).toBe(actual);
-    transfer.flush({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});
-    await uploading;
-    fixture.detectChanges();
-
-    expect(component.registeringAndUploading()).toBeFalse();
-    expect(component.session()?.baseline?.originalFilename).toBe('50CM_1.MOV');
-    expect(root.querySelectorAll('video').length).toBe(1);
-    expect(root.querySelectorAll('canvas').length).toBe(3);
-    expect(root.querySelectorAll('.video-toolbar .upload-new-video input[type=file]').length).toBe(0);
-// The offline SAM JSON inspector has its own separate optional file input.
-    expect(root.textContent).toContain('He revisado el video');
-    http.expectNone(req=>req.url.includes('/api/meta/'));
-    await verifyHttp(http);
+  it('uploads the first recording under the generated recovery code',async()=>{
+    const {component,fixture,root,http}=await init();
+    const file=new File([new Uint8Array(15000)],'50CM_1.MOV',{type:'video/quicktime'});
+    const control={files:[file],value:'chosen'};
+    const pending=component.uploadFocused({target:control} as unknown as Event,'baseline');
+    http.expectNone(studyUrl);http.expectNone(theoryUrl);
+    const transfer=http.expectOne(r=>r.url.includes('/'+session.id+'/video/baseline'));
+    expect(transfer.request.body).toBe(file);transfer.flush({...session,baseline:video});await pending;fixture.detectChanges();await Promise.resolve();await Promise.resolve();fixture.detectChanges();
+    expect(component.session()?.id).toBe(session.id);expect(component.session()?.baseline?.sha256).toBe(video.sha256);
+    expect((root.querySelector('#focus-length') as HTMLInputElement).disabled).toBeTrue();
+    expect(control.value).toBe('');await verifyHttp(http);
   });
 
   it('rejects unsupported videos BEFORE creating any research record',async()=>{
@@ -267,51 +234,27 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     await component.uploadFocused({target:control} as unknown as Event,'baseline');
     fixture.detectChanges();
     expect(control.value).toBe('');
-    expect(component.session()).toBeNull();
-    expect(component.error()).toContain('Video inválido');
+    expect(component.session()?.id).toBe(session.id);
+    expect(component.error()).toContain('Archivo incompatible');
     expect(root.querySelector('.video-toolbar .upload-new-video input[type=file]')).not.toBeNull();
     http.expectNone(studyUrl);
     http.expectNone(req=>req.url.includes('/video/baseline'));
     await verifyHttp(http);
   });
 
-  it('keeps the upload control available if registering the study fails',async()=>{
-    const {root,component,fixture,http}=await init();
-    const selected=new File([new Uint8Array(12000)],'50CM_2.MOV',
-      {type:'video/quicktime'});
-    const control={files:[selected],value:'file-selected'};
-    const pending=component.uploadFocused({target:control} as unknown as Event,'baseline');
-    http.expectOne(theoryUrl).flush(theory());
-    await Promise.resolve();await Promise.resolve();
-    http.expectOne(studyUrl).flush({error:'Unavailable'},{
-      status:503,statusText:'Service Unavailable'
-    });
-    await pending;
-    fixture.detectChanges();
-    expect(component.registeringAndUploading()).toBeFalse();
-    expect(component.session()).toBeNull();
-    expect(component.error()).toContain('No se pudo crear la investigación');
-    expect(control.value).toBe('');
-    expect(root.querySelector('.video-toolbar .upload-new-video input[type=file]')).not.toBeNull();
-    http.expectNone(r=>r.url.includes('/video/baseline'));
-    await verifyHttp(http);
+  it('keeps generation available when the server cannot create a code',async()=>{
+    const {component,fixture,root,http}=await init(false,false);
+    const pending=component.generateRecoveryCode();http.expectOne(theoryUrl).flush(theory());
+    await Promise.resolve();await Promise.resolve();http.expectOne(studyUrl).flush({}, {status:503,statusText:'Unavailable'});await pending;
+    fixture.detectChanges();expect(component.session()).toBeNull();expect(component.generatingCode()).toBeFalse();
+    expect(root.querySelector('.recovery-error')?.textContent).toContain('No se pudo crear');
+    expect(root.querySelector('.focus-config')).toBeNull();expect((root.querySelector('.generate-recovery') as HTMLButtonElement).disabled).toBeFalse();http.verify();
   });
 
-  it('shows the video selector again immediately after New study',async()=>{
-    const {root,component,fixture,http}=await init();
-    component.session.set({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});
-    fixture.detectChanges();
-    component.choosingUpload.set(false);fixture.detectChanges();
-    expect(root.querySelector('.upload-new-video')).toBeNull();
-    component.onPreviewState('ready');component.newFocusedStudy();
-    fixture.detectChanges();
-    expect(component.session()).toBeNull();
-    expect(root.querySelector('.video-toolbar .upload-new-video input[type=file]')).not.toBeNull();
-    expect(root.textContent).toContain('Subir video');
-    expect(root.querySelectorAll('.placeholder-panel').length).toBe(3);
-    expect((root.querySelector('#focus-length') as HTMLInputElement).disabled).toBeFalse();
-    expect(localStorage.getItem('prooflab-director-current')).toBeNull();
-    await verifyHttp(http);
+  it('clears the active choice without deleting stored studies when starting over',async()=>{
+    const {component,fixture,root,http}=await init();component.newFocusedStudy();fixture.detectChanges();
+    expect(component.session()).toBeNull();expect(root.querySelector('.generate-recovery')).not.toBeNull();
+    expect(root.querySelector('app-sam-video-replay')).toBeNull();expect(localStorage.getItem('prooflab-director-current')).toBeNull();http.verify();
   });
 
   it('quotes cache automatically, locks playback until Process, and never POSTs for reuse',async()=>{
@@ -466,7 +409,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     http.expectOne(theoryUrl).flush(theory());
     await Promise.resolve();await Promise.resolve();
     http.expectOne(studyUrl).flush({...session,id:nextId});
-    await Promise.resolve();await Promise.resolve();
+    for(let i=0;i<8;i++)await Promise.resolve();
     const upload=http.expectOne(r=>r.url.includes('/'+nextId+'/video/baseline'));
     expect(upload.request.body).toBe(file);
     upload.flush({...session,id:nextId,baseline:{...video,originalFilename:'new-trial.mp4'}});
@@ -478,43 +421,23 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     await verifyHttp(http);fixture.destroy();
   });
 
-  it('enters empty despite a remembered study and loads the configured demo only on click',async()=>{
-    localStorage.setItem('prooflab-director-current',session.id);
+  it('imports demo bytes into the generated session without adopting the demo ID',async()=>{
     const {component,fixture,root,http}=await init(false);
-    http.expectNone(studyUrl+'/'+session.id);
-    http.expectNone('demo-video.json');
-    expect(component.session()).toBeNull();
-    expect(root.querySelector('video')).toBeNull();
-    expect((root.querySelector('.sam-submit') as HTMLButtonElement).disabled).toBeTrue();
-    const loading=component.loadDemo();fixture.detectChanges();
-    expect(component.demoLoading()).toBeTrue();
-    expect(root.querySelector('.focus-video app-lab-activity')).not.toBeNull();
-    expect(root.querySelector('.sam-empty app-lab-activity')).not.toBeNull();
-    await component.loadDemo(); // second click cannot start another load
-    http.expectOne('demo-video.json').flush({studyId:session.id});
-    await Promise.resolve();
-    http.expectOne(studyUrl+'/'+session.id).flush({...session,baseline:video});
-    await loading;
-    http.expectOne(theoryUrl).flush(theory());
-    fixture.detectChanges();await Promise.resolve();
-    // Metadata/quote runs while the browser preview is still loading.
-    expect(component.previewState()).toBe('loading');
-    expect(component.session()?.baseline).toEqual(video);
-    expect(root.querySelector('.viewer-loading')).not.toBeNull();
-    await verifyHttp(http);fixture.destroy();
+    const loading=component.loadDemo();fixture.detectChanges();expect(component.demoLoading()).toBeTrue();
+    await component.loadDemo();http.expectOne('demo-video.json').flush({studyId:'e'.repeat(32)});await Promise.resolve();await Promise.resolve();
+    http.expectOne(studyUrl+'/'+'e'.repeat(32)).flush({...session,id:'e'.repeat(32),baseline:video});await Promise.resolve();await Promise.resolve();
+    http.expectOne(studyUrl+'/'+'e'.repeat(32)+'/original/baseline').flush(new Blob([new Uint8Array(15000)],{type:'video/quicktime'}));await Promise.resolve();await Promise.resolve();
+    http.expectOne(r=>r.url.includes('/'+session.id+'/video/baseline')).flush({...session,baseline:video});await loading;fixture.detectChanges();
+    expect(component.session()?.id).toBe(session.id);expect(component.previewState()).toBe('loading');
+    expect(root.querySelector('.viewer-loading')).not.toBeNull();http.expectNone(studyUrl);await verifyHttp(http);fixture.destroy();
   });
 
-  it('recovers from demo configuration failure and allows choosing an upload',async()=>{
-    const {component,fixture,root,http}=await init(false);
-    const loading=component.loadDemo();
-    http.expectOne('demo-video.json').flush({}, {status:404,statusText:'Not Found'});
-    await loading;fixture.detectChanges();
-    expect(component.videoActionsBusy()).toBeFalse();
-    expect(component.error()).toContain('No se pudo cargar');
-    component.newFocusedStudy();fixture.detectChanges();
-    expect(root.querySelector('.video-toolbar .upload-new-video input[type=file]')).not.toBeNull();
-    expect(component.session()).toBeNull();
-    http.verify();fixture.destroy();
+  it('keeps the generated code when the demo cannot load',async()=>{
+    const {component,fixture,root,http}=await init(false);const loading=component.loadDemo();
+    http.expectOne('demo-video.json').flush({}, {status:404,statusText:'Not Found'});await loading;fixture.detectChanges();
+    expect(component.session()?.id).toBe(session.id);expect(component.videoActionsBusy()).toBeFalse();
+    component.beginNewTrial();fixture.detectChanges();expect(root.querySelector('.upload-new-video')).not.toBeNull();
+    expect(component.error()).toBe('');http.verify();fixture.destroy();
   });
 
   it('does not restart loading when selecting the already active trial',async()=>{
@@ -548,7 +471,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(root.querySelector('.upload-new-video')).toBeNull();
     expect(root.querySelector('.demo-video')).not.toBeNull();
     expect(root.querySelector('.new-trial')).not.toBeNull();
-    expect(component.session()).toBeNull();
+    expect(component.session()?.id).toBe(session.id);
     http.expectNone(r=>r.method==='POST');await verifyHttp(http);fixture.destroy();
   });
 
@@ -620,5 +543,47 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       await verifyHttp(http);fixture.destroy();
     });
   }
+
+  it('reports a missing session distinctly from an unavailable server and permits retry',async()=>{
+    const {component,fixture,root,http}=await init(false,false);
+    for(const status of [404,503]){
+      component.recoveryCode.set(' '+session.id.toUpperCase()+' ');const pending=component.resumeResearch(component.recoveryCode());fixture.detectChanges();
+      expect(root.querySelector('.recovery-entry [role=progressbar]')).not.toBeNull();
+      await component.resumeResearch(session.id); // no duplicate request
+      http.expectOne(studyUrl+'/'+session.id+'/recovery').flush({}, {status,statusText:'Test failure'});await pending;fixture.detectChanges();
+      expect(root.querySelector('.recovery-status')?.textContent).toContain(status===404?'No se encontró ninguna sesión':'Comprueba la conexión');
+      expect(component.recoveryLoading()).toBeFalse();expect(component.session()).toBeNull();
+      expect((root.querySelector('.search-recovery') as HTMLButtonElement).disabled).toBeFalse();
+    }
+    http.verify();fixture.destroy();
+  });
+  it('restores an empty draft without waiting for nonexistent media',async()=>{
+    const {component,fixture,root,http}=await init(false,false);const pending=component.resumeResearch(session.id);
+    http.expectOne(studyUrl+'/'+session.id+'/recovery').flush({session,operations:[],selections:[],unavailable:[]});await pending;
+    http.expectOne(theoryUrl).flush(theory());fixture.detectChanges();
+    expect(component.recoveryLoading()).toBeFalse();expect(component.videoActionsBusy()).toBeFalse();expect(root.querySelector('.focus-config')).not.toBeNull();
+    await verifyHttp(http);fixture.destroy();
+  });
+  it('shows recovery progress until both the original and saved graphics have loaded',async()=>{
+    const {component,http,fixture}=await init(false,false);const pending=component.resumeResearch(session.id);
+    http.expectOne(studyUrl+'/'+session.id+'/recovery').flush({session:{...session,baseline:video},operations:[],unavailable:[],selections:[{
+      studyId:session.id,videoRole:'baseline',sourceSha256:video.sha256,analysisId:'e'.repeat(32)}]});await pending;
+    http.expectOne(theoryUrl).flush(theory());expect(component.recovering()).toBeFalse();expect(component.recoveryLoading()).toBeTrue();
+    component.onPreviewState('ready');expect(component.recoveryLoading()).toBeTrue();component.onProcessingFinished(true);expect(component.recoveryLoading()).toBeFalse();
+    http.verify();fixture.destroy();
+  });
+  it('serializes draft saves under the same code and blocks uploads after a failed save',async()=>{
+    const {component,http,fixture}=await init(false);
+    component.baselineLength.set(.8);component.updateDraft();http.expectOne(theoryUrl).flush(theory());await Promise.resolve();
+    const first=http.expectOne(studyUrl+'/'+session.id+'/draft');expect(first.request.method).toBe('PUT');expect(first.request.body.baselineLengthMeters).toBe(.8);
+    component.massGrams.set(400);component.updateDraft();http.expectOne(theoryUrl).flush(theory());
+    first.flush({...session,baselineLengthMeters:.8});for(let i=0;i<6;i++)await Promise.resolve();
+    const second=http.expectOne(studyUrl+'/'+session.id+'/draft');expect(second.request.body.massGrams).toBe(400);
+    second.flush({}, {status:503,statusText:'Unavailable'});for(let i=0;i<6;i++)await Promise.resolve();
+    expect(component.draftSaving()).toBeFalse();expect(component.draftError()).toContain('No se guardaron');expect(component.videoActionsBusy()).toBeTrue();
+    component.updateDraft();http.expectOne(theoryUrl).flush(theory());await Promise.resolve();http.expectOne(studyUrl+'/'+session.id+'/draft').flush({...session,baselineLengthMeters:.8,massGrams:400});
+    for(let i=0;i<6;i++)await Promise.resolve();expect(component.draftError()).toBe('');expect(component.session()?.id).toBe(session.id);expect(component.videoActionsBusy()).toBeFalse();
+    http.expectNone(studyUrl);http.verify();fixture.destroy();
+  });
 
 });

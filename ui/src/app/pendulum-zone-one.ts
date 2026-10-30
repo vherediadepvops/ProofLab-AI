@@ -2,8 +2,8 @@ import type {FrozenMusePrediction} from './muse-investigator';
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal, input, effect, untracked, DestroyRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { firstValueFrom, timeout } from 'rxjs';
 import { LabActivity } from './lab-activity';
 import { PendulumDirector, type DirectorSession } from './pendulum-director';
 import { PendulumMasterPlayer } from './pendulum-master-player';
@@ -32,6 +32,46 @@ interface RecoverySnapshot {
 export class PendulumZoneOne extends PendulumDirector {
   private readonly demoHttp=inject(HttpClient);
   readonly resumeRequest=input<{id:string;nonce:number}|null>(null);
+  readonly recoveryCode=signal('');
+  readonly generatingCode=signal(false);
+  readonly recoveryFailure=signal(false);
+  readonly draftSaving=signal(false);
+  readonly draftError=signal('');
+  private draftQueue:Promise<boolean>=Promise.resolve(true);
+  private draftWrites=0;
+  readonly recoveryLoading=computed(()=>this.recovering() ||
+    (this.recoveryMode && (this.previewState()==='loading' || this.resultState()==='loading')));
+  recoveryControlsBusy():boolean {return this.generatingCode() || this.recoveryLoading() || this.draftSaving() || this.sourcePending() || this.busy() || this.connection.busy();}
+  validRecoveryCode():boolean {return /^[a-f0-9]{32}$/i.test(this.recoveryCode().trim());}
+  async generateRecoveryCode():Promise<void> {
+    if(this.session() || this.recoveryControlsBusy())return;
+    this.generatingCode.set(true);this.recoveryMessage.set('');this.recoveryFailure.set(false);
+    try {
+      await this.refreshTheory();await this.start();
+      if(this.session()){
+        this.copiedId.set(false);this.recoveryMode=false;this.draftError.set('');
+        this.recoveryMessage.set(this.es?'Código generado. Cópialo y guárdalo antes de continuar.':'Code generated. Copy and save it before continuing.');
+      } else {this.recoveryFailure.set(true);this.recoveryMessage.set(this.error() || this.modelError());}
+    } finally {this.generatingCode.set(false);}
+  }
+  updateDraft():void {
+    void this.refreshTheory();
+    const current=this.session();if(!current || current.baseline)return;
+    const payload={baselineLengthMeters:this.baselineLength(),angleDegrees:this.initialAngleDegrees(),massGrams:this.massGrams(),
+      includeSecondTrial:this.includeSecondTrial(),followUpMode:this.followUpMode(),
+      selectedFollowUpLengthMeters:this.includeSecondTrial() && this.followUpMode()==='manual'?this.manualFollowUpLength():null};
+    const url=this.api+'/'+current.id+'/draft';
+    this.draftWrites++;this.draftSaving.set(true);this.draftError.set('');
+    this.draftQueue=this.draftQueue.then(async()=>{
+      try {
+        const saved=await firstValueFrom(this.demoHttp.put<DirectorSession>(url,payload).pipe(timeout(30000)));
+        if(this.session()?.id===current.id)this.session.set(saved);
+        this.draftError.set('');return true;
+      } catch {
+        this.draftError.set(this.es?'No se guardaron los parámetros. Revisa la conexión y pulsa Reintentar guardado.':'Parameters were not saved. Check the connection and retry saving.');return false;
+      } finally {this.draftSaving.set(--this.draftWrites>0);}
+    });
+  }
   readonly recovering=signal(false);
   readonly recoveringOperation=signal('');
   readonly recoveryMessage=signal('');
@@ -50,22 +90,25 @@ export class PendulumZoneOne extends PendulumDirector {
     try{await navigator.clipboard.writeText(id);this.copiedId.set(true);}catch{this.copiedId.set(false);}
   }
   async resumeResearch(id:string):Promise<void> {
-    if(this.connection.busy() || !/^[a-f0-9]{32}$/.test(id))return;
+    id=id.trim().toLowerCase();
+    if(this.recoveryControlsBusy())return;
+    if(!/^[a-f0-9]{32}$/.test(id)){this.recoveryFailure.set(true);this.recoveryMessage.set(this.es?'Introduce un código de recuperación válido de 32 caracteres.':'Enter a valid 32-character recovery code.');return;}
+    this.recoveryCode.set(id);this.recoveryFailure.set(false);this.draftError.set('');
     const generation=++this.recoveryGeneration;
     if(this.recoveryTimer)clearTimeout(this.recoveryTimer);
-    this.copiedId.set(false);this.recoveryMode=true;this.recovering.set(true);this.recoveryMessage.set('');this.error.set('');
+    this.copiedId.set(false);this.recoveryMode=true;this.recovering.set(true);this.recoveryMessage.set('');this.error.set('');this.recoveringOperation.set('');
     this.roleSelections={};this.clearProcessed();this.session.set(null);this.previewState.set('empty');
     const port=this.connection.port();
     const poll=async(first:boolean):Promise<void>=>{
       try {
         const snapshot=await firstValueFrom(this.demoHttp.get<RecoverySnapshot>(
-          'http://127.0.0.1:'+port+'/api/science/director/pendulum/sessions/'+id+'/recovery'));
+          'http://127.0.0.1:'+port+'/api/science/director/pendulum/sessions/'+id+'/recovery').pipe(timeout(30000)));
         if(generation!==this.recoveryGeneration)return;
         if(port!==this.connection.port()){this.recovering.set(false);this.recoveringOperation.set('');return;}
         if(snapshot.session.id!==id)throw Error('STUDY_MISMATCH');
         if(first){
           this.applyRestoredSession(snapshot.session);this.musePrediction.set(snapshot.session.musePrediction??null);
-          this.sourceChoice.set('upload');this.choosingUpload.set(false);this.previewState.set('loading');
+          this.sourceChoice.set('upload');this.choosingUpload.set(false);this.previewState.set(snapshot.session.baseline?'loading':'empty');
           this.activeTrial.set(snapshot.session.followup?'followup':'baseline');
         } else {
           this.session.set(snapshot.session);this.musePrediction.set(snapshot.session.musePrediction??null);
@@ -92,10 +135,12 @@ export class PendulumZoneOne extends PendulumDirector {
             snapshot.selections.length?(this.es?'Investigación recuperada con sus resultados guardados. No se han realizado llamadas a Meta.':'Study restored with saved results. No Meta calls were made.'):
             (this.es?'Investigación recuperada. El análisis pendiente continúa únicamente al pulsar Procesar.':'Study restored. Pending analysis continues only when you press Process.'));
         }
-      } catch {
+      } catch (failure) {
         if(generation!==this.recoveryGeneration)return;
-        this.recovering.set(false);
-        this.recoveryMessage.set(this.es?'No se pudo recuperar el estado. Conserva el ID y vuelve a Retomar cuando el servidor esté disponible.':'Could not recover status. Keep the ID and resume when the server is available.');
+        this.recovering.set(false);this.recoveringOperation.set('');this.recoveryFailure.set(true);
+        this.recoveryMessage.set(failure instanceof HttpErrorResponse && failure.status===404
+          ? (this.es?'No se encontró ninguna sesión con ese código. Revisa el código e inténtalo de nuevo.':'No session was found with that code. Check it and try again.')
+          : (this.es?'No se pudo recuperar la sesión. Comprueba la conexión con el servidor y vuelve a pulsar Buscar.':'Could not recover the session. Check the server connection and press Search again.'));
       }
     };
     await poll(true);
@@ -181,21 +226,21 @@ export class PendulumZoneOne extends PendulumDirector {
   }
 
   async loadDemo():Promise<void> {
-    if(this.videoActionsBusy())return;
-    this.newFocusedStudy();
-    this.sourceChoice.set('demo');this.choosingUpload.set(false);this.demoLoading.set(true);
-    this.previewState.set('loading');
+    const current=this.session();if(!current || current.baseline || this.videoActionsBusy())return;
+    this.sourceChoice.set('demo');this.choosingUpload.set(false);this.demoLoading.set(true);this.previewState.set('loading');this.error.set('');
     try {
-      // Local deployment configuration contains only a study ID, never video bytes or keys.
       const config=await firstValueFrom(this.demoHttp.get<{studyId:string}>('demo-video.json'));
-      if(!/^[a-f0-9]{32}$/i.test(config.studyId))throw new Error('INVALID_DEMO');
-      await this.restore(config.studyId);
-      if(!this.session()?.baseline)throw new Error('DEMO_UNAVAILABLE');
+      if(!/^[a-f0-9]{32}$/.test(config.studyId))throw Error('INVALID_DEMO');
+      const demo=await firstValueFrom(this.demoHttp.get<DirectorSession>(this.api+'/'+config.studyId));
+      if(!demo.baseline)throw Error('MISSING_DEMO');
+      const data=await firstValueFrom(this.demoHttp.get(this.api+'/'+config.studyId+'/original/baseline',{responseType:'blob'}));
+      const file=new File([data],demo.baseline.originalFilename,{type:data.type});
+      await this.upload({target:{files:[file],value:''}} as unknown as Event,'baseline');
+      if(!this.session()?.baseline)throw Error('DEMO_UPLOAD_FAILED');
       this.checkedVideo.set(false);
     } catch {
-      this.session.set(null);this.previewState.set('error');
-      this.error.set(this.es?'No se pudo cargar el video de prueba. Puedes reintentarlo o iniciar una nueva prueba.':
-        'Could not load the test video. Try again or start a new trial.');
+      this.previewState.set('error');
+      this.error.set(this.es?'No se pudo cargar el video de prueba. Tu código se conserva; vuelve a intentarlo o sube un video.':'Could not load the test video. Your code is preserved; retry or upload a video.');
     } finally {this.demoLoading.set(false);}
   }
 
@@ -257,56 +302,21 @@ export class PendulumZoneOne extends PendulumDirector {
     if (!file || this.registeringAndUploading() ||
         this.busy() || !!this.stageBusy() || this.connection.busy()) return;
 
-    this.sourceChoice.set('upload');
-    const autoRegister = role === 'baseline' && !this.session();
-    if (autoRegister) {
-      // Preflight BEFORE creating a study to avoid orphan records on invalid
-      // extension or size. The server performs its own stricter validation.
-      if (file.size < 10000 || file.size > 240000000 ||
-          !/\.(mov|mp4|m4v|webm|mkv|avi|3gp|3g2)$/i.test(file.name)) {
-        this.error.set(this.es
-          ? 'Video inválido. Selecciona MOV, MP4 u otro formato compatible de 10 KB a 240 MB.'
-          : 'Invalid video. Select MOV, MP4 or another supported format (10 KB–240 MB).');
-        control.value = '';
-        return;
-      }
-      this.registeringAndUploading.set(true);
-      this.error.set('');
-    }
-
-    this.previewState.set('loading');
+    if(!this.session() || this.draftSaving() || this.draftError())return;
+    this.sourceChoice.set('upload');this.previewState.set('loading');
     try {
-      if (autoRegister) {
-        // Always refresh from the currently visible length/angle/mass, so a
-        // previous pending calculation cannot stamp stale parameters.
-        await this.refreshTheory();
-        if (!this.model()) {
-          this.error.set(this.es
-            ? 'No se pudo calcular la teoría. Corrige los parámetros antes de cargar el video.'
-            : 'Could not calculate the model. Correct the parameters before upload.');
-          return;
-        }
-
-        await this.start(); // persists model SHA-256 before media submission
-        if (!this.session()) return; // no upload if registration failed
-      }
-
       await this.upload(event, role);
       if((role==='baseline'?this.session()?.baseline:this.session()?.followup))this.choosingUpload.set(false);
-      if (role === 'followup' && this.session()?.followup) {
-        this.activeTrial.set('followup');
-      }
+      if(role==='followup' && this.session()?.followup)this.activeTrial.set('followup');
     } finally {
-      if (autoRegister) this.registeringAndUploading.set(false);
       const clip=role==='baseline'?this.session()?.baseline:this.session()?.followup;
       if(!clip)this.previewState.set(this.error()?'error':'empty');
-      // Also clear after failed registration, to allow selecting same file.
-      control.value = '';
+      control.value='';
     }
   }
 
   videoActionsBusy():boolean {
-    return this.recovering() || this.videoLoading() || this.busy() || this.resultState()==='loading' || this.connection.busy();
+    return !this.session() || this.generatingCode() || this.draftSaving() || !!this.draftError() || this.recoveryLoading() || this.videoLoading() || this.busy() || this.resultState()==='loading' || this.connection.busy();
   }
 
   async uploadNewTrial(event:Event):Promise<void> {
@@ -319,12 +329,16 @@ export class PendulumZoneOne extends PendulumDirector {
         'Invalid video. Use a supported format from 10 KB to 240 MB.');
       control.value='';return;
     }
-    this.newFocusedStudy(); // only clears the UI selection; stored studies are preserved
+    if(this.session()?.baseline) {
+      this.newFocusedStudy();
+      await this.generateRecoveryCode();
+      if(!this.session()){control.value='';return;}
+    }
     await this.uploadFocused(event,'baseline');
   }
 
   newFocusedStudy():void {
-    if(this.videoActionsBusy())return;
+    if(this.recoveryControlsBusy() || this.resultState()==='loading')return;
     this.recoveryGeneration++;this.recoveryMode=false;this.roleSelections={};this.recoveryMessage.set('');this.musePrediction.set(null);
     this.clearProcessed();
     this.reset();

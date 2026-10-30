@@ -4,12 +4,17 @@ Implementación local del 30/10/2026. No requiere nuevas inferencias para revisa
 
 ## Uso
 
-1. Al crear una investigación, copia su ID desde la cabecera del Laboratorio.
-2. Tras recargar o perder conexión, abre Inicio, pega el ID en «Retomar investigación por ID» y pulsa Retomar. El navegador recuerda el último ID.
-3. Se recuperan configuración, videos, resultados verificables y predicción congelada. Puede alternarse entre Prueba 1 y Prueba 2.
-4. Si hay una solicitud en curso, se consulta su estado cada 2,5 s; no se envía otra. Una etapa interrumpida exige revisar su estado antes de continuar manualmente.
+1. Abre **Laboratorio**. Una visita nueva o una recarga empieza sin sesión activa; no se crea un ID automáticamente.
+2. Pulsa **Generar código de recuperación** para crear una sesión vacía. Copia el código y guárdalo. Esto habilita la configuración y la carga de video.
+3. Los cambios de longitud, ángulo, masa y segunda prueba se guardan con el mismo código antes de cargar el primer video. La interfaz indica «Guardando parámetros» o permite reintentar si falla la conexión. Al registrar el video, estos parámetros quedan protegidos.
+4. **Video de prueba** y la primera carga propia conservan el código generado. Una Nueva prueba posterior crea otra investigación; la anterior continúa recuperable mediante su propio código.
+5. Para recuperar, pega el código en **¿Ya tienes un código?**, al lado del botón de generación, y pulsa **Buscar**. También se conserva el acceso anterior desde Inicio. Se aceptan mayúsculas y espacios al principio/final.
+6. La barra «Recuperando sesión» permanece hasta cargar la configuración, el video y los resultados guardados. Un ID desconocido muestra «No se encontró ninguna sesión»; un fallo de conexión muestra un mensaje diferente para reintentar.
+7. Se recuperan ambos videos, resultados verificables y predicción congelada. Si una operación sigue en curso, se consulta cada 2,5 s sin reenviarla. Una etapa interrumpida requiere revisar su estado antes de continuar manualmente.
 
-El ID identifica una investigación y sus dos pruebas, no la sesión temporal del token. Recuperar funciona contra la misma API y sus datos privados persistentes; no es sincronización en la nube. Una carga de archivo incompleta requiere seleccionar de nuevo el archivo. Tokens nunca se guardan en el registro de recuperación. Si hacen falta llamadas nuevas tras recargar, el propietario debe volver a introducir el token.
+El código identifica una investigación y sus dos pruebas, no el token temporal. Recuperar requiere la misma API y sus datos persistentes; no es sincronización en la nube. Una carga de archivo incompleta requiere seleccionar nuevamente el archivo. Los tokens nunca se guardan en recuperación; para nuevas llamadas tras recargar hay que introducirlos otra vez.
+
+El endpoint local PUT /api/science/director/pendulum/sessions/{id}/draft valida los parámetros y actualiza el modelo mediante reemplazo atómico, conservando el ID. Devuelve 404 si no existe y 409 si ya hay video, propuesta o predicción. No reescribe evidencia congelada.
 
 ## Geometría
 
@@ -26,6 +31,16 @@ GET /api/science/director/pendulum/sessions/{id}/recovery consulta sesión, resu
 Una etapa enviada continúa ante desconexión del navegador durante un máximo de 70 minutos y hasta el cierre de la API. Recuperar no inicia etapas siguientes ni reenvía solicitudes posiblemente facturadas. Un reinicio del servidor marca la operación no terminada como interrumpida. El encabezado opcional X-ProofLab-Operation-Id impide ejecutar dos veces un mismo ID. No hay garantía de reanudar un trabajo interno del proveedor que no haya dejado evidencia recuperable.
 
 La prueba inicial con predicción congelada se vincula a su análisis original. Si falta esa evidencia o no pasa integridad, se informa; nunca se sustituye por un análisis posterior del mismo video. Los archivos y SQLite existentes permanecen intactos.
+
+## Verificación de la entrada de recuperación (30/10/2026)
+
+- 46 pruebas Angular de interfaz, recuperación y navegación correctas en Edge.
+- 7 comprobaciones locales de API con almacenamiento aislado: mismo código, parámetros recuperados, entrada inválida, ID desconocido, bloqueo tras registrar video, integridad y cero consumo Meta. Script: tests/recovery-draft.integration.mjs; pasar la ruta absoluta del DLL compilado y opcionalmente un puerto libre.
+- Recorrido real en Edge: crear código, guardar 80 cm, recargar sin sesión activa, buscar código con mayúsculas, ver la barra, recuperar 80 cm, buscar ID inexistente y restaurar un H.264 histórico con 182 máscaras verificadas. Revisado a 1440 y 540 px; sin excepciones JavaScript.
+- Compilaciones Angular/.NET correctas. Advertencias Angular: bundle inicial ~748 kB y estilos de ~11,5/10,2 kB sobre presupuestos de 500/10 kB.
+- API 5391 y localhost:4300 actualizados. Cero llamadas Meta; contador 148→148 y permisos manuales conservados. Sin CI.
+
+Las verificaciones históricas de geometría anteriores se conservan debajo; no se repitieron como parte de este ajuste de interfaz.
 
 ## Verificación
 
