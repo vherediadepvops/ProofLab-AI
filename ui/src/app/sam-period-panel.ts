@@ -1,4 +1,5 @@
 import {Component, computed, input, signal} from '@angular/core';
+import {repeatabilityInterval95} from './period-confidence';
 import {
   measureSamPeriod, periodReportPayload, periodReportEnvelope,
   type SamPeriodInput, type SamPeriodSource, type PeriodIssue, type PendulumMotionIssue
@@ -40,6 +41,7 @@ export class SamPeriodPanel {
   readonly source=input<SamPeriodSource|null>(null);
   readonly language=input<'es'|'en'>('es');
   readonly assessment=computed(()=>measureSamPeriod(this.measurement()));
+  readonly interval95=computed(()=>repeatabilityInterval95(this.assessment()));
   readonly downloading=signal(false);
   readonly downloadError=signal(false);
   get es():boolean{return this.language()==='es';}
@@ -60,7 +62,9 @@ export class SamPeriodPanel {
     const source=this.source();
     if(!source || this.downloading())return;
     // Capture a self-consistent snapshot before awaiting the integrity hash.
-    const payload=periodReportPayload(source,this.measurement(),this.assessment());
+    const payload={...periodReportPayload(source,this.measurement(),this.assessment()),
+      statisticalInterval95:this.interval95(),
+      intervalInterpretation:'EXPLORATORY_MEAN_PERIOD_REPEATABILITY_ONLY_ASSUMES_INDEPENDENT_APPROXIMATELY_NORMAL_CYCLES_NOT_TOTAL_UNCERTAINTY'};
     this.downloading.set(true);this.downloadError.set(false);
     try {
       const envelope=await periodReportEnvelope(payload);

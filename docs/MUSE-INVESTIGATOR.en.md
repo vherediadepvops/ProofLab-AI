@@ -59,3 +59,15 @@ Outcomes: seven within the predeclared band (one synthetic), two inconclusive be
 Synthetic measured periods were 1.419011 s and 1.793957 s against known 1.418746 s and 1.794587 s (+0.019% and -0.035%). This does NOT validate angular accuracy: Spark displaced the pivot and SAM missed 13.4% of the first control's frames. Next priority is image-grounded pivot verification and tracking gaps; do not weaken validation to display values.
 
 Validation: 401 .NET tests, 46 Angular tests and production build passed (existing bundle warning). Isolated Edge checks covered original H.264 playback, changing θ/ω, gaps without invented values, ES/EN contrast and a non-overflowing card at 390 px. HEVC originals decoded as audio without image in these profiles; this is not a claim about all browsers. No CI. Owner service permissions and counter preserved.
+
+## Visible uncertainty and download — 2026-10-30
+
+The existing log displays exploratory 95% intervals for mean periods in videos 1 and 2, bound to current analysis and evidence. The frozen practical band (for example ±5%) remains distinct from the statistical margin. Predictions, criteria and stored verdicts are never retroactively changed.
+
+For Tpred = T1·√(L2/L1), uPred = u1·√(L2/L1). The difference T2−Tpred uses uDelta = √(u2²+uPred²), Welch-Satterthwaite degrees of freedom and a 95% Student factor. This partial calculation assumes exact lengths and independent videos; length, tracking, suspension, camera and clock uncertainty remain excluded. Global p-value and decision are explicitly unassessed; agreement within the practical band does not mean 95% hypothesis acceptance.
+
+Download buttons GET the JSON and create a local downloadable Blob, avoiding navigation to a different-origin endpoint that replaced the lab. Original payloadJson strings and hashes remain unchanged; separate displayStatistics are appended only when evidence identities match. No Meta requests or paid retries are performed.
+
+Remaining limitation: initial length comes from the user field, initially 0.50 m, not a Spark measurement. A 0.80 m proposal may come from ProofLab's 1.6×L1 option. This delivery does not add explicit length confirmation or calibrate recordings.
+
+Local validation: 26 Angular tests in Edge 155 and successful production build (bundle-size warning), zero Meta calls, no CI or API restart.

@@ -18,7 +18,7 @@
         <div class="decision"><strong>{{contrastVerdict()}}</strong><span>Muse Spark</span></div>
         <p>{{text(result.answer.justification)}}</p><p>{{text(result.answer.limitations)}}</p><p>{{text(result.answer.nextStep)}}</p>
         @if(!contrastMatches()){<p class="warning">{{es?'Este contraste pertenece a un análisis anterior.':'This comparison belongs to an earlier analysis.'}}</p>}
-        <a class="report" [href]="url()+'/contrast'" download>{{es?'Descargar contraste y fuentes':'Download comparison and sources'}}</a>
+        <button type="button" class="report" (click)="downloadReport('contrast')" [disabled]="downloading()">{{downloading()?(es?'Preparando descarga…':'Preparing download…'):(es?'Descargar contraste y fuentes':'Download comparison and sources')}}</button>
       } @else {
         <div class="actions">
           <label>{{es?'Longitud del segundo experimento (m)':'Second experiment length (m)'}}
@@ -68,7 +68,7 @@
           <p class="fine">{{es?'El hash comprueba integridad local; no prueba cuándo se filmó el segundo video.':'The hash checks local integrity; it does not establish when video 2 was filmed.'}}</p>
         }
       </details>
-      <a class="report" [href]="url()+'/report'" download>{{es?'Descargar acta e informe':'Download lab record and report'}}</a>
+      <button type="button" class="report" (click)="downloadReport('report')" [disabled]="downloading()">{{downloading()?(es?'Preparando descarga…':'Preparing download…'):(es?'Descargar acta e informe':'Download lab record and report')}}</button>
     } @else {
       <div class="actions">
         <button type="button" (click)="prepare()" [disabled]="!!busy()||connection.busy()">
@@ -92,6 +92,24 @@
         'Motion classification is awaiting a response from Muse Spark. Video 2 is enabled after a valid prediction is stored in SQLite. Muse may recommend another recording or an inconclusive result.'}}</p>
     }
   }
+  @if(statisticalSummary(); as stats) {
+    <p class="fine"><strong>{{es?'Intervalos estadísticos del 95 % · período medio':'95% statistical intervals · mean period'}}</strong></p>
+    <div class="prediction">
+      <div><span>{{es?'Video 1 · solo repetibilidad':'Video 1 · repeatability only'}}</span>
+        @if(stats.first; as ci){<strong>{{number(ci.estimateSeconds)}} s</strong><span>± {{number(ci.marginSeconds)}} s · ±{{number(ci.relativeMarginPercent,3)}} % · n = {{ci.cycles}}</span>}
+        @else {<strong>—</strong><span>{{es?'Datos insuficientes':'Insufficient data'}}</span>}</div>
+      @if(isFollowup){<div><span>{{es?'Video 2 · solo repetibilidad':'Video 2 · repeatability only'}}</span>
+        @if(stats.second; as ci){<strong>{{number(ci.estimateSeconds)}} s</strong><span>± {{number(ci.marginSeconds)}} s · ±{{number(ci.relativeMarginPercent,3)}} % · n = {{ci.cycles}}</span>}
+        @else {<strong>—</strong><span>{{es?'Datos insuficientes':'Insufficient data'}}</span>}</div>}
+      @if(stats.comparison; as c){<div><span>{{es?'Diferencia: observado − predicho':'Difference: observed − predicted'}}</span>
+        <strong>{{number(c.difference.estimateSeconds)}} s</strong><span>± {{number(c.difference.marginSeconds)}} s · IC 95 %</span>
+        <span>{{es?'Diferencia relativa':'Relative difference'}}: {{number(c.relativeDifferencePercent,3)}} %</span></div>}
+    </div>
+    <p class="fine">{{es?'Margen = t × u; no es la tolerancia de la hipótesis. Intervalos exploratorios, condicionados a ciclos aproximadamente independientes y normales. En la diferencia se propaga solo repetibilidad, suponiendo longitudes exactas y videos independientes.':'Margin = t × u; it is not the hypothesis tolerance. Exploratory intervals assume approximately independent, normally distributed cycles. The difference propagates repeatability only, treating lengths as exact and videos as independent.'}}</p>
+    <p class="fine">{{es?'Incertidumbre total y p-valor global: no disponibles. Faltan errores de longitud, seguimiento, suspensión, cámara y reloj. No se declara la hipótesis aceptada al 95 %. El criterio congelado conserva su tolerancia práctica original.':'Total uncertainty and global p-value: unavailable. Length, tracking, suspension, camera and clock errors remain unquantified. The hypothesis is not declared 95% accepted. The frozen criterion retains its original practical tolerance.'}}</p>
+    <p class="fine">{{es?'95 % corresponde a α = 0,05 (5 %) en un contraste bilateral compatible. No es la probabilidad de que la hipótesis sea verdadera. No se ha realizado un contraste global con ese nivel.':'95% corresponds to α = 0.05 (5%) for a matching two-sided test. This is not the probability that the hypothesis is true. No global test at this level has been performed.'}}</p>
+  }
+  @if(downloadError()){<p class="warning" role="alert">{{es?'No se pudo descargar el archivo. Tus resultados siguen guardados.':'Could not download the file. Your results remain saved.'}}</p>}
   @if(error()){<p class="warning" role="alert">{{error()}}</p>
     <button type="button" (click)="load()" [disabled]="!!busy()">{{es?'Consultar estado':'Refresh status'}}</button>}
 </section>

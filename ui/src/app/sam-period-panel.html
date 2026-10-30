@@ -16,9 +16,18 @@
     <div><span>{{es?'Fotogramas con detección':'Frames with detections'}}</span>
       <strong>{{number(assessment().detectionCoverage*100,1)}} <small>%</small></strong></div>
   </div>
+  @if(interval95(); as ci){
+    <p class="scope"><strong>{{es?'Período medio · IC estadístico del 95 %':'Mean period · 95% statistical CI'}}:
+      {{number(ci.estimateSeconds,5)}} ± {{number(ci.marginSeconds,5)}} s
+      (±{{number(ci.relativeMarginPercent,3)}} %)</strong><br>
+      {{es?'Intervalo':'Interval'}}: [{{number(ci.lowerSeconds,5)}}, {{number(ci.upperSeconds,5)}}] s · n = {{ci.cycles}}.
+      {{es?'Margen calculado con t de Student. Solo repetibilidad; supone ciclos aproximadamente independientes y normales. No representa la exactitud total del video.':'Student-t margin. Repeatability only; assumes approximately independent, normally distributed cycles. Does not represent total video accuracy.'}}</p>
+  } @else {
+    <p class="scope">{{es?'IC estadístico del 95 %: no disponible; faltan ciclos utilizables o dispersión resuelta.':'95% statistical CI unavailable: usable cycles or resolved dispersion are missing.'}}</p>
+  }
   <p class="scope">{{es
-    ? 'u = s/√n de ciclos alternos. Solo repetibilidad: no incluye errores de SAM, pivote, cámara ni reloj. No es incertidumbre total ni intervalo del 95%.'
-    : 'u = s/√n of alternating cycles. Repeatability only: SAM, pivot, camera and clock errors are excluded. Not total uncertainty or a 95% interval.'}}</p>
+    ? 'u = s/√n de ciclos alternos. Solo repetibilidad: no incluye errores de SAM, pivote, cámara ni reloj. u no es un margen del 95 %. El intervalo mostrado tampoco incluye estos errores sistemáticos. No es incertidumbre total.'
+    : 'u = s/√n of alternating cycles. Repeatability only: SAM, pivot, camera and clock errors are excluded. u is not a 95% margin. The displayed interval also excludes these systematic errors. Not total uncertainty.'}}</p>
   @if(assessment().status==='INCONCLUSIVE') {
     <p class="warning" role="status">{{es
       ? 'Los datos aún no permiten una estimación estable. Cualquier valor mostrado es diagnóstico.'

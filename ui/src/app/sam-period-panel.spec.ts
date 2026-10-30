@@ -20,7 +20,7 @@ describe('SAM period panel',()=>{
   it('renders the explanation and status in English',()=>{
     const f=init();f.componentRef.setInput('language','en');f.detectChanges();
     expect(f.nativeElement.textContent).toContain('Insufficient local measurement');
-    expect(f.nativeElement.textContent).toContain('Not total uncertainty or a 95% interval.');
+    expect(f.nativeElement.textContent).toContain('Not total uncertainty.');
     expect(f.nativeElement.textContent).toContain('SAM did not detect the object.');f.destroy();
   });
   it('reports local quality without issuing a phenomenon classification',()=>{

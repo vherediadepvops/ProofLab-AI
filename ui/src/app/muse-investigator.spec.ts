@@ -22,6 +22,33 @@ describe('Muse investigator',()=>{
     const f=TestBed.createComponent(MuseInvestigator);f.componentRef.setInput('source',source);f.detectChanges();
     http.expectOne(base).flush(state);await f.whenStable();f.detectChanges();return f;
   }
+
+  for(const kind of ['report','contrast'] as const) {
+    it('downloads '+kind+' as a local blob without leaving the laboratory',async()=>{
+      const f=await init(),before=location.href;
+      const create=spyOn(URL,'createObjectURL').and.returnValue('blob:http://localhost/fake-export');
+      const click=spyOn(HTMLAnchorElement.prototype,'click');
+      const p=f.componentInstance.downloadReport(kind);
+      void f.componentInstance.downloadReport(kind);
+      const request=http.expectOne(base+'/'+kind);
+      expect(request.request.method).toBe('GET');
+      expect(request.request.responseType).toBe('blob');
+      request.flush(new Blob(['{"evidence":"stored"}'],{type:'application/json'}));await p;
+      expect(create).toHaveBeenCalledTimes(1);expect(click).toHaveBeenCalledTimes(1);
+      const anchor=click.calls.mostRecent().object as HTMLAnchorElement;
+      expect(anchor.download).toBe('prooflab-muse-'+kind+'-study.json');
+      expect(anchor.href).toBe('blob:http://localhost/fake-export');
+      expect(anchor.isConnected).toBeFalse();expect(location.href).toBe(before);
+      expect(f.componentInstance.downloading()).toBeFalse();f.destroy();
+    });
+  }
+  it('keeps the lab visible and reports a failed download without retrying',async()=>{
+    const f=await init(),create=spyOn(URL,'createObjectURL'),p=f.componentInstance.downloadReport('contrast');
+    http.expectOne(base+'/contrast').flush(null,{status:500,statusText:'Unavailable'});await p;f.detectChanges();
+    expect(create).not.toHaveBeenCalled();expect(f.nativeElement.textContent).toContain('Tus resultados siguen guardados');
+    expect(f.componentInstance.downloading()).toBeFalse();f.destroy();
+  });
+
   function token(){
     const c=TestBed.inject(LabConnection),field=document.createElement('input');
     field.type='password';field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';c.register(field);c.confirmToken();return c;
@@ -158,6 +185,22 @@ describe('Muse complete second-video workflow',()=>{
   it('does not use a comparison that belongs to another analysis',async()=>{
     const f=await init({...empty,evidence:{...evidence,payloadJson:JSON.stringify({analysisId:'old',sourceSha256:'second',followupLengthMeters:.7})}});
     expect(f.componentInstance.canContrast()).toBeFalse();expect(f.componentInstance.followupLength()).toBe(.7);f.destroy();
+  });
+  it('shows both 95% margins separately from the immutable tolerance and withholds global acceptance',async()=>{
+    const assessment={status:'CANDIDATE',periodSeconds:1.4,statisticalStandardUncertaintySeconds:.001,usedCycles:10};
+    const original={...state.prediction,studyId:'study',observationId:'baseline-o',responseId:'receipt',frozenAtUtc:'2026-10-30',
+      payloadJson:JSON.stringify({prediction:{baselineLengthMeters:.5,nextLengthMeters:.8,periodSeconds:1.4*Math.sqrt(1.6),tolerancePercent:5}})};
+    const f=await init({...empty,evidence:{...evidence,payloadJson:JSON.stringify({analysisId:'batch',sourceSha256:'second',
+      measurement:{assessment:{...assessment,periodSeconds:1.78,usedCycles:8}}})}});
+    f.componentInstance.state.set({...state,prediction:original,observation:{id:'baseline-o',analysisId:'baseline',payloadSha256:'hash',
+      payloadJson:JSON.stringify({measurement:{assessment}})}});f.detectChanges();
+    expect(f.nativeElement.textContent).toContain('Video 1 · solo repetibilidad');
+    expect(f.nativeElement.textContent).toContain('Video 2 · solo repetibilidad');
+    expect(f.nativeElement.textContent).toContain('p-valor global: no disponibles');
+    expect(f.componentInstance.statisticalSummary()?.comparison?.tolerancePercent).toBe(5);
+    expect(f.componentInstance.statisticalSummary()?.comparison?.globalPValue).toBeNull();
+    expect(f.componentInstance.state()?.prediction?.payloadJson).toBe(original.payloadJson);
+    expect(f.nativeElement.querySelectorAll('section').length).toBe(1);f.destroy();
   });
   it('reconciles a failed contrast without resending to Meta',async()=>{
     const f=await init({...empty,evidence});const run=f.componentInstance.evaluateContrast();

@@ -69,3 +69,15 @@ Se registraron 102 inferencias en total, incluidas dos recuperaciones continuas 
 El control sintético dio períodos de 1,419011 s y 1,793957 s frente a valores conocidos de 1,418746 s y 1,794587 s (errores +0,019% y -0,035%). Esto NO valida precisión angular: Spark desplazó el pivote y SAM perdió 13,4% de fotogramas del primer control. La prioridad pendiente es verificar el pivote contra la imagen y los huecos de seguimiento; no flexibilizar validaciones para mostrar valores.
 
 Verificación: 401 pruebas .NET, 46 Angular y build de producción correctos (advertencia de bundle existente). En Edge aislado se comprobó reproducción H.264 original, θ/ω variables, huecos sin valores inventados, contraste ES/EN y tarjeta sin desbordamiento a 390 px. Los originales HEVC se decodificaron como audio sin imagen en esos perfiles; esta limitación no equivale a fallo en todos los navegadores. Sin CI. Permisos y contador del servicio propietario conservados.
+
+## Incertidumbre visible y descarga — 30/10/2026
+
+La bitácora existente muestra IC exploratorios del 95 % para los períodos medios de los videos 1 y 2, enlazados al análisis y evidencia actuales. Se distingue la banda práctica congelada (por ejemplo ±5 %) del margen estadístico. No se cambia retrospectivamente la predicción, el criterio ni el veredicto guardado.
+
+Para Tpred = T1·√(L2/L1), se propaga uPred = u1·√(L2/L1). La diferencia T2−Tpred usa uDelta = √(u2²+uPred²), grados de libertad de Welch-Satterthwaite y Student al 95 %. Este cálculo parcial supone longitudes exactas y videos independientes; no incluye incertidumbre de longitud, seguimiento, suspensión, cámara o reloj. El p-valor y decisión global quedan explícitamente sin evaluar; un resultado dentro de la banda práctica no equivale a hipótesis aceptada al 95 %.
+
+Los botones de descarga consultan el JSON con GET y generan un Blob descargable local, evitando navegar al endpoint de otro origen y reemplazar el laboratorio. Se conservan payloadJson y hashes originales; displayStatistics se agrega por separado solo cuando coinciden las identidades de evidencia. No se consume Meta ni se repiten solicitudes de pago.
+
+Limitación pendiente: la longitud inicial procede del campo del usuario, cuyo valor inicial es 0,50 m; no fue medida por Spark. La propuesta de 0,80 m puede proceder de la opción 1,6×L1 calculada por ProofLab. Esta entrega no añade confirmación explícita de longitud ni calibra las grabaciones.
+
+Validación local: 26 pruebas Angular en Edge 155, compilación de producción correcta (aviso de tamaño de bundle), cero llamadas a Meta, sin CI ni reinicio de API.

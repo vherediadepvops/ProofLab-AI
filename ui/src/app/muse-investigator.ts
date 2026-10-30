@@ -1,9 +1,10 @@
-import {Component,OnChanges,OnDestroy,inject,input,output,signal} from '@angular/core';
+import {Component,OnChanges,OnDestroy,inject,input,output,signal,computed} from '@angular/core';
 import {HttpClient,HttpHeaders} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
 import {LabConnection} from './lab-connection';
 import {LabActivity} from './lab-activity';
 import type {SamPeriodSource} from './sam-period';
+import {repeatabilityInterval95,compareRepeatability95} from './period-confidence';
 
 interface Bilingual {es:string;en:string}
 interface MusePhenomenon {
@@ -34,6 +35,27 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   readonly state=signal<MuseState|null>(null);
   readonly contrast=signal<{evidence:null|{sha256:string;payloadJson:string};evaluation:null|{responseId:string;answer:{verdict:string;justification:Bilingual;limitations:Bilingual;nextStep:Bilingual}};attemptStatus:string|null}|null>(null);
   readonly followupLength=signal<number|null>(null);
+  readonly statisticalSummary=computed(()=>{
+    const s=this.state(),o=s?.observation,source=this.source();
+    if(!o || (!this.isFollowup && o.analysisId!==source.analysisId) ||
+      (this.isFollowup && s?.prediction?.observationId!==o.id))return null;
+    try {
+      const observation=JSON.parse(o.payloadJson),first=repeatabilityInterval95(observation.measurement?.assessment);
+      const payload=this.contrastMatches()?JSON.parse(this.contrast()!.evidence!.payloadJson):null;
+      const second=repeatabilityInterval95(payload?.measurement?.assessment);
+      const prediction=s?.prediction?JSON.parse(s.prediction.payloadJson).prediction:null;
+      return {confidenceLevel:.95,scope:'REPEATABILITY_ONLY',
+        baselineObservationId:o.id,predictionSha256:s?.prediction?.sha256??null,
+        contrastEvidenceSha256:this.contrastMatches()?this.contrast()?.evidence?.sha256??null:null,first,second,
+        comparison:compareRepeatability95(first,second,prediction),
+        globalPValue:null,globalDecision:'NOT_ASSESSED_MISSING_TOTAL_UNCERTAINTY',
+        interpretation:'EXPLORATORY_INTERVALS_NOT_A_REPLACEMENT_FOR_THE_FROZEN_TOLERANCE_OR_A_HYPOTHESIS_ACCEPTANCE_PROBABILITY'};
+    }catch{return null;}
+  });
+  number(value:number|null,digits=5):string {
+    return value===null||!Number.isFinite(value)?'—':value.toLocaleString(this.es?'es-PE':'en-US',
+      {minimumFractionDigits:digits,maximumFractionDigits:digits});
+  }
   get isFollowup():boolean{return this.source().role==='followup';}
   contrastMatches():boolean {try{const c=this.contrast(),p=JSON.parse(c!.evidence!.payloadJson);return p.analysisId===this.source().analysisId&&p.sourceSha256===this.source().originalVideoSha256;}catch{return false;}}
   async prepareContrast():Promise<void>{
@@ -63,6 +85,29 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
 
   readonly busy=signal<'loading'|'preparing'|'evaluating'|null>(null);
   readonly error=signal('');
+  readonly downloading=signal(false);
+  readonly downloadError=signal(false);
+  async downloadReport(kind:'report'|'contrast'):Promise<void> {
+    if(this.downloading())return;
+    const serial=this.serial,source=this.source(),url=this.url()+'/'+kind,summary=this.statisticalSummary();
+    this.downloading.set(true);this.downloadError.set(false);
+    try {
+      const data=await firstValueFrom(this.http.get(url,{responseType:'blob'}));
+      if(serial!==this.serial)return;
+      // Keep every original evidence payload/hash unchanged; append a separate display derivation.
+      const saved=JSON.parse(await data.text());
+      if(serial!==this.serial)return;
+      const matches=kind==='report'
+        ? saved.observation?.id===summary?.baselineObservationId && (saved.prediction?.sha256??null)===summary?.predictionSha256
+        : saved.evidence?.sha256===summary?.contrastEvidenceSha256;
+      const blob=new Blob([JSON.stringify({...saved,displayStatistics:matches?summary:null},null,2)],{type:'application/json'});
+      const blobUrl=URL.createObjectURL(blob),link=document.createElement('a');
+      link.href=blobUrl;link.download='prooflab-muse-'+kind+'-'+source.studyId+'.json';
+      document.body.appendChild(link);
+      try{link.click();}finally{link.remove();setTimeout(()=>URL.revokeObjectURL(blobUrl),1000);}
+    }catch{if(serial===this.serial)this.downloadError.set(true);}
+    finally{this.downloading.set(false);}
+  }
   readonly headers=new HttpHeaders({'X-ProofLab-Manual-Action':'muse-research'});
   private readonly subscription=this.connection.changed.subscribe(()=>void this.load());
   get es():boolean{return this.language()==='es';}

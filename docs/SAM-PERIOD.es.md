@@ -10,7 +10,7 @@ El laboratorio calcula el período desde los centroides del objeto en una respue
 4. Formar períodos entre cruces consecutivos de la misma dirección dentro del mismo segmento. No conectar segmentos.
 5. Usar ciclos alternos para no compartir el mismo cruce entre dos períodos seleccionados. Calcular media, desviación muestral s y u = s/√n, con al menos tres ciclos seleccionados.
 
-La incertidumbre indicada mide solo repetibilidad, suponiendo errores aproximadamente independientes. Alternar ciclos no garantiza independencia. No incluye sesgos de segmentación, pivote, perspectiva, movimiento de cámara o calibración del reloj; tampoco es un intervalo del 95%. Una dispersión numéricamente cero no significa exactitud perfecta. Véase [NIST: incertidumbre estándar](https://physics.nist.gov/cuu/Constants/definitions.html).
+La incertidumbre indicada mide solo repetibilidad, suponiendo errores aproximadamente independientes. Alternar ciclos no garantiza independencia. No incluye sesgos de segmentación, pivote, perspectiva, movimiento de cámara o calibración del reloj; u tampoco es por sí sola un intervalo del 95%. Una dispersión numéricamente cero no significa exactitud perfecta. Véase [NIST: incertidumbre estándar](https://physics.nist.gov/cuu/Constants/definitions.html).
 
 ## Calidad y límites
 
@@ -27,3 +27,13 @@ Después de verificar ese hash, ejecutar measureSamPeriod(JSON.parse(payloadJson
 Pruebas locales: sam-period.spec.ts, sam-period-panel.spec.ts, pendulum-master-player.spec.ts y sam-playback.spec.ts. Incluyen 60/120/240 FPS, PTS irregulares, huecos, geometría, deriva, ausencia de datos, cambio de pivote y reproducción del informe.
 
 Comprobación del 28/10/2026 con evidencia SAM ya guardada: 1781/1828 detecciones, 20 ciclos completos y 10 alternos usados; T = 1,415864 s, u estadística = 0,000432 s. No es incertidumbre total. Cálculo del período ≈2 ms tras decodificar las máscaras. Sin llamadas nuevas a Meta.
+
+## Intervalos exploratorios del 95 % — 30/10/2026
+
+El propietario eligió 95 % de confianza. Para un período candidato con n ≥ 3 ciclos usados y u > 0 finita, el panel calcula T ± t(0,975; n−1)·u. El tamaño muestral es el número de ciclos, nunca el de fotogramas. Se usa Student, no 1,96 para todas las muestras. Una dispersión cero o datos inconclusos no generan un margen de exactitud cero.
+
+El intervalo se refiere al período medio y solo a repetibilidad, condicionado a independencia aproximada y distribución aproximadamente normal de los ciclos. No demuestra exactitud de SAM, calibración física ni probabilidad de que una hipótesis sea verdadera. α = 0,05 equivale a 5 %, no a 0,05 %; corresponde al intervalo en un contraste bilateral compatible, que aquí no se realiza globalmente.
+
+La exportación añade statisticalInterval95 e intervalInterpretation al nuevo payload antes de calcular su hash. Las entradas y assessment conservan su significado y siguen siendo reproducibles. La evidencia y los hashes históricos no se reescriben.
+
+Implementación: ui/src/app/period-confidence.ts. Validación: valores Student de referencia, muestras pequeñas, propagación de dos videos, datos inválidos y exportación. Fuente: [NIST, intervalo de confianza para la media](https://www.itl.nist.gov/div898/handbook/eda/section3/eda352.htm).
