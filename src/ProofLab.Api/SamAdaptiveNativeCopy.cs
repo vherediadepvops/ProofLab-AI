@@ -29,7 +29,8 @@ public sealed partial class SamAdaptiveClipBuilder {
         SamSceneDefinition? scene,int target,int concurrency,CancellationToken ct) {
         var timeline=await Timeline(source,pts,ct);
         return SamAdaptiveSegmentPlan.Native(pts.Count,timeline.Keys,timeline.SafeEnds,
-            scene?.Seeds.Where(s=>s.Role=="object").Select(s=>s.Frame).ToArray(),target,Math.Min(concurrency,8));
+            scene?.Seeds.Where(s=>s.Role=="object").Select(s=>s.Frame).ToArray(),target,Math.Min(concurrency,SamAdaptiveSegmentPlan.MaximumNewNativeParts),
+            maximumParts:SamAdaptiveSegmentPlan.MaximumNewNativeParts);
     }
     private async Task<SamAdaptiveClipManifest> PrepareNativeAsync(SamVideoSource source,IReadOnlyList<double> pts,
         SamAdaptiveSegmentPlan plan,string folder,string sourceSha,SamOrientedFrameGeometry display,string ptsSha,
@@ -38,7 +39,7 @@ public sealed partial class SamAdaptiveClipBuilder {
         if(plan.Windows.Any(w=>!timeline.Keys.Contains(w.InputStart)||!timeline.SafeEnds.Contains(w.InputEndExclusive)))
             throw new InvalidDataException("Native cuts must preserve original random-access and decode-order boundaries.");
         var args=new List<string>{"-hide_banner","-loglevel","error","-nostdin","-protocol_whitelist","file,pipe","-i",source.Path};
-        // One compressed read, up to eight original packet copies. Bitstream filters only
+        // One compressed read for all planned original packet copies. Bitstream filters only
         // select packets and rebase timestamps; no decoder, encoder, scale or FPS filter.
         foreach(var w in plan.Windows) {
             var start=pts[w.InputStart]+timeline.FirstPts;

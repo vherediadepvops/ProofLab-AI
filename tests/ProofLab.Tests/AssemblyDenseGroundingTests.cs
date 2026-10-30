@@ -16,10 +16,10 @@ public sealed class AssemblyDenseGroundingTests {
         Assert.Equal(49,p.Observations.Last().Frame);
     }
     [Theory][InlineData(0)][InlineData(25)][InlineData(49)]public void WrongReferenceOrdinalIsRejected(int bad)=>Assert.Throws<FormatException>(()=>AssemblyPolicy.ParseGrounding(Payload(bad),Frames));
-    [Fact]public void NativePlanUsesAtMostEightKeyframeStartsAndCoversEverySourceFrame(){
+    [Fact]public void NativePlanUsesAtMostThreeKeyframeStartsAndCoversEverySourceFrame(){
         var keys=Enumerable.Range(0,34).Select(i=>i*56).Where(i=>i<1845).ToArray();
         var plan=SamAdaptiveSegmentPlan.Native(1845,keys,Enumerable.Range(1,1845).ToArray(),Enumerable.Range(0,50).Select(i=>(int)Math.Round(1844*i/49d)).ToArray(),53,8);
-        Assert.Equal(8,plan.PartCount);Assert.True(plan.OriginalPacketCopy);
+        Assert.Equal(3,plan.PartCount);Assert.Equal(3,plan.MaxInFlight);Assert.True(plan.OriginalPacketCopy);
         Assert.Equal(1845,plan.Windows.Sum(w=>w.CoreFrames));
         foreach(var w in plan.Windows)Assert.Contains(w.InputStart,keys);
         for(int i=1;i<plan.PartCount;i++)Assert.Equal(plan.Windows[i-1].CoreEndExclusive,plan.Windows[i].CoreStart);

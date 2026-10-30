@@ -27,6 +27,8 @@ public sealed record SamAdaptiveWindow(
 
 public sealed class SamAdaptiveSegmentPlan
 {
+    // New requests use fewer seams; archived native plans can still contain eight parts.
+    public const int MaximumNewNativeParts=3;
     public const int MinimumBilledFrames=50;
     public const int TargetCoreFrames=53;
     public const int OverlapFrames=2;
@@ -116,7 +118,7 @@ public sealed class SamAdaptiveSegmentPlan
         return new(frames,target,maxInFlight,.50,windows,false,true){OriginalPacketCopy=true};
     }
     public static SamAdaptiveSegmentPlan Native(int frames,int[] keyFrames,int[] safeEnds,
-        int[]? seeds,int target=53,int maxInFlight=8,int maximumParts=8) {
+        int[]? seeds,int target=53,int maxInFlight=MaximumNewNativeParts,int maximumParts=MaximumNewNativeParts) {
         if(frames is <50 or >MaximumSourceFrames || maximumParts is <1 or >8 || maxInFlight is <1 or >8 || target is <50 or >500 || !keyFrames.Contains(0) || !safeEnds.Contains(frames))throw new ArgumentException("Invalid native source plan.");
         var keys=keyFrames.Where(x=>x>=50&&x+52<=frames).Distinct().Order().ToArray();
         for(var count=Math.Min(Math.Min(maximumParts,8),Math.Min(frames/50,keys.Length+1));count>=1;count--) {

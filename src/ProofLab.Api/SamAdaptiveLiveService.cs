@@ -84,7 +84,10 @@ public sealed class SamAdaptiveLiveService(
             var id=Path.GetFileName(folder);
             if(!ValidBatchId(id))continue;
             var report=await ReadReportAsync(id,ct);
-            if(report is not null && report.BatchId==id && Recoverable(report,sourceSha,sceneKey) &&
+            // Older, more fragmented failures first receive the current three-part plan.
+            // Only a failure with the current limit offers a separately authorized continuous recovery.
+            if(report is not null && report.Parts<=SamAdaptiveSegmentPlan.MaximumNewNativeParts &&
+               report.BatchId==id && Recoverable(report,sourceSha,sceneKey) &&
                (newest is null || report.RecordedAtUtc>newest.RecordedAtUtc))
                 newest=report;
         }

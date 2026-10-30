@@ -4,11 +4,11 @@ Verified on 2026-10-29 (America/Lima). **Meta API · segments** uses the existin
 
 ## Flow
 
-1. Read the original presentation timestamps and packets. Choose up to eight windows starting at keyframes, with full coverage, verifiable overlaps and at least 50 core frames per part. Use fewer parts when keyframes or verified references are insufficient.
+1. Read the original presentation timestamps and packets. Choose up to three windows starting at keyframes, with full coverage, verifiable overlaps and at least 50 core frames per part. Use fewer parts when keyframes or verified references are insufficient.
 2. Remux the complete Spark video and extract 50 oriented reference images in one pass. Prioritize shared seam frames, cover both endpoints and distribute remaining references across the timeline. Selection is deterministic and auditable.
 3. Send the complete video plus 50 images to Spark. Request boxes for the same moving object without assuming shape/material. Retain three suspension estimates at reference ordinals 0, 25 and 49. Sending the complete file does not prove that the provider examines every native frame.
 4. Create segments with `-c:v copy`: no encoder, scaling or FPS conversion. Bitstream filters select packets and rebase timestamps. One compressed read feeds all outputs. SAM does not need audio/other tracks; playback still uses the original file.
-5. Verify geometry, frame count, decoded pixels and source PTS (maximum tolerance 5 ms). Send valid parts, up to eight concurrently, with Spark boxes from their own reference frames.
+5. Verify geometry, frame count, decoded pixels and source PTS (maximum tolerance 5 ms). Send valid parts, up to three concurrently, with Spark boxes from their own reference frames.
 6. Join only results whose continuity passes validation. Preserve inconclusive responses. A continuous recovery requires a new manual action and displayed estimate; it is not an automatic retry.
 
 There is no lossless-transcode fallback. Failed original-copy validation produces an explicit error. Historical batches remain readable. Existing laboratory frame/duration/size limits still apply; this does not promise unrestricted 4K/240 FPS support.
@@ -68,3 +68,13 @@ Code: ObjectVisualReview.cs, AssemblyObjectReview.cs, AssemblyVideoGrounding.cs 
 Additional test: a small animated nut. Spark localized/reviewed it in 43.4 s (13.1 s for review), but seven SAM cuts disagreed at four seams. The result remained inconclusive. An authorized continuous recovery reused the review (no further Spark), obtained 1799/1800 masks in 160 s of SAM time and restored θ/ω, vectors and trail in Edge. Continuous tracking cost/latency remains a limitation for small objects; seam validation was not weakened.
 
 This update used five additional live tests: seven Spark and 23 SAM inferences including the inconclusive segmented attempt and its recovery. The campaign ledger has 19 of 30 entries (one ended before any provider call); the runner conservatively allows 11 more entries. Do not spend them routinely. Cumulative total: 19 Spark and 94 SAM. Angular production build passed with the existing initial-bundle warning: 703.54 kB / 500 kB.
+
+## Three-part limit — 2026-10-30
+
+New plans use at most three parts and three concurrent SAM requests, hence at most two seams. Original packet copying, full coverage, PTS, authentic Spark references and continuity thresholds are preserved. Sparse keyframes/references may reduce the count further.
+
+A historical failure with more than three parts now quotes the current three-part plan without submitting it. A failed two/three-part batch may offer the existing continuous recovery through a new manual action. Eight-part archives and their outcomes remain intact. Refresh the quote before submission; stale windows are rejected before Meta calls.
+
+Fewer seams do not guarantee accuracy or lower total latency: each request processes a longer fragment. A real comparison requires another authorized run; this change is checked without new inference.
+
+Local verification for this update: 55 .NET planning/archive/seam tests. The real 80CM_1.MOV (1845 frames) produces 621/621/613-frame clips, 1855 billable frames with overlaps, estimated SAM US$0.371 and 45,345,235 total bytes. Decoded pixels match the original; maximum PTS error 0.001 ms. Local preparation took 24.8 s in this run. Zero Meta calls.

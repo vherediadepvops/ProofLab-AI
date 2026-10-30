@@ -4,11 +4,11 @@ Implementación verificada el 29/10/2026 (America/Lima). El modo **API Meta · s
 
 ## Flujo
 
-1. Leer los tiempos de presentación y los paquetes del archivo original. Elegir hasta ocho ventanas que comiencen en fotogramas clave; mantener cobertura completa, solapamientos verificables y al menos 50 fotogramas centrales por parte. Si faltan claves o referencias válidas, usar menos partes.
+1. Leer los tiempos de presentación y los paquetes del archivo original. Elegir hasta tres ventanas que comiencen en fotogramas clave; mantener cobertura completa, solapamientos verificables y al menos 50 fotogramas centrales por parte. Si faltan claves o referencias válidas, usar menos partes.
 2. Preparar el video completo de Spark mediante remux y 50 imágenes originales orientadas en una sola extracción. Priorizar los fotogramas compartidos entre partes, cubrir principio/final y distribuir los restantes por la duración. La selección es determinista y auditable.
 3. Enviar video completo + 50 imágenes a Spark. Pedir cajas del mismo objeto en cada referencia, sin presuponer forma/material. Mantener las tres estimaciones de suspensión identificadas por los ordinales 0, 25 y 49. Enviar el archivo completo no demuestra que el proveedor examine cada fotograma nativo.
-4. Crear los segmentos con `-c:v copy`: sin codificador, escalado ni cambio de FPS. Los filtros de bitstream seleccionan paquetes y reubican los tiempos. Una lectura comprimida abastece los ocho archivos. Audio y otras pistas no se requieren para SAM; la reproducción conserva el original.
-5. Verificar geometría, número de fotogramas, píxeles decodificados y PTS (tolerancia máxima 5 ms) contra la fuente. Enviar las partes válidas, hasta ocho simultáneas, con cajas Spark de sus propios fotogramas.
+4. Crear los segmentos con `-c:v copy`: sin codificador, escalado ni cambio de FPS. Los filtros de bitstream seleccionan paquetes y reubican los tiempos. Una lectura comprimida abastece los archivos de las partes. Audio y otras pistas no se requieren para SAM; la reproducción conserva el original.
+5. Verificar geometría, número de fotogramas, píxeles decodificados y PTS (tolerancia máxima 5 ms) contra la fuente. Enviar las partes válidas, hasta tres simultáneas, con cajas Spark de sus propios fotogramas.
 6. Unir solo resultados con continuidad comprobada. Una unión inconclusa conserva las respuestas; una recuperación continua requiere una nueva acción manual y presupuesto mostrado, no un reintento automático.
 
 No existe una conversión sin pérdida de respaldo: si la copia original no puede verificarse, la operación falla de forma explícita. Se conserva la compatibilidad de lectura con lotes históricos. Los límites preexistentes de duración/fotogramas/tamaño del laboratorio siguen vigentes; esto no promete soporte ilimitado de 4K/240 FPS.
@@ -68,3 +68,13 @@ Código: ObjectVisualReview.cs, AssemblyObjectReview.cs, AssemblyVideoGrounding.
 Prueba adicional: animación de tuerca pequeña. Spark la identificó y revisó en 43,4 s (13,1 s de revisión), pero siete cortes SAM tuvieron diferencias de contorno en cuatro empalmes. Se mantuvo el resultado inconcluso. Una recuperación continua autorizada reutilizó la revisión (sin otro Spark), obtuvo 1799/1800 máscaras en 160 s de SAM y recuperó θ/ω, vectores y rastro en Edge. El coste/latencia del seguimiento continuo siguen siendo una limitación para objetos pequeños; no se rebajó la verificación de empalmes.
 
 Esta actualización usó cinco pruebas reales adicionales: siete inferencias Spark y 23 SAM, contando el intento segmentado inconcluso y su recuperación. La bitácora de la campaña contiene 19 registros de 30 (uno terminó antes de consultar al proveedor); el ejecutor conserva un límite conservador de 11 registros adicionales. No ejecutar los restantes por rutina. Total acumulado: 19 Spark y 94 SAM. Build Angular local correcto con advertencia existente de tamaño inicial: 703,54 kB / 500 kB.
+
+## Límite de tres partes — 30/10/2026
+
+Los nuevos planes usan como máximo tres partes y tres peticiones SAM simultáneas, con dos uniones como máximo. Se conservan copia de paquetes originales, cobertura completa, PTS, referencias Spark y el umbral de continuidad. Si faltan fotogramas clave o referencias, puede haber menos partes.
+
+Un fallo histórico con más de tres partes vuelve a cotizar el plan actual de tres; no lanza una petición por sí solo. Un fallo de dos/tres partes puede ofrecer la recuperación continua existente mediante otra acción manual. Se mantienen intactos los archivos de ocho partes y sus resultados. Actualizar el costo antes del próximo envío; los presupuestos con ventanas antiguas se rechazan antes de llamar a Meta.
+
+Reducir uniones no garantiza exactitud ni menor latencia total: cada petición procesa un fragmento más largo. La comparación real requiere otra ejecución autorizada; este cambio se valida sin nuevas inferencias.
+
+Verificación local de esta actualización: 55 pruebas .NET de planificación, archivo y uniones. El archivo real 80CM_1.MOV (1845 fotogramas) produce cortes de 621/621/613 fotogramas, 1855 facturables por solapamiento, US$0,371 SAM estimados y 45.345.235 bytes totales. Píxeles idénticos al original; error PTS máximo 0,001 ms. Preparación local: 24,8 s en esta ejecución. Cero llamadas Meta.

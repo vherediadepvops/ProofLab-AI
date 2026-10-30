@@ -18,12 +18,12 @@ public sealed class SamAdaptiveLiveIntegrationTests
         using var f=new Fixture();f.Scenes.Scene=null;
         var upper=await f.Quote();
         Assert.True(upper.RequiresNewSparkCall);Assert.True(upper.CanRunWithManualToken);
-        Assert.Null(upper.RemainingTrialSlots);Assert.Equal(8,upper.Parts);
+        Assert.Null(upper.RemainingTrialSlots);Assert.Equal(3,upper.Parts);
         Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
         f.Scenes.Scene=Scene();
         var exact=await f.Quote();
         Assert.False(exact.RequiresNewSparkCall);Assert.True(exact.ExistingSparkSceneVerified);
-        Assert.Equal(4,exact.Parts);Assert.True(exact.TotalSamEstimatedUsd<=upper.TotalSamEstimatedUsd);
+        Assert.Equal(3,exact.Parts);Assert.True(exact.TotalSamEstimatedUsd<=upper.TotalSamEstimatedUsd);
     }
     [Fact]
     public async Task MoreThanThreeManualBatchesWorkAndDuplicateIdsNeverResend()
@@ -36,9 +36,9 @@ public sealed class SamAdaptiveLiveIntegrationTests
             Assert.Equal("PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW",report.Status);
             Assert.True(report.DerivedSeamsVerified);Assert.Equal(667,report.DerivedFramesWithMasks);
         }
-        Assert.Equal(16,f.Transport.Calls);Assert.InRange(f.Transport.MaximumActive,2,4);
+        Assert.Equal(12,f.Transport.Calls);Assert.InRange(f.Transport.MaximumActive,2,3);
         await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.RunOnceAsync("study","baseline",last!,default));
-        Assert.Equal(16,f.Transport.Calls);
+        Assert.Equal(12,f.Transport.Calls);
     }
     [Fact]
     public async Task PlaybackVerifiesPartReceiptsAndPreservesOriginalTiming()
@@ -47,11 +47,11 @@ public sealed class SamAdaptiveLiveIntegrationTests
         await f.Service.RunOnceAsync("study","baseline",request,default);
         var artifact=await f.Service.ReadPlaybackAsync("study","baseline",request.ClientBatchId,default);
         Assert.False(artifact.Derivation!.NativeProviderResult);Assert.True(artifact.Derivation.SeamsVerified);
-        Assert.Equal(4,artifact.Derivation.PartResponseSha256.Length);
+        Assert.Equal(3,artifact.Derivation.PartResponseSha256.Length);
         Assert.Equal(f.Runtime.Pts,artifact.Receipt.FramePtsSeconds);
         var progress=await f.Service.ReadProgressAsync(request.ClientBatchId,default);
         Assert.Equal("COMPLETED",progress.Phase);
-        Assert.Equal(4,progress.Completed);Assert.True(progress.TotalElapsedMs>=progress.PreparationElapsedMs);
+        Assert.Equal(3,progress.Completed);Assert.True(progress.TotalElapsedMs>=progress.PreparationElapsedMs);
         Assert.All(progress.PerPart,x=>Assert.True(x.ElapsedMs>=0));
         Assert.Contains("f>1<|box;",SamFourWayMaskAssembler.OutputWire(artifact.RawResponseJson));
         Assert.Equal(SamAdaptiveLiveService.Protocol,artifact.Receipt.RequestProtocol);
@@ -81,7 +81,7 @@ public sealed class SamAdaptiveLiveIntegrationTests
     [InlineData(4)]
     [InlineData(8)]
     [InlineData(12)]
-    public async Task DenseAuthenticSeedsUseRequestedConcurrencyWithoutExceedingIt(int width)
+    public async Task DenseAuthenticSeedsRespectTheThreePartPolicyEvenWithHigherRequestedConcurrency(int width)
     {
         using var f=new Fixture();
         var planned=SamAdaptiveSegmentPlan.Create(667,alignToTwoFrameIntraKeyframes:true);
@@ -89,14 +89,14 @@ public sealed class SamAdaptiveLiveIntegrationTests
             new SamSceneSeed((w.CoreStart+w.CoreEndExclusive)/2,"object",20,30,40,50)).ToArray()};
         f.Scenes.Scene=draft with{Key=AssemblyPolicy.DefinitionKey(draft)};
         var quote=await f.Service.PreflightAsync("study","baseline",53,width,default);
-        Assert.Equal(13,quote.Parts);Assert.Equal(width,quote.SimultaneousRequests);
+        Assert.Equal(3,quote.Parts);Assert.Equal(3,quote.SimultaneousRequests);
         var request=Request(quote);
         var report=await f.Service.RunOnceAsync("study","baseline",request,default);
         Assert.True(report.DerivedSeamsVerified);
-        Assert.Equal(13,f.Transport.Calls);
-        Assert.InRange(f.Transport.MaximumActive,2,width);
+        Assert.Equal(3,f.Transport.Calls);
+        Assert.InRange(f.Transport.MaximumActive,2,3);
         var automatic=await f.Service.PreflightAsync("study","baseline",53,0,default);
-        Assert.Equal(8,automatic.SimultaneousRequests);
+        Assert.Equal(3,automatic.SimultaneousRequests);
         await Assert.ThrowsAsync<ArgumentException>(()=>
             f.Service.PreflightAsync("study","baseline",53,13,default));
     }
@@ -108,7 +108,7 @@ public sealed class SamAdaptiveLiveIntegrationTests
         var id=completed.BatchId;var dir=Path.Combine(f.Store,"batches",id);
         var r=completed with {
             Status="PROVIDER_PARTS_COMPLETE_SEAM_OR_DETECTION_INCONCLUSIVE",
-            SourceSha256=source??Sha,CompletedParts=partial?3:4,FailedParts=partial?1:0,
+            SourceSha256=source??Sha,CompletedParts=partial?completed.Parts-1:completed.Parts,FailedParts=partial?1:0,
             DerivedSeamsVerified=false,Note="Synthetic seam disagreement"
         };
         await File.WriteAllTextAsync(Path.Combine(dir,"batch-report.json"),
@@ -141,7 +141,7 @@ public sealed class SamAdaptiveLiveIntegrationTests
     [InlineData(false,true)]
     public async Task OtherVideoOrIncompleteProviderWorkDoesNotOfferSeamRecovery(bool otherVideo,bool partial){
         using var f=new Fixture();await SaveInconclusive(f,otherVideo?new string('f',64):null,partial);
-        var q=await f.Quote();Assert.Null(q.RecoveryFromBatchId);Assert.Equal(4,q.Parts);
+        var q=await f.Quote();Assert.Null(q.RecoveryFromBatchId);Assert.Equal(3,q.Parts);
         Assert.Equal(0,f.Transport.Calls);
     }
     [Fact]
@@ -171,9 +171,43 @@ public sealed class SamAdaptiveLiveIntegrationTests
         Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
     }
 
-    private static SamAdaptiveLiveRunRequest Request(SamAdaptiveLiveQuote q,double? maximum=null)=>new(){
+    [Fact]
+    public async Task ArchivedEightPartPlaybackRemainsReadableAfterThePolicyChange(){
+        using var f=new Fixture();f.Clips.MaximumParts=8;
+        var draft=Scene() with {Seeds=Enumerable.Range(0,667).Where(i=>i%15==0)
+            .Select(i=>new SamSceneSeed(i,"object",20,30,40,50)).ToArray()};
+        f.Scenes.Scene=draft with {Key=AssemblyPolicy.DefinitionKey(draft)};
+        var oldQuote=await f.Quote();Assert.Equal(8,oldQuote.Parts);
+        var oldRequest=Request(oldQuote);
+        await f.Service.RunOnceAsync("study","baseline",oldRequest,default);
+        f.Clips.MaximumParts=3;
+        var current=await f.Quote();Assert.Equal(3,current.Parts);
+        var playback=await f.Service.ReadPlaybackAsync("study","baseline",oldRequest.ClientBatchId,default);
+        Assert.Equal(8,playback.Derivation!.PartResponseSha256.Length);
+        Assert.True(playback.Derivation.SeamsVerified);
+        var stale=Request(oldQuote,batchId:Guid.NewGuid().ToString("N"));
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.RunOnceAsync("study","baseline",stale,default));
+        Assert.Equal(8,f.Transport.Calls);
+    }
+    [Fact]
+    public async Task OldEightPartSeamFailureQuotesThreeWithoutSendingOrRewritingEvidence(){
+        using var f=new Fixture();f.Clips.MaximumParts=8;
+        var draft=Scene() with {Seeds=Enumerable.Range(0,667).Where(i=>i%15==0)
+            .Select(i=>new SamSceneSeed(i,"object",20,30,40,50)).ToArray()};
+        f.Scenes.Scene=draft with {Key=AssemblyPolicy.DefinitionKey(draft)};
+        var id=await SaveInconclusive(f);
+        var path=Path.Combine(f.Store,"batches",id,"batch-report.json");
+        var original=await File.ReadAllTextAsync(path);
+        f.Clips.MaximumParts=3;
+        var quote=await f.Quote();
+        Assert.Equal(3,quote.Parts);Assert.Null(quote.RecoveryFromBatchId);
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
+        Assert.Equal(original,await File.ReadAllTextAsync(path));
+    }
+
+    private static SamAdaptiveLiveRunRequest Request(SamAdaptiveLiveQuote q,double? maximum=null,string? batchId=null)=>new(){
         MaxInFlight=q.SimultaneousRequests,ModelApiToken=Token,VideoSha256=q.SourceSha256,SceneKey=q.SparkSceneKey,PlanSha256=q.PlanSha256,
-        ClientBatchId=q.SuggestedBatchId,MaximumSamCostUsd=maximum??q.TotalSamEstimatedUsd,RecoveryFromBatchId=q.RecoveryFromBatchId,
+        ClientBatchId=batchId??q.SuggestedBatchId,MaximumSamCostUsd=maximum??q.TotalSamEstimatedUsd,RecoveryFromBatchId=q.RecoveryFromBatchId,
         ConfirmPrivateVideoTransfer=true,ConfirmUpToManyBillableSamCalls=true,ConfirmNoAutomaticRetry=true
     };
     private static SamSceneDefinition Scene(){
@@ -186,6 +220,7 @@ public sealed class SamAdaptiveLiveIntegrationTests
         private readonly string root=Path.Combine(Path.GetTempPath(),"prooflab-segments-"+Guid.NewGuid().ToString("N"));
         public string Store=>Path.Combine(root,".private","segments");
         public Runtime Runtime {get;}=new();public Scenes Scenes {get;}=new();public Transport Transport {get;}=new();
+        public Clips Clips {get;}=new();
         public SamAdaptiveLiveService Service {get;}
         public Fixture(){
             Directory.CreateDirectory(root);
@@ -193,7 +228,7 @@ public sealed class SamAdaptiveLiveIntegrationTests
                 ["SamAdaptive:PrivateRoot"]=Store,["Meta:AllowPaidRequests"]="true",
                 ["Meta:CreditsConfirmedByOwner"]="true",["Meta:OwnerApprovedPaidRequests"]="true",
                 ["Meta:UnlimitedManualRequests"]="true"}).Build();
-            Service=new(Runtime,Scenes,Transport,new Clips(),new MetaLiveAccess(config,new MetaCallSafetyBudget(43)),new Env(root),config);
+            Service=new(Runtime,Scenes,Transport,Clips,new MetaLiveAccess(config,new MetaCallSafetyBudget(43)),new Env(root),config);
         }
         public Task<SamAdaptiveLiveQuote> Quote()=>Service.PreflightAsync("study","baseline",53,4,default);
         public void Dispose()=>Directory.Delete(root,true);
@@ -213,6 +248,10 @@ public sealed class SamAdaptiveLiveIntegrationTests
         public Task CreateMp4Async(string source,string dest,CancellationToken ct)=>throw new NotSupportedException();
     }
     private sealed class Clips:ISamAdaptiveClipBuilder{
+        public int MaximumParts=SamAdaptiveSegmentPlan.MaximumNewNativeParts;
+        public Task<SamAdaptiveSegmentPlan> PlanAsync(SamVideoSource source,IReadOnlyList<double> pts,SamSceneDefinition? scene,int target,int concurrency,CancellationToken ct)=>
+            Task.FromResult(SamAdaptiveSegmentPlan.Native(pts.Count,Enumerable.Range(0,(pts.Count+1)/2).Select(i=>i*2).ToArray(),
+                Enumerable.Range(1,pts.Count).ToArray(),scene?.Seeds.Select(s=>s.Frame).ToArray(),target,Math.Min(concurrency,8),MaximumParts));
         public async Task<SamAdaptiveClipManifest> PrepareAsync(SamVideoSource source,IReadOnlyList<double> pts,
             SamAdaptiveSegmentPlan plan,string folder,CancellationToken ct){
             Directory.CreateDirectory(folder);var clips=new List<SamAdaptiveClip>();

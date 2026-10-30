@@ -7,7 +7,7 @@ using System.Text.Json;
 namespace ProofLab.Api;
 
 /// <summary>
-/// Copy original compressed packets into at most eight keyframe-aligned clips.
+/// New plans copy original compressed packets into at most three keyframe-aligned clips.
 /// No re-encoding, provider uploads or original-file edits.
 /// Every decoded frame is compared byte-for-byte (SHA256) to the original.
 /// A failed/incomplete clip disqualifies the entire batch from paid transport.
