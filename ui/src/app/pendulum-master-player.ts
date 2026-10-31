@@ -1,5 +1,6 @@
 import {resolveSamSuspension,suspensionPlaybackTrack,automaticPivotProvenance,type AutomaticSuspension} from './sam-suspension';
 import type {SceneDefinition} from './assembly-review';
+import {historicalSamSilhouettes} from './sam-ghost-trail';
 import {
   AfterViewInit, Component, ElementRef, OnChanges, OnDestroy, SimpleChanges, ViewChild,
   inject, input, output, signal, computed
@@ -837,24 +838,24 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   private drawArrow(ctx:CanvasRenderingContext2D,
     x:number,y:number,dx:number,dy:number,color:string,scale:number,
-    unit=1,exactLength?:number):void{
+    unit=1,exactLength?:number,styleUnit=unit):{x:number;y:number}|null{
     const size=Math.hypot(dx,dy);
-    if(!Number.isFinite(size)||size===0)return;
+    if(!Number.isFinite(size)||size===0)return null;
     // The cyan arrow has a linear angular-speed length; other vectors retain their scale.
     const length=exactLength ?? Math.min(170*unit,Math.max(0,size*scale*3));
-    if(!Number.isFinite(length)||length<=0)return;
-    if(exactLength===undefined && (size<.01 || length<2*unit))return;
+    if(!Number.isFinite(length)||length<=0)return null;
+    if(exactLength===undefined && (size<.01 || length<2*unit))return null;
     // Shrink the shaft and head to zero too; no residual dot near a reversal.
-    const strokeUnit=exactLength===undefined?unit:Math.min(unit,length/8);
+    const strokeUnit=exactLength===undefined?styleUnit:Math.min(styleUnit,length/8);
     const angle=Math.atan2(dy,dx);
     const endX=x+Math.cos(angle)*length,endY=y+Math.sin(angle)*length;
-    const head=Math.min(16*unit,length*.4);
+    const head=Math.min(12*styleUnit,length*.4);
     ctx.save();
-    ctx.lineCap=exactLength===undefined?'round':'butt';ctx.lineJoin='round';ctx.globalAlpha=.72;
+    ctx.lineCap=exactLength===undefined?'round':'butt';ctx.lineJoin='round';ctx.globalAlpha=.94;
     ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(endX,endY);
-    // Fine translucent strokes preserve the video beneath the vector.
+    // Clear shaft and filled head; their dimensions still shrink with the measured speed.
     ctx.strokeStyle='rgba(4,12,21,.45)';ctx.lineWidth=3*strokeUnit;ctx.stroke();
-    ctx.strokeStyle=color;ctx.lineWidth=1.6*strokeUnit;ctx.stroke();
+    ctx.strokeStyle=color;ctx.lineWidth=2*strokeUnit;ctx.stroke();
     ctx.beginPath();ctx.moveTo(endX,endY);
     ctx.lineTo(endX-head*Math.cos(angle-.5),endY-head*Math.sin(angle-.5));
     ctx.lineTo(endX-head*Math.cos(angle+.5),endY-head*Math.sin(angle+.5));
@@ -862,19 +863,48 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     ctx.strokeStyle='rgba(4,12,21,.45)';ctx.lineWidth=strokeUnit;ctx.stroke();
     ctx.fillStyle=color;ctx.fill();
     ctx.restore();
+    return {x:endX,y:endY};
   }
 
-  private paintSamMask(
-    ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
-    track:SamPlaybackTrack,mark:SamPlaybackMask,role='object'):void {
+  private samMaskPath(track:SamPlaybackTrack,mark:SamPlaybackMask):Path2D {
     const key=track.objectId+':'+mark.frameIndex;
     let path=this.samPathCache.get(key);
     if(!path) {
       path=new Path2D(mark.maskPath);
       this.samPathCache.set(key,path);
-      if(this.samPathCache.size>96)
+      if(this.samPathCache.size>256)
         this.samPathCache.delete(this.samPathCache.keys().next().value!);
     }
+    return path;
+  }
+
+  private overlayTextUnit(canvas:HTMLCanvasElement):number {
+    const bounds=this.readoutBounds.get(canvas);
+    const fit=bounds?Math.min(bounds.width/canvas.width,bounds.height/canvas.height):0;
+    return Math.min(canvas.width/150,fit>0?1/fit:Math.min(canvas.width,canvas.height)/480);
+  }
+
+  /** Past observed masks only: no generic circles, future frames or interpolated shapes. */
+  private paintSamSilhouettes(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
+    track:SamPlaybackTrack,marks:SamPlaybackMask[],time:number):void {
+    for(const mark of marks){
+      const freshness=Math.max(0,1-(time-mark.timeSeconds)/1.5);
+      ctx.save();
+      ctx.scale(canvas.width/track.frameWidth,canvas.height/track.frameHeight);
+      ctx.translate(mark.left,mark.top);
+      ctx.scale(mark.maskScaleX??1,mark.maskScaleY??1);
+      ctx.strokeStyle='rgba(194,170,245,'+(.08+.4*freshness)+')';
+      ctx.fillStyle='rgba(164,133,227,'+(.01+.035*freshness)+')';
+      ctx.lineWidth=1.2*this.overlayTextUnit(canvas)*track.frameWidth/canvas.width/
+        Math.max(mark.maskScaleX??1,mark.maskScaleY??1);
+      const path=this.samMaskPath(track,mark);ctx.fill(path);ctx.stroke(path);ctx.restore();
+    }
+  }
+
+  private paintSamMask(
+    ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
+    track:SamPlaybackTrack,mark:SamPlaybackMask,role='object'):void {
+    const path=this.samMaskPath(track,mark);
     ctx.save();
     ctx.scale(canvas.width/track.frameWidth,canvas.height/track.frameHeight);
     ctx.translate(mark.left,mark.top);
@@ -885,6 +915,17 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     ctx.fill(path);
     ctx.stroke(path);
     ctx.restore();
+    if(role==='object'){
+      const sx=canvas.width/track.frameWidth,sy=canvas.height/track.frameHeight;
+      const unit=this.overlayTextUnit(canvas),pad=4*unit;
+      const x=Math.max(unit,mark.left*sx-pad),y=Math.max(unit,mark.top*sy-pad);
+      const right=Math.min(canvas.width-unit,mark.right*sx+pad);
+      const bottom=Math.min(canvas.height-unit,mark.bottom*sy+pad);
+      if(right>x && bottom>y){
+        ctx.save();ctx.beginPath();ctx.roundRect(x,y,right-x,bottom-y,6*unit);
+        ctx.strokeStyle='rgba(113,229,207,.9)';ctx.lineWidth=1.2*unit;ctx.stroke();ctx.restore();
+      }
+    }
     if(this.scene()) {
       const x=mark.centroidXpx/track.frameWidth*canvas.width;
       const y=mark.centroidYpx/track.frameHeight*canvas.height;
@@ -961,30 +1002,52 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   private paintGuidedVectors(ctx:CanvasRenderingContext2D,canvas:HTMLCanvasElement,
     frame:KinematicFrame|null,pivot:ImagePivot,geometry:ImageSize):void {
-    if(!this.samVerified() || !frame?.isValid || !this.visibleLayers().vectors)return;
-    const v=vectorAt(frame,pivot,geometry);if(!v)return;
-    const bx=frame.bobXpx*canvas.width/480,by=frame.bobYpx*canvas.height/270;
-    const sx=canvas.width/geometry.width,sy=canvas.height/geometry.height;
-    const unit=Math.min(canvas.width,canvas.height)/480,peak=this.maximumObservedAngularSpeed();
-    const omega=Math.abs(frame.angularVelocityRadiansPerSecond!);
-    const length=peak>0?90*unit*omega/peak:0;
-    this.drawArrow(ctx,bx,by,v.vx*sx,v.vy*sy,'#8bb7ff',.22,unit,length);
-    this.drawArrow(ctx,bx,by,(v.atx+v.arx)*sx,(v.aty+v.ary)*sy,'#ffbc73',.035,unit);
-    const metric=this.derivedMotion();
-    const speed=metric?metric.speed:Math.hypot(v.vx,v.vy);
-    const acceleration=metric?metric.acceleration:Math.hypot(v.atx+v.arx,v.aty+v.ary);
-    const bounds=this.readoutBounds.get(canvas);
-    const fit=bounds?Math.min(bounds.width/canvas.width,bounds.height/canvas.height):0;
-    const textUnit=Math.min(canvas.width/150,fit>0?1/fit:unit);
-    const labels=[{text:'v = '+this.formatMetric(speed)+' '+(metric?'m/s':'px/s'),color:'#a7c8ff',offset:-22},
-      {text:'a = '+this.formatMetric(acceleration)+' '+(metric?'m/s²':'px/s²'),color:'#ffd09b',offset:22}];
+    const bob=this.currentCordAngle(),layers=this.visibleLayers();
+    if(!this.samVerified() || !bob || (!layers.tracking && !layers.vectors))return;
+    const bx=bob.bobXpx*canvas.width/480,by=bob.bobYpx*canvas.height/270;
+    const unit=Math.min(canvas.width,canvas.height)/480,textUnit=this.overlayTextUnit(canvas);
+    const track=this.playbackSamTrack();
+    const mark=track?nearestSamMask(track,this.currentTime(),Math.min(.055,.5/this.sourceFps())):null;
+    const halfHeight=mark&&track?(mark.bottom-mark.top)*canvas.height/track.frameHeight/2:8*textUnit;
+    const labels:{text:string;color:string;x:number;y:number;align:'left'|'right'|'center'}[]=[];
+    // One valid observation suffices for θ, even when nearby derivative samples are missing.
+    labels.push({text:'θ = '+this.cordAngleText(),color:'#ffe2a8',x:bx,
+      y:by-halfHeight-48*textUnit,align:'center'});
+    const v=layers.vectors && frame?.isValid?vectorAt(frame,pivot,geometry):null;
+    if(v && frame){
+      const sx=canvas.width/geometry.width,sy=canvas.height/geometry.height;
+      const peak=this.maximumObservedAngularSpeed(),omega=Math.abs(frame.angularVelocityRadiansPerSecond!);
+      const length=peak>0?90*unit*omega/peak:0;
+      const velocityTip=this.drawArrow(ctx,bx,by,v.vx*sx,v.vy*sy,'#8bb7ff',.22,unit,length,textUnit);
+      const accelerationTip=this.drawArrow(ctx,bx,by,(v.atx+v.arx)*sx,(v.aty+v.ary)*sy,'#ffbc73',.035,unit,undefined,textUnit);
+      const metric=this.derivedMotion();
+      const speed=metric?metric.speed:Math.hypot(v.vx,v.vy);
+      const acceleration=metric?metric.acceleration:Math.hypot(v.atx+v.arx,v.aty+v.ary);
+      labels.push({text:'v = '+this.formatMetric(speed)+' '+(metric?'m/s':'px/s'),color:'#a7c8ff',
+        x:(velocityTip?.x??bx)+(v.vx>=0?8:-8)*textUnit,y:(velocityTip?.y??by)-31*textUnit,align:v.vx>=0?'left':'right'},
+        {text:'a = '+this.formatMetric(acceleration)+' '+(metric?'m/s²':'px/s²'),color:'#ffd09b',
+        x:(accelerationTip?.x??bx)+((v.atx+v.arx)>=0?8:-8)*textUnit,y:(accelerationTip?.y??by)+8*textUnit,align:(v.atx+v.arx)>=0?'left':'right'});
+    }
     ctx.save();ctx.font='600 '+(11*textUnit)+'px system-ui';ctx.textBaseline='middle';
+    const placed:{x:number;y:number;w:number;h:number}[]=[];
+    const margin=4*textUnit,gap=5*textUnit,height=23*textUnit;
     for(const label of labels){
-      const width=ctx.measureText(label.text).width;
-      const x=Math.max(5*textUnit,Math.min(canvas.width-width-5*textUnit,bx+14*textUnit));
-      const y=Math.max(10*textUnit,Math.min(canvas.height-10*textUnit,by+label.offset*textUnit));
-      ctx.lineWidth=3*textUnit;ctx.strokeStyle='rgba(4,12,21,.92)';ctx.strokeText(label.text,x,y);
-      ctx.fillStyle=label.color;ctx.fillText(label.text,x,y);
+      const width=ctx.measureText(label.text).width+14*textUnit;
+      const x=Math.max(margin,Math.min(canvas.width-width-margin,
+        label.x-(label.align==='right'?width:label.align==='center'?width/2:0)));
+      let y=Math.max(margin,Math.min(canvas.height-height-margin,label.y));
+      // Keep labels separate when the object approaches an image edge.
+      for(let i=0;i<placed.length+1;i++){
+        const collision=placed.find(p=>x<p.x+p.w+gap && x+width+gap>p.x && y<p.y+p.h+gap && y+height+gap>p.y);
+        if(!collision)break;
+        y=collision.y+collision.h+gap;
+        if(y+height>canvas.height-margin)y=Math.max(margin,collision.y-height-gap);
+      }
+      ctx.beginPath();ctx.roundRect(x,y,width,height,5*textUnit);
+      ctx.fillStyle='rgba(8,20,34,.9)';ctx.fill();
+      ctx.strokeStyle=label.color+'66';ctx.lineWidth=.8*textUnit;ctx.stroke();
+      ctx.fillStyle=label.color;ctx.fillText(label.text,x+7*textUnit,y+height/2);
+      placed.push({x,y,w:width,h:height});
     }
     ctx.restore();
   }
@@ -1092,6 +1155,12 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       ? measureCordAngle(angleMask.centroidXpx/sam.frameWidth*480,
           angleMask.centroidYpx/sam.frameHeight*270,pivot,geometry)
       : null);
+    if(sam && this.samVerified()){
+      const silhouettes=historicalSamSilhouettes(sam.masks,time);
+      this.paintSamSilhouettes(ctxs[1]!,canvases[1]!,sam,silhouettes,time);
+      if(!this.guided() || this.visibleLayers().trail)
+        this.paintSamSilhouettes(ctxs[2]!,canvases[2]!,sam,silhouettes,time);
+    }
     if(sam && mask) {
       try{
         this.paintSamMask(ctxs[0]!,canvases[0]!,sam,mask);
@@ -1156,7 +1225,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       const fx=ghostCanvas.width/480,fy=ghostCanvas.height/270;
       const trailUnit=Math.min(ghostCanvas.width,ghostCanvas.height)/480;
       for(const ghostCtx of (!this.guided() || this.visibleLayers().trail?[ctxs[1]!,ctxs[2]!]:[ctxs[1]!])){
-      for(let i=0;i<trail.length;i++){
+      for(let i=0;!sam && i<trail.length;i++){
         const item=trail[i];
         const ratio=(i+1)/trail.length;
         ghostCtx.beginPath();
@@ -1166,7 +1235,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
         ghostCtx.fill();
       }
       ghostCtx.beginPath();
-      ghostCtx.strokeStyle='rgba(229,177,255,.45)';ghostCtx.lineWidth=trailUnit;
+      ghostCtx.strokeStyle='rgba(205,181,249,.24)';ghostCtx.lineWidth=.7*trailUnit;
       trail.forEach((item,i)=>{
         if(i===0 || (sam && item.timeSeconds-trail[i-1].timeSeconds>1.5/this.sourceFps()))ghostCtx.moveTo(item.x*fx,item.y*fy);
         else ghostCtx.lineTo(item.x*fx,item.y*fy);
@@ -1187,11 +1256,12 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       if(!this.guided())this.paintAngular(ctxs[2]!,canvases[2]!,frame,pivot,true,geometry);
       else {
         if(this.visibleLayers().tracking)this.paintAngular(ctxs[2]!,canvases[2]!,frame,pivot,false,geometry);
-        this.paintGuidedVectors(ctxs[2]!,canvases[2]!,frame,pivot,geometry);
+
       }
     }
     const cordAngle=this.currentCordAngle();
     if(pivot && cordAngle && (!this.guided() || this.visibleLayers().tracking))this.paintCordAngle(ctxs[2]!,canvases[2]!,cordAngle,pivot);
+    if(this.guided() && pivot)this.paintGuidedVectors(ctxs[2]!,canvases[2]!,frame,pivot,geometry);
     if(sam){
       this.paintFrameReadout(ctxs[0]!,canvases[0]!);
       if(!this.guided())this.paintFrameReadout(ctxs[2]!,canvases[2]!);

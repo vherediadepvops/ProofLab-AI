@@ -656,7 +656,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     fixture.componentRef.setInput('videoSha256',sha);
     fixture.detectChanges();
     http.expectOne(r=>r.url.endsWith('/kinematics/baseline')).flush({}, {status:404,statusText:'Not Found'});
-    http.expectOne(r=>r.url.endsWith('/sam/baseline/evidence')).flush({
+    http.expectOne(r=>r.url.endsWith('/sam/baseline/evidence?analysisId=new-analysis')).flush({
       state:{analysisId:'old-analysis'},receipt:{analysisId:'old-analysis'}
     });
     await fixture.whenStable();fixture.detectChanges();

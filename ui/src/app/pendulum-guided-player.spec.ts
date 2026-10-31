@@ -82,4 +82,22 @@ describe('Guided player evidence boundaries',()=>{
     expect((chart.omegaPath.match(/M/g)??[]).length).toBe(2);expect(chart.omegaPath).not.toContain('L');
     component.samVerified.set(false);expect(component.measuredChart()).toBeNull();fixture.destroy();
   });
+  it('paints θ from a detected frame without inventing missing derivatives or retaining stale labels',()=>{
+    const {fixture,component,root}=init();
+    fixture.componentRef.setInput('presentation','understand');fixture.detectChanges();
+    const ctx=root.querySelector<HTMLCanvasElement>('[data-view="combined"] canvas')!.getContext('2d')!;
+    const text=spyOn(ctx,'fillText').and.callThrough();
+    const point={timeSeconds:1,x:290,y:160,approximateRadiusPixels:8};
+    component.samTrack.set({frameWidth:640,frameHeight:360,source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',
+      points:[point],masks:[{frameIndex:60,timeSeconds:1,left:375,top:200,right:400,bottom:230,
+        centroidXpx:point.x*640/480,centroidYpx:point.y*360/270,foregroundPixels:500,maskPath:'M0 0h25v30h-25Z'}]});
+    component.pivotRevision.set(revision);component.samVerified.set(true);component.paintFrame(1);
+    const labels=text.calls.allArgs().map(a=>a[0]);
+    expect(labels).toContain('θ = '+component.cordAngleText());
+    expect(labels.some(t=>t.startsWith('v = ') || t.startsWith('a = '))).toBeFalse();
+    expect(component.currentCordAngle()?.angleDegrees).toBeCloseTo(26.565,2);
+    text.calls.reset();component.paintFrame(1.2);
+    expect(component.currentCordAngle()).toBeNull();expect(text).not.toHaveBeenCalled();
+    fixture.destroy();
+  });
 });
