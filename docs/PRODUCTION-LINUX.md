@@ -55,3 +55,15 @@ IP pública actual: si cambia al detener/iniciar Lightsail, actualizar certifica
 Antes de una migración de datos, detener la API en una ventana acordada y respaldar `/var/lib/prooflab` completo, además de `/etc/prooflab` y `/etc/letsencrypt`.
 Nunca copiar solamente el archivo SQLite mientras está escribiendo: puede haber WAL y archivos de evidencia relacionados.
 Las copias en el mismo disco no son respaldo externo. No se ha contratado almacenamiento adicional.
+
+## Verificación inicial / Initial verification — 30/10/2026
+
+Release de aplicación: `16b216b`. Comprobaciones focalizadas: 66 pruebas .NET y 9 Angular, build de producción y publish Linux correctos.
+HTTPS validado con certificado de CA; acceso anónimo rechazado, Origin ajeno rechazado, API solo loopback.
+Video sintético H.264 de 6 s/60 FPS: carga, poster, descarga con SHA intacto, HTTP Range y recuperación después del reinicio correctos.
+Edge con perfil aislado: Inicio/Configuración/Laboratorio, conexión habilitada y recuperación con video decodificado 640×360, sin errores JavaScript.
+La sesión sintética se retiró: cero sesiones y cero filas en las tablas de evidencia/Muse. Cero llamadas Meta; no se prueba aquí la precisión científica ni el proveedor en vivo.
+`certbot renew --dry-run` correcto; renovación habilitada cada seis horas.
+
+Al terminar la verificación, el servidor escucha en 443, pero la conexión pública sigue bloqueada por la red de Lightsail. Abrir HTTPS/TCP 443 en el firewall IPv4 y comprobar el acceso externo. Las pruebas de Edge se realizaron mediante un túnel SSH privado, conservando la verificación TLS y el origen HTTPS real.
+Public reachability is pending the Lightsail HTTPS firewall rule. Browser/server checks passed over SSH; no domain or static IP was assigned, and no external backup was provisioned.

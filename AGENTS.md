@@ -14,3 +14,12 @@ Estas instrucciones aplican a `main`, todas las ramas feature y worktrees de est
 - Antes de modificar, comprobar rama/HEAD y cambios pendientes. Usar procesos y directorios propios; no detener ni reconfigurar otros chats.
 
 English: keep the owner's three Meta permission flags enabled across branches. Ask for an authorized number of agent-initiated live tests, track consumption and stop the agent's batch when exhausted; do not disable the owner's service. Offline tests use isolated configuration or mocks. Existing tool/platform restrictions still apply.
+
+## Producción y desarrollo (30/10/2026)
+
+- El propietario autorizó Lightsail `prooflab-ai-hackathon`, Ubuntu, IP actual `3.149.236.79`, como producción. La PC continúa como desarrollo.
+- Desplegar versiones explícitas según [la guía Linux](docs/PRODUCTION-LINUX.md); un push a `main` no modifica producción automáticamente. Verificar la identidad de la VM al conectarse.
+- Mantener los datos persistentes de producción separados del código. No copiar videos, sesiones ni caché de desarrollo: el propietario eligió iniciar producción vacía. No borrar datos reales durante verificaciones.
+- Conservar permisos Meta y contadores del ambiente correspondiente. Las pruebas de despliegue no necesitan llamadas de pago; una prueba real requiere autorización vigente.
+
+English: the owner authorized this Lightsail instance as production while the PC remains development. Use explicit releases, independent persistent data and the Linux runbook; pushes to main do not auto-deploy. Never overwrite production data with development fixtures.
