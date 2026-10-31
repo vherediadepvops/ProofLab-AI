@@ -23,7 +23,7 @@ Production is an explicit release, independent of local development and GitHub C
 - `/opt/prooflab/current`: enlace a la versión activa.
 - `/var/lib/prooflab/.private`: sesiones, videos, recibos, caché y SQLite. Nunca dentro del paquete de publicación.
 - `/etc/prooflab/production.env`: origen, versión y configuración de ejecución, solo root.
-- `/etc/prooflab/access.htpasswd`: contraseña cifrada del acceso inicial.
+- `/etc/prooflab/access.htpasswd`: archivo histórico del acceso inicial, actualmente no utilizado.
 - `/etc/letsencrypt`: certificado y claves; renovación cada seis horas mediante `prooflab-cert-renew.timer`.
 
 Producción comienza vacía por decisión del propietario. No se migra `demo-video.json` ni los videos de desarrollo.
@@ -50,7 +50,7 @@ Keep the previous release for rollback; restore the previous symlink and release
 `systemctl list-timers prooflab-cert-renew.timer`; `/opt/certbot/bin/certbot renew --dry-run`.
 Los certificados por IP son de corta duración; la renovación y la apertura del puerto 80 deben mantenerse.
 La VM requiere 80/443 públicos y SSH limitado al acceso administrativo. 5391 permanece en loopback.
-IP pública actual: si cambia al detener/iniciar Lightsail, actualizar certificado, origen y Nginx; asignar IP estática o dominio antes de depender de esta URL de forma permanente.
+Cloudflare publica el registro A de `prooflab-ai.com` en modo DNS only hacia `3.149.236.79`. Si la IP cambia, actualizar DNS y la redirección por IP. El origen público de la API es `https://prooflab-ai.com`.
 
 Antes de una migración de datos, detener la API en una ventana acordada y respaldar `/var/lib/prooflab` completo, además de `/etc/prooflab` y `/etc/letsencrypt`.
 Nunca copiar solamente el archivo SQLite mientras está escribiendo: puede haber WAL y archivos de evidencia relacionados.
@@ -67,3 +67,14 @@ La sesión sintética se retiró: cero sesiones y cero filas en las tablas de ev
 
 Al terminar la verificación, el servidor escucha en 443, pero la conexión pública sigue bloqueada por la red de Lightsail. Abrir HTTPS/TCP 443 en el firewall IPv4 y comprobar el acceso externo. Las pruebas de Edge se realizaron mediante un túnel SSH privado, conservando la verificación TLS y el origen HTTPS real.
 Public reachability is pending the Lightsail HTTPS firewall rule. Browser/server checks passed over SSH; no domain or static IP was assigned, and no external backup was provisioned.
+
+## Interfaz y acceso público / UI and public access — 31/10/2026
+
+HTTPS público, certificado del dominio y `/api/health` comprobados sin credenciales (HTTP 200). La verificación inicial anterior corresponde al estado histórico del aprovisionamiento.
+No ejecutar el instalador inicial para actualizar: sus valores iniciales de origen/acceso no representan esta configuración pública.
+
+Para una actualización solo de interfaz, preparar una nueva carpeta de release con la API vigente sin cambios y el nuevo `web` compilado, excluyendo `demo-video*.json`. Conservar también los archivos JS/CSS con hash anteriores para pestañas abiertas. Cambiar `current` atómicamente; no reiniciar la API ni modificar `production.env` o los datos. Registrar por separado el commit de interfaz y la versión de API en el manifiesto de release.
+
+El aviso de token ausente abre un modal ES/EN y pulsa en rojo. Aceptar mueve el token al campo de contraseña de la sesión, limpia el borrador y no llama al proveedor. Procesar pulsa en verde solo con los requisitos existentes satisfechos. Movimiento reducido desactiva las animaciones. Verificación: 77 pruebas Angular en Edge, build de producción y revisión visual a 1440 y 390 px; cero llamadas Meta.
+
+English: production now opens anonymously at the domain. For UI-only releases, keep the existing API and persistent data, deploy the compiled web assets and switch the release symlink atomically without restarting the API. Keep older hashed assets for already-open tabs and record UI/API versions separately. The bilingual token modal clears its draft, keeps the key only in the current session, and never starts analysis on acceptance. Ready-state checks remain enforced. Edge tests (77), production build and desktop/mobile visual checks passed without provider calls.

@@ -26,10 +26,23 @@ export class LabConnection {
   confirmToken():boolean {
     if(this.busy())return false;
     const value=this.tokenField?.value.trim() ?? '';
-    const valid=value.startsWith('LLM_') && value.length>=24 &&
-      value.length<=1024 && !/\s/.test(value);
+    const valid=this.validToken(value);
     this.hasToken.set(valid);
     return valid;
+  }
+  /** Move a modal draft to the session's password field; never persist the secret. */
+  confirmTokenFrom(draft:HTMLInputElement):boolean {
+    if(this.busy() || !this.tokenField)return false;
+    const value=draft.value.trim();
+    if(!this.validToken(value))return false;
+    this.tokenField.value=value;
+    this.hasToken.set(true);
+    if(draft!==this.tokenField)draft.value='';
+    return true;
+  }
+  private validToken(value:string):boolean {
+    return value.startsWith('LLM_') && value.length>=24 &&
+      value.length<=1024 && !/\s/.test(value);
   }
   clearToken():void {
     if(this.tokenField)this.tokenField.value='';

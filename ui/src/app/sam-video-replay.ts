@@ -1,6 +1,6 @@
 import { apiOrigin } from './api-origin';
 import {
-  Component, OnChanges, OnDestroy, SimpleChanges,
+  Component, ElementRef, OnChanges, OnDestroy, SimpleChanges, ViewChild,
   inject, input, output, signal
 } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
@@ -201,9 +201,14 @@ interface SamAdaptiveReport {
             } @else if(freeCacheAvailable()) {
               <span>{{es?'Resultado disponible. Pulsa Procesar para cargarlo sin consumir créditos.':'Saved result available. Press Process to load it without spending credits.'}}</span>
             } @else if(!canProcess()) {
-              <span aria-hidden="true">⚠</span>
-              <span>{{processBlockedReason()}}</span>
-              @if(!tokenEntered()) {<button type="button" class="sam-settings-link" (click)="connection.openSettings()">{{es?'Configurar token':'Configure key'}}</button>}
+              @if(!tokenEntered()) {
+                <button type="button" class="sam-token-needed" (click)="openTokenDialog()" aria-haspopup="dialog">
+                  <span aria-hidden="true">⚠</span>
+                  {{es?'Falta el token Meta · Configurar token':'Meta token missing · Configure token'}}
+                </button>
+              } @else {
+                <span aria-hidden="true">⚠</span><span>{{processBlockedReason()}}</span>
+              }
             } @else {
               <span>{{nextActionDescription()}}</span>
             }
@@ -272,6 +277,24 @@ interface SamAdaptiveReport {
         </div>
       }
 
+      <dialog #tokenDialog class="sam-token-dialog" aria-labelledby="sam-token-title" aria-describedby="sam-token-help"
+        (cancel)="$event.preventDefault(); closeTokenDialog()" (close)="clearTokenDraft()">
+        <form (submit)="$event.preventDefault(); acceptToken()">
+          <h2 id="sam-token-title">{{es?'Configurar token Meta':'Configure Meta token'}}</h2>
+          <p id="sam-token-help">{{es?'Ingresa tu token para continuar en el laboratorio. Solo permanece en esta sesión.':'Enter your token to continue in the laboratory. It stays only in this session.'}}</p>
+          <label for="sam-token-draft">{{es?'Token de API':'API token'}}</label>
+          <input #tokenDraft id="sam-token-draft" type="password" maxlength="1024" placeholder="LLM_…" autocomplete="off"
+            autocapitalize="off" autocorrect="off" spellcheck="false" [disabled]="connection.busy()"
+            [attr.aria-invalid]="tokenInvalid()" [attr.aria-describedby]="tokenInvalid()?'sam-token-error':null"
+            (input)="tokenInvalid.set(false)"/>
+          @if(tokenInvalid()) {<p id="sam-token-error" class="sam-token-error" role="alert">{{es?'Revisa el formato: debe comenzar con LLM_ y no contener espacios.':'Check the format: it must start with LLM_ and contain no spaces.'}}</p>}
+          <p class="sam-token-note">{{es?'Aceptar registra el token. El análisis comienza cuando pulses Procesar con el costo listo.':'Accept registers the token. Analysis starts when you press Process with the cost ready.'}}</p>
+          <div class="sam-token-buttons">
+            <button type="button" (click)="closeTokenDialog()">{{es?'Cancelar':'Cancel'}}</button>
+            <button type="submit" class="sam-token-accept" [disabled]="connection.busy()">{{es?'Aceptar':'Accept'}}</button>
+          </div>
+        </form>
+      </dialog>
       <details class="sam-offline">
         <summary>{{es?'Inspector JSON · sin evidencia autenticada':
           'JSON inspector · unauthenticated evidence'}}</summary>
@@ -367,6 +390,18 @@ interface SamAdaptiveReport {
     .sam-message{display:flex;align-items:baseline;flex-wrap:wrap;gap:5px;margin-top:16px;padding-top:13px;border-top:1px solid #343e4a;color:#a9c8da;font-size:12px;line-height:1.55}
     .sam-message.warning,.sam-caution{color:#ffbd52}
     .sam-actions .sam-settings-link,.sam-settings-link{border:0;background:none;padding:0;color:#69b7ff;cursor:pointer;font:inherit;text-align:left}
+    .sam-actions .sam-token-needed{display:flex;align-items:center;gap:8px;width:100%;padding:11px 13px;border:1px solid #f87171;background:#451a24;color:#ffc3c9;font-weight:700;line-height:1.5;text-align:left;animation:sam-token-pulse 2s ease-in-out infinite}
+    .sam-token-needed:focus-visible{outline:2px solid #fecaca;outline-offset:3px}
+    @keyframes sam-token-pulse{0%,100%{box-shadow:0 0 0 0 #f8717100}50%{box-shadow:0 0 0 4px #f871713d;background:#60202d}}
+    .sam-token-dialog{box-sizing:border-box;width:min(460px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:26px;border:1px solid #38526c;border-radius:16px;background:#101e2d;color:#e7f2ff;box-shadow:0 24px 80px #0008}
+    .sam-token-dialog::backdrop{background:#03101cbb;backdrop-filter:blur(4px)}
+    .sam-token-dialog h2{margin:0 0 12px;font-size:20px}.sam-token-dialog p{color:#acc4db;font-size:13px;line-height:1.6}
+    .sam-token-dialog label{display:block;margin:20px 0 8px;font-weight:650}
+    .sam-token-dialog input{box-sizing:border-box;width:100%;padding:13px;border:1px solid #57738d;border-radius:8px;background:#091320;color:#e7f2ff;font:inherit}
+    .sam-token-dialog input:focus{outline:2px solid #6ee5c1;outline-offset:2px}.sam-token-dialog .sam-token-error{color:#ffadb7}.sam-token-dialog .sam-token-note{font-size:12px}
+    .sam-token-buttons{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}.sam-token-buttons button{min-height:42px;padding:10px 18px;border:1px solid #476078;border-radius:8px;background:transparent;color:#deedff;cursor:pointer;font:inherit;font-weight:650}
+    .sam-token-buttons .sam-token-accept{background:#6ee5c1;color:#08251f;border-color:#6ee5c1}.sam-token-buttons button:focus-visible{outline:2px solid #6ee5c1;outline-offset:3px}.sam-token-buttons button:disabled{opacity:.5;cursor:not-allowed}
+    @media(prefers-reduced-motion:reduce){.sam-actions .sam-token-needed{animation:none}}
     .sam-technical,.sam-offline{margin-top:10px;border:1px solid #343e4a;border-radius:8px;background:#171b22;padding:11px 13px}
     summary{cursor:pointer;font-size:12px;font-weight:650}p{font-size:12px;line-height:1.5}
     .sam-detail-body{padding-top:5px;overflow-wrap:anywhere;color:#b6c8db}
@@ -408,7 +443,7 @@ interface SamAdaptiveReport {
     .guided .sam-video-meta{display:block;font-size:10px;margin-top:11px;color:#a4bfad}
     .guided .sam-buttons{display:flex;margin:16px 0 0;gap:8px;flex-wrap:wrap}
     .guided .sam-buttons .sam-submit{flex:1;min-width:150px;order:-1;min-height:41px}
-    .guided .sam-submit:enabled{background:#6ee5c1;border-color:#6ee5c1;color:#08251f;animation:none;box-shadow:none}
+    .guided .sam-submit:enabled{background:#6ee5c1;border-color:#6ee5c1;color:#08251f}
     .guided .sam-submit:enabled:hover{background:#88edce}
     .guided .sam-refresh{font-size:10px;border-color:#385b4b;background:transparent;color:#a8ccbb}
     .guided .sam-message{font-size:11px;line-height:1.65;color:#b2cebf}
@@ -428,7 +463,36 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private readonly http=inject(HttpClient,{optional:true});
   readonly connection=inject(LabConnection);
   readonly localApiPort=this.connection.port;
-  constructor(){this.connection.changed.pipe(takeUntilDestroyed()).subscribe(()=>{this.resetServerCheck();this.scheduleCheck();});}
+  constructor(){this.connection.changed.pipe(takeUntilDestroyed()).subscribe(()=>{this.closeTokenDialog();this.resetServerCheck();this.scheduleCheck();});}
+  @ViewChild('tokenDialog',{static:true}) private tokenDialog!:ElementRef<HTMLDialogElement>;
+  @ViewChild('tokenDraft',{static:true}) private tokenDraft!:ElementRef<HTMLInputElement>;
+  readonly tokenInvalid=signal(false);
+  private tokenFocusFrame:number|null=null;
+  openTokenDialog():void {
+    if(this.connection.busy())return;
+    this.clearTokenDraft();
+    this.tokenDialog.nativeElement.showModal();
+    this.tokenDraft.nativeElement.focus();
+  }
+  closeTokenDialog():void {
+    this.tokenDialog?.nativeElement.close();
+    this.clearTokenDraft();
+  }
+  clearTokenDraft():void {
+    if(this.tokenDraft)this.tokenDraft.nativeElement.value='';
+    this.tokenInvalid.set(false);
+  }
+  acceptToken():void {
+    if(this.connection.busy())return;
+    if(!this.connection.confirmTokenFrom(this.tokenDraft.nativeElement)){
+      this.tokenInvalid.set(true);this.tokenDraft.nativeElement.focus();return;
+    }
+    this.closeTokenDialog();
+    this.tokenFocusFrame=requestAnimationFrame(()=>{
+      this.tokenFocusFrame=null;
+      this.tokenDialog.nativeElement.closest('section')?.querySelector<HTMLButtonElement>('.sam-submit:enabled')?.focus();
+    });
+  }
   readonly guided=input(false);
   readonly sourcePending=input(false);
   readonly recoveryRunning=input(false);
@@ -618,6 +682,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     });
   }
   ngOnDestroy():void {
+    if(this.tokenFocusFrame!==null)cancelAnimationFrame(this.tokenFocusFrame);
+    this.closeTokenDialog();
     this.stopSparkPoll();
     this.disposed=true;this.serial++;this.offlineSerial++;
     if(this.adaptivePollHandle!==null)clearInterval(this.adaptivePollHandle);
@@ -896,8 +962,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         return this.es?'Los controles de créditos o pagos del servidor están deshabilitados.':
           'Server credit or payment gates are disabled.';
       if(!this.tokenEntered())return this.es?
-        'Registra el token Meta en Configuración.':
-        'Enter the Meta key in Settings.';
+        'Registra tu token Meta para continuar.':
+        'Enter your Meta key to continue.';
       return this.es?'El plan dinámico no cumple los límites.':
         'The adaptive plan does not meet current limits.';
     }
@@ -929,7 +995,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(!ready.manualRequestsUnlimited && ready.remainingRequests<this.requiredCalls())
       return this.es?'El servidor necesita habilitar los envíos de Spark y SAM para este proceso.':
         'The server must permit the Spark and SAM requests for this process.';
-    if(!this.tokenEntered())return this.es?'Configura y confirma tu token en Configuración.':'Configure and confirm your key in Settings.';
+    if(!this.tokenEntered())return this.es?'Configura y confirma tu token Meta.':'Configure and confirm your Meta key.';
     if(!this.canOfferPaidRun())return this.es?'El servidor no permite esta solicitud. Actualiza el costo o revisa el estado.':'The server does not allow this request. Refresh the cost or inspect status.';
     return this.es?'Confirma la revisión del intento anterior antes de procesar.':'Confirm review of the previous attempt before processing.';
   }
