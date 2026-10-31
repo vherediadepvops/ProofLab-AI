@@ -1,3 +1,4 @@
+import { apiOrigin } from './api-origin';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, OnInit, inject, input, signal } from '@angular/core';
@@ -98,7 +99,7 @@ interface Comparison {
 })
 export class PendulumStudy implements OnInit {
   private readonly http = inject(HttpClient);
-  private readonly api = 'http://127.0.0.1:5391';
+  private readonly api = apiOrigin(5391);
   readonly language = input<Language>('es');
   readonly firstLength = signal(0.5);
   readonly secondLength = signal(0.8);

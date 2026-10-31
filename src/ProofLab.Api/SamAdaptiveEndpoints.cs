@@ -11,13 +11,7 @@ namespace ProofLab.Api;
 /// </summary>
 public static class SamAdaptiveEndpoints
 {
-    private static bool Loopback(HttpContext ctx)
-    {
-        var remote=ctx.Connection.RemoteIpAddress;
-        var host=ctx.Request.Host.Host;
-        return remote is not null && IPAddress.IsLoopback(remote) &&
-            (host=="127.0.0.1" || host=="localhost");
-    }
+    private static bool Loopback(HttpContext ctx) => ApiRequestAccess.Host(ctx);
 
     internal static bool AuthorizedOrigin(string origin) => origin.Length==0 ||
         origin is "http://127.0.0.1:4300" or "http://localhost:4300" or
@@ -71,7 +65,7 @@ public static class SamAdaptiveEndpoints
             CancellationToken ct)=>
         {
             var origin=ctx.Request.Headers.Origin.ToString();
-            if(!Loopback(ctx) || !AuthorizedOrigin(origin) ||
+            if(!Loopback(ctx) || !ApiRequestAccess.Origin(ctx,true) ||
                ctx.Request.Headers["X-ProofLab-Manual-Action"]!="sam-adaptive-spark" ||
                ctx.Request.ContentLength is >4096)
                 return Results.StatusCode(403);
@@ -104,7 +98,7 @@ public static class SamAdaptiveEndpoints
             SamAdaptiveLiveService service,HttpContext ctx,CancellationToken ct)=>
         {
             var origin=ctx.Request.Headers.Origin.ToString();
-            var authorizedOrigin=AuthorizedOrigin(origin);
+            var authorizedOrigin=ApiRequestAccess.Origin(ctx,true);
             if(!Loopback(ctx) || !authorizedOrigin ||
                ctx.Request.Headers["X-ProofLab-Manual-Action"]!="sam-adaptive-batch" ||
                ctx.Request.ContentLength is >4096)

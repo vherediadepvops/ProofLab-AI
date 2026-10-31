@@ -1,3 +1,4 @@
+import { apiOrigin } from './api-origin';
 import {Component,OnChanges,OnDestroy,SimpleChanges,inject,input,output,signal} from '@angular/core';
 import {HttpClient} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
@@ -106,7 +107,7 @@ export class KnotReview implements OnChanges,OnDestroy {
   imageFailed():void{this.loadedImages.set([]);this.reviewed.set(false);this.error.set(this.es?'No se pudo cargar una imagen de revisión.':'A review image could not be loaded.');}
   private serial=0;private disposed=false;
   get es():boolean{return this.language()==='es';}
-  private url():string{return 'http://127.0.0.1:'+this.port()+'/api/science/director/pendulum/sessions/'+this.studyId()+'/knot/'+this.role();}
+  private url():string{return apiOrigin(this.port())+'/api/science/director/pendulum/sessions/'+this.studyId()+'/knot/'+this.role();}
   ngOnChanges(changes:SimpleChanges):void{
     if(!changes['studyId'] && !changes['role'] && !changes['sha'] && !changes['port'])return;
     this.serial++;this.quote.set(null);this.evidence.set(null);this.point.set(null);

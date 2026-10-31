@@ -1,3 +1,4 @@
+import { apiOrigin, isLocalWorkspace } from './api-origin';
 import type {FrozenMusePrediction} from './muse-investigator';
 import { ExperimentSimulator } from './experiment-simulator';
 import { CommonModule } from '@angular/common';
@@ -31,6 +32,7 @@ interface RecoverySnapshot {
   styleUrl: './pendulum-zone-one.scss'
 })
 export class PendulumZoneOne extends PendulumDirector {
+  readonly localDemoAvailable=isLocalWorkspace();
   private readonly demoHttp=inject(HttpClient);
   @ViewChild(PendulumMasterPlayer) private currentPlayer?:PendulumMasterPlayer;
   // Presentation state only. Evidence, costs, recovery and predictions remain server-owned.
@@ -193,7 +195,7 @@ export class PendulumZoneOne extends PendulumDirector {
     const poll=async(first:boolean):Promise<void>=>{
       try {
         const snapshot=await firstValueFrom(this.demoHttp.get<RecoverySnapshot>(
-          'http://127.0.0.1:'+port+'/api/science/director/pendulum/sessions/'+id+'/recovery').pipe(timeout(30000)));
+          apiOrigin(port)+'/api/science/director/pendulum/sessions/'+id+'/recovery').pipe(timeout(30000)));
         if(generation!==this.recoveryGeneration)return;
         if(port!==this.connection.port()){this.recovering.set(false);this.recoveringOperation.set('');return;}
         if(snapshot.session.id!==id)throw Error('STUDY_MISMATCH');

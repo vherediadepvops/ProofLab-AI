@@ -1,3 +1,4 @@
+import { apiOrigin, isLocalWorkspace } from './api-origin';
 import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, inject, input, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -16,6 +17,8 @@ interface ConnectionStatus {
   styleUrl:'./workspace-settings.scss'
 })
 export class WorkspaceSettings implements AfterViewInit, OnDestroy {
+  readonly localWorkspace=isLocalWorkspace();
+  get apiAddress():string {return apiOrigin(this.connection.port());}
   readonly connection=inject(LabConnection);
   private readonly http=inject(HttpClient);
   readonly language=input<'es'|'en'>('es');
@@ -44,7 +47,7 @@ export class WorkspaceSettings implements AfterViewInit, OnDestroy {
     this.checking.set(true);this.unavailable.set(false);this.status.set(null);
     try {
       const status=await firstValueFrom(this.http.get<ConnectionStatus>(
-        'http://127.0.0.1:'+this.connection.port()+'/api/meta/readiness'));
+        apiOrigin(this.connection.port())+'/api/meta/readiness'));
       if(serial===this.serial)this.status.set(status);
     }catch{if(serial===this.serial)this.unavailable.set(true);}
     finally{if(serial===this.serial)this.checking.set(false);}

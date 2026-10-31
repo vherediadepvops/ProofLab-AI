@@ -1,0 +1,26 @@
+[Unit]
+Description=ProofLab production API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=prooflab
+Group=prooflab
+WorkingDirectory=/var/lib/prooflab
+EnvironmentFile=/etc/prooflab/production.env
+ExecStart=/usr/bin/dotnet /opt/prooflab/current/api/ProofLab.Api.dll --contentRoot /var/lib/prooflab
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+KillMode=control-group
+UMask=0077
+StateDirectory=prooflab
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/prooflab
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

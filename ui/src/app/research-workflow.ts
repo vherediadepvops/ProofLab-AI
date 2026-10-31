@@ -1,3 +1,4 @@
+import { apiOrigin } from './api-origin';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, computed, inject, input, OnChanges, OnInit, signal, SimpleChanges } from '@angular/core';
@@ -78,7 +79,7 @@ type Lang = Language;
 })
 export class ResearchWorkflow implements OnInit, OnChanges {
   private readonly http = inject(HttpClient);
-  private readonly api = 'http://127.0.0.1:5391/api/research';
+  private readonly api = apiOrigin(5391)+'/api/research';
   readonly language = input<Lang>('es');
   readonly stages = signal<ResearchStage[]>([]);
   readonly project = signal<ResearchProject|null>(null);
@@ -151,10 +152,10 @@ export class ResearchWorkflow implements OnInit, OnChanges {
 
   ngOnInit() {
     this.refreshMetaReadiness();
-    this.http.get<MathProblem[]>('http://127.0.0.1:5391/api/math/problems')
+    this.http.get<MathProblem[]>(apiOrigin(5391)+'/api/math/problems')
       .subscribe({ next: items => this.proofProblems.set(items),
         error: () => this.proofError.set('Could not load Lean benchmark catalog.') });
-    this.http.get<OpenConjecture[]>('http://127.0.0.1:5391/api/math/conjectures')
+    this.http.get<OpenConjecture[]>(apiOrigin(5391)+'/api/math/conjectures')
       .subscribe({next: items => this.conjectures.set(items),
         error: () => this.finiteError.set(this.copy(
           'Catálogo de conjeturas no disponible.', 'Open conjecture catalog unavailable.'))});
@@ -170,7 +171,7 @@ export class ResearchWorkflow implements OnInit, OnChanges {
     }
   }
   refreshMetaReadiness(): void {
-    this.http.get<MetaReadiness>('http://127.0.0.1:5391/api/meta/readiness')
+    this.http.get<MetaReadiness>(apiOrigin(5391)+'/api/meta/readiness')
       .subscribe({
         next: state => { this.metaReadiness.set(state); this.metaError.set(''); },
         error: () => this.metaError.set(this.language()==='es'

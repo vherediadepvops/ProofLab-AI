@@ -52,7 +52,9 @@
         </div></div>
         <div class="video-toolbar-actions">
           @if(flowStep()===1){
+          @if(localDemoAvailable){
             <button class="secondary-button demo-video" type="button" (click)="loadDemo()" [disabled]="videoActionsBusy() || !!s.baseline">{{es?'Usar video de ejemplo':'Use example video'}}</button>
+          }
             <label class="file-action upload-new-video"><span aria-hidden="true">↑</span> {{es?'Cargar video 1':'Upload video 1'}}<input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2" [disabled]="videoActionsBusy()" (change)="uploadNewTrial($event)"/></label>
           } @else if(!s.followup){
             <label class="file-action upload-followup"><span aria-hidden="true">↑</span> {{es?'Cargar video 2':'Upload video 2'}}<input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv,.avi,.3gp,.3g2" [disabled]="flowBusy()" (change)="uploadFocused($event,'followup')"/></label>

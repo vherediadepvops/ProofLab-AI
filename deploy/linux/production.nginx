@@ -1,0 +1,40 @@
+server {
+    listen 80 default_server;
+    server_name 3.149.236.79;
+    location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 308 https://3.149.236.79$request_uri; }
+}
+server {
+    listen 443 ssl default_server;
+    server_name 3.149.236.79;
+    ssl_certificate /etc/letsencrypt/live/3.149.236.79/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/3.149.236.79/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_tokens off;
+    auth_basic "ProofLab production";
+    auth_basic_user_file /etc/prooflab/access.htpasswd;
+    root /opt/prooflab/current/web;
+    index index.html;
+    client_max_body_size 250m;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    location /api/ {
+        proxy_pass http://127.0.0.1:5391;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Connection "";
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header X-Forwarded-Proto https;
+        # The real browser Origin is retained and validated by ProofLab.
+        proxy_read_timeout 4500s;
+        proxy_send_timeout 4500s;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_ignore_client_abort on;
+        add_header Cache-Control "private, no-store" always;
+    }
+    location ~ /\. { deny all; }
+    location / { try_files $uri $uri/ /index.html; add_header Cache-Control "no-cache"; }
+}

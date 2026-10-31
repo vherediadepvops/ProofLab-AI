@@ -29,9 +29,9 @@
       : 'After registering the key, wait for the cost in Laboratory and press Process. Each click authorizes the displayed transfer and cost. Your manual requests have no session quota.'}}</p>
   </section>
   <section class="preference-card" aria-labelledby="connection-heading">
-    <div class="card-heading"><div><h2 id="connection-heading">{{es?'Conexión local':'Local connection'}}</h2><p>{{es?'Comprueba el servidor sin consumir créditos de Meta.':'Check the server without spending Meta credits.'}}</p></div></div>
+    <div class="card-heading"><div><h2 id="connection-heading">{{localWorkspace?(es?'Conexión local':'Local connection'):(es?'Conexión de producción':'Production connection')}}</h2><p>{{es?'Comprueba el servidor sin consumir créditos de Meta.':'Check the server without spending Meta credits.'}}</p></div></div>
     <div class="connection-row">
-      <div class="connection-address"><span class="local-dot"></span><div><strong>127.0.0.1:{{connection.port()}}</strong><small>{{es?'Servidor del laboratorio':'Laboratory server'}}</small></div></div>
+      <div class="connection-address"><span class="local-dot"></span><div><strong>{{apiAddress}}</strong><small>{{es?'Servidor del laboratorio':'Laboratory server'}}</small></div></div>
       <button type="button" class="secondary" (click)="checkConnection()" [disabled]="checking() || connection.busy()">{{checking()?(es?'Comprobando…':'Checking…'):(es?'Comprobar conexión':'Check connection')}}</button>
     </div>
     @if(status(); as info){
@@ -40,8 +40,8 @@
         <span>{{(info.manualTokenCallsPermitted || info.liveCallsPermitted)?(es?'Servidor habilitado · confirma el envío y el costo en Laboratorio':'Server enabled · confirm transfer and cost in Laboratory'):(es?'Pagos deshabilitados o sin autorización':'Paid requests disabled or not authorized')}}</span>
       </div>
     }
-    @if(unavailable()){<p class="form-error" role="alert">{{es?'No se pudo conectar con la API local seleccionada.':'Could not reach the selected local API.'}}</p>}
-    <details class="advanced"><summary>{{es?'Conexión avanzada':'Advanced connection'}}</summary>
+    @if(unavailable()){<p class="form-error" role="alert">{{es?'No se pudo conectar con la API seleccionada.':'Could not reach the selected API.'}}</p>}
+    @if(localWorkspace){<details class="advanced"><summary>{{es?'Conexión avanzada':'Advanced connection'}}</summary>
       <label for="settings-api-port">{{es?'Servidor local':'Local server'}}</label>
       <select id="settings-api-port" [value]="connection.port()" (change)="changePort($event)" [disabled]="connection.busy()">
         <option value="5391">5391 · {{es?'Principal':'Main'}}</option>
@@ -50,6 +50,6 @@
         <option value="5410">5410 · {{es?'SAM dinámico experimental':'Experimental adaptive SAM'}}</option>
       </select>
       <p class="help">{{es?'Cambiar de servidor borra el token y los permisos de la solicitud anterior.':'Changing servers clears the key and previous request permissions.'}}</p>
-    </details>
+    </details>}
   </section>
 </div>

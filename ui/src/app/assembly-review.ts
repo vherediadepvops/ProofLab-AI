@@ -1,3 +1,4 @@
+import { apiOrigin } from './api-origin';
 import {Component,OnChanges,OnDestroy,SimpleChanges,ElementRef,inject,input,output,signal} from '@angular/core';
 import {HttpClient} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
@@ -129,7 +130,7 @@ export class AssemblyReview implements OnChanges,OnDestroy {
   get es():boolean{return this.language()==='es';}
   label(r:string):string{return ({object:this.es?'Objeto':'Object',cord:this.es?'Cuerda':'Cord',knot:this.es?'Nudo':'Knot',pulley:this.es?'Polea':'Pulley',support:this.es?'Soporte':'Support'} as Record<string,string>)[r]??r;}
   color(r:string):string{return ({object:'#5cf4cb',cord:'#ffdd86',knot:'#d4a2ff',pulley:'#7ebcff',support:'#b5bfcd'} as Record<string,string>)[r]??'#fff';}
-  private url():string{return 'http://127.0.0.1:'+this.port()+'/api/science/director/pendulum/sessions/'+this.studyId()+'/assembly/'+this.role();}
+  private url():string{return apiOrigin(this.port())+'/api/science/director/pendulum/sessions/'+this.studyId()+'/assembly/'+this.role();}
   ngOnChanges(c:SimpleChanges):void{
     if(!c['studyId']&&!c['role']&&!c['sha']&&!c['port'])return;
     this.serial++;this.quote.set(null);this.evidence.set(null);this.approved.set(null);this.loaded.set([]);

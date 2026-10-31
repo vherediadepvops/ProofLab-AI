@@ -1,3 +1,4 @@
+import { apiOrigin } from './api-origin';
 import {
   Component, OnChanges, OnDestroy, SimpleChanges,
   inject, input, output, signal
@@ -250,7 +251,7 @@ interface SamAdaptiveReport {
               <p class="sam-review-explanation"><strong>{{es?'Revisión de suspensión por Spark':'Suspension review by Spark'}}:</strong>
                 {{es?review.justification.es:review.justification.en}}</p>
             }
-            <p>{{tokenEntered()?(es?'Token registrado para esta sesión':'Key registered for this session'):(es?'Token en Configuración':'API key in Settings')}} · 127.0.0.1:{{localApiPort()}}
+            <p>{{tokenEntered()?(es?'Token registrado para esta sesión':'Key registered for this session'):(es?'Token en Configuración':'API key in Settings')}} · {{apiAddress()}}
               <button type="button" class="sam-settings-link" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
             </p>
             <p class="sam-disclaimer">{{es
@@ -422,6 +423,8 @@ interface SamAdaptiveReport {
 
 })
 export class SamVideoReplay implements OnChanges, OnDestroy {
+  apiAddress():string {return apiOrigin(this.localApiPort());}
+
   private readonly http=inject(HttpClient,{optional:true});
   readonly connection=inject(LabConnection);
   readonly localApiPort=this.connection.port;
@@ -563,7 +566,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     return this.base+'/'+this.studyId()+'/sam-adaptive/'+this.videoRole();
   }
   private get base():string {
-    return 'http://127.0.0.1:'+this.localApiPort()+
+    return apiOrigin(this.localApiPort())+
       '/api/science/director/pendulum/sessions';
   }
   selectMode(event:Event):void {
@@ -954,7 +957,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.adaptiveQuote.set(null);this.adaptiveResult.set(null);this.groundingQuote.set(null);
     this.adaptiveProgress.set(null);this.readiness.set(null);this.preflight.set(null);this.reusableEvidence.set(null);
     try {
-      const root='http://127.0.0.1:'+this.localApiPort();
+      const root=apiOrigin(this.localApiPort());
       const [reuse,preflight]=await Promise.all([
         firstValueFrom(this.http.get<SamReusableResult>(this.url()+'/reusable').pipe(timeout(180000))),
         firstValueFrom(this.http.get<SamPreflight>(this.url()+'/preflight').pipe(timeout(90000)))
@@ -1105,7 +1108,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     // A read-only check never consumes the key configured in Settings.
     try {
       // Independent read-only requests start together; none sends the token or calls Meta.
-      const root='http://127.0.0.1:'+this.localApiPort();
+      const root=apiOrigin(this.localApiPort());
       const [status,pf,access,ground]=await Promise.all([
         firstValueFrom(this.http.get<SamCacheStatus>(this.url()+'/status?mode='+this.mode()).pipe(timeout(15000))),
         firstValueFrom(this.http.get<SamPreflight>(this.url()+'/preflight').pipe(timeout(90000))),

@@ -1,0 +1,5 @@
+[Unit]
+Description=Renew ProofLab HTTPS IP certificate
+[Service]
+Type=oneshot
+ExecStart=/opt/certbot/bin/certbot renew --quiet --deploy-hook /usr/local/sbin/prooflab-reload-tls

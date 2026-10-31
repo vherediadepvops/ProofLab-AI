@@ -53,6 +53,7 @@
     <Compile Include="..\..\src\ProofLab.Api\SamVideoEvidenceIndex.cs"
              Link="SamVideoEvidenceIndex.cs" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="../../src/ProofLab.Api/ApiRequestAccess.cs" Link="ApiRequestAccess.cs" />
     <Compile Include="..\..\src\ProofLab.Api\ResearchOperationJournal.cs" Link="ResearchOperationJournal.cs" />
     <Compile Include="../../src/ProofLab.Api/ResearchFrozenSource.cs" Link="ResearchFrozenSource.cs" />
     <Compile Include="../../src/ProofLab.Api/ResearchOperationExecution.cs" Link="ResearchOperationExecution.cs" />

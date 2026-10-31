@@ -3,15 +3,8 @@ namespace ProofLab.Api;
 
 public static class AssemblyEndpoints
 {
-    private static bool Local(HttpContext c,bool write=false)
-    {
-        if(c.Connection.RemoteIpAddress is not IPAddress ip || !IPAddress.IsLoopback(ip) ||
-            c.Request.Host.Host is not ("127.0.0.1" or "localhost"))return false;
-        if(!write)return true;
-        var origin=c.Request.Headers.Origin.ToString();
-        return (origin=="http://127.0.0.1:4300" || origin=="http://localhost:4300") &&
-            c.Request.Headers["X-ProofLab-Manual-Action"]=="assembly";
-    }
+    private static bool Local(HttpContext c,bool write=false) =>
+        write ? ApiRequestAccess.Manual(c,"assembly") : ApiRequestAccess.Host(c);
     private static async Task<IResult> Safe(Func<Task<IResult>> action)
     {
         try{return await action();}

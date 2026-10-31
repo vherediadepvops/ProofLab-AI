@@ -1,3 +1,4 @@
+import { apiOrigin } from './api-origin';
 import {resolveSamSuspension,suspensionPlaybackTrack,automaticPivotProvenance,type AutomaticSuspension} from './sam-suspension';
 import type {SceneDefinition} from './assembly-review';
 import {historicalSamSilhouettes} from './sam-ghost-trail';
@@ -390,7 +391,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private pivotUrl():string{
-    return 'http://127.0.0.1:'+this.samApiPort()+'/api/science/director/pendulum/sessions/'+this.studyId()+'/kinematics/'+this.videoRole();
+    return apiOrigin(this.samApiPort())+'/api/science/director/pendulum/sessions/'+this.studyId()+'/kinematics/'+this.videoRole();
   }
 
   private matchingRevision(value:KinematicRevision):boolean {
@@ -449,7 +450,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       const batch=this.processedAdaptiveBatchId();
       if(batch && (!/^[a-f0-9]{32}$/.test(batch) || batch!==this.processedAnalysisId()))
         throw Error('INVALID_SEGMENT_SELECTION');
-      const endpoint='http://127.0.0.1:'+this.samApiPort()+
+      const endpoint=apiOrigin(this.samApiPort())+
         '/api/science/director/pendulum/sessions/'+this.studyId()+
         (batch?'/sam-adaptive/'+this.videoRole()+'/batches/'+batch+'/evidence':
           '/sam/'+this.videoRole()+'/evidence'+(this.processedAnalysisId()?'?analysisId='+encodeURIComponent(this.processedAnalysisId()):''));

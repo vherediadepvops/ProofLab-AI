@@ -1,3 +1,4 @@
+import { apiOrigin } from './api-origin';
 import {Component,OnChanges,OnDestroy,inject,input,output,signal,computed} from '@angular/core';
 import {HttpClient,HttpHeaders} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
@@ -112,7 +113,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   private readonly subscription=this.connection.changed.subscribe(()=>void this.load());
   get es():boolean{return this.language()==='es';}
   text(value:Bilingual):string{return this.es?value.es:value.en;}
-  url():string{return 'http://127.0.0.1:'+this.connection.port()+'/api/science/director/pendulum/sessions/'+this.source().studyId+'/muse';}
+  url():string{return apiOrigin(this.connection.port())+'/api/science/director/pendulum/sessions/'+this.source().studyId+'/muse';}
   ngOnChanges():void{void this.load();}
   ngOnDestroy():void{this.serial++;this.subscription.unsubscribe();}
   private accept(state:MuseState):void {

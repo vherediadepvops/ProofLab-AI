@@ -78,6 +78,5 @@ public static class ResearchRecoveryEndpoints
             catch (ArgumentException) { return Results.BadRequest(); }
         });
     }
-    private static bool Local(HttpContext context) => context.Connection.RemoteIpAddress is IPAddress ip && IPAddress.IsLoopback(ip) &&
-        context.Request.Host.Host is "localhost" or "127.0.0.1";
+    private static bool Local(HttpContext context) => ApiRequestAccess.Host(context);
 }

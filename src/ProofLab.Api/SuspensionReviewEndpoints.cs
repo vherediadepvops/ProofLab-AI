@@ -15,11 +15,7 @@ public static class SuspensionReviewEndpoints {
         });
         app.MapPost(path,async(string id,string role,SuspensionReviewRequest input,SuspensionReviewService service,
             HttpContext context,CancellationToken ct)=>{
-            var origin=context.Request.Headers.Origin.ToString();
-            if(context.Connection.RemoteIpAddress is not {} remote || !System.Net.IPAddress.IsLoopback(remote) ||
-                context.Request.Host.Host is not ("127.0.0.1" or "localhost") ||
-                origin is not ("http://127.0.0.1:4300" or "http://localhost:4300") ||
-                context.Request.Headers["X-ProofLab-Manual-Action"]!="suspension-review")return Results.StatusCode(403);
+            if(!ApiRequestAccess.Manual(context,"suspension-review"))return Results.StatusCode(403);
             context.Response.Headers.CacheControl="no-store";
             if(context.Request.ContentLength is >4096)return Results.BadRequest(new{error="Request too large."});
             try {return Results.Ok(await service.RunAsync(id,role,input,ct));}

@@ -2,12 +2,8 @@ using System.Net;
 namespace ProofLab.Api;
 public static class MuseExperimentEndpoints
 {
-    private static bool Local(HttpContext c,bool write=false)=>
-        c.Connection.RemoteIpAddress is IPAddress ip && IPAddress.IsLoopback(ip) &&
-        c.Request.Host.Host is "127.0.0.1" or "localhost" &&
-        (!write || ((c.Request.Headers.Origin=="http://127.0.0.1:4300" ||
-          c.Request.Headers.Origin=="http://localhost:4300") &&
-          c.Request.Headers["X-ProofLab-Manual-Action"]=="muse-research"));
+    private static bool Local(HttpContext c,bool write=false) =>
+        write ? ApiRequestAccess.Manual(c,"muse-research") : ApiRequestAccess.Host(c);
     private static async Task<IResult> Safe(Func<Task<IResult>> work) {
         try {return await work();}
         catch(FileNotFoundException){return Results.NotFound(new {error="MUSE_EVIDENCE_OR_WORKER_MISSING"});}

@@ -1,3 +1,4 @@
+import { apiOrigin } from './api-origin';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, ElementRef, OnInit, computed, inject, signal } from '@angular/core';
@@ -216,7 +217,7 @@ export class App implements OnInit {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly connection = inject(LabConnection);
   readonly labOpened = signal(false);
-  private readonly api = 'http://127.0.0.1:5391';
+  private readonly api = apiOrigin(5391);
   readonly language = signal<Language>('es');
   readonly words = computed(() => COPY[this.language()]);
   readonly workspace = signal<'home' | 'settings' | 'math' | 'physics' | 'meta' | 'pendulum'>('home');
@@ -242,7 +243,7 @@ export class App implements OnInit {
   readonly imageDataUri = signal('');
   readonly segmentation = signal('');
   readonly recordedAt = '2026-10-26';
-  private readonly metaTestApi = 'http://127.0.0.1:5393';
+  private readonly metaTestApi = apiOrigin(5393);
   readonly metaTestReadiness = signal<MetaTestReadiness | null>(null);
   readonly metaTestRunning = signal(false);
   readonly metaTestError = signal('');

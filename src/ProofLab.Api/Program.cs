@@ -63,7 +63,19 @@ builder.Services.AddCors(options => options.AddPolicy("HackathonLocal", policy =
     policy.WithOrigins("http://localhost:4300", "http://127.0.0.1:4300",
         "http://127.0.0.1:4327", "http://localhost:4327")
           .AllowAnyMethod().AllowAnyHeader()));
+builder.Services.AddSingleton<ApiRequestAccess>();
 var app = builder.Build();
+// Fail on invalid production origin before accepting any requests.
+var requestAccess=app.Services.GetRequiredService<ApiRequestAccess>();
+app.Use(async (context,next) => {
+    if(requestAccess.IsProduction && context.Request.Path.StartsWithSegments("/api") &&
+       (!requestAccess.TrustedHost(context) ||
+        ((context.Request.Method is not ("GET" or "HEAD" or "OPTIONS") || context.Request.Headers.Origin.Count>0) &&
+         !requestAccess.AllowedOrigin(context.Request.Headers.Origin.ToString())))) {
+        context.Response.StatusCode=403; return;
+    }
+    await next(context);
+});
 
 app.UseCors("HackathonLocal");
 app.UseResearchRecovery();
@@ -77,6 +89,7 @@ app.MapGet("/api/health", (MetaModelClient meta) =>
         project = "ProofLab AI — competition edition",
         startedLocal = "2026-10-26",
         appVersion = "2026.10.26-alpha",
+        release = app.Configuration["Deployment:Release"] ?? "development",
         metaModelApiEnabled = meta.Enabled && meta.HasKey,
         science = new[] { "pendulum", "rolling-sphere" }
     }));
@@ -550,15 +563,7 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/sam/{role}/manual-one-
         PendulumSamCache sam,MetaLiveAccess meta,HttpContext context,
         CancellationToken ct) =>
 {
-    var remote=context.Connection.RemoteIpAddress;
-    var host=context.Request.Host.Host;
-    var origin=context.Request.Headers.Origin.ToString();
-    if(remote is null || !System.Net.IPAddress.IsLoopback(remote) ||
-       (host!="127.0.0.1" && host!="localhost") ||
-       (origin!="http://127.0.0.1:4300" &&
-        origin!="http://localhost:4300") ||
-       context.Request.Headers["X-ProofLab-Manual-Action"]!="sam-one-shot")
-        return Results.StatusCode(403);
+    if(!ApiRequestAccess.Manual(context,"sam-one-shot"))return Results.StatusCode(403);
     context.Response.Headers.CacheControl="no-store";
     context.Response.Headers.Pragma="no-cache";
     if(context.Request.ContentLength is > 4096)
