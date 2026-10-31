@@ -81,3 +81,11 @@ English: production now opens anonymously at the domain. For UI-only releases, k
 
 Despliegue de interfaz verificado: `2455deb-web`, commit `2455debf6ed42a464c94e300ac1669e5c300a191`, bundle `main-JHWIAJIF.js`. API vigente `16b216b`; mismo PID y mismo hash de configuración antes/después. HTTPS anónimo, bundle y salud: HTTP 200. No se reiniciaron servicios ni se modificaron datos.
 Verified UI-only deployment: API process/configuration unchanged, public HTTPS and health returned 200, zero Meta calls.
+
+## Parámetros opcionales en producción / Optional inputs release — 31/10/2026
+
+Aplicación y API: d961ece, release /opt/prooflab/releases/d961ece-inputs; frontend main-RYQEIYKE.js. HTTPS público, bundle y salud comprobados. Sesión vacía de prueba: creación y guardado 200, ángulo 0° aceptado, recuperación de nulls correcta, longitud/masa 0 rechazadas con 400. Se retiró únicamente esa sesión vacía. Datos previos y permisos Meta preservados; contador 6 antes/después; cero llamadas Meta.
+
+Antes de reiniciar la API, consultar /api/meta/readiness en una ventana sin operaciones activas y conservar usedRequests mediante Meta__AlreadyUsedRequests en production.env. El contador es de proceso y se reinicia si no se proporciona esa semilla. Leer el valor vigente, no sumar una semilla histórica ni reutilizar un contador fijo. Preservar los demás permisos y restaurar el contador también en un rollback. La primera actualización de esta entrega se revirtió al detectar el reinicio del contador; se completó después con la semilla conservada.
+
+English: application/API d961ece is live in release d961ece-inputs. Public HTTPS, bundle, health and null-input persistence/validation checks passed; only the empty smoke session was removed. Existing data and Meta permission settings were preserved, request counter stayed at 6, and no provider calls were made. Before any API restart or rollback, snapshot the current usedRequests while idle and seed Meta__AlreadyUsedRequests with that total; do not add a historical seed or hard-code this release's count.

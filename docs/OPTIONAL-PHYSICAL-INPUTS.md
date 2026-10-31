@@ -21,3 +21,9 @@ New studies start with null length, initial angle and mass. Empty inputs pulse g
 La ejecución exploratoria de 45 pruebas UI encontró además expectativas ajenas a este cambio sobre títulos, modal de token y rutas antiguas de estado/caché. No se declara la suite completa aprobada ni se modifican esas expectativas en este cambio.
 
 English: targeted checks passed (44 .NET, 13 Angular/Edge, isolated HTTP persistence and desktop/mobile visual QA). The exploratory wider UI run exposed unrelated expectations for headings, token-modal input counts and old status/cache URLs; a full-suite pass is not claimed. No provider calls or CI runs were made.
+
+## Producción / Production
+
+Desplegado d961ece en https://prooflab-ai.com el 31/10/2026. API y frontend actualizados; comprobaciones públicas de salud/bundle y creación, guardado, borrado de parámetros, recuperación y validación correctas. Solo se retiró la sesión vacía creada por la prueba. Datos y permisos previos preservados, cero llamadas Meta.
+
+Release d961ece is live. Public health/bundle and optional-input persistence checks passed. Existing sessions and Meta permission flags were preserved; no provider calls.
