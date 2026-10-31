@@ -71,7 +71,7 @@ export class PendulumZoneOne extends PendulumDirector {
   canVisitStep(step:number):boolean {
     if(!this.session() || this.flowBusy())return false;
     if(step===1)return true;
-    if(step===2)return !!this.session()?.baseline;
+    if(step===2)return !!this.session()?.baseline && !this.parametersInvalid() && !this.draftSaving() && !this.draftError();
     // Navigation may reopen archived evidence; the player still verifies it before showing layers.
     if(step===3)return this.hasSavedSelection('baseline');
     if(step===4)return !!this.frozenForStudy() || (this.hasVerifiedResult('baseline') && !!this.session()?.humanReview);
@@ -150,6 +150,7 @@ export class PendulumZoneOne extends PendulumDirector {
   updateDraft():void {
     void this.refreshTheory();
     const current=this.session();if(!current || current.baseline)return;
+    if(this.parametersInvalid())return;
     const payload={baselineLengthMeters:this.baselineLength(),angleDegrees:this.initialAngleDegrees(),massGrams:this.massGrams(),
       includeSecondTrial:this.includeSecondTrial(),followUpMode:this.followUpMode(),
       selectedFollowUpLengthMeters:this.includeSecondTrial() && this.followUpMode()==='manual'?this.manualFollowUpLength():null};
@@ -256,11 +257,13 @@ export class PendulumZoneOne extends PendulumDirector {
   }
   readonly theoreticalPreview=computed(()=>{
     const model=this.model(),trial=model?.baseline;
+    const lengthInput=this.baselineLength(),angleInput=this.initialAngleDegrees(),massInput=this.massGrams();
+    if(lengthInput===null || angleInput===null || massInput===null)return null;
     if(!trial || this.modelLoading() || this.modelError() ||
        model?.source!=='DETERMINISTIC_NONLINEAR_RK4_THEORY_NOT_META_NOT_SAM' ||
-       Math.abs(trial.lengthMeters-this.baselineLength())>1e-6 ||
-       Math.abs(trial.initialAngleDegrees-this.initialAngleDegrees())>1e-6 ||
-       Math.abs(trial.massGrams-this.massGrams())>1e-6)return null;
+       Math.abs(trial.lengthMeters-lengthInput)>1e-6 ||
+       Math.abs(trial.initialAngleDegrees-angleInput)>1e-6 ||
+       Math.abs(trial.massGrams-massInput)>1e-6)return null;
     const length=trial.lengthMeters,amplitude=trial.initialAngleDegrees;
     const gravity=9.80665; // Matches ScientificModels.StandardGravity in the .NET ideal model.
     if(!Number.isFinite(length) || length<=0 || !Number.isFinite(amplitude) ||
@@ -408,7 +411,7 @@ export class PendulumZoneOne extends PendulumDirector {
     if (!file || this.registeringAndUploading() ||
         this.busy() || !!this.stageBusy() || this.connection.busy()) return;
 
-    if(!this.session() || this.draftSaving() || this.draftError())return;
+    if(!this.session() || this.parametersInvalid() || this.draftSaving() || this.draftError())return;
     if(role==='followup' && (!this.frozenForStudy() || this.session()?.followup))return;
     this.sourceChoice.set('upload');this.previewState.set('loading');
     try {
@@ -424,7 +427,7 @@ export class PendulumZoneOne extends PendulumDirector {
   }
 
   videoActionsBusy():boolean {
-    return !this.session() || this.generatingCode() || this.draftSaving() || !!this.draftError() || this.recoveryLoading() || this.videoLoading() || this.busy() || this.resultState()==='loading' || this.connection.busy();
+    return !this.session() || this.parametersInvalid() || this.generatingCode() || this.draftSaving() || !!this.draftError() || this.recoveryLoading() || this.videoLoading() || this.busy() || this.resultState()==='loading' || this.connection.busy();
   }
 
   async uploadNewTrial(event:Event):Promise<void> {

@@ -64,7 +64,7 @@ public sealed class MuseExperimentService(
             identity,baselineLengthMeters=study.BaselineLengthMeters,
             dataKind=study.Baseline.OriginalFilename.StartsWith("synthetic-",StringComparison.OrdinalIgnoreCase)?"SYNTHETIC_SOFTWARE_VALIDATION":"OWNER_SUPPLIED_PREEXISTING_RECORDING",
             plannedFollowupLengthMeters=study.FollowUpMode=="manual"?study.SelectedFollowUpLengthMeters:null,
-            lengthProvenance="USER_CONFIGURED_NOT_CALIBRATED_SUSPENSION_TO_VISIBLE_CENTER",
+            lengthProvenance=study.BaselineLengthMeters is null ? "NOT_PROVIDED" : "USER_CONFIGURED_NOT_CALIBRATED_SUSPENSION_TO_VISIBLE_CENTER",
             nominalReleaseAngleDegrees=study.AngleDegrees,massGrams=study.MassGrams,
             humanObjectReviewed=study.HumanReview?.BobConfirmed??false,
             pivotIndependentlyVerified=false,totalUncertaintyAvailable=false,

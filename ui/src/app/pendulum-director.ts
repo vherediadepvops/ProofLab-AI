@@ -70,12 +70,12 @@ interface SingleComparison {
   status: string; limitationsEs: string; limitationsEn: string;
 }
 export interface DirectorSession {
-  id: string; baselineLengthMeters: number; createdAtUtc: string;
+  id: string; baselineLengthMeters: number | null; createdAtUtc: string;
   step: string; modelStatus: string; baseline: DirectorVideo | null;
   humanReview: { reviewedAtUtc: string; bobConfirmed: boolean } | null;
   proposal: Proposal | null; followup: DirectorVideo | null;
   comparison: Comparison | null;
-  angleDegrees?: number; massGrams?: number; includeSecondTrial?: boolean;
+  angleDegrees?: number | null; massGrams?: number | null; includeSecondTrial?: boolean;
   followUpMode?: 'recommended' | 'manual';
   selectedFollowUpLengthMeters?: number | null;
   singleComparison?: SingleComparison | null;
@@ -95,9 +95,9 @@ export class PendulumDirector implements OnInit {
   private readonly directorConnection=inject(LabConnection);
   protected get api():string {return apiOrigin(this.directorConnection.port())+'/api/science/director/pendulum/sessions';}
   readonly language = input<Language>('es');
-  readonly baselineLength = signal(0.5);
-  readonly initialAngleDegrees = signal(15);
-  readonly massGrams = signal(300);
+  readonly baselineLength = signal<number|null>(null);
+  readonly initialAngleDegrees = signal<number|null>(null);
+  readonly massGrams = signal<number|null>(null);
   readonly includeSecondTrial = signal(false);
   readonly followUpMode = signal<'recommended'|'manual'>('recommended');
   readonly manualFollowUpLength = signal(.8);
@@ -113,8 +113,31 @@ export class PendulumDirector implements OnInit {
   readonly advancedInformation = signal(false);
   get es(): boolean { return this.language() === 'es'; }
 
-  get recommendedFollowUpLength(): number {
+  readonly baselineCentimeters=computed(()=>{const length=this.baselineLength();return length===null?null:length*100;});
+  optionalNumber(value:unknown, divisor=1):number|null {
+    return value===null || value===undefined || value==='' ? null : Number(value)/divisor;
+  }
+  parameterState(value:number|null, min:number, max:number):'missing'|'valid'|'invalid' {
+    return value===null?'missing':Number.isFinite(value)&&value>=min&&value<=max?'valid':'invalid';
+  }
+  parameterLabel(value:number|null,min:number,max:number):string {
+    const state=this.parameterState(value,min,max);
+    return state==='missing'?(this.es?'Sin dato · opcional':'Not provided · optional'):
+      state==='valid'?(this.es?'Dato ingresado':'Value provided'):
+      (this.es?'Revisa el rango permitido':'Check the allowed range');
+  }
+  readonly parametersInvalid=computed(()=>
+    this.parameterState(this.baselineLength(),.1,5)==='invalid' ||
+    this.parameterState(this.initialAngleDegrees(),0,85)==='invalid' ||
+    this.parameterState(this.massGrams(),10,5000)==='invalid' ||
+    (this.includeSecondTrial() && this.followUpMode()==='manual' &&
+      this.parameterState(this.manualFollowUpLength(),.1,5)!=='valid'));
+  readonly theoryInputsReady=computed(()=>this.baselineLength()!==null &&
+    this.initialAngleDegrees()!==null && this.massGrams()!==null && !this.parametersInvalid());
+
+  get recommendedFollowUpLength(): number|null {
     const length=this.baselineLength();
+    if(length===null || this.parameterState(length,.1,5)!=='valid')return null;
     return Math.round((length*1.6>5 ? length*.7 : length*1.6)*1000)/1000;
   }
 
@@ -164,6 +187,9 @@ export class PendulumDirector implements OnInit {
 
   async refreshTheory():Promise<void> {
     const serial=++this.modelRequestCounter;
+    if(!this.theoryInputsReady() || this.initialAngleDegrees()===0){
+      this.model.set(null);this.modelLoading.set(false);this.modelError.set('');return;
+    }
     const followUp=this.chosenSecondLength;
     this.modelLoading.set(true);this.modelError.set('');
     // A request only to our deterministic .NET engine; never contacts Meta.
@@ -205,9 +231,9 @@ export class PendulumDirector implements OnInit {
   }=>{
     const s=this.session(),m=this.model();
     const empty={baseline:null,followup:null};
-    if(!s || !m || Math.abs(m.baseline.lengthMeters-s.baselineLengthMeters)>.000001 ||
-       Math.abs(m.baseline.initialAngleDegrees-(s.angleDegrees ?? 15))>.000001 ||
-       Math.abs(m.baseline.massGrams-(s.massGrams ?? 300))>.000001)
+    if(!s || !m || s.baselineLengthMeters==null || s.angleDegrees==null || s.massGrams==null || Math.abs(m.baseline.lengthMeters-s.baselineLengthMeters)>.000001 ||
+       Math.abs(m.baseline.initialAngleDegrees-s.angleDegrees)>.000001 ||
+       Math.abs(m.baseline.massGrams-s.massGrams)>.000001)
       return empty;
     const baseline=s.baseline
       ? buildNormalizedVideoOverlay(m.baseline.samples,
@@ -293,7 +319,7 @@ export class PendulumDirector implements OnInit {
 
 
   ngOnInit(): void {
-    // The initial three graphs render from independent local physics, no tokens.
+    // Theory is calculated only after its physical inputs have been supplied; no provider calls.
     void this.refreshTheory();
     const id = localStorage.getItem('prooflab-director-current');
     if (id && /^[a-f0-9]{32}$/i.test(id)) void this.restore(id);
@@ -311,9 +337,9 @@ export class PendulumDirector implements OnInit {
 
   protected applyRestoredSession(item:DirectorSession):void {
       this.session.set(item);
-      this.baselineLength.set(item.baselineLengthMeters);
-      this.initialAngleDegrees.set(item.angleDegrees ?? 15);
-      this.massGrams.set(item.massGrams ?? 300);
+      this.baselineLength.set(item.baselineLengthMeters ?? null);
+      this.initialAngleDegrees.set(item.angleDegrees ?? null);
+      this.massGrams.set(item.massGrams ?? null);
       this.includeSecondTrial.set(item.includeSecondTrial ?? true);
       this.followUpMode.set(item.followUpMode ?? 'recommended');
       this.manualFollowUpLength.set(item.selectedFollowUpLengthMeters ?? .8);
@@ -323,7 +349,7 @@ export class PendulumDirector implements OnInit {
   }
 
   async start(): Promise<void> {
-    if(this.busy() || !this.model() || this.modelLoading())return;
+    if(this.busy() || this.parametersInvalid())return;
     this.busy.set(true);this.error.set('');
     try{
       const study=await firstValueFrom(this.http.post<DirectorSession>(
@@ -349,6 +375,9 @@ export class PendulumDirector implements OnInit {
     if(this.busy() || this.stageBusy())return;
     localStorage.removeItem('prooflab-director-current');
     this.session.set(null);this.checkedVideo.set(false);this.error.set('');
+    this.baselineLength.set(null);this.initialAngleDegrees.set(null);this.massGrams.set(null);
+    this.includeSecondTrial.set(false);this.modelRequestCounter++;
+    this.model.set(null);this.modelLoading.set(false);this.modelError.set('');
   }
 
   async upload(event: Event, role: Stage):Promise<void>{

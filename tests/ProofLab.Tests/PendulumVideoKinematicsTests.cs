@@ -25,6 +25,22 @@ public sealed class PendulumVideoKinematicsTests
     }
 
     [Fact]
+    public void MissingPhysicalInputsKeepObservedAnglesButNeverInventMetricScaleOrTheory()
+    {
+        var track=MakeTrack();
+        var measured=PendulumVideoKinematics.Analyze(track,new PendulumPivotInput(PivotX,PivotY,null,true));
+        var declared=PendulumVideoKinematics.Analyze(track,new PendulumPivotInput(PivotX,PivotY,L,false),15);
+        Assert.False(measured.PhysicalUnitsEnabled);Assert.Null(measured.TheoreticalMaxAngularSpeedRadPerSec);
+        Assert.True(measured.DerivativePoints>170);
+        Assert.Equal(declared.Samples.Select(s=>s.AngleDegrees),measured.Samples.Select(s=>s.AngleDegrees));
+        Assert.Equal(declared.Samples.Select(s=>s.AngularVelocityRadiansPerSecond),measured.Samples.Select(s=>s.AngularVelocityRadiansPerSecond));
+        Assert.All(measured.Samples,s=>Assert.Null(s.TangentialSpeedMetersPerSecond));
+        var zero=PendulumVideoKinematics.Analyze(track,new PendulumPivotInput(PivotX,PivotY,L,false),0);
+        Assert.Equal(0d,zero.TheoreticalMaxAngularSpeedRadPerSec);
+        Assert.Equal(measured.ObservedMaximumAngularSpeedRadPerSec,zero.ObservedMaximumAngularSpeedRadPerSec);
+    }
+
+    [Fact]
     public void AnglesAndAngularVelocityUseObservedPixelsNotTheoreticalPeriod()
     {
         var actualPeriod = 1.61; // deliberately different from the ideal model

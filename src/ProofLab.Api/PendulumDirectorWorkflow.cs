@@ -12,9 +12,9 @@ namespace ProofLab.Api;
 /// unsafe execution of AI-generated instructions.
 /// </summary>
 public sealed record DirectorStartRequest(
-    double BaselineLengthMeters,
-    double AngleDegrees = 15,
-    double MassGrams = 300,
+    double? BaselineLengthMeters = null,
+    double? AngleDegrees = null,
+    double? MassGrams = null,
     bool IncludeSecondTrial = true,
     string FollowUpMode = "recommended",
     double? SelectedFollowUpLengthMeters = null);
@@ -52,15 +52,15 @@ public sealed record DirectorSingleComparison(
     string LimitationsEs,
     string LimitationsEn);
 public sealed record DirectorSession(
-    string Id, double BaselineLengthMeters, DateTimeOffset CreatedAtUtc,
+    string Id, double? BaselineLengthMeters, DateTimeOffset CreatedAtUtc,
     string Step, string ModelStatus,
     DirectorVideoEvidence? Baseline,
     DirectorHumanReview? HumanReview,
     DirectorProposal? Proposal,
     DirectorVideoEvidence? Followup,
     DirectorComparison? Comparison,
-    double AngleDegrees = 15,
-    double MassGrams = 300,
+    double? AngleDegrees = null,
+    double? MassGrams = null,
     bool IncludeSecondTrial = true,
     string FollowUpMode = "recommended",
     double? SelectedFollowUpLengthMeters = null,
@@ -115,12 +115,16 @@ public sealed class PendulumDirectorWorkflow(
 
     private static void ValidateDraft(DirectorStartRequest input)
     {
-        _ = PendulumMathematicalModel.Predict(
-            new PendulumMathematicalRequest(input.BaselineLengthMeters,
-                input.AngleDegrees,input.MassGrams,
-                input.IncludeSecondTrial && input.FollowUpMode == "manual"
-                    ? input.SelectedFollowUpLengthMeters
-                    : null));
+        // Unknown is null, never a fabricated default or a zero physical length.
+        static void Check(double? value, double min, double max, string name)
+        {
+            if (value is double v && (!double.IsFinite(v) || v < min || v > max))
+                throw new ArgumentException($"{name} must be between {min} and {max}, or omitted.");
+        }
+        Check(input.BaselineLengthMeters, .1, 5, "Length (m)");
+        Check(input.AngleDegrees, 0, 85, "Initial angle (degrees)");
+        Check(input.MassGrams, 10, 5000, "Mass (g)");
+        Check(input.SelectedFollowUpLengthMeters, .1, 5, "Second length (m)");
         if(input.FollowUpMode is not ("manual" or "recommended"))
             throw new ArgumentException("Select manual or recommended follow-up.");
         if(input.IncludeSecondTrial && input.FollowUpMode == "manual" &&
@@ -301,19 +305,22 @@ public sealed class PendulumDirectorWorkflow(
             if(session.Proposal is not null) return session; // frozen once written
             if(session.Baseline is null || session.HumanReview?.BobConfirmed != true)
                 throw new ArgumentException("First review the observed bob movement.");
+            if(session.BaselineLengthMeters is not double length || session.AngleDegrees is not double angle ||
+               session.MassGrams is not double mass || angle < 1)
+                throw new ArgumentException("Declared length, oscillating initial angle and mass are required for this ideal model.");
             // A fixed demonstrator control; MUST NOT be attributed to Muse Spark.
             var manual = session.FollowUpMode == "manual";
             var lengths = manual
                 ? PendulumTrialProtocol.Predict(
-                    session.BaselineLengthMeters,
+                    length,
                     session.SelectedFollowUpLengthMeters ??
                         throw new InvalidDataException("No manual length selected."))
                 : PendulumDirectorProtocol.RecommendLocalControl(
-                    session.BaselineLengthMeters);
+                    length);
             // Freeze the nonlinear finite-angle period displayed by the workbench,
             // not a different small-angle approximation.
             var prediction = PendulumDirectorProtocol.UseNonlinearModel(
-                lengths,session.AngleDegrees,session.MassGrams);
+                lengths,angle,mass);
             var source = manual ? "USER_SELECTED_LENGTH_NOT_META_AI_NOT_SAM" : NotAi;
             var stamp = DateTimeOffset.UtcNow;
             var sha = CalculateProposalHash(id, session.Baseline.Sha256,
@@ -380,9 +387,11 @@ public sealed class PendulumDirectorWorkflow(
             if(session.HumanReview?.BobConfirmed != true ||
                session.Baseline?.Spectral.PeriodSeconds is not double observed)
                 throw new ArgumentException("Review one usable video before comparison.");
+            if(session.BaselineLengthMeters is not double length || session.AngleDegrees is not double angle ||
+               session.MassGrams is not double mass || angle < 1)
+                throw new ArgumentException("Declared length, oscillating initial angle and mass are required for this ideal model.");
             var predicted=PendulumMathematicalModel.Predict(
-                new PendulumMathematicalRequest(session.BaselineLengthMeters,
-                    session.AngleDegrees,session.MassGrams)).Baseline;
+                new PendulumMathematicalRequest(length,angle,mass)).Baseline;
             var relativeError=Math.Abs(observed-predicted.NonlinearPeriodSeconds) /
                               predicted.NonlinearPeriodSeconds*100;
             var result=new DirectorSingleComparison(

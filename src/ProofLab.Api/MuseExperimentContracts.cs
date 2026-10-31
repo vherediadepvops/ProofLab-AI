@@ -62,6 +62,13 @@ public static class MuseExperimentPolicy
         Do not invent calibration, human review, confidence, friction, energy
         dissipation, phase-space residuals, object material or external sources.
         Return bilingual explanations with natural UTF-8, not literal backslash-u.
+        Null physical inputs mean NOT PROVIDED, never zero or a default value.
+        Do not infer length from period and then present it as independent calibration.
+        If no experimentOptions exist because baseline length is absent, request
+        that measurement and return INCONCLUSIVE without a numeric prediction.
+        Missing mass does not invalidate angle or period measurements, but forbids energy claims.
+        Entered inputs do not guarantee accuracy or a 95% confidence level.
+        A supplied 95% statistical interval describes period repeatability only.
         Distinguish observations, known physical models and conditional hypotheses.
         Decide PROPOSE_EXPERIMENT, REPEAT_RECORDING or INCONCLUSIVE.
         Propose only if YOUR phenomenon classification is PENDULUM_COMPATIBLE
@@ -110,7 +117,9 @@ public static class MuseExperimentPolicy
     {
         var assessment=observation.GetProperty("measurement").GetProperty("assessment");
         if(!SupportsPendularProposal(assessment,UsesSparkClassification(observation)))return [];
-        var l1=observation.GetProperty("baselineLengthMeters").GetDouble();
+        if(!observation.TryGetProperty("baselineLengthMeters",out var length) ||
+            length.ValueKind!=JsonValueKind.Number)return [];
+        var l1=length.GetDouble();
         var t1=assessment.GetProperty("periodSeconds").GetDouble();
         if(!double.IsFinite(l1)||!double.IsFinite(t1)||l1<=0||t1<=0)
             throw new FormatException("Invalid measured period or length.");
@@ -229,7 +238,10 @@ public static class MuseExperimentPolicy
         if((current && a.Phenomenon?.Classification!="PENDULUM_COMPATIBLE") ||
             !SupportsPendularProposal(assessment,current))
             throw new FormatException("Unusable or non-pendular observations cannot support a frozen prediction.");
-        var l1=observation.GetProperty("baselineLengthMeters").GetDouble();
+        if(!observation.TryGetProperty("baselineLengthMeters",out var length) ||
+            length.ValueKind!=JsonValueKind.Number)
+            throw new FormatException("A length-based prediction requires a declared baseline length.");
+        var l1=length.GetDouble();
         var t1=assessment.GetProperty("periodSeconds").GetDouble();
         if(a.NextLengthMeters is not double l2 || !double.IsFinite(l2) || l2 is <.1 or >2 ||
            Math.Abs(l2/l1-1)<.15 || a.TolerancePercent is not double tol ||

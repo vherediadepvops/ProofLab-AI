@@ -28,6 +28,16 @@ public sealed class MuseExperimentTests
         using var observation=JsonDocument.Parse(Observation().PayloadJson);
         return JsonSerializer.Serialize(new {experimentOptions=MuseExperimentPolicy.ExperimentOptions(observation.RootElement)},Json);
     }
+    [Fact] public void MissingLengthCannotProduceAnIndependentLengthPrediction() {
+        using var source=JsonDocument.Parse(Observation().PayloadJson);
+        var payload=JsonSerializer.SerializeToElement(new {
+            identity=source.RootElement.GetProperty("identity"),baselineLengthMeters=(double?)null,
+            measurement=source.RootElement.GetProperty("measurement")},Json);
+        Assert.Empty(MuseExperimentPolicy.ExperimentOptions(payload));
+        Assert.Throws<FormatException>(()=>MuseExperimentPolicy.Parse(JsonSerializer.Serialize(Answer(),Json),payload));
+        Assert.Null(MuseExperimentPolicy.Parse(JsonSerializer.Serialize(Answer("INCONCLUSIVE"),Json),payload).PeriodSeconds);
+    }
+
     [Fact] public void PrecomputedOptionsDoNotConfuseBaselineWithPrediction() {
         using var doc=JsonDocument.Parse(Observation().PayloadJson);
         var options=MuseExperimentPolicy.ExperimentOptions(doc.RootElement);

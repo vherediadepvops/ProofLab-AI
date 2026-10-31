@@ -158,7 +158,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly studyId = input('');
   readonly videoSha256 = input('');
   readonly videoRole = input<'baseline'|'followup'>('baseline');
-  readonly initialAngleDegrees = input(15);
+  readonly initialAngleDegrees = input<number|null>(null);
   readonly phaseExpanded=signal(false);
   readonly measuredChart=computed(()=>{
     const track=this.playbackSamTrack(),pivot=this.measurementPivot();
@@ -833,8 +833,9 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const revision=this.pivotRevision(),frame=this.currentKinematics();
     if(!revision || !frame || !frame.isValid)return null;
     const max=revision.analysis.theoreticalMaxAngularSpeedRadPerSec;
-    return max===null?null:idealAngularSpeedAtAngle(
-      frame.angleDegrees,this.initialAngleDegrees(),max);
+    const angle=this.initialAngleDegrees();
+    return max===null || angle===null?null:idealAngularSpeedAtAngle(
+      frame.angleDegrees,angle,max);
   }
 
   private drawArrow(ctx:CanvasRenderingContext2D,

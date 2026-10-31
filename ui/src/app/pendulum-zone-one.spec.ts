@@ -100,8 +100,47 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       status:'PERIOD_CANDIDATE_REQUIRES_MANUAL_BOB_VERIFICATION'}
   };
 
+  it('starts empty, preserves null through save/recovery, and enables upload without invented inputs',async()=>{
+    const fixture=TestBed.createComponent(PendulumZoneOne),c=fixture.componentInstance;
+    const http=TestBed.inject(HttpTestingController);fixture.detectChanges();
+    expect(c.baselineLength()).toBeNull();expect(c.initialAngleDegrees()).toBeNull();expect(c.massGrams()).toBeNull();
+    http.expectNone(theoryUrl);
+    const blank={...session,baselineLengthMeters:null,angleDegrees:null,massGrams:null};
+    const creating=c.generateRecoveryCode();await Promise.resolve();await Promise.resolve();
+    const req=http.expectOne(studyUrl);expect(req.request.body.baselineLengthMeters).toBeNull();expect(req.request.body.angleDegrees).toBeNull();expect(req.request.body.massGrams).toBeNull();
+    req.flush(blank);await creating;fixture.detectChanges();
+    const el=fixture.nativeElement as HTMLElement;
+    for(const id of ['focus-length','focus-angle','focus-mass']){
+      const input=el.querySelector('#'+id) as HTMLInputElement;
+      expect(input.value).toBe('');expect(input.dataset['state']).toBe('missing');
+    }
+    expect(c.videoActionsBusy()).toBeFalse();expect(c.parametersInvalid()).toBeFalse();expect(c.theoreticalPreview()).toBeNull();
+    expect(el.textContent).toContain('no precisión garantizada');
+    const restoring=c.restore(blank.id);http.expectOne(studyUrl+'/'+blank.id).flush(blank);await restoring;
+    expect(c.baselineLength()).toBeNull();expect(c.initialAngleDegrees()).toBeNull();expect(c.massGrams()).toBeNull();
+    http.expectNone(theoryUrl);await verifyHttp(http);
+  });
+
+  it('distinguishes zero angle, invalid zero length, and cleared fields without changing measurements',async()=>{
+    const {component:c,fixture,http}=await init(false);
+    c.initialAngleDegrees.set(0);await c.refreshTheory();fixture.detectChanges();
+    expect(c.parameterState(0,0,85)).toBe('valid');expect(c.parametersInvalid()).toBeFalse();
+    expect(c.theoreticalPreview()).toBeNull();http.expectNone(theoryUrl);
+    c.baselineLength.set(0);c.updateDraft();fixture.detectChanges();await Promise.resolve();
+    expect(c.parametersInvalid()).toBeTrue();expect(c.videoActionsBusy()).toBeTrue();http.expectNone(studyUrl+'/'+session.id+'/draft');
+    c.baselineLength.set(c.optionalNumber('',100));c.massGrams.set(c.optionalNumber(null));c.updateDraft();
+    await Promise.resolve();await Promise.resolve();
+    const save=http.expectOne(studyUrl+'/'+session.id+'/draft');
+    expect(save.request.body.baselineLengthMeters).toBeNull();expect(save.request.body.massGrams).toBeNull();expect(save.request.body.angleDegrees).toBe(0);
+    save.flush({...session,baselineLengthMeters:null,massGrams:null,angleDegrees:0});await Promise.resolve();await Promise.resolve();fixture.detectChanges();
+    expect(c.parametersInvalid()).toBeFalse();expect(c.model()).toBeNull();
+    c.reset();expect(c.baselineLength()).toBeNull();expect(c.initialAngleDegrees()).toBeNull();expect(c.massGrams()).toBeNull();
+    await verifyHttp(http);
+  });
+
   async function init(chooseUpload=true,generate=true){
     const fixture=TestBed.createComponent(PendulumZoneOne);
+    fixture.componentInstance.baselineLength.set(.5); fixture.componentInstance.initialAngleDegrees.set(15); fixture.componentInstance.massGrams.set(300);
     fixture.detectChanges();
     const http=TestBed.inject(HttpTestingController);
     const req=http.expectOne(theoryUrl);
@@ -404,9 +443,13 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     const input={files:[file],value:'chosen'};
     const nextId='f'.repeat(32);
     const transfer=component.uploadNewTrial({target:input} as unknown as Event);
-    http.expectOne(theoryUrl).flush(theory());
+    http.expectNone(theoryUrl);
     await Promise.resolve();await Promise.resolve();
-    http.expectOne(studyUrl).flush({...session,id:nextId});
+    const create=http.expectOne(studyUrl);
+    expect(create.request.body.baselineLengthMeters).toBeNull();
+    expect(create.request.body.angleDegrees).toBeNull();
+    expect(create.request.body.massGrams).toBeNull();
+    create.flush({...session,id:nextId,baselineLengthMeters:null,angleDegrees:null,massGrams:null});
     for(let i=0;i<8;i++)await Promise.resolve();
     const upload=http.expectOne(r=>r.url.includes('/'+nextId+'/video/baseline'));
     expect(upload.request.body).toBe(file);

@@ -73,6 +73,7 @@ describe('ProofLab physical workbench and guided flagship experiment', () => {
   async function initialize(two=false) {
     const fixture=TestBed.createComponent(PendulumDirector);
     const component=fixture.componentInstance;
+    component.baselineLength.set(.5); component.initialAngleDegrees.set(15); component.massGrams.set(300);
     component.includeSecondTrial.set(two);
     fixture.detectChanges();
     const http=TestBed.inject(HttpTestingController);

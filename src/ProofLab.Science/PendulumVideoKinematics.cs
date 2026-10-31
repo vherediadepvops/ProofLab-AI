@@ -7,7 +7,7 @@ namespace ProofLab.Science;
 /// </summary>
 public sealed record PendulumPivotInput(
     double PivotX, double PivotY,
-    double DeclaredLengthMeters, bool FrontalCameraAssumptionConfirmed);
+    double? DeclaredLengthMeters, bool FrontalCameraAssumptionConfirmed);
 
 public sealed record PendulumKinematicSample(
     double TimeSeconds,
@@ -49,7 +49,7 @@ public static class PendulumVideoKinematics
     public static PendulumKinematicsResult Analyze(
         IReadOnlyList<VideoPixelMotionSample> points,
         PendulumPivotInput calibration,
-        double initialAngleDegrees = 15)
+        double? initialAngleDegrees = null)
     {
         ArgumentNullException.ThrowIfNull(points);
         ArgumentNullException.ThrowIfNull(calibration);
@@ -58,11 +58,11 @@ public static class PendulumVideoKinematics
             calibration.PivotX < 0 || calibration.PivotX > SourceWidth ||
             calibration.PivotY < 0 || calibration.PivotY > SourceHeight)
             throw new ArgumentException("Pivot must lie inside the 480x270 tracked frame.");
-        if (!double.IsFinite(calibration.DeclaredLengthMeters) ||
-            calibration.DeclaredLengthMeters is < .1 or > 5)
+        if (calibration.DeclaredLengthMeters is double declaredLength &&
+            (!double.IsFinite(declaredLength) || declaredLength is < .1 or > 5))
             throw new ArgumentException("Declared length is outside safe model bounds.");
-        if (!double.IsFinite(initialAngleDegrees) || initialAngleDegrees is < 1 or > 85)
-            throw new ArgumentException("Initial angle must be 1 to 85 degrees.");
+        if (initialAngleDegrees is double declaredAngle && (!double.IsFinite(declaredAngle) || declaredAngle is < 0 or > 85))
+            throw new ArgumentException("Initial angle must be 0 to 85 degrees, or omitted.");
         if (points.Count > 2000)
             throw new ArgumentException("Too many source points.");
         for (int i = 0; i < points.Count; i++)
@@ -92,7 +92,7 @@ public static class PendulumVideoKinematics
             p.X - calibration.PivotX, p.Y - calibration.PivotY)).ToArray();
         // Circle-radius coherence is required for physical length calibration.
         // A user checkbox alone cannot make a poor track a physical measurement.
-        var enableMetres = calibration.FrontalCameraAssumptionConfirmed &&
+        var enableMetres = calibration.DeclaredLengthMeters is not null && calibration.FrontalCameraAssumptionConfirmed &&
             rMedian >= 25 && radiusDeviation <= 7.5 &&
             points.Count >= 40;
         var theta = new double[points.Count];
@@ -171,10 +171,10 @@ public static class PendulumVideoKinematics
 
         // This is from a separate ideal mathematical model and is explicitly
         // NOT used for fitting or correcting ANY of the observed values above.
-        var theta0 = initialAngleDegrees * Math.PI / 180;
-        var theoreticalOmegaAtBottom = Math.Sqrt(
-            2 * ScientificModels.StandardGravity /
-            calibration.DeclaredLengthMeters * (1 - Math.Cos(theta0)));
+        double? theoreticalOmegaAtBottom = initialAngleDegrees is double releaseAngle &&
+            calibration.DeclaredLengthMeters is double length
+            ? Math.Sqrt(2 * ScientificModels.StandardGravity / length *
+                (1 - Math.Cos(releaseAngle * Math.PI / 180))) : null;
         return new PendulumKinematicsResult(
             Version,
             "FFMPEG_BACKGROUND_PIXEL_CANDIDATES_USER_PIVOT_NOT_INDEPENDENT",
