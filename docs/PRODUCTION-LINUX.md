@@ -6,9 +6,9 @@ Production is an explicit release, independent of local development and GitHub C
 
 ## Servicios / Services
 
-- Nginx sirve Angular compilado y `/api` por HTTPS, inicialmente en `https://3.149.236.79`.
-- El acceso inicial usa una credencial privada de operador, distinta del token Meta.
-  Operator access is authenticated; the application does not implement separate user accounts.
+- Nginx sirve Angular compilado y `/api` en `https://prooflab-ai.com`. La IP redirige al dominio.
+- Acceso público directo, sin Basic Auth, por solicitud del propietario (31/10/2026). No reactivar la contraseña de operador al desplegar.
+  Public access needs no operator login; the Meta token remains required for paid operations.
 - API .NET 10 en `127.0.0.1:5391`, usuario systemd `prooflab`.
 - Node 24 ejecuta los workers de medición; FFmpeg/FFprobe prepara videos; Lean 4.35 verifica el catálogo matemático.
 - SQLite está integrado. No se instala SQL Server ni se ejecutan modelos Meta en esta VM.
@@ -78,3 +78,6 @@ Para una actualización solo de interfaz, preparar una nueva carpeta de release 
 El aviso de token ausente abre un modal ES/EN y pulsa en rojo. Aceptar mueve el token al campo de contraseña de la sesión, limpia el borrador y no llama al proveedor. Procesar pulsa en verde solo con los requisitos existentes satisfechos. Movimiento reducido desactiva las animaciones. Verificación: 77 pruebas Angular en Edge, build de producción y revisión visual a 1440 y 390 px; cero llamadas Meta.
 
 English: production now opens anonymously at the domain. For UI-only releases, keep the existing API and persistent data, deploy the compiled web assets and switch the release symlink atomically without restarting the API. Keep older hashed assets for already-open tabs and record UI/API versions separately. The bilingual token modal clears its draft, keeps the key only in the current session, and never starts analysis on acceptance. Ready-state checks remain enforced. Edge tests (77), production build and desktop/mobile visual checks passed without provider calls.
+
+Despliegue de interfaz verificado: `2455deb-web`, commit `2455debf6ed42a464c94e300ac1669e5c300a191`, bundle `main-JHWIAJIF.js`. API vigente `16b216b`; mismo PID y mismo hash de configuración antes/después. HTTPS anónimo, bundle y salud: HTTP 200. No se reiniciaron servicios ni se modificaron datos.
+Verified UI-only deployment: API process/configuration unchanged, public HTTPS and health returned 200, zero Meta calls.
