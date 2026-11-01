@@ -465,6 +465,7 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/review-baseline",
     catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
     catch(InvalidDataException ex){return Results.Json(new {error=ex.Message},statusCode:409);}
+    catch(DirectorLocalEvidenceUnavailableException){return Results.Json(new {error="Local motion processing is unavailable; retry this step."},statusCode:503);}
     catch(InvalidOperationException ex){return Results.Json(new {error=ex.Message},statusCode:409);}
 });
 app.MapPost("/api/science/director/pendulum/sessions/{id}/propose-local-control",
@@ -480,6 +481,9 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/compare",
     try {return Results.Ok(await director.CompareAsync(id,ct));}
     catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+    catch(DirectorLocalEvidenceUnavailableException){return Results.Json(new {error="Local motion processing is unavailable; retry this step."},statusCode:503);}
+    catch(InvalidDataException){return Results.Conflict(new {error="Evidence provenance mismatch."});}
+    catch(InvalidOperationException){return Results.Conflict(new {error="Research preparation is not ready."});}
 });
 app.MapPost("/api/science/director/pendulum/sessions/{id}/compare-single",
     async(string id,PendulumDirectorWorkflow director,CancellationToken ct) =>
@@ -487,6 +491,9 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/compare-single",
     try {return Results.Ok(await director.CompareSingleAsync(id,ct));}
     catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+    catch(DirectorLocalEvidenceUnavailableException){return Results.Json(new {error="Local motion processing is unavailable; retry this step."},statusCode:503);}
+    catch(InvalidDataException){return Results.Conflict(new {error="Evidence provenance mismatch."});}
+    catch(InvalidOperationException){return Results.Conflict(new {error="Research preparation is not ready."});}
 });
 // Pivot selection and derived angular measurements are LOCAL and stored as
 // append-only private revisions tied to the original video SHA-256.
@@ -498,6 +505,8 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/kinematics/{role}",
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (FileNotFoundException) { return Results.NotFound(new { error = "Video or study missing." }); }
     catch (InvalidDataException) { return Results.Conflict(new { error = "Evidence provenance mismatch." }); }
+    catch(DirectorLocalEvidenceUnavailableException){return Results.Json(new {error="Local motion processing is unavailable; retry this step."},statusCode:503);}
+    catch(InvalidOperationException){return Results.Conflict(new {error="Research preparation is not ready."});}
 });
 app.MapGet("/api/science/director/pendulum/sessions/{id}/kinematics/{role}",
     async (string id, string role, PendulumDirectorKinematicsStore kinematics,

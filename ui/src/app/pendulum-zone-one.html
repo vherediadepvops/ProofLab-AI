@@ -183,6 +183,8 @@
         @if(activeTrial() === 'followup' && s.followup) {
           @if(s.followup; as clip) {
               <app-pendulum-master-player [videoUrl]="reviewVideo('followup')"
+                [lazyPreview]="true" [posterUrl]="clip.posterAvailable?poster('followup'):''"
+                [localEvidenceDeferred]="clip.localEvidenceStatus==='DEFERRED'"
                 [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'" [processedAnalysisId]="processedAnalysis('followup')" [processedAdaptiveBatchId]="processedAdaptiveBatch('followup')"
                 [presentation]="presentation()" [physicalLengthMeters]="currentPhysicalLength()" [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
                 [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
@@ -192,11 +194,13 @@
                 [name]="clip.originalFilename"
                 [originalWidth]="clip.media.width" [originalHeight]="clip.media.height"
                 [originalFps]="clip.media.nominalFramesPerSecond" [originalCodec]="clip.media.codec"
-                [points]="clip.tracking.pixelSamples ?? null" [language]="language()"/>
+                [points]="clip.tracking?.pixelSamples ?? null" [language]="language()"/>
 
           }
         } @else {
             <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
+              [lazyPreview]="true" [posterUrl]="s.baseline.posterAvailable?poster('baseline'):''"
+              [localEvidenceDeferred]="s.baseline.localEvidenceStatus==='DEFERRED'"
               [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'" (researchFrozen)="onResearchFrozen($event)" [processedAnalysisId]="processedAnalysis('baseline')" [processedAdaptiveBatchId]="processedAdaptiveBatch('baseline')"
               [presentation]="presentation()" [physicalLengthMeters]="currentPhysicalLength()" [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
                 [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
@@ -206,7 +210,7 @@
               [name]="s.baseline.originalFilename"
               [originalWidth]="s.baseline.media.width" [originalHeight]="s.baseline.media.height"
               [originalFps]="s.baseline.media.nominalFramesPerSecond" [originalCodec]="s.baseline.media.codec"
-              [points]="s.baseline.tracking.pixelSamples ?? null" [language]="language()"/>
+              [points]="s.baseline.tracking?.pixelSamples ?? null" [language]="language()"/>
 
         }
 
@@ -226,7 +230,7 @@
             <p class="confidence-note">{{es?'Verde significa dato ingresado, no precisión garantizada. El intervalo del 95 % se calcula después, si hay ciclos suficientes, y describe solo la repetibilidad del período; no la confianza de toda la investigación.':'Green means a value was entered, not guaranteed accuracy. A 95% interval is calculated later if enough cycles are available; it describes period repeatability only, not confidence in the whole study.'}}</p>
           </div>
           @if(s.preparationPending!==true && requiredParametersSaved()) {
-          <app-sam-video-replay [guided]="true" [language]="language()" [sourcePending]="sourcePending()" [recoveryRunning]="recovering()" [mediaReady]="previewState()==='ready'" [validationState]="resultState()" [studyId]="s.id" [videoRole]="(activeTrial()==='followup' && s.followup?.sha256)?'followup':'baseline'" [videoSha256]="(activeTrial()==='followup' && s.followup?.sha256?s.followup?.sha256:s.baseline?.sha256)??''" (processingReset)="onProcessingReset()" (processingStarted)="onProcessingStarted()" (processingFailed)="onProcessingFinished(false)" (cacheUpdated)="acceptProcessed($event)"/>
+          <app-sam-video-replay [guided]="true" [language]="language()" [sourcePending]="sourcePending()" [recoveryRunning]="recovering()" [mediaReady]="originalRegistered((activeTrial()==='followup' && s.followup?.sha256)?'followup':'baseline')" [validationState]="resultState()" [studyId]="s.id" [videoRole]="(activeTrial()==='followup' && s.followup?.sha256)?'followup':'baseline'" [videoSha256]="(activeTrial()==='followup' && s.followup?.sha256?s.followup?.sha256:s.baseline?.sha256)??''" (processingReset)="onProcessingReset()" (processingStarted)="onProcessingStarted()" (processingFailed)="onProcessingFinished(false)" (cacheUpdated)="acceptProcessed($event)"/>
           } @else {<p class="focus-note">{{s.preparationPending===true?(es?'Completa los tres datos y pulsa Siguiente en Preparar.':'Enter all three values and press Next in Prepare.'):(es?'Esta investigación no tiene los tres datos completos. Puedes consultar sus resultados guardados. Para un nuevo análisis, inicia otra investigación.':'This study does not have all three values. You can view its saved results. Start another study for a new analysis.')}}</p>}
           <div class="process-roles"><p><strong>Muse Spark</strong><span>{{es?'Localiza el objeto y revisa el montaje.':'Locates the object and reviews the setup.'}}</span></p><p><strong>SAM</strong><span>{{es?'Segmenta y sigue el movimiento.':'Segments and tracks motion.'}}</span></p><p><strong>ProofLab</strong><span>{{es?'Calcula medidas a partir de posiciones y tiempos.':'Calculates measurements from positions and times.'}}</span></p></div>
           <p class="focus-note">{{es?'La consulta científica a Muse Spark se autoriza después, con su propio costo visible.':'The scientific Muse Spark consultation is authorized later with its own visible cost.'}}</p>
@@ -235,10 +239,10 @@
       </div>
 
       <div class="verification-strip" [hidden]="flowStep()!==3">
-        @if(!s.humanReview){<label class="check-label"><input type="checkbox" [ngModel]="checkedVideo()" (ngModelChange)="checkedVideo.set($event)" [disabled]="flowBusy() || !playbackReady()"/><span>{{es?'Revisé el seguimiento y confirmo que corresponde al objeto.':'I reviewed the tracking and confirm it follows the object.'}}</span></label>}
+        @if(!s.humanReview){<label class="check-label"><input type="checkbox" [ngModel]="checkedVideo()" (ngModelChange)="checkedVideo.set($event)" [disabled]="flowBusy() || !playbackReady() || previewState()!=='ready'"/><span>{{es?'Revisé el seguimiento y confirmo que corresponde al objeto.':'I reviewed the tracking and confirm it follows the object.'}}</span></label>}
         @else{<p class="review-confirmed">✓ {{es?'Revisión del seguimiento guardada.':'Tracking review saved.'}}</p>}
-        <button type="button" class="primary-button" (click)="continueToPrediction()" [disabled]="flowBusy() || !hasVerifiedResult('baseline') || (!s.humanReview && (!checkedVideo() || s.baseline?.spectral?.periodSeconds===null))">{{es?'Ver la siguiente prueba':'View the next trial'}} <span aria-hidden="true">→</span></button>
-        @if(!s.humanReview && s.baseline?.spectral?.periodSeconds===null){<p class="focus-note">{{es?'La revisión no puede registrarse todavía: falta un período local confiable. Revisa el seguimiento y sus límites.':'Review cannot be registered yet: a reliable local period is missing. Check tracking and its limits.'}}</p>}
+        <button type="button" class="primary-button" (click)="continueToPrediction()" [disabled]="flowBusy() || !hasVerifiedResult('baseline') || (!s.humanReview && (!checkedVideo() || previewState()!=='ready' || (s.baseline?.localEvidenceStatus!=='DEFERRED' && s.baseline?.spectral?.periodSeconds==null)))">{{es?'Ver la siguiente prueba':'View the next trial'}} <span aria-hidden="true">→</span></button>
+        @if(!s.humanReview && s.baseline?.localEvidenceStatus!=='DEFERRED' && s.baseline?.spectral?.periodSeconds==null){<p class="focus-note">{{es?'La revisión no puede registrarse todavía: falta un período local confiable. Revisa el seguimiento y sus límites.':'Review cannot be registered yet: a reliable local period is missing. Check tracking and its limits.'}}</p>}
       </div>
       @if(flowStep()===4 && !frozenForStudy()){<p class="prediction-guide">{{es?'La consulta a Muse Spark registra una predicción válida antes de habilitar Cargar video 2. Si recomienda repetir la grabación o declara el resultado inconcluso, revisa su explicación.':'A Muse Spark consultation records a valid prediction before enabling Upload video 2. If it recommends another recording or an inconclusive result, review its explanation.'}}</p>}
       @if(flowStep()===4 && !!frozenForStudy()){<p class="prediction-guide">🔒 {{es?'Predicción guardada antes del segundo video. Segunda longitud:':'Prediction saved before video 2. Second length:'}} {{(nextResearchLength()??0)*100 | number:'1.0-0'}} cm.</p>}

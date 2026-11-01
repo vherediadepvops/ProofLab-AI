@@ -37,7 +37,8 @@ public sealed class DirectorUploadProgressTests
         Assert.Equal(100, active.Phases.Single(p => p.Key == "queue").ElapsedMs);
         Assert.Equal(40, active.Phases.Single(p => p.Key == "validate").ElapsedMs);
         Assert.Equal(60, active.Phases.Single(p => p.Key == "receive_and_hash").ElapsedMs);
-        Assert.Equal("PENDING", active.Phases.Single(p => p.Key == "local_tracking").Status);
+        Assert.Equal("PENDING", active.Phases.Single(p => p.Key == "poster").Status);
+        Assert.DoesNotContain(active.Phases, p => p.Key is "local_tracking" or "spectral" or "playback");
         Assert.Throws<ArgumentException>(() => store.Received(Upload, 11));
         store.Received(Upload, 10);
         clock.Advance(TimeSpan.FromMilliseconds(30));

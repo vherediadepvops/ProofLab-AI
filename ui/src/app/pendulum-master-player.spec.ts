@@ -62,6 +62,44 @@ describe('One-clock three-view pendulum laboratory',()=>{
   });
 
 
+  it('keeps a lazy original inactive through poster failure and activates only on playback',()=>{
+    const fixture=TestBed.createComponent(PendulumMasterPlayer);
+    const component=fixture.componentInstance,http=TestBed.inject(HttpTestingController);
+    const states:string[]=[];
+    const subscription=component.previewStateChanged.subscribe(state=>states.push(state));
+    fixture.componentRef.setInput('videoUrl','http://127.0.0.1:5391/lazy-original.mp4');
+    fixture.componentRef.setInput('posterUrl','http://127.0.0.1:5391/lazy-poster.jpg');
+    fixture.componentRef.setInput('lazyPreview',true);
+    fixture.componentRef.setInput('presentation','source');
+    fixture.detectChanges();
+    const root=fixture.nativeElement as HTMLElement,native=root.querySelector('video') as HTMLVideoElement;
+    const play=spyOn(native,'play').and.returnValue(Promise.resolve());
+    expect(root.querySelectorAll('video').length).toBe(1);
+    expect(native.getAttribute('src')).toBeNull();expect(native.preload).toBe('none');
+    expect(component.mediaActivated()).toBeFalse();expect(component.previewLoading()).toBeFalse();
+    expect(states).toContain('deferred');expect(play).not.toHaveBeenCalled();
+
+    const poster=root.querySelector('img.video-poster') as HTMLImageElement;
+    expect(poster).not.toBeNull();poster.dispatchEvent(new Event('error'));
+    native.dispatchEvent(new Event('error'));fixture.detectChanges();
+    expect(component.posterFailed()).toBeTrue();expect(root.querySelector('.poster-fallback')).not.toBeNull();
+    expect(component.error()).toBe('');expect(states).not.toContain('error');
+    expect(native.getAttribute('src')).toBeNull();expect(component.mediaActivated()).toBeFalse();
+
+    (root.querySelector('.activate-playback') as HTMLButtonElement).click();fixture.detectChanges();
+    expect(component.mediaActivated()).toBeTrue();expect(native.preload).toBe('metadata');
+    expect(native.getAttribute('src')).toBe('http://127.0.0.1:5391/lazy-original.mp4');
+    expect(states).toContain('loading');expect(play).toHaveBeenCalledTimes(1);
+
+    fixture.componentRef.setInput('videoUrl','http://127.0.0.1:5391/other-original.mp4');
+    fixture.componentRef.setInput('posterUrl','http://127.0.0.1:5391/other-poster.jpg');fixture.detectChanges();
+    expect(root.querySelectorAll('video').length).toBe(1);
+    expect(native.getAttribute('src')).toBeNull();expect(native.preload).toBe('none');
+    expect(component.mediaActivated()).toBeFalse();expect(component.posterFailed()).toBeFalse();
+    expect(play).toHaveBeenCalledTimes(1);
+    http.expectNone(()=>true);subscription.unsubscribe();fixture.destroy();http.verify();
+  });
+
   it('defers the research SQLite request while showing source and measured results',async()=>{
     const {fixture,component}=init();
     const http=TestBed.inject(HttpTestingController);

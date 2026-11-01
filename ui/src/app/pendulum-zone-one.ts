@@ -72,7 +72,7 @@ export class PendulumZoneOne extends PendulumDirector {
   canVisitStep(step:number):boolean {
     if(!this.session() || this.flowBusy())return false;
     if(step===1)return true;
-    if(step===2)return !!this.session()?.baseline && this.session()?.preparationPending!==true && this.previewState()==='ready' && this.requiredParametersReady() && this.requiredParametersSaved() && !this.parametersInvalid() && !this.draftSaving() && !this.draftError();
+    if(step===2)return this.originalRegistered() && this.session()?.preparationPending!==true && this.requiredParametersReady() && this.requiredParametersSaved() && !this.parametersInvalid() && !this.draftSaving() && !this.draftError();
     // Navigation may reopen archived evidence; the player still verifies it before showing layers.
     if(step===3)return this.hasSavedSelection('baseline');
     if(step===4)return !!this.frozenForStudy() || (this.hasVerifiedResult('baseline') && !!this.session()?.humanReview);
@@ -108,7 +108,8 @@ export class PendulumZoneOne extends PendulumDirector {
   async continueToPrediction():Promise<void> {
     if(this.flowBusy() || !this.hasVerifiedResult('baseline'))return;
     if(!this.session()?.humanReview) {
-      if(!this.checkedVideo())return;await this.confirm();
+      if(!this.checkedVideo() || this.previewState()!=='ready')return;
+      await this.confirm();
     }
     if(this.session()?.humanReview)this.setJourneyStep(4);
   }
@@ -170,15 +171,13 @@ export class PendulumZoneOne extends PendulumDirector {
       this.preparationMessage.set(this.es?'Corrige los valores fuera de rango para continuar.':
         'Correct the values outside the allowed range to continue.');return;
     }
-    if(!original.baseline || this.sourcePending() || this.previewState()!=='ready') {
+    if(!original.baseline || !this.originalRegistered()) {
       this.flowStep.set(1);
       this.preparationMessage.set(this.es?
         (!original.baseline && !this.sourcePending()?'Carga un video para continuar.':
-          this.previewState()==='error'?'No se pudo preparar la reproducción del video. Revisa el archivo antes de continuar.':
-          'Espera a que termine la carga y el video esté listo para continuar.'):
+          'Espera a que termine de guardarse el video original para continuar.'):
         (!original.baseline && !this.sourcePending()?'Upload a video to continue.':
-          this.previewState()==='error'?'Video playback could not be prepared. Check the file before continuing.':
-          'Wait until loading finishes and the video is ready to continue.'));return;
+          'Wait until the original video finishes saving to continue.'));return;
     }
     const id=original.id,sha=original.baseline.sha256,port=this.connection.port();
     const current=()=>this.session()?.id===id && this.session()?.baseline?.sha256===sha && this.connection.port()===port;
@@ -201,9 +200,9 @@ export class PendulumZoneOne extends PendulumDirector {
         this.session.set(saved);
         if(!this.requiredParametersSaved())throw Error('PREPARATION_INPUT_MISMATCH');
       }
-      advance=this.previewState()==='ready' && !this.sourcePending();
-      if(!advance)this.preparationMessage.set(this.es?'Espera a que el video esté listo para continuar.':
-        'Wait until the video is ready to continue.');
+      advance=this.originalRegistered();
+      if(!advance)this.preparationMessage.set(this.es?'Espera a que termine de guardarse el video original para continuar.':
+        'Wait until the original video finishes saving to continue.');
     } catch {
       if(current())this.preparationMessage.set(this.es?
         'No se pudo confirmar la preparación. Tus datos y el video se conservan; vuelve a pulsar Siguiente.':
@@ -219,7 +218,7 @@ export class PendulumZoneOne extends PendulumDirector {
   private draftQueue:Promise<boolean>=Promise.resolve(true);
   private draftWrites=0;
   readonly recoveryLoading=computed(()=>this.recovering() ||
-    (this.recoveryMode && (this.previewState()==='loading' || this.resultState()==='loading')));
+    (this.recoveryMode && this.resultState()==='loading'));
   recoveryControlsBusy():boolean {return this.preparingAnalysis() || this.generatingCode() || this.recoveryLoading() || this.draftSaving() || this.sourcePending() || this.busy() || this.connection.busy();}
   validRecoveryCode():boolean {return /^[a-f0-9]{32}$/i.test(this.recoveryCode().trim());}
   async generateRecoveryCode():Promise<void> {
@@ -290,7 +289,7 @@ export class PendulumZoneOne extends PendulumDirector {
         if(snapshot.session.id!==id)throw Error('STUDY_MISMATCH');
         if(first){
           this.applyRestoredSession(snapshot.session);this.musePrediction.set(snapshot.session.musePrediction??null);
-          this.sourceChoice.set('upload');this.choosingUpload.set(false);this.previewState.set(snapshot.session.baseline?'loading':'empty');
+          this.sourceChoice.set('upload');this.choosingUpload.set(false);this.previewState.set(snapshot.session.baseline?'deferred':'empty');
           this.activeTrial.set(snapshot.session.followup?'followup':'baseline');
           this.flowStep.set(snapshot.session.followup||snapshot.session.musePrediction?4:snapshot.session.baseline && snapshot.session.preparationPending!==true?2:1);
         } else {
@@ -404,7 +403,7 @@ export class PendulumZoneOne extends PendulumDirector {
     this.choosingUpload.set(false);this.error.set('');
     if(!this.session()?.baseline)this.sourceChoice.set('empty');
   }
-  readonly previewState=signal<'empty'|'loading'|'ready'|'error'>('empty');
+  readonly previewState=signal<'empty'|'deferred'|'loading'|'ready'|'error'>('empty');
   readonly resultState=signal<'idle'|'loading'|'ready'|'error'>('idle');
 
   override ngOnInit():void {
@@ -414,7 +413,7 @@ export class PendulumZoneOne extends PendulumDirector {
 
   async loadDemo():Promise<void> {
     const current=this.session();if(!current || current.baseline || this.uploadBlocked())return;
-    this.sourceChoice.set('demo');this.choosingUpload.set(false);this.demoLoading.set(true);this.previewState.set('loading');this.error.set('');
+    this.sourceChoice.set('demo');this.choosingUpload.set(false);this.demoLoading.set(true);this.previewState.set('deferred');this.error.set('');
     try {
       const config=await firstValueFrom(this.demoHttp.get<{studyId:string}>('demo-video.json'));
       if(!/^[a-f0-9]{32}$/.test(config.studyId))throw Error('INVALID_DEMO');
@@ -436,10 +435,8 @@ export class PendulumZoneOne extends PendulumDirector {
     queue:['Esperando turno','Waiting for processing'],validate:['Validando archivo','Validating the file'],
     receive_and_hash:['Guardando el video original','Saving the original video'],
     probe:['Leyendo formato y duración','Reading format and duration'],
-    local_tracking:['Siguiendo el movimiento local','Tracking local motion'],
-    spectral:['Estimando el período','Estimating the period'],poster:['Generando la miniatura','Creating the thumbnail'],
-    persist:['Guardando la investigación','Saving the study'],complete:['Registro completado','Registration complete'],
-    playback:['Preparando reproducción original','Preparing original playback']
+    poster:['Generando la miniatura','Creating the thumbnail'],
+    persist:['Guardando la investigación','Saving the study'],complete:['Registro completado','Registration complete']
   };
   uploadPhaseLabel(key:string):string {
     const labels=this.uploadPhaseNames[key];return labels?labels[this.es?0:1]:this.es?'Preparando video':'Preparing video';
@@ -452,20 +449,15 @@ export class PendulumZoneOne extends PendulumDirector {
   uploadPhaseRows():{key:string;label:string;status:string;elapsedMs:number|null}[] {
     const progress=this.uploadProgress();
     const rows:{key:string;label:string;status:string;elapsedMs:number|null}[]=
-      ['queue','validate','receive_and_hash','probe','local_tracking','spectral','poster','persist'].map(key=>{
+      ['queue','validate','receive_and_hash','probe','poster','persist'].map(key=>{
         const phase=progress?.phases.find(item=>item.key===key);
         return {key,label:this.uploadPhaseLabel(key),status:phase?.status??'PENDING',
           elapsedMs:phase && phase.status!=='PENDING'?phase.elapsedMs:null};
       });
-    rows.push({key:'playback',label:this.uploadPhaseLabel('playback'),
-      status:!this.uploadServerComplete()?'PENDING':this.previewState()==='ready'?'COMPLETED':
-        this.previewState()==='error'?'FAILED':'RUNNING',elapsedMs:null});
     return rows;
   }
   uploadStatusLabel():string {
-    if(this.uploadServerComplete())return this.previewState()==='ready'?
-      (this.es?'Video listo':'Video ready'):this.previewState()==='error'?
-      (this.es?'No se pudo abrir la reproducción':'Playback could not be opened'):this.uploadPhaseLabel('playback');
+    if(this.uploadServerComplete())return this.es?'Video original guardado':'Original video saved';
     const progress=this.uploadProgress();
     if(progress?.state==='FAILED')return this.es?'La preparación del video falló':'Video preparation failed';
     if(progress?.state==='CANCELLED')return this.es?'Carga cancelada':'Upload cancelled';
@@ -476,8 +468,12 @@ export class PendulumZoneOne extends PendulumDirector {
   sourcePending():boolean {
     return this.demoLoading() || this.registeringAndUploading() || !!this.stageBusy();
   }
-  videoLoading():boolean {return this.sourcePending() || this.previewState()==='loading';}
-  onPreviewState(state:'loading'|'ready'|'error'):void {this.previewState.set(state);}
+  originalRegistered(role:'baseline'|'followup'='baseline'):boolean {
+    const study=this.session(),clip=role==='followup'?study?.followup:study?.baseline;
+    return !!clip && /^[a-f0-9]{64}$/i.test(clip.sha256) && !this.sourcePending();
+  }
+  videoLoading():boolean {return this.sourcePending();}
+  onPreviewState(state:'deferred'|'loading'|'ready'|'error'):void {this.previewState.set(state);}
   onProcessingStarted():void {
     this.recoveryMode=false;this.recoveryMessage.set('');this.advanceAfterProcessing=true;
     delete this.roleSelections[this.activeTrial()];
@@ -520,7 +516,7 @@ export class PendulumZoneOne extends PendulumDirector {
   }
   selectTrial(role:'baseline'|'followup'):void {
     if(role===this.activeTrial() || this.videoActionsBusy())return;
-    this.clearProcessed();this.previewState.set('loading');this.activeTrial.set(role);
+    this.clearProcessed();this.previewState.set('deferred');this.activeTrial.set(role);
     const saved=this.roleSelections[role];if(saved){this.recoveryMode=true;this.acceptProcessed(saved);this.resultState.set('loading');}
   }
   onPlaybackReady(ready:boolean):void {
@@ -543,7 +539,7 @@ export class PendulumZoneOne extends PendulumDirector {
     if(this.uploadBlocked()){control.value='';return;}
     if(role==='followup' && (!this.frozenForStudy() || this.session()?.followup ||
       this.parameterState(this.nextResearchLength(),.1,5)!=='valid')){control.value='';return;}
-    this.sourceChoice.set('upload');this.previewState.set('loading');this.registeringAndUploading.set(true);
+    this.sourceChoice.set('upload');this.previewState.set('deferred');this.registeringAndUploading.set(true);
     try {
       await this.draftQueue;
       await this.upload(event, role);

@@ -17,7 +17,7 @@ public sealed record DirectorUploadProgressSnapshot(string UploadId,string Study
 public sealed class DirectorUploadProgress
 {
     private static readonly string[] PhaseKeys=[
-        "queue","validate","receive_and_hash","probe","local_tracking","spectral","poster","persist","complete"];
+        "queue","validate","receive_and_hash","probe","poster","persist","complete"];
     private const int MaximumTerminalSnapshots=128;
     private static readonly TimeSpan TerminalRetention=TimeSpan.FromHours(2);
     private readonly object sync=new();

@@ -3,7 +3,7 @@ import {resolveSamSuspension,suspensionPlaybackTrack,automaticPivotProvenance,ty
 import type {SceneDefinition} from './assembly-review';
 import {historicalSamSilhouettes} from './sam-ghost-trail';
 import {
-  AfterViewInit, Component, ElementRef, OnChanges, OnDestroy, SimpleChanges, ViewChild,
+  AfterViewInit, ChangeDetectorRef, Component, ElementRef, OnChanges, OnDestroy, SimpleChanges, ViewChild,
   inject, input, output, signal, computed
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -42,6 +42,7 @@ import {
 })
 export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy {
   private readonly http=inject(HttpClient,{optional:true});
+  private readonly mediaChangeDetector=inject(ChangeDetectorRef);
   private revisionSerial=0;
   private revisionKey='';
   private samSerial=0;
@@ -136,6 +137,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   @ViewChild('ghostCanvas') ghostCanvas?: ElementRef<HTMLCanvasElement>;
   @ViewChild('combinedCanvas') combinedCanvas?: ElementRef<HTMLCanvasElement>;
   readonly videoUrl = input.required<string>();
+  readonly lazyPreview=input(false);
+  readonly posterUrl=input('');
+  readonly mediaActivated=signal(true);
+  readonly posterFailed=signal(false);
   readonly name = input('pendulum.mp4');
   readonly originalFps = input(60);
   readonly originalWidth = input(1920);
@@ -154,6 +159,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     return this.decodedMediaTime ?? this.masterVideo?.nativeElement.currentTime ?? 0;
   }
   readonly points = input<CandidatePixelPoint[] | null>(null);
+  readonly localEvidenceDeferred=input(false);
+  canRequestLocalPivot():boolean {
+    return this.localEvidenceDeferred() || (this.points()?.length??0)>=5;
+  }
   readonly language = input<'es'|'en'>('es');
   readonly studyId = input('');
   readonly videoSha256 = input('');
@@ -241,9 +250,27 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly processingReady=output<boolean>();
   readonly processingFinished=output<boolean>();
   readonly processingPending=input(false);
-  readonly previewStateChanged=output<'loading'|'ready'|'error'>();
+  readonly previewStateChanged=output<'deferred'|'loading'|'ready'|'error'>();
   readonly previewLoading=signal(true);
+  activatePlayback(autoplay=false):void {
+    if(this.mediaActivated())return;
+    this.mediaActivated.set(true);
+    this.previewLoading.set(true);
+    this.error.set('');
+    this.previewStateChanged.emit('loading');
+    if(autoplay) {
+      // Apply the src binding within the explicit Play gesture before calling play().
+      this.mediaChangeDetector.detectChanges();
+      const video=this.masterVideo?.nativeElement,url=this.videoUrl();
+      if(video)void video.play().catch(()=>{
+        if(!this.disposed && this.mediaActivated() && this.videoUrl()===url)
+          this.error.set(this.es?'Pulsa Reproducir para iniciar el original.':
+            'Press Play to start the original.');
+      });
+    }
+  }
   onPreviewError():void {
+    if(!this.mediaActivated())return;
     this.currentCordAngle.set(null);
     this.previewLoading.set(false);
     const codec=this.originalCodec() || this.name().split('.').pop() || '';
@@ -406,11 +433,17 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   ngOnChanges(changes:SimpleChanges):void{
     if(changes['presentation'] && this.presentation()==='source')this.pivotMode.set(false);
-    if(changes['videoUrl']) {
-      this.previewLoading.set(true);this.error.set('');
+    if(changes['videoUrl'] || changes['lazyPreview']) {
+      this.masterVideo?.nativeElement.pause();this.stopFrameLoop();this.playing.set(false);
+      this.posterFailed.set(false);
+      const activate=!this.lazyPreview() || this.presentation()!=='source';
+      this.mediaActivated.set(activate);this.previewLoading.set(activate);this.error.set('');
       this.decodedMediaTime=null;this.pendingDecodedPaint=false;this.decodedSize.set(null);this.droppedFrames.set(0);
-      this.previewStateChanged.emit('loading');
+      this.previewStateChanged.emit(activate?'loading':'deferred');
     }
+    if(changes['posterUrl'])this.posterFailed.set(false);
+    if(changes['presentation'] && this.presentation()!=='source' && !this.mediaActivated())
+      this.activatePlayback();
     const key=this.studyId()+'|'+this.videoRole()+'|'+this.videoSha256()+'|'+
       this.samApiPort()+'|'+this.processingRequired()+'|'+this.processedAnalysisId()+'|'+this.processedAdaptiveBatchId();
     if(this.revisionKey===key && !changes['samRefreshNonce']){
@@ -534,9 +567,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   beginPivotSelection():void{
-    if(this.playbackLocked() || (this.guided() && !this.analysisVisible()) || !this.http || !/^[a-f0-9]{32}$/i.test(this.studyId()) ||
+    if(!this.mediaActivated() || (this.lazyPreview() && this.previewLoading()) ||
+       this.playbackLocked() || (this.guided() && !this.analysisVisible()) || !this.http || !/^[a-f0-9]{32}$/i.test(this.studyId()) ||
        !/^[a-f0-9]{64}$/i.test(this.videoSha256()) ||
-       (this.points()?.length??0)<5 || this.pivotSaving())return;
+       !this.canRequestLocalPivot() || this.pivotSaving())return;
     this.masterVideo?.nativeElement.pause();
     this.pivotMode.set(true);
     this.pivotError.set('');
@@ -552,7 +586,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   private async selectPivot(event:MouseEvent):Promise<void>{
     const video=this.masterVideo?.nativeElement;
-    if(!video || !this.http || !this.pivotMode() || this.pivotSaving())return;
+    if(!video || !this.mediaActivated() || !this.http || !this.pivotMode() || this.pivotSaving())return;
     const position=pivotFromClick(event.clientX,event.clientY,
       video.getBoundingClientRect(),video.videoWidth,video.videoHeight);
     if(!position){
@@ -618,7 +652,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   onLoadedMetadata():void{
     const video=this.masterVideo?.nativeElement;
-    if(!video)return;
+    if(!video || !this.mediaActivated())return;
     this.duration.set(Number.isFinite(video.duration)?video.duration:0);
     this.decodedSize.set(video.videoWidth>0&&video.videoHeight>0?{width:video.videoWidth,height:video.videoHeight}:null);
     this.setCanvasSizes();
@@ -628,7 +662,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   onDecodedFrame():void{
     const video=this.masterVideo?.nativeElement;
-    if(!video)return;
+    if(!video || !this.mediaActivated())return;
     // Some browsers accept the audio track of HEVC while reporting a 0x0 video.
     if(video.readyState>=2&&(video.videoWidth<1||video.videoHeight<1)){
       this.decodedSize.set(null);this.onPreviewError();return;
@@ -648,7 +682,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   onPlay():void{
-    if(this.playbackLocked()){this.masterVideo?.nativeElement.pause();return;}
+    if(!this.mediaActivated() || this.playbackLocked()){this.masterVideo?.nativeElement.pause();return;}
     this.playing.set(true);
     this.startFrameLoop();
   }
@@ -668,6 +702,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   togglePlayback():void{
     if(this.playbackLocked())return;
+    if(!this.mediaActivated()){this.activatePlayback(true);return;}
     const video=this.masterVideo?.nativeElement;
     if(!video)return;
     if(video.paused){
@@ -687,7 +722,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   stepFrame(step:-1|1):void{
-    if(this.playbackLocked())return;
+    if(!this.mediaActivated() || (this.lazyPreview() && this.previewLoading()) || this.playbackLocked())return;
     const video=this.masterVideo?.nativeElement;
     if(!video)return;
     video.pause();
@@ -699,7 +734,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   scrub(event:Event):void{
-    if(this.playbackLocked())return;
+    if(!this.mediaActivated() || (this.lazyPreview() && this.previewLoading()) || this.playbackLocked())return;
     const video=this.masterVideo?.nativeElement;
     if(!video)return;
     const input=event.target as HTMLInputElement;
@@ -715,11 +750,11 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   private startFrameLoop():void{
     this.stopFrameLoop();
     const video=this.masterVideo?.nativeElement;
-    if(!video || this.disposed)return;
+    if(!video || !this.mediaActivated() || this.disposed)return;
     if(typeof video.requestVideoFrameCallback==='function'){
       const frame=(_:DOMHighResTimeStamp,metadata:VideoFrameCallbackMetadata)=>{
         this.frameCallbackId=null;
-        if(this.disposed)return;
+        if(this.disposed || !this.mediaActivated())return;
         this.decodedMediaTime=metadata.mediaTime;
         this.pendingDecodedPaint=video.readyState<HTMLMediaElement.HAVE_CURRENT_DATA;
         if(!this.pendingDecodedPaint)this.paintFrame(metadata.mediaTime);
@@ -731,7 +766,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       if(video.paused)return;
       const frame=()=>{
         this.fallbackRafId=null;
-        if(this.disposed || video.paused)return;
+        if(this.disposed || !this.mediaActivated() || video.paused)return;
         this.decodedMediaTime=video.currentTime;
         this.paintFrame(video.currentTime);
         this.fallbackRafId=requestAnimationFrame(frame);
@@ -1102,7 +1137,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const canvases=[this.vectorCanvas?.nativeElement,
                     this.ghostCanvas?.nativeElement,
                     this.combinedCanvas?.nativeElement];
-    if(!video || canvases.some(x=>!x))return;
+    if(!video || !this.mediaActivated() || canvases.some(x=>!x))return;
     const time=Number.isFinite(mediaTime)?mediaTime:video.currentTime;
     if(!Number.isFinite(time))return;
 

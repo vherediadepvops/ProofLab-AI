@@ -11,6 +11,7 @@ public static class KnotEndpoints
         catch(FileNotFoundException){return Results.NotFound(new {error="KNOT_SOURCE_OR_EVIDENCE_MISSING"});}
         catch(ArgumentException){return Results.BadRequest(new {error="KNOT_INPUT_INVALID"});}
         catch(InvalidDataException){return Results.Conflict(new {error="KNOT_EVIDENCE_INTEGRITY_FAILED"});}
+        catch(DirectorLocalEvidenceUnavailableException){return Results.Json(new {error="LOCAL_MOTION_PROCESSING_UNAVAILABLE"},statusCode:503);}
         catch(InvalidOperationException){return Results.Conflict(new {error="KNOT_GATES_OR_PREVIOUS_ATTEMPT_BLOCKED"});}
         catch(IOException){return Results.Conflict(new {error="KNOT_BUSY_OR_STORAGE_FAILURE"});}
         catch(HttpRequestException){return Results.Problem("Meta request failed; inspect status before retrying.",statusCode:502);}

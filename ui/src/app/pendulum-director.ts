@@ -21,8 +21,9 @@ interface DirectorVideo {
   originalFilename: string; sha256: string; posterAvailable: boolean;
   previewAvailable?: boolean;
   media: { codec: string; durationSeconds: number; width: number; height: number; nominalFramesPerSecond: number };
-  tracking: Motion;
-  spectral: { periodSeconds: number | null; fitRSquared: number; status: string };
+  tracking: Motion | null;
+  spectral: { periodSeconds: number | null; fitRSquared: number; status: string } | null;
+  localEvidenceStatus?: 'DEFERRED' | 'READY';
 }
 interface Proposal {
   source: string;
@@ -285,12 +286,12 @@ export class PendulumDirector implements OnInit {
        Math.abs(m.baseline.initialAngleDegrees-s.angleDegrees)>.000001 ||
        Math.abs(m.baseline.massGrams-s.massGrams)>.000001)
       return empty;
-    const baseline=s.baseline
+    const baseline=s.baseline?.tracking
       ? buildNormalizedVideoOverlay(m.baseline.samples,
           m.baseline.nonlinearPeriodSeconds,s.baseline.tracking.observations)
       : null;
     const secondLength=s.proposal?.theory.followUpLengthMeters;
-    const followup=s.followup && m.followUp && secondLength!==undefined &&
+    const followup=s.followup?.tracking && m.followUp && secondLength!==undefined &&
       Math.abs(m.followUp.lengthMeters-secondLength)<.000001
       ? buildNormalizedVideoOverlay(m.followUp.samples,
           m.followUp.nonlinearPeriodSeconds,s.followup.tracking.observations)
@@ -301,7 +302,7 @@ export class PendulumDirector implements OnInit {
   private videoPlot(video:DirectorVideo|null):{
     position:string;velocity:string;phase:string;count:number
   }|null {
-    if(!video || video.tracking.observations.length<12)return null;
+    if(!video?.tracking || video.tracking.observations.length<12)return null;
     const frames=video.tracking.observations.filter(x=>
       Number.isFinite(x.timeSeconds)&&Number.isFinite(x.position));
     if(frames.length<12)return null;
@@ -342,7 +343,7 @@ export class PendulumDirector implements OnInit {
   }
 
   get baselinePeriodDiscrepancyPercent():number|null {
-    const observed=this.session()?.baseline?.spectral.periodSeconds;
+    const observed=this.session()?.baseline?.spectral?.periodSeconds;
     const theory=this.model()?.baseline.nonlinearPeriodSeconds;
     return observed !== null && observed !== undefined && theory
       ? Math.abs(observed-theory)/theory*100 : null;
@@ -524,12 +525,27 @@ export class PendulumDirector implements OnInit {
   private async action(path:string, payload:unknown, failure:string):Promise<void>{
     const s=this.session();
     if(!s || this.busy())return;
+    const api=this.api,sourceSha=s.baseline?.sha256;
     this.busy.set(true);this.error.set('');
     try{
       const next=await firstValueFrom(this.http.post<DirectorSession>(
-        this.api+'/'+s.id+'/'+path,payload));
-      this.session.set(next);
-    }catch{this.error.set(failure);}
+        api+'/'+s.id+'/'+path,payload));
+      if(this.session()?.id===s.id && this.api===api)this.session.set(next);
+    }catch{
+      if(this.session()?.id!==s.id || this.api!==api)return;
+      this.error.set(failure);
+      // Local evidence may have completed even when the observation was inconclusive.
+      // Refresh the saved state without retrying the review or requesting a provider.
+      if(path==='review-baseline' && s.baseline?.localEvidenceStatus==='DEFERRED') {
+        try {
+          const refreshed=await firstValueFrom(this.http.get<DirectorSession>(
+            api+'/'+s.id).pipe(timeout(30000)));
+          if(this.session()?.id===s.id && this.api===api && refreshed.id===s.id &&
+             this.session()?.baseline?.sha256===sourceSha && refreshed.baseline?.sha256===sourceSha)
+            this.session.set(refreshed);
+        } catch { /* Keep the original review error; a later recovery can refresh the evidence. */ }
+      }
+    }
     finally{this.busy.set(false)}
   }
 

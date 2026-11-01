@@ -13,6 +13,14 @@ predecir resultados y explicar diferencias entre la teoría y las observaciones.
 
 **Navegación:** Inicio contiene espacios para futuros videos explicativos; Laboratorio conserva el experimento de péndulo y sus cuatro vistas; Configuración reúne el token de uso único y la conexión local. Cambiar de sección conserva la investigación. El token permanece únicamente en el campo de contraseña durante la sesión y se borra al utilizarlo, cambiar de modo/conexión o recargar; no habilita pagos por sí mismo.
 
+## Preparación actual del video (1 de noviembre de 2026)
+
+El Laboratorio admite la grabación antes de completar los tres datos físicos. La carga espera la recepción y el SHA-256, la validación de formato/duración, una miniatura y el registro de la investigación. El reproductor inicial muestra esa miniatura; **Reproducir original** carga la grabación original completa. Siguiente exige el original registrado y la confirmación de longitud, ángulo inicial (incluido 0°) y masa, sin esperar a que el navegador decodifique el video.
+
+Las grabaciones nuevas dejan pendientes el seguimiento local experimental y su cálculo espectral del período. Se calculan cuando una función local los necesita (revisión humana inicial, análisis del pivote manual o comparación local) y se guardan en un registro asociado al origen, sin reescribir la evidencia del video original. Los resultados locales históricos siguen siendo legibles. Una señal local inconclusa sigue siendo inconclusa. Spark/SAM conservan sus entradas de video original; la miniatura no sustituye la grabación enviada a analizar.
+
+El progreso de carga presenta únicamente el trabajo realizado durante la subida. No espera la reproducción del navegador ni muestra los cálculos locales aplazados como fases de carga sin terminar. Esto retira trabajo de la espera inicial; el tiempo de transferencia sigue dependiendo del tamaño y la conexión. Se conservan la selección API Meta / Caché + SQLite, el consentimiento para analizar y los límites del proveedor.
+
 ## Procedencia del código competitivo
 
 Este es un proyecto **nuevo**, independiente del prototipo privado anterior

@@ -206,6 +206,9 @@ describe('ProofLab physical workbench and guided flagship experiment', () => {
       step:'AWAITING_HUMAN_BOB_REVIEW'};
     uploaded.flush(observed);
     await uploading;
+    // Upload completion cancels its independent progress request.
+    for(const progress of http.match(req=>req.url.includes('/video/baseline/uploads/')))
+      if(!progress.cancelled)progress.flush({}, {status:404,statusText:'Not Found'});
     fixture.detectChanges();
     expect(control.value).toBe('');
     expect(rootEl.textContent).toContain('1.416 s');
@@ -244,7 +247,7 @@ describe('ProofLab physical workbench and guided flagship experiment', () => {
     expect(mediaElement?.getAttribute('src')).toBe(
       studyApi+'/'+root(false).id+'/original/baseline');
     expect(master?.querySelectorAll('canvas').length).toBe(3);
-    expect(rootEl.textContent).toContain('Cuatro perspectivas, un solo reloj');
+    expect(master?.querySelectorAll('video').length).toBe(1);
     http.verify();
   });
 
@@ -304,8 +307,31 @@ describe('ProofLab physical workbench and guided flagship experiment', () => {
     expect(rootEl.querySelectorAll('.overlay-comparison').length).toBe(1);
     expect(rootEl.textContent).toContain('SOLO VISUAL');
     expect(rootEl.textContent).toContain('NO se modifica la frecuencia teórica');
-    expect(component.session()?.baseline?.spectral.periodSeconds).toBe(1.416);
+    expect(component.session()?.baseline?.spectral?.periodSeconds).toBe(1.416);
     http.verify();
+  });
+
+  it('refreshes completed local evidence after an inconclusive deferred review without repeating the review', async () => {
+    const {component,fixture,http}=await initialize();
+    const source=video('baseline',1.416),deferred={...source,tracking:null,spectral:null,localEvidenceStatus:'DEFERRED' as const};
+    const saved={...root(false),baseline:deferred};
+    component.session.set(saved);component.checkedVideo.set(true);
+    const pending=component.confirm();
+    const request=http.expectOne(studyApi+'/'+saved.id+'/review-baseline');
+    expect(request.request.method).toBe('POST');
+    request.flush({error:'No usable local period'},{status:400,statusText:'Bad Request'});
+    await Promise.resolve();
+    const refresh=http.expectOne(studyApi+'/'+saved.id);
+    expect(refresh.request.method).toBe('GET');
+    refresh.flush({...saved,baseline:{...source,localEvidenceStatus:'READY',
+      spectral:{...source.spectral,periodSeconds:null,status:'INCONCLUSIVE_REQUIRES_MANUAL_REVIEW'}}});
+    await pending;fixture.detectChanges();
+    expect(component.session()?.baseline?.localEvidenceStatus).toBe('READY');
+    expect(component.session()?.baseline?.spectral?.periodSeconds).toBeNull();
+    expect(component.session()?.humanReview).toBeNull();
+    expect(component.error()).toContain('No se pudo registrar');
+    expect(component.busy()).toBeFalse();
+    http.expectNone(req=>req.method==='POST');http.verify();fixture.destroy();
   });
 
   it('reports the observed two-trial change without claiming SAM', async () => {

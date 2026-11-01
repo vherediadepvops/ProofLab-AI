@@ -13,9 +13,9 @@ const video={
   role:'baseline',videoId:'e'.repeat(32),originalFilename:'first.mp4',bytes:15000,sha256:'b'.repeat(64),
   uploadedAtUtc:'2026-11-01T15:00:00Z',posterAvailable:true,previewAvailable:false,
   media:{codec:'h264',durationSeconds:6,width:640,height:480,nominalFramesPerSecond:30},
-  tracking:{framesAnalyzed:72,detectedFrames:60,observations:[{timeSeconds:0,position:150}],
-    pixelSamples:[{timeSeconds:0,x:100,y:180,approximateRadiusPixels:10}]},
-  spectral:{periodSeconds:1.4,fitRSquared:.97,status:'PERIOD_CANDIDATE_REQUIRES_MANUAL_BOB_VERIFICATION'}
+  tracking:null,
+  spectral:null,
+  localEvidenceStatus:'DEFERRED' as const
 };
 const blank:DirectorSession={
   id,baselineLengthMeters:null,angleDegrees:null,massGrams:null,includeSecondTrial:false,followUpMode:'recommended',
@@ -24,9 +24,9 @@ const blank:DirectorSession={
   baseline:null,humanReview:null,proposal:null,followup:null,comparison:null,singleComparison:null,modelSha256:'1'.repeat(64)
 };
 function saved(mass=300):DirectorSession {
-  return {...blank,baselineLengthMeters:.5,angleDegrees:0,massGrams:mass,baseline:video};
+  return {...blank,baselineLengthMeters:.5,angleDegrees:0,massGrams:mass,baseline:video,step:'AWAITING_PREPARATION_CONFIRMATION'};
 }
-function progress(uploadId:string,phase='local_tracking',receivedBytes=15000) {
+function progress(uploadId:string,phase='probe',receivedBytes=15000) {
   const now=new Date().toISOString();
   return {uploadId,studyId:id,role:'baseline',state:'RUNNING',phase,receivedBytes,totalBytes:15000,
     startedAtUtc:now,updatedAtUtc:now,elapsedMs:1000,phases:[]};
@@ -50,7 +50,7 @@ describe('Preparation, native upload and explicit analysis admission',()=>{
     const f=TestBed.createComponent(PendulumZoneOne),c=f.componentInstance,h=TestBed.inject(HttpTestingController);
     c.session.set(withSavedVideo?saved():{...blank});
     if(withSavedVideo){
-      c.baselineLength.set(.5);c.initialAngleDegrees.set(0);c.massGrams.set(300);c.onPreviewState('ready');
+      c.baselineLength.set(.5);c.initialAngleDegrees.set(0);c.massGrams.set(300);c.previewState.set('deferred');
     }
     f.detectChanges();flushMicrotasks();return {f,c,h};
   }
@@ -89,7 +89,11 @@ describe('Preparation, native upload and explicit analysis admission',()=>{
     u.request.flush({...blank,baseline:video});flushUploadFinal(x,u,'COMPLETED');
     // Server byte telemetry also works when the browser supplies no upload events.
     expect(x.c.uploadPercent()).toBe(100);
-    x.c.onPreviewState('ready');x.f.detectChanges();
+    x.f.detectChanges();
+    expect(x.c.originalRegistered()).toBeTrue();
+    expect(x.c.session()?.baseline?.tracking).toBeNull();
+    expect(x.c.session()?.baseline?.spectral).toBeNull();
+    expect(x.c.session()?.baseline?.localEvidenceStatus).toBe('DEFERRED');
     expect(x.c.session()?.id).toBe(id);expect(x.c.session()?.baseline?.sha256).toBe(video.sha256);
     expect(x.c.session()?.preparationPending).toBeTrue();
     expect(x.c.baselineLength()).toBeNull();expect(x.c.initialAngleDegrees()).toBeNull();expect(x.c.massGrams()).toBeNull();
@@ -101,7 +105,7 @@ describe('Preparation, native upload and explicit analysis admission',()=>{
     x.h.expectNone(api);x.h.expectNone(prepareUrl);finish(x);
   }));
 
-  it('keeps upload 100 percent separate from server and player readiness',fakeAsync(()=>{
+  it('does not register the original at 100 percent until the server completes',fakeAsync(()=>{
     const x=setup(),u=startUpload(x);
     u.request.event({type:HttpEventType.Sent});
     u.request.event({type:HttpEventType.UploadProgress,loaded:7500,total:15000});flushMicrotasks();
@@ -109,16 +113,18 @@ describe('Preparation, native upload and explicit analysis admission',()=>{
     expect(x.c.stageBusy()).toBe('baseline');expect(x.c.session()?.baseline).toBeNull();
     u.request.event({type:HttpEventType.UploadProgress,loaded:15000,total:15000});flushMicrotasks();
     expect(x.c.uploadTransfer()?.loaded).toBe(15000);expect(x.c.uploadServerComplete()).toBeFalse();
+    expect(x.c.originalRegistered()).toBeFalse();
     expect(x.c.stageBusy()).toBe('baseline');expect(x.c.canVisitStep(2)).toBeFalse();
     tick(1000);
     const poll=x.h.expectOne(u.progressUrl);expect(poll.request.method).toBe('GET');
     poll.flush(progress(u.uploadId));flushMicrotasks();
-    expect(x.c.uploadProgress()?.phase).toBe('local_tracking');expect(x.c.uploadProgress()?.state).toBe('RUNNING');
+    expect(x.c.uploadProgress()?.phase).toBe('probe');expect(x.c.uploadProgress()?.state).toBe('RUNNING');
     expect(x.c.session()?.baseline).toBeNull();
     u.request.flush({...blank,baseline:video});flushUploadFinal(x,u,'COMPLETED');
     expect(x.c.uploadServerComplete()).toBeTrue();expect(x.c.stageBusy()).toBe('');
     expect(x.c.session()?.baseline?.sha256).toBe(video.sha256);
-    expect(x.c.previewState()).toBe('loading');expect(x.c.flowStep()).toBe(1);expect(x.c.canVisitStep(2)).toBeFalse();
+    expect(x.c.originalRegistered()).toBeTrue();
+    expect(x.c.flowStep()).toBe(1);expect(x.c.canVisitStep(2)).toBeFalse();
     tick(2000);x.h.expectNone(u.progressUrl);finish(x);
   }));
 
@@ -136,8 +142,11 @@ describe('Preparation, native upload and explicit analysis admission',()=>{
     finish(x);
   }));
 
-  it('accepts saved zero degrees and freezes the exact preparation',fakeAsync(()=>{
-    const x=setup(true);
+  it('accepts zero degrees without a decoded frame or poster and freezes the exact preparation',fakeAsync(()=>{
+    const x=setup(true),withoutPoster={...video,posterAvailable:false};
+    x.c.session.set({...saved(),baseline:withoutPoster});
+    expect(x.c.previewState()).toBe('deferred');
+    expect(x.c.originalRegistered()).toBeTrue();
     expect(x.c.initialAngleDegrees()).toBe(0);expect(x.c.requiredParametersReady()).toBeTrue();
     expect(x.c.requiredParametersSaved()).toBeTrue();expect(x.c.model()).toBeNull();
     void x.c.continueFromPreparation();flushMicrotasks();
@@ -145,10 +154,12 @@ describe('Preparation, native upload and explicit analysis admission',()=>{
     expect(freeze.request.body).toEqual(jasmine.objectContaining({baselineLengthMeters:.5,angleDegrees:0,massGrams:300}));
     expect(x.c.flowStep()).toBe(1);expect(x.c.preparingAnalysis()).toBeTrue();
     void x.c.continueFromPreparation();flushMicrotasks();x.h.expectNone(prepareUrl);
-    freeze.flush({...saved(),preparationPending:false,modelSha256:'2'.repeat(64)});
+    freeze.flush({...saved(),baseline:withoutPoster,preparationPending:false,
+      step:'READY_FOR_ANALYSIS',modelSha256:'2'.repeat(64)});
     flushMicrotasks();x.f.detectChanges();
     expect(x.c.session()?.preparationPending).toBeFalse();expect(x.c.session()?.modelSha256).toBe('2'.repeat(64));
     expect(x.c.session()?.baseline?.sha256).toBe(video.sha256);expect(x.c.flowStep()).toBe(2);
+    expect(x.c.session()?.baseline?.tracking).toBeNull();expect(x.c.session()?.baseline?.spectral).toBeNull();
     expect(x.c.preparingAnalysis()).toBeFalse();expect(x.c.model()).toBeNull();finish(x);
   }));
 
@@ -175,14 +186,24 @@ describe('Preparation, native upload and explicit analysis admission',()=>{
     finish(x);
   }));
 
-  it('requires an existing and loaded original before freezing preparation',fakeAsync(()=>{
+  it('requires server registration but does not gate preparation on browser playback errors',fakeAsync(()=>{
     const x=setup(true);
-    for(const state of ['empty','loading','error'] as const){
-      x.c.session.set(state==='empty'?{...saved(),baseline:null}:saved());
-      x.c.previewState.set(state);void x.c.continueFromPreparation();flushMicrotasks();
-      expect(x.c.flowStep()).toBe(1);expect(x.c.preparationMessage().length).toBeGreaterThan(0);
-      expect(x.c.preparingAnalysis()).toBeFalse();x.h.expectNone(prepareUrl);
-    }
+    x.c.session.set({...saved(),baseline:null});x.c.previewState.set('empty');
+    void x.c.continueFromPreparation();flushMicrotasks();
+    expect(x.c.originalRegistered()).toBeFalse();expect(x.c.flowStep()).toBe(1);
+    expect(x.c.preparationMessage().length).toBeGreaterThan(0);x.h.expectNone(prepareUrl);
+
+    x.c.session.set(saved());x.c.stageBusy.set('baseline');x.c.previewState.set('deferred');
+    void x.c.continueFromPreparation();flushMicrotasks();
+    expect(x.c.originalRegistered()).toBeFalse();expect(x.c.flowStep()).toBe(1);
+    expect(x.c.preparingAnalysis()).toBeFalse();x.h.expectNone(prepareUrl);
+
+    x.c.stageBusy.set('');x.c.previewState.set('error');
+    expect(x.c.originalRegistered()).toBeTrue();
+    void x.c.continueFromPreparation();flushMicrotasks();
+    const freeze=x.h.expectOne(prepareUrl);expect(freeze.request.method).toBe('POST');
+    freeze.flush({...saved(),preparationPending:false,step:'READY_FOR_ANALYSIS'});flushMicrotasks();
+    expect(x.c.flowStep()).toBe(2);expect(x.c.preparingAnalysis()).toBeFalse();
     finish(x);
   }));
 
@@ -198,7 +219,7 @@ describe('Preparation, native upload and explicit analysis admission',()=>{
     expect(x.c.uploadActiveId()).toBe(second.uploadId);expect(x.c.uploadProgress()?.uploadId).not.toBe(first.uploadId);
     expect(x.c.stageBusy()).toBe('baseline');
     tick(1000);x.h.expectOne(second.progressUrl).flush(progress(second.uploadId));flushMicrotasks();
-    expect(x.c.uploadProgress()?.uploadId).toBe(second.uploadId);expect(x.c.uploadProgress()?.phase).toBe('local_tracking');
+    expect(x.c.uploadProgress()?.uploadId).toBe(second.uploadId);expect(x.c.uploadProgress()?.phase).toBe('probe');
     second.request.flush({...blank,baseline:video});flushUploadFinal(x,second,'COMPLETED');
     expect(x.c.stageBusy()).toBe('');expect(x.c.session()?.baseline?.sha256).toBe(video.sha256);
     tick(2000);x.h.expectNone(first.progressUrl);x.h.expectNone(second.progressUrl);finish(x);

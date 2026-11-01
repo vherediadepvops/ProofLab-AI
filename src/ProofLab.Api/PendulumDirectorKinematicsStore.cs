@@ -49,7 +49,10 @@ public sealed class PendulumDirectorKinematicsStore(
         if (!string.Equals(video.Sha256, input.VideoSha256,
                 StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("Video SHA-256 does not match this study.");
-        var points = video.Tracking.PixelSamples;
+        var local = await director.EnsureLocalEvidenceAsync(studyId, role, ct);
+        if (local.VideoId != video.VideoId || local.Sha256 != video.Sha256)
+            throw new InvalidDataException("Original video changed before pivot analysis.");
+        var points = local.Tracking?.PixelSamples;
         if (points is null || points.Count < 5)
             throw new ArgumentException(
                 "This video has no usable local X/Y samples. Reprocess the original.");

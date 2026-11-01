@@ -13,6 +13,14 @@ help explain why data may agree or disagree with a scientific hypothesis.
 
 **Navigation:** Home reserves space for future walkthrough videos; Laboratory keeps the pendulum experiment and its four views; Settings contains the single-use API key and local connection. Switching sections preserves the study. The key stays only in the session password field and is cleared after use, a mode/connection change or reload; it never enables billing by itself.
 
+## Current video preparation flow (November 1, 2026)
+
+The Laboratory accepts the recording before the three physical inputs are complete. Upload waits for receipt and SHA-256, format/duration validation, a still thumbnail and study registration. The initial player shows that thumbnail; **Play original** loads the complete original recording. Next requires the registered original and confirmed length, initial angle (including 0°) and mass, without waiting for browser video decoding.
+
+New recordings explicitly defer the experimental local tracker and its spectral period calculation. These are computed only when a local consumer needs them (human baseline review, manual pivot analysis or local comparison), and saved in a source-linked companion record without rewriting the original video evidence. Existing embedded local evidence remains readable. An inconclusive local signal remains inconclusive. Spark/SAM continue to receive their original video inputs; the thumbnail does not replace the recording sent for analysis.
+
+The upload progress list reports only work performed during upload. It does not wait for browser playback or show deferred local calculations as unfinished upload stages. This removes work from the initial wait; transfer time still depends on file size and connection. API Meta / Cache + SQLite selection, explicit analysis consent and existing provider limits remain in force.
+
 ## Competition provenance
 
 This is a **new project**, distinct from the pre-event private prototype at

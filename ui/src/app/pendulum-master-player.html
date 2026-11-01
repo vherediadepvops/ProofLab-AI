@@ -101,10 +101,30 @@
         (pointerdown)="onPanStart($event)" (pointermove)="onPanMove($event)"
         (pointerup)="onPanEnd($event)" (pointercancel)="onPanEnd($event)"
         (click)="onSurfaceClick('original',$event)">
+        @if(!mediaActivated()) {
+          <div class="poster-preview">
+            @if(posterUrl() && !posterFailed()) {
+              <img class="video-poster" [src]="posterUrl()" decoding="async"
+                [alt]="es?'Miniatura del video original':'Original video thumbnail'"
+                (error)="posterFailed.set(true)"/>
+            } @else {
+              <div class="poster-fallback"><span aria-hidden="true">▷</span>
+                <strong>{{es?'Video original guardado':'Original video saved'}}</strong>
+                <small>{{name()}}</small>
+              </div>
+            }
+            <div class="poster-actions">
+              <button type="button" class="activate-playback" (click)="activatePlayback(true)">
+                <span aria-hidden="true">▶</span> {{es?'Reproducir original':'Play original'}}
+              </button>
+              <small>{{es?'Vista previa. El análisis utiliza el video completo.':'Preview image. Analysis uses the complete video.'}}</small>
+            </div>
+          </div>
+        }
         <video #masterVideo
           class="master-source" [style.transform]="imageTransform()"
-          [src]="videoUrl()" crossorigin="anonymous"
-          preload="metadata" playsinline
+          [attr.src]="mediaActivated()?videoUrl():null" crossorigin="anonymous"
+          [hidden]="!mediaActivated()" [attr.preload]="mediaActivated()?'metadata':'none'" playsinline
           (loadedmetadata)="onLoadedMetadata()"
           (loadeddata)="onDecodedFrame()"
           (seeked)="onDecodedFrame()"
@@ -114,7 +134,7 @@
           (error)="onPreviewError()"
           [attr.aria-label]="es ? 'Video fuente y reloj maestro' : 'Source video and master clock'"></video>
       </div>
-      <div class="view-meta">{{es?'Archivo original, sin anotaciones ni conversión':'Original file, without annotations or conversion'}}</div>
+      <div class="view-meta">{{!mediaActivated()?(es?'Miniatura del original · reproducción bajo demanda':'Original thumbnail · playback on demand'):(es?'Archivo original, sin anotaciones ni conversión':'Original file, without annotations or conversion')}}</div>
     </div>
 
     <div class="view-panel" data-view="vectors" [class.is-primary]="activeView()==='vectors'"
@@ -166,7 +186,7 @@
 
   </div>
 
-  <div class="timeline" role="group"
+  <div class="timeline" role="group" [hidden]="!mediaActivated()"
     [attr.aria-label]="es?'Controles de reproducción sincronizada':'Synchronized playback controls'">
     <div class="playback-buttons">
       <button class="zoom-action" type="button" (click)="toggleZoom()"
@@ -179,9 +199,9 @@
         {{playing() ? 'Ⅱ' : '▶'}}
         <span>{{playing()?(es?'Pausar':'Pause'):(es?'Reproducir':'Play')}}</span>
       </button>
-      <button type="button" class="frame-button" (click)="stepFrame(-1)" [disabled]="playbackLocked()"
+      <button type="button" class="frame-button" (click)="stepFrame(-1)" [disabled]="!mediaActivated() || (lazyPreview() && previewLoading()) || playbackLocked()"
         [attr.aria-label]="es?'Fotograma anterior':'Previous frame'">|◀</button>
-      <button type="button" class="frame-button" (click)="stepFrame(1)" [disabled]="playbackLocked()"
+      <button type="button" class="frame-button" (click)="stepFrame(1)" [disabled]="!mediaActivated() || (lazyPreview() && previewLoading()) || playbackLocked()"
         [attr.aria-label]="es?'Fotograma siguiente':'Next frame'">▶|</button>
       <label class="rate-label">{{es?'Velocidad':'Speed'}}
         <select [disabled]="playbackLocked()" [value]="playbackRate()" (change)="setSpeed(+$any($event.target).value)"
@@ -195,7 +215,7 @@
       </label>
       @if(studyId() && videoSha256() && !playbackLocked() && (!guided() || analysisVisible())) {
         <button type="button" class="pivot-button" (click)="beginPivotSelection()"
-          [disabled]="pivotSaving() || (points()?.length ?? 0)<5">
+          [disabled]="pivotSaving() || !mediaActivated() || (lazyPreview() && previewLoading()) || !canRequestLocalPivot()">
           {{pivotRevision() ? (es?'Corregir suspensión':'Adjust suspension') : (es?'Marcar suspensión':'Select suspension')}}
         </button>
         @if(pivotMode()) {
@@ -216,7 +236,7 @@
           : 'Saving pivot revision and calculating local derivatives…'}}</p>
       }
       @if(pivotError()) {<p class="player-error" role="alert">{{pivotError()}}</p>}
-    <input type="range" class="timeline-range" [disabled]="playbackLocked()"
+    <input type="range" class="timeline-range" [disabled]="!mediaActivated() || (lazyPreview() && previewLoading()) || playbackLocked()"
       min="0" [max]="duration() || 1" [step]="frameStepSeconds"
       [value]="currentTime()" (input)="scrub($event)"
       [attr.aria-label]="es?'Posición del fotograma compartido':'Shared video playhead'"/>

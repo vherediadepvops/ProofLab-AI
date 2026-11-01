@@ -24,9 +24,9 @@ public sealed record DirectorHumanReviewRequest(bool BobConfirmed);
 public sealed record DirectorVideoEvidence(
     string Role, string VideoId, string OriginalFilename, long Bytes,
     string Sha256, DateTimeOffset UploadedAtUtc,
-    VideoStreamMetadata Media, LocalMotionTrack Tracking,
-    PendulumSpectralAssessment Spectral, bool PosterAvailable,
-    bool PreviewAvailable = false);
+    VideoStreamMetadata Media, LocalMotionTrack? Tracking,
+    PendulumSpectralAssessment? Spectral, bool PosterAvailable,
+    bool PreviewAvailable = false, string LocalEvidenceStatus = "READY");
 public sealed record DirectorHumanReview(
     DateTimeOffset ReviewedAtUtc, string VideoSha256, bool BobConfirmed,
     string EvidenceLevel);
@@ -79,7 +79,7 @@ public sealed class DirectorPreparationRequiredException(string[] fields)
     public string[] Fields { get; } = fields;
 }
 
-public sealed class PendulumDirectorWorkflow(
+public sealed partial class PendulumDirectorWorkflow(
     IWebHostEnvironment environment, VideoMediaDecoder decoder, MuseExperimentStore? muse = null,
     ILogger<PendulumDirectorWorkflow>? logger = null, DirectorUploadProgress? uploads = null)
 {
@@ -391,11 +391,6 @@ public sealed class PendulumDirectorWorkflow(
                 throw new ArgumentException("The second experiment must use a different video.");
             NextPhase("probe");
             var media = await decoder.ProbeAsync(rawPath,ct);
-            NextPhase("local_tracking");
-            var tracking = await decoder.TrackAsync(rawPath, ct);
-            NextPhase("spectral");
-            var spectral = PendulumSpectralEstimator.Estimate(
-                tracking.Observations, tracking.DetectionRate);
             NextPhase("poster");
             bool poster = false;
             try { await decoder.CreatePosterAsync(rawPath, posterPath, ct); poster = true; }
@@ -404,7 +399,8 @@ public sealed class PendulumDirectorWorkflow(
             // a reduced-resolution/cadence proxy for newly uploaded studies.
             const bool preview = false;
             var record = new DirectorVideoEvidence(role,videoId,filename,bytes,hash,
-                DateTimeOffset.UtcNow,media,tracking,spectral,poster,preview);
+                DateTimeOffset.UtcNow,media,Tracking:null,Spectral:null,
+                PosterAvailable:poster,PreviewAvailable:preview,LocalEvidenceStatus:"DEFERRED");
             NextPhase("persist");
             await WriteAtomicNewAsync(PathFor(id, role + ".json"),record,ct);
             var result = await LoadUnlockedAsync(id,ct);
@@ -450,6 +446,13 @@ public sealed class PendulumDirectorWorkflow(
     {
         if(!bobConfirmed)
             throw new ArgumentException("A human must review the tracked object first.");
+        var before=await ReadAsync(id,ct);
+        if(before.PreparationPending)
+            throw new InvalidOperationException("Confirm preparation before reviewing the analysis.");
+        if(before.Baseline is null || before.Proposal is not null)
+            throw new ArgumentException("Review requires the first video before a proposal.");
+        if(before.HumanReview is null)
+            await EnsureLocalEvidenceAsync(id,"baseline",ct);
         await gate.WaitAsync(ct);
         try
         {
@@ -458,7 +461,8 @@ public sealed class PendulumDirectorWorkflow(
                 throw new InvalidOperationException("Confirm preparation before reviewing the analysis.");
             if(session.Baseline is null || session.Proposal is not null)
                 throw new ArgumentException("Review requires the first video before a proposal.");
-            if(!PendulumDirectorProtocol.HasUsableInitialSignal(session.Baseline.Spectral))
+            if(session.Baseline.Spectral is not { } localPeriod ||
+               !PendulumDirectorProtocol.HasUsableInitialSignal(localPeriod))
                 throw new ArgumentException("No usable local period; manual review is required.");
             if(session.HumanReview is not null) return session;
             var review = new DirectorHumanReview(DateTimeOffset.UtcNow,
@@ -518,6 +522,14 @@ public sealed class PendulumDirectorWorkflow(
 
     public async Task<DirectorSession> CompareAsync(string id,CancellationToken ct)
     {
+        var before=await ReadAsync(id,ct);
+        if(before.Comparison is not null) return before;
+        if(!before.IncludeSecondTrial)
+            throw new ArgumentException("Use single-trial comparison for this study.");
+        if(before.Baseline is null || before.Followup is null || before.Proposal is null)
+            throw new ArgumentException("Two videos and a frozen proposal are required.");
+        await EnsureLocalEvidenceAsync(id,"baseline",ct);
+        await EnsureLocalEvidenceAsync(id,"followup",ct);
         await gate.WaitAsync(ct);
         try
         {
@@ -525,8 +537,8 @@ public sealed class PendulumDirectorWorkflow(
             if(session.Comparison is not null)return session;
             if(!session.IncludeSecondTrial)
                 throw new ArgumentException("Use single-trial comparison for this study.");
-            if(session.Baseline?.Spectral.PeriodSeconds is not double first ||
-               session.Followup?.Spectral.PeriodSeconds is not double second ||
+            if(session.Baseline?.Spectral?.PeriodSeconds is not double first ||
+               session.Followup?.Spectral?.PeriodSeconds is not double second ||
                session.Proposal is null)
                 throw new ArgumentException("Two usable videos and a frozen proposal are required.");
             var (observed, gap) = PendulumDirectorProtocol.Compare(
@@ -554,6 +566,13 @@ public sealed class PendulumDirectorWorkflow(
     /// </summary>
     public async Task<DirectorSession> CompareSingleAsync(string id,CancellationToken ct)
     {
+        var before=await ReadAsync(id,ct);
+        if(before.IncludeSecondTrial)
+            throw new ArgumentException("This research requires the planned follow-up video.");
+        if(before.SingleComparison is not null) return before;
+        if(before.HumanReview?.BobConfirmed != true || before.Baseline is null)
+            throw new ArgumentException("Review one usable video before comparison.");
+        await EnsureLocalEvidenceAsync(id,"baseline",ct);
         await gate.WaitAsync(ct);
         try
         {
@@ -562,7 +581,7 @@ public sealed class PendulumDirectorWorkflow(
                 throw new ArgumentException("This research requires the planned follow-up video.");
             if(session.SingleComparison is not null) return session;
             if(session.HumanReview?.BobConfirmed != true ||
-               session.Baseline?.Spectral.PeriodSeconds is not double observed)
+               session.Baseline?.Spectral?.PeriodSeconds is not double observed)
                 throw new ArgumentException("Review one usable video before comparison.");
             if(session.BaselineLengthMeters is not double length || session.AngleDegrees is not double angle ||
                session.MassGrams is not double mass || angle < 1)
@@ -628,10 +647,10 @@ public sealed class PendulumDirectorWorkflow(
            !string.Equals(original.ModelSha256,CalculateModelHash(original),
                StringComparison.Ordinal))
             throw new InvalidDataException("Theoretical model snapshot integrity mismatch.");
-        var first=await ReadOptionalAsync<DirectorVideoEvidence>(PathFor(id,"baseline.json"),ct);
+        var first=await ReadVideoWithLocalEvidenceAsync(id,"baseline",ct);
         var review=await ReadOptionalAsync<DirectorHumanReview>(PathFor(id,"human-review.json"),ct);
         var proposal=await ReadOptionalAsync<DirectorProposal>(PathFor(id,"proposal.json"),ct);
-        var second=await ReadOptionalAsync<DirectorVideoEvidence>(PathFor(id,"followup.json"),ct);
+        var second=await ReadVideoWithLocalEvidenceAsync(id,"followup",ct);
         var musePrediction=muse?.Prediction(id);
         var result=await ReadOptionalAsync<DirectorComparison>(PathFor(id,"comparison.json"),ct);
         var single=await ReadOptionalAsync<DirectorSingleComparison>(PathFor(id,"single-comparison.json"),ct);
@@ -670,8 +689,8 @@ public sealed class PendulumDirectorWorkflow(
             second is not null ? "READY_TO_COMPARE":
             proposal is not null ? "AWAITING_SECOND_VIDEO":
             review is not null ? "READY_TO_PROPOSE":
-            first is not null && first.Spectral.PeriodSeconds is not null ?
-                "AWAITING_HUMAN_BOB_REVIEW":
+            first?.LocalEvidenceStatus=="DEFERRED" ? "READY_FOR_ANALYSIS":
+            first?.Spectral?.PeriodSeconds is not null ? "AWAITING_HUMAN_BOB_REVIEW":
             first is not null ? "INITIAL_VIDEO_NEEDS_REVIEW":"AWAITING_FIRST_VIDEO";
         return original with {
             Step=step, ModelStatus=NotAi,Baseline=first,HumanReview=review,

@@ -200,9 +200,9 @@ interface SamAdaptiveReport {
                 {{batch.derivedSeamsVerified===true?(es?'empalmes coherentes':'seams consistent'):(es?'revisión de empalmes pendiente':'seam review pending')}}.
                 {{es?'No se declara validación científica automática.':'No automatic scientific validation is claimed.'}}</span>
             } @else if(validationState()==='ready') {
-              <span>{{es?'Procesado · reproducción disponible.':'Processed · playback available.'}}</span>
+              <span>{{es?'Procesado · resultados disponibles.':'Processed · results available.'}}</span>
             } @else if(!mediaReady()) {
-              <span>{{es?'Esperando que termine de cargar el video original.':'Waiting for the original video to finish loading.'}}</span>
+              <span>{{es?'Esperando que termine de guardarse el video original.':'Waiting for the original video to finish saving.'}}</span>
             } @else if(freeCacheAvailable()) {
               <span>{{es?'Resultado disponible. Pulsa Procesar para cargarlo sin consumir créditos.':'Saved result available. Press Process to load it without spending credits.'}}</span>
             } @else if(!apiEnabled()) {
@@ -502,6 +502,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly guided=input(false);
   readonly sourcePending=input(false);
   readonly recoveryRunning=input(false);
+  // True once the original is registered on the server; browser decoding is independent.
   readonly mediaReady=input(true);
   readonly validationState=input<'idle'|'loading'|'ready'|'error'>('idle');
   readonly processingStarted=output<void>();
@@ -599,7 +600,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const p=this.adaptiveProgress(),now=this.traceClock(),phase=p?.phase;
     if(this.samWasReused && this.segmentedMode())return [
       {key:'cache',label:this.es?'Caché verificada':'Verified cache',state:'COMPLETED',ms:0},
-      {key:'view',label:this.es?'Gráficos y reproducción':'Overlays and playback',
+      {key:'view',label:this.es?'Validación de resultados':'Result validation',
        state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.traceAwaitingRecovery?'RECOVERY_REQUIRED':this.viewStartedAt?'IN_PROGRESS':this.traceFailed?'FAILED':'NOT_STARTED',
        ms:this.viewStartedAt?Math.max(0,(this.viewFinishedAt||now)-this.viewStartedAt):0}];
     const sparkDone=!!this.sparkFinishedAt;
@@ -630,7 +631,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       if(this.reviewStartedAt)rows.push({key:'review',label:this.es?'Revisión de suspensión · Spark':'Suspension review · Spark',
         state:this.reviewFailed?'FAILED':this.reviewFinishedAt?'COMPLETED':'IN_PROGRESS',
         ms:Math.max(0,(this.reviewFinishedAt||now)-this.reviewStartedAt)});
-      rows.push({key:'view',label:this.es?'Gráficos y reproducción':'Overlays and playback',
+      rows.push({key:'view',label:this.es?'Validación de resultados':'Result validation',
         state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.traceAwaitingRecovery?'RECOVERY_REQUIRED':this.viewStartedAt?'IN_PROGRESS':this.traceFailed?'FAILED':'NOT_STARTED',
         ms:this.viewStartedAt?Math.max(0,(this.viewFinishedAt||now)-this.viewStartedAt):0});
       return rows;
@@ -656,7 +657,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         {key:'retry-validation',label:this.es?'Reintento · verificar resultado':'Retry · verify result',
          state:!r?waiting:rp==='COMPLETED'?'COMPLETED':rp==='FAILED'?'FAILED':rp==='VALIDATING'?'IN_PROGRESS':'NOT_STARTED',ms:r?.validationElapsedMs??0});
     }
-    rows.push({key:'view',label:this.es?'Gráficos y reproducción':'Overlays and playback',
+    rows.push({key:'view',label:this.es?'Validación de resultados':'Result validation',
       state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.traceAwaitingRecovery?'RECOVERY_REQUIRED':this.viewStartedAt?'IN_PROGRESS':this.traceFailed?'FAILED':'NOT_STARTED',
       ms:this.viewStartedAt?Math.max(0,(this.viewFinishedAt||now)-this.viewStartedAt):0});
     return rows.map(row=>this.traceAwaitingRecovery && (row.state==='IN_PROGRESS' || row.state==='NOT_STARTED')
