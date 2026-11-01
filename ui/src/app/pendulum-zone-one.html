@@ -11,12 +11,12 @@
   <div [hidden]="experiment()!=='pendulum'">
     <section class="recovery-entry compact-recovery" [attr.aria-label]="es?'Código de investigación':'Research code'" [attr.aria-busy]="generatingCode() || recoveryLoading()">
       <div class="recovery-bar">
-        <div class="recovery-title"><span class="recovery-dot" aria-hidden="true"></span><div><strong>{{es?'Investigación':'Research'}}</strong><small>{{session()?(es?'Guardada en este servidor':'Saved on this server'):(es?'Genera o recupera tu código':'Generate or recover your code')}}</small></div></div>
+        <div class="recovery-title"><span class="recovery-dot" aria-hidden="true"></span><div><strong>{{es?'Investigación':'Research'}}</strong><small>{{session()?(es?'Guardada en este servidor':'Saved on this server'):(es?'Inicia o recupera una investigación':'Start or recover a research session')}}</small></div></div>
         @if(session(); as research){
           <div class="research-id"><label class="visually-hidden" for="active-recovery-code">{{es?'Código de recuperación':'Recovery code'}}</label><input id="active-recovery-code" type="text" [value]="research.id" readonly spellcheck="false"/>
             <button class="secondary-button copy-recovery" type="button" (click)="copyStudyId()">{{copiedId()?(es?'Copiado':'Copied'):(es?'Copiar':'Copy')}}</button></div>
         } @else {
-          <button class="primary-button generate-recovery" type="button" (click)="generateRecoveryCode()" [disabled]="recoveryControlsBusy()">{{es?'Generar código':'Generate code'}}</button>
+          <button class="primary-button generate-recovery" type="button" (click)="generateRecoveryCode()" [disabled]="recoveryControlsBusy()">{{es?'Iniciar':'Start'}}</button>
         }
         <button id="manage-recovery" type="button" class="secondary-button manage-recovery" [attr.aria-expanded]="recoveryMenuOpen()" aria-controls="recovery-drawer" [disabled]="recoveryControlsBusy()" (click)="toggleRecoveryMenu()">{{session()?(es?'Gestionar':'Manage'):(es?'Recuperar':'Recover')}} <span aria-hidden="true">{{recoveryMenuOpen()?'▴':'▾'}}</span></button>
       </div>
@@ -34,7 +34,7 @@
         <details><summary>{{es?'¿Qué se recupera?':'What is recovered?'}}</summary><p class="recovery-help">{{es?'Configuración, videos y evidencia verificada. Recuperar no repite solicitudes a Meta. Los intentos interrumpidos requieren revisión; el token se introduce de nuevo en Configuración.':'Settings, videos and verified evidence. Recovery does not repeat Meta requests. Interrupted attempts need review; re-enter your token in Settings.'}}</p></details>
       </div>
       @if(generatingCode() || recoveryLoading()){
-        <app-lab-activity [label]="generatingCode()?(es?'Generando código…':'Generating code…'):(es?'Recuperando sesión…':'Recovering session…')"
+        <app-lab-activity [label]="generatingCode()?(es?'Iniciando investigación…':'Starting research…'):(es?'Recuperando sesión…':'Recovering session…')"
           [detail]="generatingCode()?(es?'Guardando tu nueva sesión.':'Saving your new session.'):(es?'Cargando configuración, videos y resultados guardados.':'Loading saved settings, videos and results.')"/>
       } @else if(recoveryMessage()) {<p class="recovery-status" [class.recovery-error]="recoveryFailure()" [class.recovery-warning]="recoveryWarning()" [class.visually-hidden]="!recoveryFailure() && !recoveryWarning()" role="status">{{recoveryMessage()}}</p>}
     </section>
@@ -234,7 +234,7 @@
       @if(error()){<p class="focus-error" role="alert">{{error()}}</p>}
       <p class="focus-disclaimer">{{es?'Muse Spark orienta e interpreta · SAM sigue el objeto · ProofLab calcula las medidas.':'Muse Spark guides and interprets · SAM tracks the object · ProofLab calculates measurements.'}}</p>
     } @else {
-      <div class="research-empty"><span aria-hidden="true">⌁</span><h2>{{es?'Tu laboratorio comienza con un código.':'Your laboratory begins with a code.'}}</h2><p>{{es?'Genera uno para preparar la primera prueba o recupera una investigación guardada.':'Generate one to prepare the first trial or recover a saved study.'}}</p></div>
+      <div class="research-empty"><span aria-hidden="true">⌁</span><h2>{{es?'Inicia tu investigación.':'Start your research.'}}</h2><p>{{es?'Pulsa Iniciar para preparar la primera prueba o recupera una investigación guardada.':'Press Start to prepare your first trial, or recover a saved research session.'}}</p></div>
     }
   </div>
   @if(experiment()!=='pendulum'){<app-experiment-simulator [kind]="simulationKind()" [language]="language()" [active]="active() && experiment()!=='pendulum'"/>}

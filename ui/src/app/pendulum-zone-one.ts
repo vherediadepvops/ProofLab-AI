@@ -143,7 +143,7 @@ export class PendulumZoneOne extends PendulumDirector {
       await this.refreshTheory();await this.start();
       if(this.session()){
         this.copiedId.set(false);this.recoveryMode=false;this.draftError.set('');this.recoveryMenuOpen.set(false);this.activeTrial.set('baseline');this.flowStep.set(1);
-        this.recoveryMessage.set(this.es?'Código generado. Cópialo y guárdalo antes de continuar.':'Code generated. Copy and save it before continuing.');
+        this.recoveryMessage.set(this.es?'Investigación iniciada. Copia y guarda el código para recuperarla.':'Research started. Copy and save the code to recover it.');
       } else {this.recoveryFailure.set(true);this.recoveryMessage.set(this.error() || this.modelError());}
     } finally {this.generatingCode.set(false);}
   }
