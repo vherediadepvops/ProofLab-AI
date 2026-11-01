@@ -15,7 +15,7 @@ const located={...spark,status:'READY',canRun:false,scene:{key:scene,videoSha256
 const access={manualTokenCallsPermitted:true,paidRequestsSwitchEnabled:true,creditsConfirmedByOwner:true,
  ownerApprovedPaidRequests:true,remainingRequests:0,usedRequests:43,manualRequestsUnlimited:true};
 const media={sourceSha256:sha,sourceFrames:667,durationSeconds:22.23,estimatedCostUsd:.1334,supportsSingleCall:true,codec:'h264'};
-const done={batchId:batch,parts:4,status:'PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW',
+const done={batchId:batch,parts:4,sourceSha256:sha,sparkSceneKey:scene,planSha256:key,status:'PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW',
  derivedSeamsVerified:true,derivedFramesWithMasks:667};
 async function tick(){for(let i=0;i<12;i++)await Promise.resolve();}
 async function finalProgress(x:any,failed=false){
@@ -41,10 +41,10 @@ describe('Integrated manual Meta segments',()=>{
   field.value='LLM_SYNTHETIC_LOCAL_TEST_KEY_1234567890';con.confirmToken();
   return {f,c,h,con};
  }
- async function check(x:ReturnType<typeof setup>,q:any=quote,g:any=spark){
+ async function check(x:ReturnType<typeof setup>,q:any=quote,g:any=spark,m:any=media){
   const p=x.c.check();
   x.h.expectOne(root+'/sam/baseline/reusable').flush({sourceSha256:sha,cacheHit:false,analysisId:null,adaptiveBatchId:null,excludedResults:1,quality:null,storage:'sqlite'});
-  x.h.expectOne(root+'/sam/baseline/preflight').flush(media);
+  x.h.expectOne(root+'/sam/baseline/preflight').flush(m);
   await tick();const all=x.h.match(()=>true);expect(all.length).toBe(3);
   for(const r of all){expect(r.request.method).toBe('GET');
    if(r.request.url.includes('/sam-adaptive/')&&r.request.url.includes('/preflight?'))r.flush(q);
@@ -52,6 +52,27 @@ describe('Integrated manual Meta segments',()=>{
    else if(r.request.url.endsWith('/readiness'))r.flush(access);else r.flush(media);}
   await p;x.f.detectChanges();
  }
+
+ const retryChild='8'.repeat(32);
+ const retryQuote={...exact,sourceFrames:1001,parts:3,simultaneousRequests:3,totalSamEstimatedUsd:.2022,
+  continuousRetryEstimatedUsd:.2002,maximumSamWithRetryEstimatedUsd:.4024};
+ const retryMedia={...media,sourceFrames:1001,durationSeconds:33.37,estimatedCostUsd:.2002};
+ const failedParent={...done,parts:3,completedParts:2,failedParts:1,
+  status:'PARTIAL_PROVIDER_ATTEMPTS_REQUIRE_MANUAL_RECONCILIATION',derivedSeamsVerified:null,derivedFramesWithMasks:null};
+ const savedChild={...done,batchId:retryChild,parts:1,completedParts:1,failedParts:0,
+  planSha256:'6'.repeat(64),derivedFramesWithMasks:701,automaticRetryOfBatchId:batch};
+ const retryProgress={batchId:batch,parts:3,started:3,completed:2,failed:1,phase:'FAILED',perPart:[],
+  continuousRetryBatchId:retryChild,continuousRetry:{batchId:retryChild,parts:1,started:1,completed:1,
+   failed:0,phase:'COMPLETED',perPart:[{part:0,state:'COMPLETED',elapsedMs:147200}]}};
+ async function recoverConflict(x:ReturnType<typeof setup>,child:any=savedChild){
+  const post=x.h.expectOne(url+'/manual-batch');expect(post.request.method).toBe('POST');
+  post.flush({error:'Adaptive request blocked: prior attempt.'},{status:409,statusText:'Conflict'});
+  await tick();x.h.expectOne(url+'/batches/'+batch+'/progress').flush(retryProgress);
+  await tick();x.h.expectOne(url+'/batches/'+batch+'/report').flush(failedParent);
+  await tick();x.h.expectOne(url+'/batches/'+retryChild+'/report').flush(child);
+  await tick();
+ }
+
  it('reuses checked native and segmented evidence for free without a token or paid quotes',async()=>{
   for(const adaptiveBatchId of [null,batch]) {
    const x=setup();x.c.mode.set('api-meta-cache');x.con.clearToken();
@@ -222,6 +243,65 @@ describe('Integrated manual Meta segments',()=>{
  it('rejects an incomplete combined quote before any paid request',async()=>{
   const x=setup();await check(x,{...exact,parts:3,continuousRetryEstimatedUsd:.1334,maximumSamWithRetryEstimatedUsd:.14},located);
   expect(x.c.canProcess()).toBeFalse();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+
+ it('recovers the archived 701-frame child after a final 409 without another provider POST',async()=>{
+  const x=setup();await check(x,retryQuote,located,retryMedia);
+  const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
+  await recoverConflict(x);
+  x.h.expectOne(url+'/batches/'+batch+'/progress').flush(retryProgress);await p;
+  expect(emit).toHaveBeenCalledOnceWith(jasmine.objectContaining({analysisId:retryChild,adaptiveBatchId:retryChild,sourceSha256:sha}));
+  expect(x.c.error()).toBe('');expect(x.c.processing()).toBeTrue();
+  x.f.componentRef.setInput('validationState','ready');x.f.detectChanges();
+  expect(x.c.stageRows().find(r=>r.key==='view')?.state).toBe('COMPLETED');
+  expect(x.con.busy()).toBeFalse();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('shows a terminal overlay failure for an archived inconclusive retry even if progress was green',async()=>{
+  const x=setup();await check(x,retryQuote,located,retryMedia);
+  const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
+  await recoverConflict(x,{...savedChild,status:'PROVIDER_PARTS_COMPLETE_SEAM_OR_DETECTION_INCONCLUSIVE',derivedFramesWithMasks:0});
+  x.h.expectOne(url+'/batches/'+batch+'/progress').flush(retryProgress);await p;
+  expect(emit).not.toHaveBeenCalled();expect(x.c.error()).toContain('reintento');
+  expect(x.c.processing()).toBeFalse();expect(x.con.busy()).toBeFalse();
+  expect(x.c.stageRows().find(r=>r.key==='view')?.state).toBe('FAILED');
+  x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('refuses a recovered child from another source',async()=>{
+  const x=setup();await check(x,retryQuote,located,retryMedia);
+  const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
+  await recoverConflict(x,{...savedChild,sourceSha256:'f'.repeat(64)});await p;
+  expect(emit).not.toHaveBeenCalled();expect(x.c.error()).toContain('no coincide');
+  expect(x.c.stageRows().find(r=>r.key==='view')?.state).toBe('FAILED');
+  x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('refuses a recovered parent whose plan differs from the accepted quote',async()=>{
+  const x=setup();await check(x,retryQuote,located,retryMedia);
+  const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
+  x.h.expectOne(url+'/manual-batch').flush({}, {status:409,statusText:'Conflict'});
+  await tick();x.h.expectOne(url+'/batches/'+batch+'/progress').flush(retryProgress);
+  await tick();x.h.expectOne(url+'/batches/'+batch+'/report').flush({...failedParent,planSha256:'7'.repeat(64)});
+  await p;expect(emit).not.toHaveBeenCalled();expect(x.c.error()).toContain('no coincide');
+  x.h.expectNone(url+'/batches/'+retryChild+'/report');x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('pauses an unfinished recovery after bounded reads without resending or leaving animated rows',async()=>{
+  const x=setup();await check(x,retryQuote,located,retryMedia);
+  const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
+  x.h.expectOne(url+'/manual-batch').flush({}, {status:409,statusText:'Conflict'});
+  for(let attempt=0;attempt<2;attempt++){
+   await tick();x.h.expectOne(url+'/batches/'+batch+'/progress').flush({...retryProgress,
+    continuousRetry:{...retryProgress.continuousRetry,completed:0,phase:'RUNNING',perPart:[{part:0,state:'IN_PROGRESS'}]}});
+   await tick();x.h.expectOne(url+'/batches/'+batch+'/report').flush(failedParent);
+   await tick();x.h.expectOne(url+'/batches/'+retryChild+'/report').flush({}, {status:404,statusText:'Not Found'});
+   await tick();if(attempt===0)await new Promise(resolve=>setTimeout(resolve,1050));
+  }
+  await p;expect(emit).not.toHaveBeenCalled();expect(x.c.processing()).toBeFalse();expect(x.con.busy()).toBeFalse();
+  expect(x.c.error()).toContain('puede continuar');expect(x.c.canProcess()).toBeFalse();
+  expect(x.c.stageRows().some(r=>r.state==='IN_PROGRESS')).toBeFalse();
+  expect(x.c.stageRows().find(r=>r.key==='view')?.state).toBe('RECOVERY_REQUIRED');
+  expect(x.c.stageStateLabel('RECOVERY_REQUIRED')).toBe('Retomar con código');
+  x.f.componentRef.setInput('language','en');x.f.detectChanges();
+  expect(x.c.stageStateLabel('RECOVERY_REQUIRED')).toBe('Resume with code');
+  await x.c.process();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
  });
 
 });

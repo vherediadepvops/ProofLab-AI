@@ -570,7 +570,7 @@ public sealed partial class SamAdaptiveLiveService(
             validationMs=(long)(end-doc.RootElement.GetProperty("startedAtUtc").GetDateTimeOffset()).TotalMilliseconds;
             phase="VALIDATING";
         }
-        if(report is not null)phase=report.DerivedSeamsVerified==true?"COMPLETED":"FAILED";
+        if(report is not null)phase=CompletedEvidence(report)?"COMPLETED":"FAILED";
         var rows=new List<SamAdaptivePartStatus>(total);
         for(var part=0;part<total;part++)
         {

@@ -243,6 +243,23 @@ public sealed class SamAdaptiveLiveIntegrationTests
         Assert.Equal(4,f.Transport.Calls); // duplicate HTTP action cannot resend either batch
     }
     [Fact]
+    public async Task EmptyWholeVideoCompletesTransportButFailsValidationAndCannotDriveOverlays(){
+        using var f=new Fixture();f.Transport.EmptySegments=true;f.Transport.EmptyWhole=true;
+        var request=Request(await f.Quote(),retry:true);
+        var result=await f.Service.RunWithOneRetryAsync("study","baseline",request,default);
+        Assert.Equal(1,result.Parts);Assert.Equal(1,result.CompletedParts);Assert.Equal(0,result.FailedParts);
+        Assert.True(result.DerivedSeamsVerified);Assert.Equal(0,result.DerivedFramesWithMasks);
+        Assert.Equal("PROVIDER_PARTS_COMPLETE_SEAM_OR_DETECTION_INCONCLUSIVE",result.Status);
+        var progress=await f.Service.ReadProgressAsync(request.ClientBatchId,default);
+        Assert.Equal(result.BatchId,progress.ContinuousRetryBatchId);
+        Assert.Equal("FAILED",progress.ContinuousRetry!.Phase);Assert.Equal(1,progress.ContinuousRetry.Completed);
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Service.ReadPlaybackAsync("study","baseline",result.BatchId,default));
+        Assert.Equal(4,f.Transport.Calls);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.RunWithOneRetryAsync("study","baseline",request,default));
+        Assert.Equal(4,f.Transport.Calls);
+    }
+
+    [Fact]
     public async Task FailedWholeVideoHasNoThirdAttemptAndCannotDriveOverlays(){
         using var f=new Fixture();f.Transport.Fail=true;
         var request=Request(await f.Quote(),retry:true);
@@ -351,7 +368,7 @@ public sealed class SamAdaptiveLiveIntegrationTests
         }
     }
     private sealed class Transport:ISamVideoTransport{
-        public int Calls,Active,MaximumActive;public bool Fail,FailSegmentsOnly,EmptySegments,BrokenSeams;
+        public int Calls,Active,MaximumActive;public bool Fail,FailSegmentsOnly,EmptySegments,EmptyWhole,BrokenSeams;
         public System.Net.HttpStatusCode? FailureStatus;
         public string LastPrompt="";public int ActiveAtFullDispatch=-1;
         public readonly System.Collections.Concurrent.ConcurrentBag<SamAdaptiveWindow> Windows=new();
@@ -367,7 +384,7 @@ public sealed class SamAdaptiveLiveIntegrationTests
                 if((Fail || (FailSegmentsOnly && w.InputFrames<667)) && w.Part==0)
                     throw new HttpRequestException("Synthetic part failure",null,FailureStatus);
                 var indices=BrokenSeams && w.InputFrames<667?Enumerable.Range(w.CoreStart-w.InputStart,w.CoreEndExclusive-w.CoreStart):
-                    Enumerable.Range(0,EmptySegments && w.InputFrames<667?0:w.InputFrames);
+                    Enumerable.Range(0,(EmptySegments && w.InputFrames<667) || (EmptyWhole && w.InputFrames==667)?0:w.InputFrames);
                 var wire=string.Concat(indices.Select(i=>
                     "<"+i+"f>1<|box;x1=20;y1=30;x2=40;y2=50;w=1080;h=1920|><|mask;x=20;y=30;data=21,21,SYNTHETIC|>\n"));
                 return new(JsonSerializer.Serialize(new{model="sam-3.1",status="completed",

@@ -3,7 +3,7 @@ import {
   Component, ElementRef, OnChanges, OnDestroy, SimpleChanges, ViewChild,
   inject, input, output, signal
 } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, timeout } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LabConnection } from './lab-connection';
@@ -71,6 +71,7 @@ interface SamAdaptiveProgress {
   continuousRetry?:SamAdaptiveProgress|null;continuousRetryBatchId?:string|null;
 }
 interface SamAdaptiveReport {
+  sourceSha256:string;sparkSceneKey:string;planSha256:string;
   batchId:string;status:string;parts:number;startedParts:number;completedParts:number;
   failedParts:number;skippedParts:number;estimatedSamUsd:number;
   derivedFramesWithMasks:number|null;derivedSeamsVerified:boolean|null;
@@ -551,11 +552,12 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private viewStartedAt=0;
   private viewFinishedAt=0;
   private traceFailed=false;
+  private traceAwaitingRecovery=false;
   private sparkWasNeeded=false;
   private startStageTrace(cached=false):void {
     if(this.traceTicker!==null)clearInterval(this.traceTicker);
     this.traceStartedAt=Date.now();this.traceClock.set(this.traceStartedAt);
-    this.sparkFinishedAt=cached?this.traceStartedAt:0;this.viewStartedAt=0;this.viewFinishedAt=0;this.traceFailed=false;
+    this.sparkFinishedAt=cached?this.traceStartedAt:0;this.viewStartedAt=0;this.viewFinishedAt=0;this.traceFailed=false;this.traceAwaitingRecovery=false;
     this.samStartedAt=0;this.samFinishedAt=0;this.samWasReused=cached;
     this.reviewStartedAt=0;this.reviewFinishedAt=0;this.reviewFailed=false;
     this.sparkWasNeeded=!cached && (this.segmentedMode()?!!this.adaptiveQuote()?.requiresNewSparkCall:this.groundingRequired());
@@ -565,6 +567,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.traceTicker=setInterval(()=>this.traceClock.set(Date.now()),250);
   }
   stageStateLabel(state:string):string {
+    if(state==='RECOVERY_REQUIRED')return this.es?'Retomar con código':'Resume with code';
     return state==='SKIPPED'?(this.es?'No necesario':'Not needed'):state==='COMPLETED'?(this.es?'Listo':'Done'):state==='FAILED'?(this.es?'Falló':'Failed'):
       state==='IN_PROGRESS'?(this.es?'En curso':'Running'):(this.es?'Pendiente':'Pending');
   }
@@ -573,7 +576,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.samWasReused && this.segmentedMode())return [
       {key:'cache',label:this.es?'Caché verificada':'Verified cache',state:'COMPLETED',ms:0},
       {key:'view',label:this.es?'Gráficos y reproducción':'Overlays and playback',
-       state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.viewStartedAt?'IN_PROGRESS':'NOT_STARTED',
+       state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.traceAwaitingRecovery?'RECOVERY_REQUIRED':this.viewStartedAt?'IN_PROGRESS':this.traceFailed?'FAILED':'NOT_STARTED',
        ms:this.viewStartedAt?Math.max(0,(this.viewFinishedAt||now)-this.viewStartedAt):0}];
     const sparkDone=!!this.sparkFinishedAt;
     const rows:{key:string;label:string;state:string;ms:number;percent?:number|null}[]=[{key:'spark',label:this.sparkWasNeeded?'Spark':(this.es?'Spark · reutilizado':'Spark · reused'),
@@ -604,7 +607,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         state:this.reviewFailed?'FAILED':this.reviewFinishedAt?'COMPLETED':'IN_PROGRESS',
         ms:Math.max(0,(this.reviewFinishedAt||now)-this.reviewStartedAt)});
       rows.push({key:'view',label:this.es?'Gráficos y reproducción':'Overlays and playback',
-        state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.viewStartedAt?'IN_PROGRESS':'NOT_STARTED',
+        state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.traceAwaitingRecovery?'RECOVERY_REQUIRED':this.viewStartedAt?'IN_PROGRESS':this.traceFailed?'FAILED':'NOT_STARTED',
         ms:this.viewStartedAt?Math.max(0,(this.viewFinishedAt||now)-this.viewStartedAt):0});
       return rows;
     }
@@ -630,9 +633,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
          state:!r?waiting:rp==='COMPLETED'?'COMPLETED':rp==='FAILED'?'FAILED':rp==='VALIDATING'?'IN_PROGRESS':'NOT_STARTED',ms:r?.validationElapsedMs??0});
     }
     rows.push({key:'view',label:this.es?'Gráficos y reproducción':'Overlays and playback',
-      state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.viewStartedAt?'IN_PROGRESS':'NOT_STARTED',
+      state:this.viewFinishedAt?(this.traceFailed?'FAILED':'COMPLETED'):this.traceAwaitingRecovery?'RECOVERY_REQUIRED':this.viewStartedAt?'IN_PROGRESS':this.traceFailed?'FAILED':'NOT_STARTED',
       ms:this.viewStartedAt?Math.max(0,(this.viewFinishedAt||now)-this.viewStartedAt):0});
-    return rows;
+    return rows.map(row=>this.traceAwaitingRecovery && (row.state==='IN_PROGRESS' || row.state==='NOT_STARTED')
+      ? {...row,state:'RECOVERY_REQUIRED'} : row);
   }
   private adaptiveUrl():string {
     return this.base+'/'+this.studyId()+'/sam-adaptive/'+this.videoRole();
@@ -670,7 +674,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.adaptiveQuote.set(null);
     this.adaptiveProgress.set(null);
     this.adaptiveResult.set(null);
-    this.stageTraceStarted.set(false);
+    this.stageTraceStarted.set(false);this.traceAwaitingRecovery=false;
     if(this.traceTicker!==null)clearInterval(this.traceTicker);this.traceTicker=null;
   }
   readonly studyId=input('');
@@ -714,6 +718,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.recoveryRunning())return false;
     if(this.segmentedMode() && this.cachedResultAvailable())return this.mediaReady() && !this.sourcePending() &&
       !this.processing() && !this.sending() && !this.checking() && !this.connection.busy();
+    if(this.traceAwaitingRecovery)return false;
     if(this.segmentedMode()) {
       const quote=this.adaptiveQuote(),ready=this.readiness(),spark=this.groundingQuote();
       if(this.adaptiveResult())return false;
@@ -802,6 +807,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.processing())return this.es?'Procesando':'Processing';
     if(this.checking())return this.es?'Verificando caché':'Checking cache';
     if(this.cachedResultAvailable())return this.es?'Caché verificada':'Verified cache';
+    if(this.traceAwaitingRecovery)return this.es?'Resultado por recuperar':'Result awaiting recovery';
     if(this.segmentedMode()){
       const result=this.adaptiveResult();
       if(result)return result.completedParts===result.parts ?
@@ -959,6 +965,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.');
   }
   processBlockedReason():string {
+    if(this.traceAwaitingRecovery)return this.es?
+      'Retoma el resultado con el código de recuperación antes de iniciar otro análisis.':
+      'Resume the saved result with the recovery code before starting another analysis.';
     if(this.segmentedMode()){
       const q=this.adaptiveQuote(),r=this.readiness();
       if(!q)return this.es?'Actualiza el costo del procesamiento por segmentos.':'Refresh the segment processing cost.';
@@ -1071,6 +1080,58 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     }finally{if(serial===this.serial)this.checking.set(false);}
   }
 
+  private recoverableAdaptiveReply(error:unknown):boolean {
+    return error instanceof HttpErrorResponse
+      ? error.status===0 || error.status===409 || error.status>=500
+      : error instanceof Error && error.name==='TimeoutError';
+  }
+  private async recoverAdaptiveReport(url:string,quote:SamAdaptiveQuote,current:()=>boolean):Promise<SamAdaptiveReport|null> {
+    const read=async<T>(path:string):Promise<T|null>=>{
+      try{return await firstValueFrom(this.http!.get<T>(path).pipe(timeout(5000)));}
+      catch(error){
+        if(error instanceof HttpErrorResponse || error instanceof Error && error.name==='TimeoutError')return null;
+        throw error;
+      }
+    };
+    const sameSource=(report:SamAdaptiveReport)=>report.sourceSha256===quote.sourceSha256 &&
+      report.sparkSceneKey===quote.sparkSceneKey && /^[a-f0-9]{64}$/.test(report.planSha256);
+    const usable=(report:SamAdaptiveReport)=>report.status==='PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW' &&
+      report.derivedSeamsVerified===true && (report.derivedFramesWithMasks??0)>0;
+    // Only read durable evidence. Never resend the POST or authorize another provider call.
+    for(let attempt=0;attempt<2 && current();attempt++){
+      const progress=await read<SamAdaptiveProgress>(url+'/batches/'+quote.suggestedBatchId+'/progress');
+      if(!current())return null;
+      if(progress){
+        if(progress.batchId!==quote.suggestedBatchId || progress.parts!==quote.parts)throw Error('BATCH_ID_MISMATCH');
+        this.adaptiveProgress.set(progress);
+      }
+      const parent=await read<SamAdaptiveReport>(url+'/batches/'+quote.suggestedBatchId+'/report');
+      if(!current())return null;
+      if(parent){
+        if(!sameSource(parent) || parent.batchId!==quote.suggestedBatchId || parent.parts!==quote.parts ||
+          parent.planSha256!==quote.planSha256 || parent.automaticRetryOfBatchId)throw Error('BATCH_ID_MISMATCH');
+        const childId=progress?.continuousRetryBatchId || parent.automaticRetryBatchId;
+        if(progress?.continuousRetry && progress.continuousRetry.batchId!==childId ||
+          childId && parent.automaticRetryBatchId && parent.automaticRetryBatchId!==childId)throw Error('BATCH_ID_MISMATCH');
+        if(childId){
+          if((quote.continuousRetryEstimatedUsd??0)<=0 || !/^[a-f0-9]{32}$/.test(childId) ||
+            childId===quote.suggestedBatchId)throw Error('BATCH_ID_MISMATCH');
+          const child=await read<SamAdaptiveReport>(url+'/batches/'+childId+'/report');
+          if(!current())return null;
+          if(child){
+            if(!sameSource(child) || child.batchId!==childId || child.parts!==1 ||
+              child.automaticRetryOfBatchId!==quote.suggestedBatchId || child.automaticRetryBatchId)
+              throw Error('BATCH_ID_MISMATCH');
+            // The existing evidence endpoint also rechecks the child plan, receipts and hashes.
+            return child;
+          }
+        }else if(usable(parent) || (quote.continuousRetryEstimatedUsd??0)===0)return parent;
+      }
+      if(attempt===0 && current())await new Promise<void>(resolve=>setTimeout(resolve,1000));
+    }
+    return null;
+  }
+
   private async analyzeAdaptive():Promise<void> {
     if(!this.http || !this.canProcess() || !this.segmentedMode())return;
     let quote=this.adaptiveQuote()!;
@@ -1128,13 +1189,28 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         confirmOneContinuousRetry:(quote.continuousRetryEstimatedUsd??0)>0,maximumCombinedSamCostUsd:this.combinedSamCost(quote),
         targetCoreFrames:53,maxInFlight:quote.simultaneousRequests,recoveryFromBatchId:quote.recoveryFromBatchId??null,
         confirmPrivateVideoTransfer:true,confirmUpToManyBillableSamCalls:true,confirmNoAutomaticRetry:true
-      },{headers:{'X-ProofLab-Manual-Action':'sam-adaptive-batch'}}).pipe(timeout(70*60*1000)));
+      },{headers:{'X-ProofLab-Manual-Action':'sam-adaptive-batch'}}).pipe(timeout(70*60*1000))).catch(async failure=>{
+        if(!current() || !this.recoverableAdaptiveReply(failure))throw failure;
+        if(this.adaptivePollHandle!==null)clearInterval(this.adaptivePollHandle);
+        this.adaptivePollHandle=null;
+        return this.recoverAdaptiveReport(url,quote,current);
+      });
       if(!current())return;
+      if(!report){
+        this.traceAwaitingRecovery=true;
+        this.error.set(this.es?
+          'No se recibió la respuesta final y aún no se pudo recuperar. La operación puede continuar en el servidor. Retómala con su código de recuperación; no se ha enviado otro análisis.':
+          'The final response was not received and could not yet be recovered. The operation may still be running on the server. Resume it with its recovery code; no new analysis was sent.');
+        this.finishProcessing();this.processingFailed.emit();
+        return;
+      }
       const initial=report.batchId===quote.suggestedBatchId && report.parts===quote.parts && !report.automaticRetryOfBatchId;
       const fallback=(quote.continuousRetryEstimatedUsd??0)>0 && report.parts===1 &&
         /^[a-f0-9]{32}$/.test(report.batchId) && report.batchId!==quote.suggestedBatchId &&
         report.automaticRetryOfBatchId===quote.suggestedBatchId;
-      if(!initial && !fallback)throw Error('BATCH_ID_MISMATCH');
+      if(report.sourceSha256!==sha || report.sparkSceneKey!==quote.sparkSceneKey ||
+        !/^[a-f0-9]{64}$/.test(report.planSha256) || (initial && report.planSha256!==quote.planSha256) ||
+        (!initial && !fallback))throw Error('BATCH_ID_MISMATCH');
       this.adaptiveResult.set(report);
       await poll();
       if(report.status!=='PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW' ||
@@ -1147,7 +1223,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     }catch(e){
       if(current()){
         const code=e instanceof Error?e.message:'';
-        this.error.set(code==='SEGMENT_QUOTE_CHANGED'?(this.es?
+        this.error.set(code==='BATCH_ID_MISMATCH'?(this.es?
+          'El resultado guardado no coincide con este video y su solicitud. No se abrirán gráficos ni se enviará otro análisis; revisa el código de recuperación.':
+          'The saved result does not match this video and request. No overlays will open and no new analysis will be sent; review the recovery code.'):
+          code==='SEGMENT_QUOTE_CHANGED'?(this.es?
           'Spark terminó, pero cambió el presupuesto o la evidencia. SAM no se envió; actualiza el costo.':
           'Spark finished, but the quote or evidence changed. SAM was not sent; refresh the cost.'):
           this.processingPhase()==='grounding'?(this.es?
