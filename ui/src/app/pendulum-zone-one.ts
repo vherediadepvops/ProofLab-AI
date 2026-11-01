@@ -7,6 +7,7 @@ import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, timeout } from 'rxjs';
 import { LabActivity } from './lab-activity';
+import { DirectorUploadProgress } from './director-upload-progress';
 import { PendulumDirector, type DirectorSession } from './pendulum-director';
 import { PendulumMasterPlayer } from './pendulum-master-player';
 import { LabConnection } from './lab-connection';
@@ -27,7 +28,7 @@ interface RecoverySnapshot {
 @Component({
   selector: 'app-pendulum-zone-one',
   standalone: true,
-  imports: [CommonModule, FormsModule, PendulumMasterPlayer, SamVideoReplay, LabActivity, ExperimentSimulator],
+  imports: [CommonModule, FormsModule, PendulumMasterPlayer, SamVideoReplay, LabActivity, DirectorUploadProgress, ExperimentSimulator],
   templateUrl: './pendulum-zone-one.html',
   styleUrl: './pendulum-zone-one.scss'
 })
@@ -71,7 +72,7 @@ export class PendulumZoneOne extends PendulumDirector {
   canVisitStep(step:number):boolean {
     if(!this.session() || this.flowBusy())return false;
     if(step===1)return true;
-    if(step===2)return !!this.session()?.baseline && this.requiredParametersReady() && this.requiredParametersSaved() && !this.parametersInvalid() && !this.draftSaving() && !this.draftError();
+    if(step===2)return !!this.session()?.baseline && this.session()?.preparationPending!==true && this.previewState()==='ready' && this.requiredParametersReady() && this.requiredParametersSaved() && !this.parametersInvalid() && !this.draftSaving() && !this.draftError();
     // Navigation may reopen archived evidence; the player still verifies it before showing layers.
     if(step===3)return this.hasSavedSelection('baseline');
     if(step===4)return !!this.frozenForStudy() || (this.hasVerifiedResult('baseline') && !!this.session()?.humanReview);
@@ -129,12 +130,97 @@ export class PendulumZoneOne extends PendulumDirector {
   readonly generatingCode=signal(false);
   readonly recoveryFailure=signal(false);
   readonly draftSaving=signal(false);
+  readonly preparingAnalysis=signal(false);
+  readonly preparationMessage=signal('');
+  private draftAfterUpload=false;
+  preparationActionBusy():boolean {
+    return this.preparingAnalysis() || this.generatingCode() || this.recovering() || this.connection.busy();
+  }
+  preparationInputsLocked():boolean {
+    const s=this.session();
+    return !!s?.baseline && s.preparationPending!==true || this.preparationActionBusy();
+  }
+  private preparationPayload() {
+    return {baselineLengthMeters:this.baselineLength(),angleDegrees:this.initialAngleDegrees(),
+      massGrams:this.massGrams(),includeSecondTrial:this.includeSecondTrial(),
+      followUpMode:this.followUpMode(),selectedFollowUpLengthMeters:
+        this.includeSecondTrial() && this.followUpMode()==='manual'?this.manualFollowUpLength():null};
+  }
+  async continueFromPreparation():Promise<void> {
+    if(this.preparationActionBusy())return;
+    const original=this.session();if(!original)return;
+    this.preparationMessage.set('');
+    if(original.baseline && original.preparationPending!==true && !this.requiredParametersReady()) {
+      this.flowStep.set(1);
+      this.preparationMessage.set(this.es?
+        'Para un nuevo análisis, inicia otra investigación con los tres datos. Puedes consultar sus resultados guardados.':
+        'For a new analysis, start another study with all three values. You can view its saved results.');return;
+    }
+    if(!this.requiredParametersReady()) {
+      this.flowStep.set(1);
+      this.preparationMessage.set(this.parametersInvalid()?
+        (this.es?'Corrige los valores fuera de rango para continuar.':'Correct the values outside the allowed range to continue.'):
+        (this.es?'Ingresa longitud, ángulo y masa para continuar.':'Enter length, angle and mass to continue.'));
+      const missing=this.parameterState(this.baselineLength(),.1,5)!=='valid'?'focus-length':
+        this.parameterState(this.initialAngleDegrees(),0,85)!=='valid'?'focus-angle':'focus-mass';
+      document.getElementById(missing)?.focus();return;
+    }
+    if(this.parametersInvalid()) {
+      this.flowStep.set(1);
+      this.preparationMessage.set(this.es?'Corrige los valores fuera de rango para continuar.':
+        'Correct the values outside the allowed range to continue.');return;
+    }
+    if(!original.baseline || this.sourcePending() || this.previewState()!=='ready') {
+      this.flowStep.set(1);
+      this.preparationMessage.set(this.es?
+        (!original.baseline && !this.sourcePending()?'Carga un video para continuar.':
+          this.previewState()==='error'?'No se pudo preparar la reproducción del video. Revisa el archivo antes de continuar.':
+          'Espera a que termine la carga y el video esté listo para continuar.'):
+        (!original.baseline && !this.sourcePending()?'Upload a video to continue.':
+          this.previewState()==='error'?'Video playback could not be prepared. Check the file before continuing.':
+          'Wait until loading finishes and the video is ready to continue.'));return;
+    }
+    const id=original.id,sha=original.baseline.sha256,port=this.connection.port();
+    const current=()=>this.session()?.id===id && this.session()?.baseline?.sha256===sha && this.connection.port()===port;
+    this.preparingAnalysis.set(true);
+    let advance=false;
+    try {
+      await this.draftQueue;
+      if(!current())return;
+      if(this.draftError() || !this.requiredParametersSaved()) {
+        this.preparationMessage.set(this.draftError() || (this.es?
+          'Guarda los tres datos antes de continuar. Pulsa Reintentar guardado.':
+          'Save all three values before continuing. Press Retry saving.'));return;
+      }
+      if(this.session()?.preparationPending===true) {
+        const saved=await firstValueFrom(this.demoHttp.post<DirectorSession>(
+          this.api+'/'+id+'/prepare-analysis',this.preparationPayload()).pipe(timeout(30000)));
+        if(!current())return;
+        if(saved.id!==id || saved.baseline?.sha256!==sha || saved.preparationPending!==false)
+          throw Error('PREPARATION_CONFIRMATION_MISMATCH');
+        this.session.set(saved);
+        if(!this.requiredParametersSaved())throw Error('PREPARATION_INPUT_MISMATCH');
+      }
+      advance=this.previewState()==='ready' && !this.sourcePending();
+      if(!advance)this.preparationMessage.set(this.es?'Espera a que el video esté listo para continuar.':
+        'Wait until the video is ready to continue.');
+    } catch {
+      if(current())this.preparationMessage.set(this.es?
+        'No se pudo confirmar la preparación. Tus datos y el video se conservan; vuelve a pulsar Siguiente.':
+        'Preparation could not be confirmed. Your values and video are preserved; press Next again.');
+    } finally {this.preparingAnalysis.set(false);}
+    if(advance && current())this.setJourneyStep(2);
+  }
+  private flushUploadDraft():void {
+    if(!this.draftAfterUpload)return;
+    this.draftAfterUpload=false;this.draftSaving.set(this.draftWrites>0);this.updateDraft();
+  }
   readonly draftError=signal('');
   private draftQueue:Promise<boolean>=Promise.resolve(true);
   private draftWrites=0;
   readonly recoveryLoading=computed(()=>this.recovering() ||
     (this.recoveryMode && (this.previewState()==='loading' || this.resultState()==='loading')));
-  recoveryControlsBusy():boolean {return this.generatingCode() || this.recoveryLoading() || this.draftSaving() || this.sourcePending() || this.busy() || this.connection.busy();}
+  recoveryControlsBusy():boolean {return this.preparingAnalysis() || this.generatingCode() || this.recoveryLoading() || this.draftSaving() || this.sourcePending() || this.busy() || this.connection.busy();}
   validRecoveryCode():boolean {return /^[a-f0-9]{32}$/i.test(this.recoveryCode().trim());}
   async generateRecoveryCode():Promise<void> {
     if(this.session() || this.recoveryControlsBusy())return;
@@ -149,11 +235,13 @@ export class PendulumZoneOne extends PendulumDirector {
   }
   updateDraft():void {
     void this.refreshTheory();
-    const current=this.session();if(!current || current.baseline)return;
+    this.preparationMessage.set('');
+    const current=this.session();if(!current || current.baseline && current.preparationPending!==true || this.preparingAnalysis())return;
     if(this.parametersInvalid())return;
-    const payload={baselineLengthMeters:this.baselineLength(),angleDegrees:this.initialAngleDegrees(),massGrams:this.massGrams(),
-      includeSecondTrial:this.includeSecondTrial(),followUpMode:this.followUpMode(),
-      selectedFollowUpLengthMeters:this.includeSecondTrial() && this.followUpMode()==='manual'?this.manualFollowUpLength():null};
+    if(this.sourcePending()){
+      this.draftAfterUpload=true;this.draftSaving.set(true);this.draftError.set('');return;
+    }
+    const payload=this.preparationPayload();
     const url=this.api+'/'+current.id+'/draft';
     this.draftWrites++;this.draftSaving.set(true);this.draftError.set('');
     this.draftQueue=this.draftQueue.then(async()=>{
@@ -163,7 +251,7 @@ export class PendulumZoneOne extends PendulumDirector {
         this.draftError.set('');return true;
       } catch {
         this.draftError.set(this.es?'No se guardaron los parámetros. Revisa la conexión y pulsa Reintentar guardado.':'Parameters were not saved. Check the connection and retry saving.');return false;
-      } finally {this.draftSaving.set(--this.draftWrites>0);}
+      } finally {this.draftSaving.set(--this.draftWrites>0 || this.draftAfterUpload);}
     });
   }
   readonly recovering=signal(false);
@@ -187,7 +275,7 @@ export class PendulumZoneOne extends PendulumDirector {
     id=id.trim().toLowerCase();
     if(this.recoveryControlsBusy())return;
     if(!/^[a-f0-9]{32}$/.test(id)){this.recoveryFailure.set(true);this.recoveryMessage.set(this.es?'Introduce un código de recuperación válido de 32 caracteres.':'Enter a valid 32-character recovery code.');return;}
-    this.recoveryCode.set(id);this.recoveryFailure.set(false);this.recoveryWarning.set(false);this.draftError.set('');this.verifiedRoles.set({});this.recoveredDestination=null;
+    this.preparationMessage.set('');this.clearUploadProgress();this.recoveryCode.set(id);this.recoveryFailure.set(false);this.recoveryWarning.set(false);this.draftError.set('');this.verifiedRoles.set({});this.recoveredDestination=null;
     const generation=++this.recoveryGeneration;
     if(this.recoveryTimer)clearTimeout(this.recoveryTimer);
     this.copiedId.set(false);this.recoveryMode=true;this.recovering.set(true);this.recoveryMessage.set('');this.error.set('');this.recoveringOperation.set('');
@@ -204,7 +292,7 @@ export class PendulumZoneOne extends PendulumDirector {
           this.applyRestoredSession(snapshot.session);this.musePrediction.set(snapshot.session.musePrediction??null);
           this.sourceChoice.set('upload');this.choosingUpload.set(false);this.previewState.set(snapshot.session.baseline?'loading':'empty');
           this.activeTrial.set(snapshot.session.followup?'followup':'baseline');
-          this.flowStep.set(snapshot.session.followup||snapshot.session.musePrediction?4:snapshot.session.baseline?2:1);
+          this.flowStep.set(snapshot.session.followup||snapshot.session.musePrediction?4:snapshot.session.baseline && snapshot.session.preparationPending!==true?2:1);
         } else {
           this.session.set(snapshot.session);this.musePrediction.set(snapshot.session.musePrediction??null);
         }
@@ -334,13 +422,55 @@ export class PendulumZoneOne extends PendulumDirector {
       if(!demo.baseline)throw Error('MISSING_DEMO');
       const data=await firstValueFrom(this.demoHttp.get(this.api+'/'+config.studyId+'/original/baseline',{responseType:'blob'}));
       const file=new File([data],demo.baseline.originalFilename,{type:data.type});
+      await this.draftQueue;
       await this.upload({target:{files:[file],value:''}} as unknown as Event,'baseline');
       if(!this.session()?.baseline)throw Error('DEMO_UPLOAD_FAILED');
       this.checkedVideo.set(false);
     } catch {
       this.previewState.set('error');
       this.error.set(this.es?'No se pudo cargar el video de prueba. Tu código se conserva; vuelve a intentarlo o sube un video.':'Could not load the test video. Your code is preserved; retry or upload a video.');
-    } finally {this.demoLoading.set(false);}
+    } finally {this.demoLoading.set(false);this.flushUploadDraft();}
+  }
+
+  private readonly uploadPhaseNames:Record<string,[string,string]>={
+    queue:['Esperando turno','Waiting for processing'],validate:['Validando archivo','Validating the file'],
+    receive_and_hash:['Guardando el video original','Saving the original video'],
+    probe:['Leyendo formato y duración','Reading format and duration'],
+    local_tracking:['Siguiendo el movimiento local','Tracking local motion'],
+    spectral:['Estimando el período','Estimating the period'],poster:['Generando la miniatura','Creating the thumbnail'],
+    persist:['Guardando la investigación','Saving the study'],complete:['Registro completado','Registration complete'],
+    playback:['Preparando reproducción original','Preparing original playback']
+  };
+  uploadPhaseLabel(key:string):string {
+    const labels=this.uploadPhaseNames[key];return labels?labels[this.es?0:1]:this.es?'Preparando video':'Preparing video';
+  }
+  uploadStateLabel(state:string):string {
+    const labels:Record<string,[string,string]>={PENDING:['Pendiente','Pending'],RUNNING:['En curso','In progress'],
+      COMPLETED:['Listo','Ready'],FAILED:['Falló','Failed'],CANCELLED:['Cancelado','Cancelled']};
+    return labels[state]?.[this.es?0:1]??(this.es?'Sin confirmar':'Unconfirmed');
+  }
+  uploadPhaseRows():{key:string;label:string;status:string;elapsedMs:number|null}[] {
+    const progress=this.uploadProgress();
+    const rows:{key:string;label:string;status:string;elapsedMs:number|null}[]=
+      ['queue','validate','receive_and_hash','probe','local_tracking','spectral','poster','persist'].map(key=>{
+        const phase=progress?.phases.find(item=>item.key===key);
+        return {key,label:this.uploadPhaseLabel(key),status:phase?.status??'PENDING',
+          elapsedMs:phase && phase.status!=='PENDING'?phase.elapsedMs:null};
+      });
+    rows.push({key:'playback',label:this.uploadPhaseLabel('playback'),
+      status:!this.uploadServerComplete()?'PENDING':this.previewState()==='ready'?'COMPLETED':
+        this.previewState()==='error'?'FAILED':'RUNNING',elapsedMs:null});
+    return rows;
+  }
+  uploadStatusLabel():string {
+    if(this.uploadServerComplete())return this.previewState()==='ready'?
+      (this.es?'Video listo':'Video ready'):this.previewState()==='error'?
+      (this.es?'No se pudo abrir la reproducción':'Playback could not be opened'):this.uploadPhaseLabel('playback');
+    const progress=this.uploadProgress();
+    if(progress?.state==='FAILED')return this.es?'La preparación del video falló':'Video preparation failed';
+    if(progress?.state==='CANCELLED')return this.es?'Carga cancelada':'Upload cancelled';
+    if(!this.sourcePending())return this.es?'La carga no se ha confirmado':'Upload has not been confirmed';
+    return progress?this.uploadPhaseLabel(progress.phase):(this.es?'Enviando el archivo':'Sending the file');
   }
 
   sourcePending():boolean {
@@ -401,9 +531,8 @@ export class PendulumZoneOne extends PendulumDirector {
   }
 
   /**
-   * Select the first recording immediately. The study's theoretical inputs
-   * are recomputed and frozen on the server BEFORE any video bytes are sent.
-   * Existing sessions and their original evidence are never overwritten.
+   * Upload an original independently of physical inputs. Edits made during
+   * transfer are saved afterwards; Next explicitly confirms the preparation.
    */
   async uploadFocused(event: Event, role:'baseline'|'followup'): Promise<void> {
     const control = event.target as HTMLInputElement;
@@ -414,13 +543,15 @@ export class PendulumZoneOne extends PendulumDirector {
     if(this.uploadBlocked()){control.value='';return;}
     if(role==='followup' && (!this.frozenForStudy() || this.session()?.followup ||
       this.parameterState(this.nextResearchLength(),.1,5)!=='valid')){control.value='';return;}
-    this.sourceChoice.set('upload');this.previewState.set('loading');
+    this.sourceChoice.set('upload');this.previewState.set('loading');this.registeringAndUploading.set(true);
     try {
+      await this.draftQueue;
       await this.upload(event, role);
       if((role==='baseline'?this.session()?.baseline:this.session()?.followup))this.choosingUpload.set(false);
       if(role==='followup' && this.session()?.followup){this.clearProcessed();this.activeTrial.set('followup');this.flowStep.set(4);}
       if(role==='baseline' && this.session()?.baseline)this.flowStep.set(1);
     } finally {
+      this.registeringAndUploading.set(false);this.flushUploadDraft();
       const clip=role==='baseline'?this.session()?.baseline:this.session()?.followup;
       if(!clip)this.previewState.set(this.error()?'error':'empty');
       control.value='';
@@ -432,12 +563,12 @@ export class PendulumZoneOne extends PendulumDirector {
   }
 
   uploadBlocked():boolean {
-    return this.videoActionsBusy() || !this.requiredParametersReady() || !this.requiredParametersSaved();
+    return !this.session() || this.generatingCode() || this.recoveryLoading() || this.videoLoading() || this.busy() || this.resultState()==='loading' || this.connection.busy() || this.preparingAnalysis();
   }
 
   async uploadNewTrial(event:Event):Promise<void> {
     const control=event.target as HTMLInputElement,file=control.files?.[0];
-    if(!file || this.videoActionsBusy())return;
+    if(!file || this.uploadBlocked())return;
     // Cancellation and invalid files leave the current investigation selected.
     if(file.size<10000 || file.size>240000000 ||
        !/\.(mov|mp4|m4v|webm|mkv|avi|3gp|3g2)$/i.test(file.name)) {
@@ -449,13 +580,14 @@ export class PendulumZoneOne extends PendulumDirector {
       this.newFocusedStudy();
       await this.generateRecoveryCode();
       control.value='';
-      return; // The new setup must be entered and saved before selecting its video.
+      return; // Select this new study's recording independently of its physical inputs.
     }
     await this.uploadFocused(event,'baseline');
   }
 
   newFocusedStudy():void {
     if(this.recoveryControlsBusy() || this.resultState()==='loading')return;
+    this.preparationMessage.set('');this.draftAfterUpload=false;
     this.recoveryGeneration++;this.recoveryMode=false;this.roleSelections={};this.recoveryMessage.set('');this.musePrediction.set(null);
     this.verifiedRoles.set({});this.flowStep.set(1);this.recoveryMenuOpen.set(false);this.recoveryWarning.set(false);this.recoveryFailure.set(false);this.advanceAfterProcessing=false;this.recoveredDestination=null;
     this.clearProcessed();

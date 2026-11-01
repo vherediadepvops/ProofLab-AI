@@ -1,12 +1,12 @@
 import { apiOrigin } from './api-origin';
 import { LabConnection } from './lab-connection';
 import { CommonModule } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
-import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
+import { HttpClient, HttpEventType, HttpResponse } from '@angular/common/http';
+import { Component, computed, inject, input, OnInit, signal, DestroyRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PendulumMasterPlayer } from './pendulum-master-player';
 import type { CandidatePixelPoint } from './pendulum-master-sync';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, filter, map, tap, timeout } from 'rxjs';
 import { buildNormalizedVideoOverlay, type NormalizedOverlay } from './pendulum-overlay';
 
 type Language = 'es' | 'en';
@@ -69,7 +69,14 @@ interface SingleComparison {
   relativePeriodErrorPercent: number;
   status: string; limitationsEs: string; limitationsEn: string;
 }
+export type DirectorUploadState='RUNNING'|'COMPLETED'|'FAILED'|'CANCELLED';
+export interface DirectorUploadProgress {
+  uploadId:string;studyId:string;role:'baseline'|'followup';state:DirectorUploadState;
+  phase:string;receivedBytes:number;totalBytes:number;startedAtUtc:string;updatedAtUtc:string;elapsedMs:number;
+  phases:{key:string;status:DirectorUploadState|'PENDING';elapsedMs:number}[];
+}
 export interface DirectorSession {
+  preparationPending?:boolean;
   id: string; baselineLengthMeters: number | null; createdAtUtc: string;
   step: string; modelStatus: string; baseline: DirectorVideo | null;
   humanReview: { reviewedAtUtc: string; bobConfirmed: boolean } | null;
@@ -110,6 +117,34 @@ export class PendulumDirector implements OnInit {
   readonly busy = signal(false);
   readonly error = signal('');
   readonly stageBusy = signal('');
+  readonly uploadProgress=signal<DirectorUploadProgress|null>(null);
+  readonly uploadTransfer=signal<{uploadId:string;loaded:number;total:number|null}|null>(null);
+  readonly uploadActiveId=signal('');
+  readonly uploadProgressUnavailable=signal(false);
+  readonly uploadServerComplete=signal(false);
+  readonly uploadPercent=computed(()=>{
+    const transfer=this.uploadTransfer(),progress=this.uploadProgress(),id=this.uploadActiveId();
+    const sent=transfer?.uploadId===id?transfer:null;
+    const received=progress?.uploadId===id?progress:null;
+    const total=sent?.total??received?.totalBytes??null;
+    // Both values are byte counts, not an estimate of server processing.
+    const loaded=Math.max(sent?.loaded??0,received?.receivedBytes??0);
+    return total!==null && total>0?Math.min(100,Math.max(0,100*loaded/total)):null;
+  });
+  private uploadSerial=0;
+  private uploadPollHandle:ReturnType<typeof setTimeout>|null=null;
+  constructor() {
+    inject(DestroyRef).onDestroy(()=>{this.uploadSerial++;this.stopUploadPolling();});
+  }
+  private stopUploadPolling():void {
+    if(this.uploadPollHandle!==null)clearTimeout(this.uploadPollHandle);
+    this.uploadPollHandle=null;
+  }
+  clearUploadProgress():void {
+    this.uploadSerial++;this.stopUploadPolling();this.uploadActiveId.set('');
+    this.uploadProgress.set(null);this.uploadTransfer.set(null);
+    this.uploadProgressUnavailable.set(false);this.uploadServerComplete.set(false);
+  }
   readonly advancedInformation = signal(false);
   get es(): boolean { return this.language() === 'es'; }
 
@@ -135,11 +170,17 @@ export class PendulumDirector implements OnInit {
       this.parameterState(this.manualFollowUpLength(),.1,5)!=='valid'));
   readonly requiredParametersReady=computed(()=>
     this.parameterState(this.baselineLength(),.1,5)==='valid' &&
+    this.parameterState(this.initialAngleDegrees(),0,85)==='valid' &&
     this.parameterState(this.massGrams(),10,5000)==='valid');
   requiredParametersSaved():boolean {
     const study=this.session();
-    return !!study && this.parameterState(study.baselineLengthMeters,.1,5)==='valid' &&
-      this.parameterState(study.massGrams??null,10,5000)==='valid';
+    if(!study || !this.requiredParametersReady() ||
+      this.parameterState(study.baselineLengthMeters,.1,5)!=='valid' ||
+      this.parameterState(study.angleDegrees??null,0,85)!=='valid' ||
+      this.parameterState(study.massGrams??null,10,5000)!=='valid')return false;
+    return Math.abs(study.baselineLengthMeters!-this.baselineLength()!)<1e-9 &&
+      Math.abs(study.angleDegrees!-this.initialAngleDegrees()!)<1e-9 &&
+      Math.abs(study.massGrams!-this.massGrams()!)<1e-9;
   }
   readonly theoryInputsReady=computed(()=>this.baselineLength()!==null &&
     this.initialAngleDegrees()!==null && this.massGrams()!==null && !this.parametersInvalid());
@@ -382,6 +423,7 @@ export class PendulumDirector implements OnInit {
 
   reset():void {
     if(this.busy() || this.stageBusy())return;
+    this.clearUploadProgress();
     localStorage.removeItem('prooflab-director-current');
     this.session.set(null);this.checkedVideo.set(false);this.error.set('');
     this.baselineLength.set(null);this.initialAngleDegrees.set(null);this.massGrams.set(null);
@@ -389,33 +431,74 @@ export class PendulumDirector implements OnInit {
     this.model.set(null);this.modelLoading.set(false);this.modelError.set('');
   }
 
-  async upload(event: Event, role: Stage):Promise<void>{
-    const control=event.target as HTMLInputElement;
-    const file=control.files?.[0];
-    const s=this.session();
+  async upload(event:Event,role:Stage):Promise<void> {
+    const control=event.target as HTMLInputElement,file=control.files?.[0],s=this.session();
     if(!s || !file || this.stageBusy())return;
-    if(role==='baseline' && (!this.requiredParametersReady() || !this.requiredParametersSaved())){
-      this.error.set(this.es?'Ingresa y guarda la longitud y la masa antes de cargar el video.':
-        'Enter and save the length and mass before uploading the video.');
+    if(file.size<10000 || file.size>240000000 ||
+       !/\.(mov|mp4|m4v|webm|mkv|avi|3gp|3g2)$/i.test(file.name)) {
+      this.error.set(this.es?
+        'Archivo incompatible. Usa MOV, MP4, WebM u otro formato permitido, hasta 240 MB.':
+        'Unsupported media. Try MOV, MP4, WebM or another allowed format (up to 240 MB).');
       control.value='';return;
     }
-    if(file.size < 10000 || file.size > 240000000 ||
-       !/\.(mov|mp4|m4v|webm|mkv|avi|3gp|3g2)$/i.test(file.name)){
-      this.error.set(this.es
-        ? 'Archivo incompatible. Usa MOV, MP4, WebM u otro formato permitido, hasta 240 MB.'
-        : 'Unsupported media. Try MOV, MP4, WebM or another allowed format (up to 240 MB).');
-      control.value='';return;
-    }
+    this.clearUploadProgress();
+    const uploadId=crypto.randomUUID().replace(/-/g,''),serial=this.uploadSerial,base=this.api;
+    const progressUrl=base+'/'+s.id+'/video/'+role+'/uploads/'+uploadId;
+    this.uploadActiveId.set(uploadId);
+    this.uploadTransfer.set({uploadId,loaded:0,total:file.size});
     this.stageBusy.set(role);this.error.set('');
-    try{
+    let finished=false;
+    const current=()=>serial===this.uploadSerial && this.uploadActiveId()===uploadId &&
+      this.session()?.id===s.id && this.api===base;
+    const readProgress=async(final=false):Promise<void>=>{
+      if(!current() || finished&&!final)return;
+      try {
+        const snapshot=await firstValueFrom(this.http.get<DirectorUploadProgress>(progressUrl).pipe(timeout(5000)));
+        if(!current() || finished&&!final)return;
+        if(snapshot.uploadId!==uploadId || snapshot.studyId!==s.id || snapshot.role!==role ||
+          !['RUNNING','COMPLETED','FAILED','CANCELLED'].includes(snapshot.state) ||
+          !Array.isArray(snapshot.phases))throw Error('UPLOAD_PROGRESS_MISMATCH');
+        this.uploadProgress.set(snapshot);this.uploadProgressUnavailable.set(false);
+      } catch(failure) {
+        if(current() && (!finished || final) && (failure as {status?:number})?.status!==404)
+          this.uploadProgressUnavailable.set(true);
+      }
+    };
+    const poll=async():Promise<void>=>{
+      this.uploadPollHandle=null;
+      await readProgress();
+      if(current() && !finished && (!this.uploadProgress() || this.uploadProgress()?.state==='RUNNING'))
+        this.uploadPollHandle=setTimeout(()=>void poll(),750);
+    };
+    this.uploadPollHandle=setTimeout(()=>void poll(),250);
+    try {
       const next=await firstValueFrom(this.http.post<DirectorSession>(
-        this.api+'/'+s.id+'/video/'+role+'?filename='+encodeURIComponent(file.name),file));
-      this.session.set(next);
-      this.checkedVideo.set(false);
-    }catch{this.error.set(this.es
-      ? 'No se pudo analizar el video. Puede estar dañado o exceder el límite de procesamiento.'
-      : 'Could not process the media. Check encoding and size limits.');}
-    finally{this.stageBusy.set('');control.value='';}
+        base+'/'+s.id+'/video/'+role+'?filename='+encodeURIComponent(file.name)+'&uploadId='+uploadId,
+        file,{observe:'events',reportProgress:true}).pipe(
+        tap(item=>{
+          if(!current() || item.type!==HttpEventType.UploadProgress)return;
+          this.uploadTransfer.set({uploadId,loaded:item.loaded,total:item.total??null});
+        }),
+        filter((item):item is HttpResponse<DirectorSession>=>item.type===HttpEventType.Response),
+        map(item=>item.body)
+      ));
+      if(!current())return;
+      if(!next || next.id!==s.id || !(role==='baseline'?next.baseline:next.followup))
+        throw Error('UPLOAD_RESULT_MISMATCH');
+      this.uploadServerComplete.set(true);
+      this.session.set(next);this.checkedVideo.set(false);
+    } catch {
+      if(current())this.error.set(this.es?
+        'No se pudo preparar el video. Revisa las etapas y el archivo antes de volver a cargarlo.':
+        'The video could not be prepared. Review the stages and file before uploading it again.');
+    } finally {
+      finished=true;
+      if(serial===this.uploadSerial) {
+        this.stopUploadPolling();this.stageBusy.set('');
+        void readProgress(true);
+      }
+      control.value='';
+    }
   }
 
   async confirm():Promise<void>{

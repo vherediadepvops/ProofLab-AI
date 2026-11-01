@@ -67,15 +67,27 @@ public sealed record DirectorSession(
     string FollowUpMode = "recommended",
     double? SelectedFollowUpLengthMeters = null,
     DirectorSingleComparison? SingleComparison = null,
-    string? ModelSha256 = null, MusePrediction? MusePrediction = null);
+    string? ModelSha256 = null, MusePrediction? MusePrediction = null,
+    bool PreparationPending = false);
+public sealed record DirectorPreparationDraft(string Protocol,string StudyId,DateTimeOffset CreatedAtUtc);
+public sealed record DirectorPreparationReceipt(string Protocol,string StudyId,string VideoId,
+    string SourceSha256,string ModelSha256,double BaselineLengthMeters,double AngleDegrees,
+    double MassGrams,DateTimeOffset ConfirmedAtUtc);
+public sealed class DirectorPreparationRequiredException(string[] fields)
+    : ArgumentException("Enter length, initial angle and mass before continuing.")
+{
+    public string[] Fields { get; } = fields;
+}
 
 public sealed class PendulumDirectorWorkflow(
     IWebHostEnvironment environment, VideoMediaDecoder decoder, MuseExperimentStore? muse = null,
-    ILogger<PendulumDirectorWorkflow>? logger = null)
+    ILogger<PendulumDirectorWorkflow>? logger = null, DirectorUploadProgress? uploads = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
         { WriteIndented = true };
     private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly DirectorUploadProgress uploadProgress = uploads ?? new();
+    private const string PreparationProtocol = "PROOFLAB_PARAMETERS_BEFORE_ANALYSIS_V1";
     private string Root => Path.Combine(environment.ContentRootPath,
         ".private", "physics", "director");
     private static readonly string NotAi = PendulumDirectorProtocol.Source;
@@ -160,43 +172,138 @@ public sealed class PendulumDirectorWorkflow(
             input.FollowUpMode,input.IncludeSecondTrial &&
                 input.FollowUpMode=="manual"
                 ? input.SelectedFollowUpLengthMeters : null);
-        metadata = metadata with { ModelSha256 = CalculateModelHash(metadata) };
+        metadata = metadata with { ModelSha256 = CalculateModelHash(metadata), PreparationPending = true };
         await gate.WaitAsync(ct);
         try
         {
             Directory.CreateDirectory(Folder(id));
+            await WriteNewAsync(PathFor(id,"preparation-draft.json"),
+                new DirectorPreparationDraft(PreparationProtocol,id,metadata.CreatedAtUtc),ct);
             await WriteNewAsync(PathFor(id, "session.json"), metadata, ct);
             return metadata;
         }
         finally { gate.Release(); }
     }
 
-    // The recovery code exists before media. Parameters remain a draft until
-    // the first recording is registered; frozen evidence is never rewritten.
+    // Video reception is independent of physical inputs. New preparations
+    // remain editable until the explicit transition to analysis is committed.
     public async Task<DirectorSession> UpdateDraftAsync(string id, DirectorStartRequest input, CancellationToken ct)
     {
         ValidateDraft(input);
         await gate.WaitAsync(ct);
         try
         {
-            var current = await LoadUnlockedAsync(id, ct);
-            if (current.Baseline is not null || current.Proposal is not null || current.MusePrediction is not null)
-                throw new InvalidOperationException("Research parameters are frozen after the first video.");
-            var next = current with {
-                BaselineLengthMeters = input.BaselineLengthMeters, AngleDegrees = input.AngleDegrees,
-                MassGrams = input.MassGrams, IncludeSecondTrial = input.IncludeSecondTrial,
-                FollowUpMode = input.FollowUpMode, SelectedFollowUpLengthMeters =
-                    input.IncludeSecondTrial && input.FollowUpMode == "manual" ? input.SelectedFollowUpLengthMeters : null
-            };
-            next = next with { ModelSha256 = CalculateModelHash(next) };
-            var pending = PathFor(id, "draft-" + Guid.NewGuid().ToString("N") + ".tmp");
-            try {
-                await WriteNewAsync(pending, next, ct);
-                File.Move(pending, PathFor(id, "session.json"), overwrite: true);
-            } finally { if (File.Exists(pending)) File.Delete(pending); }
+            var current=await LoadUnlockedAsync(id,ct);
+            if(current.Baseline is not null && !current.PreparationPending ||
+               current.HumanReview is not null || current.Proposal is not null ||
+               current.MusePrediction is not null || current.Followup is not null ||
+               current.Comparison is not null || current.SingleComparison is not null)
+                throw new InvalidOperationException("Research parameters are frozen after preparation is confirmed.");
+            var next=ApplyParameters(current,input);
+            await SaveConfigurationAsync(next,ct);
             return next;
         }
-        finally { gate.Release(); }
+        finally {gate.Release();}
+    }
+
+    public async Task<DirectorSession> PrepareAnalysisAsync(string id,DirectorStartRequest input,CancellationToken ct)
+    {
+        ValidateDraft(input);
+        var missing=new List<string>();
+        if(input.BaselineLengthMeters is null)missing.Add("baselineLengthMeters");
+        if(input.AngleDegrees is null)missing.Add("angleDegrees");
+        if(input.MassGrams is null)missing.Add("massGrams");
+        if(missing.Count>0)throw new DirectorPreparationRequiredException(missing.ToArray());
+        await gate.WaitAsync(ct);
+        try
+        {
+            var current=await LoadUnlockedAsync(id,ct);
+            if(current.Baseline is null)
+                throw new InvalidOperationException("Finish uploading the first video before continuing.");
+            var next=ApplyParameters(current,input);
+            if(!current.PreparationPending) {
+                if(next.ModelSha256!=current.ModelSha256)
+                    throw new InvalidOperationException("Research parameters are already frozen.");
+                return current; // Idempotent; never rewrite a receipt or legacy evidence.
+            }
+            if(current.HumanReview is not null || current.Proposal is not null ||
+               current.MusePrediction is not null || current.Followup is not null ||
+               current.Comparison is not null || current.SingleComparison is not null)
+                throw new InvalidOperationException("Existing research evidence already fixes the parameters.");
+            next=next with {PreparationPending=false};
+            await SaveConfigurationAsync(next,ct);
+            var receipt=new DirectorPreparationReceipt(PreparationProtocol,current.Id,
+                current.Baseline.VideoId,current.Baseline.Sha256,next.ModelSha256!,
+                input.BaselineLengthMeters!.Value,input.AngleDegrees!.Value,input.MassGrams!.Value,
+                DateTimeOffset.UtcNow);
+            // The short commit is completed after an accepted request disconnects.
+            await WriteAtomicNewAsync(PathFor(id,"preparation-confirmed.json"),receipt,CancellationToken.None);
+            return await LoadUnlockedAsync(id,ct);
+        }
+        finally {gate.Release();}
+    }
+
+    // Called only for scientific analysis, never for original-video playback.
+    // Uses identity files, not the research/cache SQLite stores.
+    public async Task RequirePreparedAnalysisAsync(string id,CancellationToken ct)
+    {
+        await gate.WaitAsync(ct);
+        try {
+            var original=await ReadOptionalAsync<DirectorSession>(PathFor(id,"session.json"),ct)
+                ?? throw new FileNotFoundException("Director session not found.");
+            if(original.Id!=id.ToLowerInvariant() || original.ModelSha256 is not null &&
+               original.ModelSha256!=CalculateModelHash(original))
+                throw new InvalidDataException("Theoretical model snapshot integrity mismatch.");
+            var first=await ReadOptionalAsync<DirectorVideoEvidence>(PathFor(id,"baseline.json"),ct);
+            if(await PreparationPendingAsync(original,first,ct))
+                throw new InvalidOperationException("Complete the three physical inputs and press Next before analysis.");
+        } finally {gate.Release();}
+    }
+
+    private static DirectorSession ApplyParameters(DirectorSession current,DirectorStartRequest input)
+    {
+        var next=current with {
+            BaselineLengthMeters=input.BaselineLengthMeters,AngleDegrees=input.AngleDegrees,
+            MassGrams=input.MassGrams,IncludeSecondTrial=input.IncludeSecondTrial,
+            FollowUpMode=input.FollowUpMode,SelectedFollowUpLengthMeters=
+                input.IncludeSecondTrial && input.FollowUpMode=="manual"?input.SelectedFollowUpLengthMeters:null
+        };
+        return next with {ModelSha256=CalculateModelHash(next)};
+    }
+
+    private async Task SaveConfigurationAsync(DirectorSession value,CancellationToken ct)
+    {
+        // Media and research evidence have their own immutable files.
+        var metadata=value with {Baseline=null,HumanReview=null,Proposal=null,Followup=null,
+            Comparison=null,SingleComparison=null,MusePrediction=null};
+        var pending=PathFor(value.Id,"draft-"+Guid.NewGuid().ToString("N")+".tmp");
+        try {
+            await WriteNewAsync(pending,metadata,ct);
+            File.Move(pending,PathFor(value.Id,"session.json"),overwrite:true);
+        } finally {if(File.Exists(pending))File.Delete(pending);}
+    }
+
+    private async Task<bool> PreparationPendingAsync(DirectorSession original,DirectorVideoEvidence? first,CancellationToken ct)
+    {
+        var draft=await ReadOptionalAsync<DirectorPreparationDraft>(PathFor(original.Id,"preparation-draft.json"),ct);
+        if(draft is null) {
+            if(original.PreparationPending || File.Exists(PathFor(original.Id,"preparation-confirmed.json")))
+                throw new InvalidDataException("Preparation policy identity is missing.");
+            return false; // Historical studies remain immutable and recoverable.
+        }
+        if(draft.Protocol!=PreparationProtocol || draft.StudyId!=original.Id ||
+           draft.CreatedAtUtc<original.CreatedAtUtc)
+            throw new InvalidDataException("Preparation policy identity mismatch.");
+        var confirmed=await ReadOptionalAsync<DirectorPreparationReceipt>(PathFor(original.Id,"preparation-confirmed.json"),ct);
+        if(confirmed is null)return true;
+        if(first is null || confirmed.Protocol!=PreparationProtocol || confirmed.StudyId!=original.Id ||
+           confirmed.VideoId!=first.VideoId || confirmed.SourceSha256!=first.Sha256 ||
+           confirmed.ModelSha256!=original.ModelSha256 ||
+           confirmed.BaselineLengthMeters!=original.BaselineLengthMeters ||
+           confirmed.AngleDegrees!=original.AngleDegrees || confirmed.MassGrams!=original.MassGrams ||
+           confirmed.ConfirmedAtUtc<first.UploadedAtUtc)
+            throw new InvalidDataException("Confirmed preparation identity mismatch.");
+        return false;
     }
 
     public async Task<DirectorSession> ReadAsync(string id, CancellationToken ct)
@@ -208,21 +315,25 @@ public sealed class PendulumDirectorWorkflow(
 
     public async Task<DirectorSession> UploadAsync(
         string id, string role, string filename, Stream input,
-        long bytes, CancellationToken ct)
+        long bytes, CancellationToken ct,string? uploadId=null)
     {
+        id=Path.GetFileName(Folder(id));
         var extension = VideoClipPolicy.CheckNameAndSize(filename, bytes);
         if (role is not ("baseline" or "followup"))
             throw new ArgumentException("Expected baseline or followup.");
         if (!decoder.Available)
             throw new InvalidOperationException("Local FFmpeg is not available.");
+        uploadId ??= Guid.NewGuid().ToString("N");
+        uploadProgress.Begin(id,role,uploadId,bytes);
         var total = Stopwatch.StartNew();
-        await gate.WaitAsync(ct);
-        var timings = new Dictionary<string, double> { ["queue"] = total.Elapsed.TotalMilliseconds };
+        var gateTaken=false;
+        var timings = new Dictionary<string,double>();
         var phaseClock = Stopwatch.StartNew();
-        var phase = "validate";
+        var phase = "queue";
         void NextPhase(string next) {
             timings[phase] = phaseClock.Elapsed.TotalMilliseconds;
             phase = next; phaseClock.Restart();
+            uploadProgress.Phase(uploadId,next);
         }
         long receivedBytes = 0;
         string outcome = "failed";
@@ -231,6 +342,8 @@ public sealed class PendulumDirectorWorkflow(
         string? posterPath = null;
         try
         {
+            await gate.WaitAsync(ct);gateTaken=true;
+            NextPhase("validate");
             using var studyLock=role=="followup"?muse?.LockStudy(id):null;
             var session = await LoadUnlockedAsync(id, ct);
             if (role == "baseline" && session.Baseline is not null)
@@ -240,11 +353,13 @@ public sealed class PendulumDirectorWorkflow(
             if (role == "baseline" && session.Proposal is not null)
                 throw new ArgumentException("The first video cannot be replaced after a proposal.");
 
-            // Drafts may be partial; freeze a new first video only with declared physical inputs.
-            if (role == "baseline" &&
-                (session.BaselineLengthMeters is not double length || !double.IsFinite(length) || length < .1 || length > 5 ||
-                 session.MassGrams is not double mass || !double.IsFinite(mass) || mass < 10 || mass > 5000))
-                throw new ArgumentException("Length (10–500 cm) and mass (10–5000 g) are required before uploading the first video.");
+            // Upgrade only empty legacy drafts. Existing recordings stay frozen.
+            if(role=="baseline" && !File.Exists(PathFor(id,"preparation-draft.json"))) {
+                await WriteNewAsync(PathFor(id,"preparation-draft.json"),
+                    new DirectorPreparationDraft(PreparationProtocol,session.Id,DateTimeOffset.UtcNow),ct);
+                session=session with {PreparationPending=true};
+                await SaveConfigurationAsync(session,ct);
+            }
 
             var videoId = Guid.NewGuid().ToString("N");
             var folder = Folder(id);
@@ -264,6 +379,7 @@ public sealed class PendulumDirectorWorkflow(
                     receivedBytes += n;
                     if (receivedBytes > VideoClipPolicy.MaximumBytes)
                         throw new ArgumentException("Video exceeds size limit.");
+                    uploadProgress.Received(uploadId,receivedBytes);
                     hasher.AppendData(readBuffer, 0, n);
                     await dest.WriteAsync(readBuffer.AsMemory(0,n),ct);
                 }
@@ -290,13 +406,15 @@ public sealed class PendulumDirectorWorkflow(
             var record = new DirectorVideoEvidence(role,videoId,filename,bytes,hash,
                 DateTimeOffset.UtcNow,media,tracking,spectral,poster,preview);
             NextPhase("persist");
-            await WriteNewAsync(PathFor(id, role + ".json"),record,ct);
+            await WriteAtomicNewAsync(PathFor(id, role + ".json"),record,ct);
             var result = await LoadUnlockedAsync(id,ct);
             outcome = "complete";
+            uploadProgress.Complete(uploadId);
             return result;
         }
-        catch
+        catch(Exception failure)
         {
+            uploadProgress.Fail(uploadId,failure is OperationCanceledException);
             if(rawPath is not null && File.Exists(rawPath) &&
                !File.Exists(PathFor(id,role + ".json")))
                 File.Delete(rawPath);
@@ -312,7 +430,7 @@ public sealed class PendulumDirectorWorkflow(
             // Local diagnostics only: no video content, filenames, tokens or prompts.
             logger?.LogInformation("Video upload {StudyId}/{Role}: outcome={Outcome} bytes={Bytes} totalMs={TotalMs} phasesMs={Phases}",
                 id, role, outcome, receivedBytes, elapsed, JsonSerializer.Serialize(timings));
-            gate.Release();
+            if(gateTaken)gate.Release();
             if (timingPath is not null) {
                 try {
                     using var diagnosticTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
@@ -336,6 +454,8 @@ public sealed class PendulumDirectorWorkflow(
         try
         {
             var session = await LoadUnlockedAsync(id,ct);
+            if(session.PreparationPending)
+                throw new InvalidOperationException("Confirm preparation before reviewing the analysis.");
             if(session.Baseline is null || session.Proposal is not null)
                 throw new ArgumentException("Review requires the first video before a proposal.");
             if(!PendulumDirectorProtocol.HasUsableInitialSignal(session.Baseline.Spectral))
@@ -542,7 +662,9 @@ public sealed class PendulumDirectorWorkflow(
            result is not null && (second is null ||
                                   result.ComparedAtUtc < second.UploadedAtUtc))
             throw new InvalidDataException("Research order/provenance mismatch.");
-        var step=musePrediction is not null ? (second is null ? "MUSE_PREDICTION_FROZEN_AWAITING_VIDEO_2" : "MUSE_FOLLOWUP_READY_FOR_SAM"):
+        var preparationPending=await PreparationPendingAsync(original,first,ct);
+        var step=preparationPending && first is not null ? "AWAITING_PREPARATION_CONFIRMATION":
+            musePrediction is not null ? (second is null ? "MUSE_PREDICTION_FROZEN_AWAITING_VIDEO_2" : "MUSE_FOLLOWUP_READY_FOR_SAM"):
             single is not null ? "SINGLE_COMPARED_PRELIMINARY":
             result is not null ? "COMPARED_PRELIMINARY":
             second is not null ? "READY_TO_COMPARE":
@@ -554,7 +676,7 @@ public sealed class PendulumDirectorWorkflow(
         return original with {
             Step=step, ModelStatus=NotAi,Baseline=first,HumanReview=review,
             Proposal=proposal,Followup=second,Comparison=result,
-            SingleComparison=single, MusePrediction=musePrediction
+            SingleComparison=single, MusePrediction=musePrediction, PreparationPending=preparationPending
         };
     }
 
@@ -564,6 +686,15 @@ public sealed class PendulumDirectorWorkflow(
         await using var stream=File.OpenRead(path);
         return await JsonSerializer.DeserializeAsync<T>(stream,Json,ct)
             ?? throw new InvalidDataException("Stored research item is invalid.");
+    }
+
+    private static async Task WriteAtomicNewAsync<T>(string path,T input,CancellationToken ct)
+    {
+        var temporary=path+".pending-"+Guid.NewGuid().ToString("N");
+        try {
+            await WriteNewAsync(temporary,input,ct);
+            File.Move(temporary,path,overwrite:false);
+        } finally {if(File.Exists(temporary))File.Delete(temporary);}
     }
 
     private static async Task WriteNewAsync<T>(string path,T input,CancellationToken ct)

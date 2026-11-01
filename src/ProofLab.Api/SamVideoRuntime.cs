@@ -9,6 +9,7 @@ public sealed class SamVideoRuntime(
     public async Task<SamVideoSource> GetVerifiedSourceAsync(
         string studyId, string role, CancellationToken ct)
     {
+        await director.RequirePreparedAnalysisAsync(studyId,ct);
         var (video, path) = await director.GetVerifiedOriginalAsync(studyId, role, ct);
         return new(video.Sha256, video.VideoId, path, video.Media.Codec,
             video.Media.Width, video.Media.Height, video.Media.DurationSeconds);
@@ -16,6 +17,7 @@ public sealed class SamVideoRuntime(
 
     public async Task<SamVideoSource> GetQuoteSourceAsync(string studyId,string role,CancellationToken ct)
     {
+        await director.RequirePreparedAnalysisAsync(studyId,ct);
         var (video,path)=await director.GetOriginalForQuoteAsync(studyId,role,ct);
         return new(video.Sha256,video.VideoId,path,video.Media.Codec,
             video.Media.Width,video.Media.Height,video.Media.DurationSeconds);

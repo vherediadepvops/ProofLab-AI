@@ -52,6 +52,7 @@
              Link="SamManualApiTokenPolicy.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamVideoEvidenceIndex.cs"
              Link="SamVideoEvidenceIndex.cs" />
+    <Compile Include="../../src/ProofLab.Api/DirectorUploadProgress.cs" Link="DirectorUploadProgress.cs" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <Compile Include="../../src/ProofLab.Api/ApiRequestAccess.cs" Link="ApiRequestAccess.cs" />
     <Compile Include="..\..\src\ProofLab.Api\ResearchOperationJournal.cs" Link="ResearchOperationJournal.cs" />

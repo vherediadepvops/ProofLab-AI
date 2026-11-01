@@ -37,6 +37,7 @@ builder.Services.AddSingleton<IMuseExperimentTransport,MuseExperimentTransport>(
 builder.Services.AddSingleton<MuseExperimentService>();
 builder.Services.AddSingleton<MuseContrastTransport>();
 builder.Services.AddSingleton<MuseContrastService>();
+builder.Services.AddSingleton<DirectorUploadProgress>();
 builder.Services.AddSingleton<PendulumDirectorWorkflow>();
 builder.Services.AddSingleton<ResearchOperationJournal>();
 builder.Services.AddSingleton<PendulumDirectorKinematicsStore>();
@@ -413,6 +414,25 @@ app.MapPut("/api/science/director/pendulum/sessions/{id}/draft", async (
     catch(InvalidOperationException ex){return Results.Conflict(new {error=ex.Message});}
     catch(InvalidDataException){return Results.Conflict(new {error="Research integrity mismatch."});}
 });
+app.MapPost("/api/science/director/pendulum/sessions/{id}/prepare-analysis", async (
+    string id, DirectorStartRequest request, PendulumDirectorWorkflow director, CancellationToken ct) =>
+{
+    try {return Results.Ok(await director.PrepareAnalysisAsync(id,request,ct));}
+    catch(DirectorPreparationRequiredException ex){return Results.BadRequest(new {code="REQUIRED_PARAMETERS_MISSING",fields=ex.Fields,error=ex.Message});}
+    catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+    catch(InvalidDataException){return Results.Conflict(new {error="Research integrity mismatch."});}
+    catch(InvalidOperationException ex){return Results.Conflict(new {error=ex.Message});}
+});
+app.MapGet("/api/science/director/pendulum/sessions/{id}/video/{role}/uploads/{uploadId}",
+    (string id,string role,string uploadId,DirectorUploadProgress progress,HttpResponse response) =>
+{
+    response.Headers.CacheControl="no-store";
+    try {
+        var snapshot=progress.Read(id,role,uploadId);
+        return snapshot is null?Results.NotFound(new {error="Upload status not available."}):Results.Ok(snapshot);
+    } catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
+});
 app.MapGet("/api/science/director/pendulum/sessions/{id}", async (
     string id, PendulumDirectorWorkflow director, CancellationToken ct) =>
 {
@@ -422,15 +442,17 @@ app.MapGet("/api/science/director/pendulum/sessions/{id}", async (
     catch(InvalidDataException){return Results.Conflict(new {error="Research integrity mismatch."});}
 });
 app.MapPost("/api/science/director/pendulum/sessions/{id}/video/{role}",
-    async (string id,string role,string? filename,HttpRequest request,
+    async (string id,string role,string? filename,string? uploadId,HttpRequest request,
         PendulumDirectorWorkflow director,CancellationToken ct) =>
 {
     if(request.ContentLength is null)
         return Results.BadRequest(new {error="Content-Length required."});
     try { return Results.Ok(await director.UploadAsync(id,role,filename ?? "",
-        request.Body,request.ContentLength.Value,ct)); }
+        request.Body,request.ContentLength.Value,ct,uploadId)); }
+    catch(DirectorUploadConflictException ex){return Results.Conflict(new {error=ex.Message});}
     catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+    catch(InvalidDataException){return Results.Conflict(new {error="Research integrity mismatch."});}
     catch(InvalidOperationException ex){return Results.Problem(ex.Message,statusCode:503);}
 })
 .WithMetadata(new RequestSizeLimitAttribute(250_000_000));
@@ -442,6 +464,8 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/review-baseline",
         request.BobConfirmed,ct));}
     catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
+    catch(InvalidDataException ex){return Results.Json(new {error=ex.Message},statusCode:409);}
+    catch(InvalidOperationException ex){return Results.Json(new {error=ex.Message},statusCode:409);}
 });
 app.MapPost("/api/science/director/pendulum/sessions/{id}/propose-local-control",
     async (string id,PendulumDirectorWorkflow director,CancellationToken ct) =>

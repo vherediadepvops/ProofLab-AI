@@ -42,13 +42,13 @@
     <header class="focus-heading"><div><span class="focus-eyebrow">{{es?'DEL MOVIMIENTO A LA EVIDENCIA':'FROM MOTION TO EVIDENCE'}}</span><h1>{{es?'¿Qué cambia al alargar el péndulo?':'What changes when the pendulum gets longer?'}}</h1><p>{{es?'Observa, mide y pon a prueba una predicción. Un paso a la vez.':'Observe, measure and test a prediction. One step at a time.'}}</p></div></header>
     @if(session(); as s) {
       <nav class="journey-steps" [attr.aria-label]="es?'Etapas del experimento':'Experiment stages'">
-        @for(step of flowSteps; track step.id){<button type="button" class="journey-step" [class.active]="flowStep()===step.id" [class.complete]="step.id<flowStep()" [attr.aria-current]="flowStep()===step.id?'step':null" [disabled]="!canVisitStep(step.id)" (click)="setJourneyStep(step.id)"><span class="step-index">{{stepLabel(step.id)}}</span><span><strong>{{es?step.es:step.en}}</strong><small>{{es?step.subEs:step.subEn}}</small></span></button>}
+        @for(step of flowSteps; track step.id){<button type="button" class="journey-step" [class.active]="flowStep()===step.id" [class.complete]="step.id<flowStep()" [attr.aria-current]="flowStep()===step.id?'step':null" [disabled]="step.id===2?(preparationActionBusy() || resultState()==='loading'):!canVisitStep(step.id)" (click)="step.id===2?continueFromPreparation():setJourneyStep(step.id)"><span class="step-index">{{stepLabel(step.id)}}</span><span><strong>{{es?step.es:step.en}}</strong><small>{{es?step.subEs:step.subEn}}</small></span></button>}
       </nav>
 
       <div class="video-toolbar" [hidden]="flowStep()!==1 && !(flowStep()===4 && !!frozenForStudy())" [attr.aria-busy]="videoLoading()">
         <div class="current-video"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H5v18h14V8ZM14 3v6h5M8 13h8M8 17h5"/></svg><div>
           <strong>{{flowStep()===1?(es?'Tu primer video':'Your first video'):(es?'La segunda prueba':'The second trial')}}</strong>
-          <small>{{flowStep()===1?(s.baseline?s.baseline.originalFilename:(uploadBlocked()?(es?'Completa y guarda la longitud y la masa para cargar el video.':'Enter and save the length and mass to upload the video.'):(es?'Carga tu grabación o usa el video de ejemplo.':'Upload your recording or use the example video.'))):(s.followup?s.followup.originalFilename:(es?'Predicción guardada. Ahora carga un video de '+((nextResearchLength()??0)*100).toFixed(0)+' cm.':'Prediction saved. Now upload a video at '+((nextResearchLength()??0)*100).toFixed(0)+' cm.'))}}</small>
+          <small>{{flowStep()===1?(s.baseline?s.baseline.originalFilename:(es?'Puedes cargar tu grabación antes de completar los tres datos.':'You can upload your recording before entering the three values.')):(s.followup?s.followup.originalFilename:(es?'Predicción guardada. Ahora carga un video de '+((nextResearchLength()??0)*100).toFixed(0)+' cm.':'Prediction saved. Now upload a video at '+((nextResearchLength()??0)*100).toFixed(0)+' cm.'))}}</small>
         </div></div>
         <div class="video-toolbar-actions">
           @if(flowStep()===1){
@@ -64,58 +64,30 @@
         </div>
       </div>
 
+      @if(uploadActiveId() && (flowStep()===1 || flowStep()===4)) {
+        <app-director-upload-progress [es]="es" [loading]="videoLoading()" [label]="uploadStatusLabel()"
+          [percent]="uploadPercent()" [rows]="uploadPhaseRows()" [serverComplete]="uploadServerComplete()"
+          [sourcePending]="sourcePending()" [unavailable]="uploadProgressUnavailable()"/>
+      }
+
       <div class="journey-stage-heading"><div><h2>{{stageTitle()}}</h2><p>{{stageDescription()}}</p></div><span class="trial-badge"><span aria-hidden="true">●</span> {{activeTrial()==='followup'?(es?'Prueba 2':'Trial 2'):(es?'Prueba 1':'Trial 1')}}</span></div>
       <div class="journey-layout" [class.result-layout]="presentation()!=='source'">
-        <section class="focus-video" [attr.aria-busy]="videoLoading() || resultState()==='loading'">
-          @if(sourcePending()) {<app-lab-activity [label]="es?'Cargando video…':'Loading video…'" [detail]="es?'Preparando tu grabación original.':'Preparing your original recording.'"/>}
-          @if(s.baseline) {
-        @if(activeTrial() === 'followup' && s.followup) {
-          @if(s.followup; as clip) {
-              <app-pendulum-master-player [videoUrl]="reviewVideo('followup')"
-                [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'" [processedAnalysisId]="processedAnalysis('followup')" [processedAdaptiveBatchId]="processedAdaptiveBatch('followup')"
-                [presentation]="presentation()" [physicalLengthMeters]="currentPhysicalLength()" [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
-                [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
-                (processingFinished)="onProcessingFinished($event)" (previewStateChanged)="onPreviewState($event)"
-                [processingPending]="resultState()==='loading'" [processingError]="resultState()==='error'"
-                [initialAngleDegrees]="s.angleDegrees ?? null"
-                [name]="clip.originalFilename"
-                [originalWidth]="clip.media.width" [originalHeight]="clip.media.height"
-                [originalFps]="clip.media.nominalFramesPerSecond" [originalCodec]="clip.media.codec"
-                [points]="clip.tracking.pixelSamples ?? null" [language]="language()"/>
-
-          }
-        } @else {
-            <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
-              [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'" (researchFrozen)="onResearchFrozen($event)" [processedAnalysisId]="processedAnalysis('baseline')" [processedAdaptiveBatchId]="processedAdaptiveBatch('baseline')"
-              [presentation]="presentation()" [physicalLengthMeters]="currentPhysicalLength()" [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
-                [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
-                (processingFinished)="onProcessingFinished($event)" (previewStateChanged)="onPreviewState($event)"
-                [processingPending]="resultState()==='loading'" [processingError]="resultState()==='error'"
-              [initialAngleDegrees]="s.angleDegrees ?? null"
-              [name]="s.baseline.originalFilename"
-              [originalWidth]="s.baseline.media.width" [originalHeight]="s.baseline.media.height"
-              [originalFps]="s.baseline.media.nominalFramesPerSecond" [originalCodec]="s.baseline.media.codec"
-              [points]="s.baseline.tracking.pixelSamples ?? null" [language]="language()"/>
-
-        }
-
-          } @else {
-            <div class="empty-source"><span class="empty-play" aria-hidden="true">▷</span><h3>{{es?'Aquí aparecerá tu video original.':'Your original video will appear here.'}}</h3><p>{{es?'Cárgalo arriba o elige el video de ejemplo. Las capas y los gráficos se muestran después de analizar.':'Upload it above or choose the example video. Overlays and charts appear after analysis.'}}</p><span class="source-clean-label">{{es?'VISTA PREVIA · SIN ANALIZAR':'PREVIEW · NOT ANALYZED'}}</span></div>
-          }
-        </section>
-
         <section class="focus-config" [hidden]="flowStep()!==1" [attr.aria-label]="es?'Parámetros físicos del péndulo':'Physical pendulum parameters'">
-          <span class="card-eyebrow">{{es?'TU EXPERIMENTO':'YOUR EXPERIMENT'}}</span><h2>{{es?'La longitud, bien medida.':'Measure the length carefully.'}}</h2>
+          <span class="card-eyebrow">{{es?'TU EXPERIMENTO':'YOUR EXPERIMENT'}}</span><h2>{{es?'Los datos de tu péndulo.':'Your pendulum’s measurements.'}}</h2>
           <p>{{es?'Mide desde el punto de suspensión hasta el centro del objeto. Esta medida física la proporcionas tú.':'Measure from the suspension point to the object’s center. You provide this physical measurement.'}}</p>
-          <div class="parameter-grid">
-            <label class="length-field"><span>{{es?'Longitud del péndulo (cm) · obligatoria':'Pendulum length (cm) · required'}}</span><input id="focus-length" required aria-required="true" [attr.data-state]="parameterState(baselineLength(),0.1,5)" [attr.aria-invalid]="parameterState(baselineLength(),0.1,5)==='invalid'" aria-describedby="length-input-state" [placeholder]="es?'Sin dato':'Not provided'" type="number" min="10" max="500" step="1" [ngModel]="baselineCentimeters()" (ngModelChange)="baselineLength.set(optionalNumber($event,100));updateDraft()" [disabled]="!!s.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/><small id="length-input-state" class="parameter-state" [attr.data-state]="parameterState(baselineLength(),0.1,5)">{{parameterLabel(baselineLength(),0.1,5,true)}} · 10–500 cm</small></label>
+          <div class="parameter-grid preparation-parameters">
+            <label class="length-field"><span>{{es?'Longitud (cm)':'Length (cm)'}}</span><input id="focus-length" required aria-required="true" [attr.data-state]="parameterState(baselineLength(),0.1,5)" [attr.aria-invalid]="parameterState(baselineLength(),0.1,5)==='invalid'" aria-describedby="length-input-state" [placeholder]="es?'Sin dato':'Not provided'" type="number" min="10" max="500" step="1" [ngModel]="baselineCentimeters()" (ngModelChange)="baselineLength.set(optionalNumber($event,100));updateDraft()" [disabled]="preparationInputsLocked()"/><small id="length-input-state" class="parameter-state" [attr.data-state]="parameterState(baselineLength(),0.1,5)">{{parameterLabel(baselineLength(),0.1,5,true)}} · 10–500 cm</small></label>
+            <label><span>{{es?'Ángulo inicial (°)':'Initial angle (°)'}}</span><input id="focus-angle" required aria-required="true" [attr.data-state]="parameterState(initialAngleDegrees(),0,85)" [attr.aria-invalid]="parameterState(initialAngleDegrees(),0,85)==='invalid'" aria-describedby="angle-input-state" [placeholder]="es?'Sin dato':'Not provided'" type="number" min="0" max="85" step="any" [ngModel]="initialAngleDegrees()" (ngModelChange)="initialAngleDegrees.set(optionalNumber($event));updateDraft()" [disabled]="preparationInputsLocked()"/><small id="angle-input-state" class="parameter-state" [attr.data-state]="parameterState(initialAngleDegrees(),0,85)">{{parameterLabel(initialAngleDegrees(),0,85,true)}} · 0–85°</small></label>
+            <label><span>{{es?'Masa (g)':'Mass (g)'}}</span><input id="focus-mass" required aria-required="true" [attr.data-state]="parameterState(massGrams(),10,5000)" [attr.aria-invalid]="parameterState(massGrams(),10,5000)==='invalid'" aria-describedby="mass-input-state" [placeholder]="es?'Sin dato':'Not provided'" type="number" min="10" max="5000" step="any" [ngModel]="massGrams()" (ngModelChange)="massGrams.set(optionalNumber($event));updateDraft()" [disabled]="preparationInputsLocked()"/><small id="mass-input-state" class="parameter-state" [attr.data-state]="parameterState(massGrams(),10,5000)">{{parameterLabel(massGrams(),10,5000,true)}} · 10–5000 g</small></label>
           </div>
+          <p class="focus-note">{{es?'Los tres datos son obligatorios para continuar. Puedes completarlos mientras carga el video; 0° es válido.':'All three values are required to continue. You can enter them while the video loads; 0° is valid.'}}</p>
+          @if(preparationMessage()){<p id="preparation-message" class="focus-error preparation-message" role="alert">{{preparationMessage()}}</p>}
+          @if(draftSaving()){<p class="focus-note" role="status">{{sourcePending()?(es?'Los datos se guardarán al terminar la carga.':'Your values will be saved when the upload finishes.'):(es?'Guardando parámetros…':'Saving parameters…')}}</p>}
+          @if(draftError()){<p class="focus-error" role="alert">{{draftError()}} <button type="button" class="secondary-button" [disabled]="preparingAnalysis()" (click)="updateDraft()">{{es?'Reintentar guardado':'Retry saving'}}</button></p>}
+          <button type="button" class="primary-button stage-next" (click)="continueFromPreparation()" [disabled]="preparationActionBusy()">{{preparingAnalysis()?(es?'Confirmando preparación…':'Confirming preparation…'):(es?'Siguiente':'Next')}} <span aria-hidden="true">→</span></button>
           <div class="length-guide"><svg viewBox="0 0 310 150" role="img" [attr.aria-label]="es?'La longitud llega al centro del objeto':'Length reaches the object’s center'"><path d="M112 17h86" stroke="#8ba4bb" stroke-width="5"/><path d="M155 17v105" stroke="#becddd" stroke-width="1.3"/><circle cx="155" cy="122" r="12" fill="#c89f6a" stroke="#876547" stroke-width="4"/><circle cx="155" cy="122" r="2" fill="#fff1d6"/><path d="M181 17h10m-5 0v105m-5 0h10" stroke="#7eafff" fill="none"/><text x="196" y="76" fill="#9ec7ff" font-size="13">L</text></svg><small>{{es?'Suspensión → centro del objeto.':'Suspension → object’s center.'}}</small></div>
-          <details class="parameter-details" open><summary>{{es?'Otros parámetros':'Other parameters'}}</summary><div class="parameter-grid compact-parameters">
-            <label><span>{{es?'Ángulo inicial (°)':'Initial angle (°)'}}</span><input id="focus-angle" [attr.data-state]="parameterState(initialAngleDegrees(),0,85)" [attr.aria-invalid]="parameterState(initialAngleDegrees(),0,85)==='invalid'" aria-describedby="angle-input-state" [placeholder]="es?'Sin dato':'Not provided'" type="number" min="0" max="85" step="any" [ngModel]="initialAngleDegrees()" (ngModelChange)="initialAngleDegrees.set(optionalNumber($event));updateDraft()" [disabled]="!!s.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/><small id="angle-input-state" class="parameter-state" [attr.data-state]="parameterState(initialAngleDegrees(),0,85)">{{parameterLabel(initialAngleDegrees(),0,85)}} · 0–85°</small></label>
-            <label><span>{{es?'Masa del objeto (g) · obligatoria':'Object mass (g) · required'}}</span><input id="focus-mass" required aria-required="true" [attr.data-state]="parameterState(massGrams(),10,5000)" [attr.aria-invalid]="parameterState(massGrams(),10,5000)==='invalid'" aria-describedby="mass-input-state" [placeholder]="es?'Sin dato':'Not provided'" type="number" min="10" max="5000" step="any" [ngModel]="massGrams()" (ngModelChange)="massGrams.set(optionalNumber($event));updateDraft()" [disabled]="!!s.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/><small id="mass-input-state" class="parameter-state" [attr.data-state]="parameterState(massGrams(),10,5000)">{{parameterLabel(massGrams(),10,5000,true)}} · 10–5000 g</small></label>
-          </div><div class="second-config"><label class="check-label"><input type="checkbox" [ngModel]="includeSecondTrial()" (ngModelChange)="includeSecondTrial.set($event);updateDraft()" [disabled]="!!s.baseline || recovering() || generatingCode() || !!stageBusy() || connection.busy()"/><span>{{es?'Vista teórica de una segunda longitud':'Theoretical preview of a second length'}}</span></label>
-          @if(includeSecondTrial()){<div class="second-inline"><select [ngModel]="followUpMode()" (ngModelChange)="followUpMode.set($event);updateDraft()" [disabled]="!!s.baseline || flowBusy()" [attr.aria-label]="es?'Longitud de la vista teórica':'Theoretical preview length'"><option value="recommended">{{es?'Propuesta local (sin IA)':'Local preset (not AI)'}}</option><option value="manual">{{es?'Longitud libre':'Custom length'}}</option></select>@if(followUpMode()==='manual'){<label class="followup-label"><span>{{es?'Segunda longitud (cm)':'Second length (cm)'}}</span><input type="number" min="10" max="500" step="1" [ngModel]="manualFollowUpLength()*100" (ngModelChange)="manualFollowUpLength.set(+$event/100);updateDraft()" [disabled]="!!s.baseline || flowBusy()"/></label>}@else{<span class="length-hint">{{(recommendedFollowUpLength===null?null:recommendedFollowUpLength*100) | number:'1.0-0'}} cm</span>}</div>}</div></details>
+          <details class="parameter-details"><summary>{{es?'Opciones de la vista teórica':'Theoretical preview options'}}</summary><div class="second-config"><label class="check-label"><input type="checkbox" [ngModel]="includeSecondTrial()" (ngModelChange)="includeSecondTrial.set($event);updateDraft()" [disabled]="preparationInputsLocked()"/><span>{{es?'Vista teórica de una segunda longitud':'Theoretical preview of a second length'}}</span></label>
+          @if(includeSecondTrial()){<div class="second-inline"><select [ngModel]="followUpMode()" (ngModelChange)="followUpMode.set($event);updateDraft()" [disabled]="preparationInputsLocked()" [attr.aria-label]="es?'Longitud de la vista teórica':'Theoretical preview length'"><option value="recommended">{{es?'Propuesta local (sin IA)':'Local preset (not AI)'}}</option><option value="manual">{{es?'Longitud libre':'Custom length'}}</option></select>@if(followUpMode()==='manual'){<label class="followup-label"><span>{{es?'Segunda longitud (cm)':'Second length (cm)'}}</span><input type="number" min="10" max="500" step="1" [ngModel]="manualFollowUpLength()*100" (ngModelChange)="manualFollowUpLength.set(+$event/100);updateDraft()" [disabled]="preparationInputsLocked()"/></label>}@else{<span class="length-hint">{{(recommendedFollowUpLength===null?null:recommendedFollowUpLength*100) | number:'1.0-0'}} cm</span>}</div>}</div></details>
     <details class="theory-preview">
       <summary>
         <strong>{{es ? 'Predicción teórica del péndulo' : 'Theoretical pendulum prediction'}}</strong>
@@ -188,7 +160,7 @@
           </div>
         </div>
       } @else {
-        <p class="theory-pending">{{modelLoading()?(es?'Calculando la predicción matemática local…':'Calculating the local mathematical prediction…'):initialAngleDegrees()===0?(es?'0° es válido. Desde reposo en la vertical, el modelo ideal no oscila. Las mediciones del video se evalúan por separado.':'0° is valid. At rest at the vertical, the ideal model does not oscillate. Video measurements are evaluated separately.'):(es?'La vista teórica necesita longitud, ángulo inicial y masa válidos. Puedes analizar el video sin completar estos datos.':'The theoretical preview needs valid length, initial angle and mass. You can analyze the video without these inputs.')}}</p>
+        <p class="theory-pending">{{modelLoading()?(es?'Calculando la predicción matemática local…':'Calculating the local mathematical prediction…'):initialAngleDegrees()===0?(es?'0° es válido. Desde reposo en la vertical, el modelo ideal no oscila. Las mediciones del video se evalúan por separado.':'0° is valid. At rest at the vertical, the ideal model does not oscillate. Video measurements are evaluated separately.'):(es?'Completa longitud, ángulo inicial y masa para continuar y consultar la vista teórica.':'Enter length, initial angle and mass to continue and view the theoretical preview.')}}</p>
       }
     </details>
 
@@ -200,13 +172,47 @@
             @if(initialAngleDegrees()===null){<p>{{es?'Sin ángulo inicial: se podrá medir el ángulo observado si la suspensión es válida; la vista teórica queda pendiente.':'Without an initial angle: the observed angle can be measured if the pivot is valid; the theoretical preview stays pending.'}}</p>}
             <p class="confidence-note">{{es?'Verde significa dato ingresado, no precisión garantizada. El intervalo del 95 % se calcula después, si hay ciclos suficientes, y describe solo la repetibilidad del período; no la confianza de toda la investigación.':'Green means a value was entered, not guaranteed accuracy. A 95% interval is calculated later if enough cycles are available; it describes period repeatability only, not confidence in the whole study.'}}</p>
           </div>
-          @if(!s.baseline && !requiredParametersReady()){<p class="focus-note" role="status">{{es?'Completa la longitud y la masa antes de cargar o analizar el video.':'Enter the length and mass before uploading or analyzing the video.'}}</p>}
-          @if(parametersInvalid()){<p class="focus-error" role="alert">{{es?'Corrige los valores fuera de rango. La longitud y la masa son obligatorias; el ángulo inicial puede quedar vacío.':'Correct out-of-range values. Length and mass are required; the initial angle can remain empty.'}}</p>}
-          @if(s.baseline){<p class="focus-note">{{es?'Parámetros protegidos con este código. Para cambiar el montaje, inicia otra investigación desde Gestionar.':'Parameters are locked to this code. Start another study from Manage to change the setup.'}}</p>}
+          @if(parametersInvalid()){<p class="focus-error" role="alert">{{es?'Corrige los valores fuera de rango. Longitud, ángulo inicial y masa son obligatorios.':'Correct the values outside the allowed range. Length, initial angle and mass are required.'}}</p>}
+          @if(s.baseline && s.preparationPending!==true){<p class="focus-note">{{es?'Preparación confirmada con este código. Para cambiar el montaje, inicia otra investigación desde Gestionar.':'Preparation is confirmed for this code. Start another study from Manage to change the setup.'}}</p>}
           @if(modelError()){<p class="focus-error" role="alert">{{modelError()}}</p>}
-          @if(draftSaving()){<p class="focus-note" role="status">{{es?'Guardando parámetros…':'Saving parameters…'}}</p>}
-          @if(draftError()){<p class="focus-error" role="alert">{{draftError()}} <button type="button" class="secondary-button" (click)="updateDraft()">{{es?'Reintentar guardado':'Retry saving'}}</button></p>}
-          <button type="button" class="primary-button stage-next" (click)="setJourneyStep(2)" [disabled]="!canVisitStep(2)">{{es?'Revisar costo y analizar':'Review cost and analyze'}} <span aria-hidden="true">→</span></button>
+        </section>
+
+        <section class="focus-video" [attr.aria-busy]="videoLoading() || resultState()==='loading'">
+          @if(sourcePending() && !uploadActiveId()) {<app-lab-activity [label]="demoLoading()?(es?'Descargando video de ejemplo…':'Downloading example video…'):(es?'Preparando carga…':'Preparing upload…')" [detail]="demoLoading()?(es?'Obteniendo el archivo para tu investigación.':'Fetching the file for your study.'):(es?'Esperando a que terminen los cambios de parámetros.':'Waiting for parameter changes to finish saving.')"/>}
+          @if(s.baseline) {
+        @if(activeTrial() === 'followup' && s.followup) {
+          @if(s.followup; as clip) {
+              <app-pendulum-master-player [videoUrl]="reviewVideo('followup')"
+                [studyId]="s.id" [videoSha256]="clip.sha256" [videoRole]="'followup'" [processedAnalysisId]="processedAnalysis('followup')" [processedAdaptiveBatchId]="processedAdaptiveBatch('followup')"
+                [presentation]="presentation()" [physicalLengthMeters]="currentPhysicalLength()" [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
+                [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
+                (processingFinished)="onProcessingFinished($event)" (previewStateChanged)="onPreviewState($event)"
+                [processingPending]="resultState()==='loading'" [processingError]="resultState()==='error'"
+                [initialAngleDegrees]="s.angleDegrees ?? null"
+                [name]="clip.originalFilename"
+                [originalWidth]="clip.media.width" [originalHeight]="clip.media.height"
+                [originalFps]="clip.media.nominalFramesPerSecond" [originalCodec]="clip.media.codec"
+                [points]="clip.tracking.pixelSamples ?? null" [language]="language()"/>
+
+          }
+        } @else {
+            <app-pendulum-master-player [videoUrl]="reviewVideo('baseline')"
+              [studyId]="s.id" [videoSha256]="s.baseline.sha256" [videoRole]="'baseline'" (researchFrozen)="onResearchFrozen($event)" [processedAnalysisId]="processedAnalysis('baseline')" [processedAdaptiveBatchId]="processedAdaptiveBatch('baseline')"
+              [presentation]="presentation()" [physicalLengthMeters]="currentPhysicalLength()" [samRefreshNonce]="samRefreshNonce()" [processingRequired]="true"
+                [samApiPort]="connection.port()" (processingReady)="onPlaybackReady($event)"
+                (processingFinished)="onProcessingFinished($event)" (previewStateChanged)="onPreviewState($event)"
+                [processingPending]="resultState()==='loading'" [processingError]="resultState()==='error'"
+              [initialAngleDegrees]="s.angleDegrees ?? null"
+              [name]="s.baseline.originalFilename"
+              [originalWidth]="s.baseline.media.width" [originalHeight]="s.baseline.media.height"
+              [originalFps]="s.baseline.media.nominalFramesPerSecond" [originalCodec]="s.baseline.media.codec"
+              [points]="s.baseline.tracking.pixelSamples ?? null" [language]="language()"/>
+
+        }
+
+          } @else {
+            <div class="empty-source"><span class="empty-play" aria-hidden="true">▷</span><h3>{{es?'Aquí aparecerá tu video original.':'Your original video will appear here.'}}</h3><p>{{es?'Cárgalo arriba o elige el video de ejemplo. Las capas y los gráficos se muestran después de analizar.':'Upload it above or choose the example video. Overlays and charts appear after analysis.'}}</p><span class="source-clean-label">{{es?'VISTA PREVIA · SIN ANALIZAR':'PREVIEW · NOT ANALYZED'}}</span></div>
+          }
         </section>
 
         <section class="processing-panel" [hidden]="!showProcessing()">
@@ -219,9 +225,9 @@
             @if(initialAngleDegrees()===null){<p>{{es?'Sin ángulo inicial: se podrá medir el ángulo observado si la suspensión es válida; la vista teórica queda pendiente.':'Without an initial angle: the observed angle can be measured if the pivot is valid; the theoretical preview stays pending.'}}</p>}
             <p class="confidence-note">{{es?'Verde significa dato ingresado, no precisión garantizada. El intervalo del 95 % se calcula después, si hay ciclos suficientes, y describe solo la repetibilidad del período; no la confianza de toda la investigación.':'Green means a value was entered, not guaranteed accuracy. A 95% interval is calculated later if enough cycles are available; it describes period repeatability only, not confidence in the whole study.'}}</p>
           </div>
-          @if(requiredParametersSaved()) {
+          @if(s.preparationPending!==true && requiredParametersSaved()) {
           <app-sam-video-replay [guided]="true" [language]="language()" [sourcePending]="sourcePending()" [recoveryRunning]="recovering()" [mediaReady]="previewState()==='ready'" [validationState]="resultState()" [studyId]="s.id" [videoRole]="(activeTrial()==='followup' && s.followup?.sha256)?'followup':'baseline'" [videoSha256]="(activeTrial()==='followup' && s.followup?.sha256?s.followup?.sha256:s.baseline?.sha256)??''" (processingReset)="onProcessingReset()" (processingStarted)="onProcessingStarted()" (processingFailed)="onProcessingFinished(false)" (cacheUpdated)="acceptProcessed($event)"/>
-          } @else {<p class="focus-note">{{s.baseline?(es?'Esta investigación no tiene longitud y masa completas. Puedes consultar sus resultados guardados. Para un nuevo análisis, inicia otra investigación con ambos datos.':'This study has incomplete length or mass. You can view its saved results. Start a new study with both values for a new analysis.'):(es?'Completa y guarda la longitud y la masa en Preparar.':'Enter and save the length and mass in Prepare.')}}</p>}
+          } @else {<p class="focus-note">{{s.preparationPending===true?(es?'Completa los tres datos y pulsa Siguiente en Preparar.':'Enter all three values and press Next in Prepare.'):(es?'Esta investigación no tiene los tres datos completos. Puedes consultar sus resultados guardados. Para un nuevo análisis, inicia otra investigación.':'This study does not have all three values. You can view its saved results. Start another study for a new analysis.')}}</p>}
           <div class="process-roles"><p><strong>Muse Spark</strong><span>{{es?'Localiza el objeto y revisa el montaje.':'Locates the object and reviews the setup.'}}</span></p><p><strong>SAM</strong><span>{{es?'Segmenta y sigue el movimiento.':'Segments and tracks motion.'}}</span></p><p><strong>ProofLab</strong><span>{{es?'Calcula medidas a partir de posiciones y tiempos.':'Calculates measurements from positions and times.'}}</span></p></div>
           <p class="focus-note">{{es?'La consulta científica a Muse Spark se autoriza después, con su propio costo visible.':'The scientific Muse Spark consultation is authorized later with its own visible cost.'}}</p>
           @if(hasVerifiedResult(activeTrial())){<button class="primary-button stage-next" type="button" (click)="setJourneyStep(activeTrial()==='followup'?5:3)" [disabled]="flowBusy()">{{es?'Ver resultados':'View results'}} <span aria-hidden="true">→</span></button>}

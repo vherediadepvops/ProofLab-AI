@@ -57,6 +57,8 @@ public static class SamAdaptiveEndpoints
             catch(ArgumentException){return Results.BadRequest();}
             catch(FileNotFoundException){return Results.NotFound();}
             catch(InvalidDataException){return Results.Conflict();}
+            catch(InvalidOperationException){return Results.Conflict(new{
+                error="Source is not ready for analysis. Complete preparation first."});}
         });
 
         app.MapPost(Route+"/spark-once",async (

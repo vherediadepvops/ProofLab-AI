@@ -70,12 +70,10 @@ svg{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-l
 .parameter-grid label{display:flex;flex-direction:column;gap:8px;color:#c2d6ed;font-size:12px}
 .parameter-grid input,.followup-label input,.second-inline select{min-width:0;width:100%;border:1px solid #39506b;border-radius:8px;background:#0b1624;color:#e6f0ff;padding:12px;font-size:17px}
 .parameter-grid input:disabled,.followup-label input:disabled{color:#a6bbd1;opacity:1;background:#101d2b}
-.length-field input{font-size:22px;min-height:53px}
 .length-guide{border:1px solid #2c4159;background:#0c1827;border-radius:9px;text-align:center;margin-top:18px;padding:14px}
 .length-guide svg{width:100%;height:150px;max-width:300px;stroke:none}.length-guide small{font-size:10px;color:#9db5d0;display:block}
 .parameter-details,.theory-preview{border-top:1px solid #2e4259;margin-top:18px;padding-top:13px}
 .parameter-details summary,.theory-preview summary{font-size:11px;color:#b2c9e4;cursor:pointer;line-height:1.6}
-.compact-parameters{grid-template-columns:1fr 1fr;margin-top:13px}.compact-parameters label{font-size:11px}.compact-parameters input{font-size:14px;padding:10px}
 .check-label{display:flex;align-items:center;gap:10px;color:#c5d9ee;font-size:12px;line-height:1.6}
 .check-label input{accent-color:#6ee5c1;flex:none;width:15px;height:15px}
 .second-config{margin-top:14px}.second-inline{display:flex;flex-wrap:wrap;gap:10px;margin-top:9px}.second-inline select{font-size:11px;padding:8px;width:auto}.followup-label{display:flex;align-items:center;gap:7px;font-size:10px}.followup-label input{width:95px;font-size:12px;padding:7px}.length-hint{font-size:12px;color:#a1c5ed}
@@ -111,3 +109,15 @@ svg{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-l
 .parameter-guidance .confidence-note{color:#a4b7cc;}
 @keyframes parameter-attention{0%,100%{box-shadow:0 0 0 0 #a4b2c000;}50%{box-shadow:0 0 0 3px #a4b2c02b;border-color:#b2beca;}}
 @media(prefers-reduced-motion:reduce){.parameter-grid input[data-state="missing"]{animation:none;}}
+
+/* Preparation follows reading order on phones; desktop keeps the player beside it. */
+.journey-layout>.focus-config,.journey-layout>.processing-panel{grid-column:2;grid-row:1}
+.journey-layout>.focus-video{grid-column:1;grid-row:1}
+.preparation-parameters{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.preparation-parameters label{min-width:0;gap:6px;font-size:11px}
+.preparation-parameters label>span{min-height:2.6em;line-height:1.3}
+.preparation-parameters input{box-sizing:border-box;min-height:44px;padding:10px 7px;font-size:16px}
+.preparation-parameters .parameter-state{font-size:10px;line-height:1.4}
+@media(max-width:850px){
+ .journey-layout>.focus-config,.journey-layout>.processing-panel,.journey-layout>.focus-video{grid-column:1;grid-row:auto}
+}

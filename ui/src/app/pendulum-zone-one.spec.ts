@@ -39,13 +39,20 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
   const studyUrl='http://127.0.0.1:5391/api/science/director/pendulum/sessions';
 
   async function verifyHttp(http:HttpTestingController):Promise<void>{
-    await Promise.resolve();
+    for(let i=0;i<6;i++)await Promise.resolve();
+    const uploads=http.match(req=>req.method==='GET' &&
+      /\/video\/(baseline|followup)\/uploads\/[a-f0-9]{32}$/.test(req.url));
+    for(const request of uploads){
+      if(request.cancelled)continue;
+      const match=request.request.url.match(/\/sessions\/([a-f0-9]{32})\/video\/(baseline|followup)\/uploads\/([a-f0-9]{32})$/)!;
+      const now=new Date().toISOString();
+      request.flush({uploadId:match[3],studyId:match[1],role:match[2],state:'COMPLETED',phase:'complete',
+        receivedBytes:15000,totalBytes:15000,startedAtUtc:now,updatedAtUtc:now,elapsedMs:1000,phases:[]});
+    }
     const pending=http.match(req=>req.method==='GET' &&
       (req.url.includes('/kinematics/') || req.url.includes('/sam/') || req.url.includes('/grounding/') || req.url.endsWith('/readiness')));
-    for(const request of pending)
-      request.flush({error:'Synthetic unavailable result'},
-        {status:404,statusText:'Not Found'});
-    await Promise.resolve();
+    for(const request of pending)request.flush({error:'Synthetic unavailable result'},{status:404,statusText:'Not Found'});
+    for(let i=0;i<6;i++)await Promise.resolve();
     http.verify();
   }
 
@@ -100,12 +107,12 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       status:'PERIOD_CANDIDATE_REQUIRES_MANUAL_BOB_VERIFICATION'}
   };
 
-  it('starts with an editable empty draft and requires length and mass before upload',async()=>{
+  it('starts with an editable empty draft and allows upload before preparation is complete',async()=>{
     const fixture=TestBed.createComponent(PendulumZoneOne),c=fixture.componentInstance;
     const http=TestBed.inject(HttpTestingController);fixture.detectChanges();
     expect(c.baselineLength()).toBeNull();expect(c.initialAngleDegrees()).toBeNull();expect(c.massGrams()).toBeNull();
     http.expectNone(theoryUrl);
-    const blank={...session,baselineLengthMeters:null,angleDegrees:null,massGrams:null};
+    const blank={...session,baselineLengthMeters:null,angleDegrees:null,massGrams:null,preparationPending:true};
     const creating=c.generateRecoveryCode();await Promise.resolve();await Promise.resolve();
     const req=http.expectOne(studyUrl);expect(req.request.body.baselineLengthMeters).toBeNull();expect(req.request.body.angleDegrees).toBeNull();expect(req.request.body.massGrams).toBeNull();
     req.flush(blank);await creating;fixture.detectChanges();
@@ -114,11 +121,11 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       const input=el.querySelector('#'+id) as HTMLInputElement;
       expect(input.value).toBe('');expect(input.dataset['state']).toBe('missing');
     }
-    expect(c.videoActionsBusy()).toBeFalse();expect(c.uploadBlocked()).toBeTrue();expect(c.parametersInvalid()).toBeFalse();expect(c.theoreticalPreview()).toBeNull();
-    expect((el.querySelector('.upload-new-video input') as HTMLInputElement).disabled).toBeTrue();
+    expect(c.videoActionsBusy()).toBeFalse();expect(c.uploadBlocked()).toBeFalse();expect(c.parametersInvalid()).toBeFalse();expect(c.theoreticalPreview()).toBeNull();
+    expect((el.querySelector('.upload-new-video input') as HTMLInputElement).disabled).toBeFalse();
     expect((el.querySelector('#focus-length') as HTMLInputElement).required).toBeTrue();
     expect((el.querySelector('#focus-mass') as HTMLInputElement).required).toBeTrue();
-    expect((el.querySelector('#focus-angle') as HTMLInputElement).required).toBeFalse();
+    expect((el.querySelector('#focus-angle') as HTMLInputElement).required).toBeTrue();
     expect(el.querySelector('#length-input-state')?.textContent).toContain('Dato obligatorio');
     fixture.componentRef.setInput('language','en');fixture.detectChanges();
     expect(el.querySelector('#mass-input-state')?.textContent).toContain('Required value');
@@ -127,43 +134,6 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     const restoring=c.restore(blank.id);http.expectOne(studyUrl+'/'+blank.id).flush(blank);await restoring;
     expect(c.baselineLength()).toBeNull();expect(c.initialAngleDegrees()).toBeNull();expect(c.massGrams()).toBeNull();
     http.expectNone(theoryUrl);await verifyHttp(http);
-  });
-
-  it('sends no video or demo request when either required value is missing',async()=>{
-    const {component:c,fixture,http}=await init(false);
-    c.initialAngleDegrees.set(null);
-    for(const [length,mass] of [[null,null],[.5,null],[null,300]] as [number|null,number|null][]){
-      c.baselineLength.set(length);c.massGrams.set(mass);
-      c.session.set({...session,baselineLengthMeters:length,massGrams:mass,angleDegrees:null});
-      const control={files:[new File([new Uint8Array(15000)],'first.mp4')],value:'selected'};
-      await c.uploadNewTrial({target:control} as unknown as Event);await c.loadDemo();
-      expect(control.value).toBe('');expect(c.uploadBlocked()).toBeTrue();
-      http.expectNone(r=>r.url.includes('/video/') || r.url==='demo-video.json');
-    }
-    await verifyHttp(http);fixture.destroy();
-  });
-
-  it('waits for complete saved physical inputs and permits an omitted initial angle',async()=>{
-    const {component:c,fixture,http}=await init(false);
-    c.initialAngleDegrees.set(null);c.baselineLength.set(.5);c.massGrams.set(null);
-    c.session.set({...session,baselineLengthMeters:null,massGrams:null,angleDegrees:null});
-    c.updateDraft();await Promise.resolve();await Promise.resolve();
-    const partial=http.expectOne(studyUrl+'/'+session.id+'/draft');
-    expect(partial.request.body.massGrams).toBeNull();
-    partial.flush({...session,baselineLengthMeters:.5,massGrams:null,angleDegrees:null});
-    for(let i=0;i<6;i++)await Promise.resolve();
-    expect(c.uploadBlocked()).toBeTrue();
-    c.massGrams.set(300);c.updateDraft();await Promise.resolve();await Promise.resolve();
-    const complete=http.expectOne(studyUrl+'/'+session.id+'/draft');
-    const control={files:[new File([new Uint8Array(15000)],'first.mp4')],value:'selected'};
-    await c.uploadFocused({target:control} as unknown as Event,'baseline');
-    http.expectNone(r=>r.url.includes('/video/'));expect(c.uploadBlocked()).toBeTrue();
-    complete.flush({...session,angleDegrees:null});for(let i=0;i<6;i++)await Promise.resolve();
-    expect(c.uploadBlocked()).toBeFalse();http.expectNone(theoryUrl);
-    const uploading=c.uploadFocused({target:control} as unknown as Event,'baseline');
-    http.expectOne(r=>r.url.includes('/video/baseline')).flush({...session,angleDegrees:null,baseline:video});
-    await uploading;expect(c.session()?.baseline?.sha256).toBe(video.sha256);
-    await verifyHttp(http);fixture.destroy();
   });
 
   it('keeps saved results accessible for historical studies with missing physical inputs',async()=>{
@@ -184,7 +154,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(c.parameterState(0,0,85)).toBe('valid');expect(c.parametersInvalid()).toBeFalse();
     expect(c.theoreticalPreview()).toBeNull();http.expectNone(theoryUrl);
     c.baselineLength.set(0);c.updateDraft();fixture.detectChanges();await Promise.resolve();
-    expect(c.parametersInvalid()).toBeTrue();expect(c.videoActionsBusy()).toBeTrue();http.expectNone(studyUrl+'/'+session.id+'/draft');
+    expect(c.parametersInvalid()).toBeTrue();expect(c.canVisitStep(2)).toBeFalse();http.expectNone(studyUrl+'/'+session.id+'/draft');
     c.baselineLength.set(c.optionalNumber('',100));c.massGrams.set(c.optionalNumber(null));c.updateDraft();
     await Promise.resolve();await Promise.resolve();
     const save=http.expectOne(studyUrl+'/'+session.id+'/draft');
@@ -312,11 +282,12 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     const file=new File([new Uint8Array(15000)],'50CM_1.MOV',{type:'video/quicktime'});
     const control={files:[file],value:'chosen'};
     const pending=component.uploadFocused({target:control} as unknown as Event,'baseline');
+    for(let i=0;i<6;i++)await Promise.resolve();
     http.expectNone(studyUrl);http.expectNone(theoryUrl);
-    const transfer=http.expectOne(r=>r.url.includes('/'+session.id+'/video/baseline'));
-    expect(transfer.request.body).toBe(file);transfer.flush({...session,baseline:video});await pending;fixture.detectChanges();await Promise.resolve();await Promise.resolve();fixture.detectChanges();
+    const transfer=http.expectOne(r=>r.method==='POST' && r.url.includes('/'+session.id+'/video/baseline'));
+    expect(transfer.request.body).toBe(file);transfer.flush({...session,baseline:video,preparationPending:true});await pending;fixture.detectChanges();await Promise.resolve();await Promise.resolve();fixture.detectChanges();
     expect(component.session()?.id).toBe(session.id);expect(component.session()?.baseline?.sha256).toBe(video.sha256);
-    expect((root.querySelector('#focus-length') as HTMLInputElement).disabled).toBeTrue();
+    expect((root.querySelector('#focus-length') as HTMLInputElement).disabled).toBeFalse();
     expect(control.value).toBe('');await verifyHttp(http);
   });
 
@@ -354,60 +325,49 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
   it('quotes cache while preserving original playback and never POSTs for reuse',async()=>{
     const {root,component,fixture,http}=await init();
     component.session.set({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});
-    fixture.detectChanges();await Promise.resolve();
-    const controls=root.querySelector('app-sam-video-replay')!;
-    const samUrl=studyUrl+'/'+session.id+'/sam/baseline';
-    http.expectOne(samUrl+'/status?mode=api-meta-cache').flush({
-      status:'CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW',
-      sourceSha256:video.sha256,cacheKey:'c'.repeat(64),
-      sourceFrames:1828,estimatedCostUsd:.3656,canRunLive:false,
-      provenance:'META_SAM_3_1',mode:'api-meta-cache',
-      cacheHit:true,storage:'SQLite',analysisId:'integration-cache-hit'
-    });
-    await Promise.resolve();
-    http.expectOne(samUrl+'/preflight').flush({
-      sourceSha256:video.sha256,sourceFrames:1828,estimatedCostUsd:.3656,
-      durationSeconds:30.5,codec:'hevc',supportsSingleCall:true
-    });
-    http.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush({manualTokenCallsPermitted:false,remainingRequests:0});
-    http.expectOne(studyUrl+'/'+session.id+'/assembly/baseline/grounding/preflight?mode=api-meta-cache')
-      .flush({}, {status:503,statusText:'Unavailable'});
-    http.expectNone(req=>req.method==='POST' && req.url.includes('/assembly/'));
-    expect(root.querySelector('app-assembly-review')).toBeNull();
-    await fixture.whenStable();fixture.detectChanges();
-    const play=root.querySelector('.play-main') as HTMLButtonElement;
-    expect(play.disabled).toBeFalse();
-    expect(controls.textContent).toContain('US$ 0.00');
-    expect(controls.textContent).toContain('US$ 0.3656');
-    http.expectNone(samUrl+'/evidence');
-    component.onPreviewState('ready');component.setJourneyStep(2);fixture.detectChanges();
-    (controls.querySelector('.sam-submit') as HTMLButtonElement).click();
     fixture.detectChanges();
+    const replay=fixture.debugElement.query(By.directive(SamVideoReplay)).componentInstance as SamVideoReplay;
+    const player=fixture.debugElement.query(By.directive(PendulumMasterPlayer)).componentInstance as PendulumMasterPlayer;
+    replay.selectSource('cache',true);
+    await Promise.resolve();
+    const controls=root.querySelector('app-sam-video-replay')!,samUrl=studyUrl+'/'+session.id+'/sam/baseline';
+    const analysisId='f'.repeat(32),evidenceUrl=samUrl+'/evidence?analysisId='+analysisId;
+    http.expectOne(samUrl+'/reusable').flush({sourceSha256:video.sha256,cacheHit:true,analysisId,
+      adaptiveBatchId:null,excludedResults:0,quality:{usable:true,reason:'MEASUREMENTS_AVAILABLE'},storage:'sqlite'});
+    http.expectOne(samUrl+'/preflight').flush({sourceSha256:video.sha256,sourceFrames:1828,estimatedCostUsd:.3656,
+      durationSeconds:30.5,codec:'hevc',supportsSingleCall:true});
+    await fixture.whenStable();fixture.detectChanges();
+    expect(replay.displayedCost()).toBe(0);expect(controls.textContent).toContain('US$ 0.00');
+    http.expectNone(req=>req.method==='POST' || req.url.endsWith('/readiness') ||
+      req.url.includes('/spark-quote') || req.url.includes('/grounding/preflight'));
+    http.expectNone(evidenceUrl);
+    player.previewLoading.set(false);component.onPreviewState('ready');component.setJourneyStep(2);fixture.detectChanges();
+    const play=root.querySelector('.play-main') as HTMLButtonElement;expect(play.disabled).toBeFalse();
+    (controls.querySelector('.sam-submit') as HTMLButtonElement).click();fixture.detectChanges();
     expect(component.resultState()).toBe('loading');
     expect(root.querySelector('app-sam-video-replay [aria-busy="true"]')).not.toBeNull();
     expect((controls.querySelector('.sam-submit') as HTMLButtonElement).disabled).toBeTrue();
-    const evidence=http.expectOne(samUrl+'/evidence');
-    expect(evidence.request.method).toBe('GET');
+    const evidence=http.expectOne(evidenceUrl);expect(evidence.request.method).toBe('GET');
+    // Synthetic parser-conformance mask, never a live provider observation.
+    const mask="<|mask;x=0;y=0;data=27,60,~!!!!M!0c[0o91w?q1!pIH4pPRVp2B3'7`e.ioeAf6-k/#Xd8%dX9x(|>";
+    const wire=Array.from({length:8},(_,i)=>'<'+(i*4)+'f>0<|box;x1=211;y1=228;x2=270;y2=254;w=1920;h=1080|>'+mask).join('\n');
     evidence.flush({
-      state:{status:'CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW',
-        sourceSha256:video.sha256,analysisId:'integration-cache-hit'},
-      receipt:{model:'sam-3.1',concept:'metal pendulum bob',
-        originalVideoSha256:video.sha256,analysisId:'integration-cache-hit',
-        providerEvidenceStatus:'COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW'},
-      rawResponseJson:JSON.stringify({model:'sam-3.1',status:'completed',
-        output:[{content:[{type:'output_text',text:''}]}]})
+      state:{status:'CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW',sourceSha256:video.sha256,
+        analysisId,provenance:'META_SAM_3_1_CACHED_PROVIDER_OUTPUT'},
+      receipt:{model:'sam-3.1',concept:'metal pendulum bob',originalVideoSha256:video.sha256,analysisId,
+        providerEvidenceStatus:'COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW',
+        framePtsSeconds:Array.from({length:1828},(_,i)=>i/60),sourceFrameCount:1828},
+      rawResponseJson:JSON.stringify({model:'sam-3.1',status:'completed',output:[{content:[{type:'output_text',text:wire}]}]})
     });
-    http.expectOne(studyUrl+'/'+session.id+'/kinematics/baseline')
-      .flush({}, {status:404,statusText:'Not Found'});
-    await fixture.whenStable();
-    for(let i=0;i<30 && !component.playbackReady();i++)
-      await new Promise<void>(resolve=>setTimeout(resolve,10));
+    http.expectOne(studyUrl+'/'+session.id+'/kinematics/baseline').flush({},{status:404,statusText:'Not Found'});
+    for(let i=0;i<8;i++)await Promise.resolve();
+    for(let i=0;i<30&&!component.playbackReady();i++)await new Promise<void>(resolve=>setTimeout(resolve,10));
     fixture.detectChanges();
-    expect(play.disabled).toBeFalse();
-    expect(component.resultState()).toBe('ready');
-    expect(component.connection.busy()).toBeFalse();
-    expect(component.playbackReady()).toBeTrue();
-    http.expectNone(req=>req.method==='POST' || req.url.endsWith('/readiness'));
+    expect(play.disabled).toBeFalse();expect(component.resultState()).toBe('ready');
+    expect(component.connection.busy()).toBeFalse();expect(component.playbackReady()).toBeTrue();
+    expect(player.samVerified()).toBeTrue();expect(player.samTrack()?.masks.length).toBe(8);
+    expect(component.processedAnalysis('baseline')).toBe(analysisId);
+    http.expectNone(req=>req.method==='POST'||req.url.endsWith('/readiness'));
     await verifyHttp(http);fixture.destroy();
   });
 
@@ -419,7 +379,10 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(player).not.toBeNull();
     const manual=root.querySelector('app-sam-video-replay');
     expect(manual).not.toBeNull();
-    expect(manual?.querySelector('input[type=password]')).toBeNull();
+    const tokenDialog=manual?.querySelector('dialog.sam-token-dialog') as HTMLDialogElement;
+    expect(tokenDialog).not.toBeNull();expect(tokenDialog.open).toBeFalse();
+    const passwordFields=manual!.querySelectorAll('input[type=password]');
+    expect(passwordFields.length).toBe(1);expect(passwordFields[0].closest('dialog')).toBe(tokenDialog);
     expect((manual!.compareDocumentPosition(player!) &
       Node.DOCUMENT_POSITION_PRECEDING)).toBeTruthy(); // original video precedes its cost card
     expect(root.textContent).toContain('Abrir configuración');
@@ -506,12 +469,12 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(create.request.body.baselineLengthMeters).toBeNull();
     expect(create.request.body.angleDegrees).toBeNull();
     expect(create.request.body.massGrams).toBeNull();
-    create.flush({...session,id:nextId,baselineLengthMeters:null,angleDegrees:null,massGrams:null});
+    create.flush({...session,id:nextId,baselineLengthMeters:null,angleDegrees:null,massGrams:null,preparationPending:true});
     for(let i=0;i<8;i++)await Promise.resolve();
     http.expectNone(r=>r.url.includes('/video/'));
     await transfer;fixture.detectChanges();
-    expect(component.session()?.baseline).toBeNull();expect(component.uploadBlocked()).toBeTrue();
-    expect((root.querySelector('.upload-new-video input') as HTMLInputElement).disabled).toBeTrue();
+    expect(component.session()?.baseline).toBeNull();expect(component.uploadBlocked()).toBeFalse();
+    expect((root.querySelector('.upload-new-video input') as HTMLInputElement).disabled).toBeFalse();
     expect(component.session()?.id).toBe(nextId);
     expect(original.id).toBe(session.id);expect(original.baseline).toBe(video);
     expect(input.value).toBe('');
@@ -524,8 +487,8 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     const loading=component.loadDemo();fixture.detectChanges();expect(component.demoLoading()).toBeTrue();
     await component.loadDemo();http.expectOne('demo-video.json').flush({studyId:'e'.repeat(32)});await Promise.resolve();await Promise.resolve();
     http.expectOne(studyUrl+'/'+'e'.repeat(32)).flush({...session,id:'e'.repeat(32),baseline:video});await Promise.resolve();await Promise.resolve();
-    http.expectOne(studyUrl+'/'+'e'.repeat(32)+'/original/baseline').flush(new Blob([new Uint8Array(15000)],{type:'video/quicktime'}));await Promise.resolve();await Promise.resolve();
-    http.expectOne(r=>r.url.includes('/'+session.id+'/video/baseline')).flush({...session,baseline:video});await loading;fixture.detectChanges();
+    http.expectOne(studyUrl+'/'+'e'.repeat(32)+'/original/baseline').flush(new Blob([new Uint8Array(15000)],{type:'video/quicktime'}));for(let i=0;i<8;i++)await Promise.resolve();
+    http.expectOne(r=>r.method==='POST' && r.url.includes('/'+session.id+'/video/baseline')).flush({...session,baseline:video,preparationPending:true});await loading;fixture.detectChanges();
     expect(component.session()?.id).toBe(session.id);expect(component.previewState()).toBe('loading');
     expect(root.querySelector('.viewer-loading')).not.toBeNull();http.expectNone(studyUrl);await verifyHttp(http);fixture.destroy();
   });
@@ -588,52 +551,51 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       const {root,component,fixture,http}=await init();
       component.session.set({...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'});
       fixture.detectChanges();await Promise.resolve();
-      const samUrl=studyUrl+'/'+session.id+'/sam/baseline';
-      const groundUrl=studyUrl+'/'+session.id+'/assembly/baseline/grounding';
-      const source={sourceSha256:video.sha256,sourceFrames:1828,estimatedCostUsd:.3656,
-        durationSeconds:30.5,codec:'hevc',supportsSingleCall:true};
-      http.expectOne(samUrl+'/status?mode=api-meta-cache').flush({
-        status:'NOT_ANALYZED_WITH_SAM',sourceSha256:video.sha256,cacheKey:'c'.repeat(64),
-        cacheHit:false,analysisId:null,mode:'api-meta-cache',canRunLive:false});
-      http.expectOne(samUrl+'/preflight').flush(source);
+      const samUrl=studyUrl+'/'+session.id+'/sam/baseline',adaptiveUrl=studyUrl+'/'+session.id+'/sam-adaptive/baseline';
+      http.expectOne(samUrl+'/preflight').flush({sourceSha256:video.sha256,sourceFrames:1828,
+        estimatedCostUsd:.3656,durationSeconds:30.5,codec:'hevc',supportsSingleCall:true});
+      http.expectNone(samUrl+'/reusable');for(let i=0;i<8;i++)await Promise.resolve();
+      http.expectOne(adaptiveUrl+'/preflight?targetCoreFrames=53&mode=api-meta').flush({
+        mode:'api-meta',sceneRunId:null,sourceSha256:video.sha256,sparkSceneKey:'',
+        sourcePtsSha256:'a'.repeat(64),planSha256:'c'.repeat(64),suggestedBatchId:'f'.repeat(32),
+        sourceFrames:1828,parts:3,simultaneousRequests:3,submittedFrames:1848,billableFrames:1848,
+        totalSamEstimatedUsd:.3696,maximumAllowedSamUsd:.50,continuousRetryEstimatedUsd:.3656,
+        maximumSamWithRetryEstimatedUsd:.7352,remainingTrialSlots:null,canRunWithManualToken:true,
+        existingSparkSceneVerified:false,requiresNewSparkCall:true,idealPartsWithoutSparkCoverage:3,
+        verifiedSparkSeedCount:0,reducedForSparseSparkSeeds:false});
       http.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush({
         apiKeyConfigured:false,liveCallsPermitted:false,manualTokenCallsPermitted:true,
         paidRequestsSwitchEnabled:true,creditsConfirmedByOwner:true,ownerApprovedPaidRequests:true,
         usedRequests:0,remainingRequests:0,manualRequestsUnlimited:true});
-      const ground={cacheKey:'e'.repeat(64),videoSha256:video.sha256,
-        maximumEstimatedCostUsd:.25,mode:'api-meta-cache',freshRequired:false,
-        protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2',cacheHit:false,priorAttempt:false,canRun:true,
-        status:'NEEDS_LOCALIZATION',scene:null};
-      http.expectOne(groundUrl+'/preflight?mode=api-meta-cache').flush(ground);
-      await fixture.whenStable();
+      const ground={cacheKey:'e'.repeat(64),videoSha256:video.sha256,maximumEstimatedCostUsd:.25,
+        mode:'api-meta',freshRequired:true,protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2',
+        cacheHit:false,priorAttempt:false,canRun:true,status:'NEEDS_LOCALIZATION',scene:null};
+      http.expectOne(adaptiveUrl+'/spark-quote?mode=api-meta').flush(ground);await fixture.whenStable();
       const replay=fixture.debugElement.query(By.directive(SamVideoReplay)).componentInstance as SamVideoReplay;
       const player=fixture.debugElement.query(By.directive(PendulumMasterPlayer)).componentInstance as PendulumMasterPlayer;
-      // Browser preview readiness is independent of the network requests under test.
-      player.previewLoading.set(false);component.onPreviewState('ready');
-      const field=document.createElement('input');field.type='password';
-      component.connection.register(field);field.value='LLM_SYNTHETIC_INTEGRATION_TEST_NEVER_SENT_123456';
-      component.connection.confirmToken();fixture.detectChanges();
-      expect(root.querySelector('.viewer-loading')).toBeNull();expect(replay.canProcess()).toBeTrue();
+      player.previewLoading.set(false);component.onPreviewState('ready');component.setJourneyStep(2);
+      const field=document.createElement('input');field.type='password';component.connection.register(field);
+      field.value='LLM_SYNTHETIC_INTEGRATION_TEST_NEVER_SENT_123456';component.connection.confirmToken();fixture.detectChanges();
+      expect(replay.mode()).toBe('api-meta');expect(root.querySelector('.viewer-loading')).toBeNull();
+      expect(replay.canProcess()).toBeTrue();
       const failureEvents=spyOn(replay.processingFailed,'emit').and.callThrough();
       const pending=replay.process();fixture.detectChanges();
       expect(component.resultState()).toBe('loading');
       expect(root.querySelector('app-sam-video-replay [aria-busy="true"]')).not.toBeNull();
-      const request=http.expectOne(groundUrl);
-      if(failure==='HTTP_ERROR')request.flush({}, {status:502,statusText:'Synthetic failure'});
-      else if(failure==='NO_INFERENCE')request.flush({error:'GROUNDING_NO_INFERENCE_SENT_REVIEW_COST'},
-        {status:409,statusText:'Conflict'});
-      else request.flush({...ground,status:failure,cacheHit:true,canRun:false});
+      const request=http.expectOne(adaptiveUrl+'/spark-once');
+      expect(request.request.method).toBe('POST');expect(request.request.body.mode).toBe('api-meta');
+      if(failure==='HTTP_ERROR')request.flush({},{status:502,statusText:'Synthetic failure'});
+      else if(failure==='NO_INFERENCE')request.flush({error:'GROUNDING_NO_INFERENCE_SENT_REVIEW_COST'},{status:409,statusText:'Conflict'});
+      else request.flush({...ground,status:failure,canRun:false,scene:null});
       await pending;fixture.detectChanges();
-      expect(failureEvents).toHaveBeenCalledTimes(1);
-      expect(component.resultState()).toBe('error');expect(component.playbackReady()).toBeFalse();
-      expect(root.querySelector('.viewer-loading')).toBeNull();
+      expect(failureEvents).toHaveBeenCalledTimes(1);expect(component.resultState()).toBe('error');
+      expect(component.playbackReady()).toBeFalse();expect(root.querySelector('.viewer-loading')).toBeNull();
       expect(component.videoActionsBusy()).toBeFalse();expect(component.connection.busy()).toBeFalse();
       expect(root.querySelector('.sam-message')?.textContent).toContain('SAM no se envió');
       if(failure==='NO_INFERENCE')expect(root.querySelector('.sam-message')?.textContent).not.toContain('facturada');
-      // Existing behavior permits viewing the original after an unsuccessful analysis.
       expect((root.querySelector('.play-main') as HTMLButtonElement).disabled).toBeFalse();
       expect(player.samVerified()).toBeFalse();
-      http.expectNone(r=>r.method==='POST'||r.url.endsWith('/evidence'));
+      http.expectNone(r=>r.method==='POST'||r.url.includes('/evidence'));
       await verifyHttp(http);fixture.destroy();
     });
   }
@@ -666,7 +628,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     component.onPreviewState('ready');expect(component.recoveryLoading()).toBeTrue();component.onProcessingFinished(true);expect(component.recoveryLoading()).toBeFalse();
     http.verify();fixture.destroy();
   });
-  it('serializes draft saves under the same code and blocks uploads after a failed save',async()=>{
+  it('serializes draft saves under the same code and cannot advance with an unsaved snapshot',async()=>{
     const {component,http,fixture}=await init(false);
     component.baselineLength.set(.8);component.updateDraft();http.expectOne(theoryUrl).flush(theory());await Promise.resolve();
     const first=http.expectOne(studyUrl+'/'+session.id+'/draft');expect(first.request.method).toBe('PUT');expect(first.request.body.baselineLengthMeters).toBe(.8);
@@ -674,7 +636,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     first.flush({...session,baselineLengthMeters:.8});for(let i=0;i<6;i++)await Promise.resolve();
     const second=http.expectOne(studyUrl+'/'+session.id+'/draft');expect(second.request.body.massGrams).toBe(400);
     second.flush({}, {status:503,statusText:'Unavailable'});for(let i=0;i<6;i++)await Promise.resolve();
-    expect(component.draftSaving()).toBeFalse();expect(component.draftError()).toContain('No se guardaron');expect(component.videoActionsBusy()).toBeTrue();
+    expect(component.draftSaving()).toBeFalse();expect(component.draftError()).toContain('No se guardaron');expect(component.requiredParametersSaved()).toBeFalse();expect(component.canVisitStep(2)).toBeFalse();
     component.updateDraft();http.expectOne(theoryUrl).flush(theory());await Promise.resolve();http.expectOne(studyUrl+'/'+session.id+'/draft').flush({...session,baselineLengthMeters:.8,massGrams:400});
     for(let i=0;i<6;i++)await Promise.resolve();expect(component.draftError()).toBe('');expect(component.session()?.id).toBe(session.id);expect(component.videoActionsBusy()).toBeFalse();
     http.expectNone(studyUrl);http.verify();fixture.destroy();

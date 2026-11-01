@@ -1,0 +1,23 @@
+:host{display:block}
+.upload-progress{margin:0 0 20px;padding:14px 16px;border:1px solid #34516b;border-radius:10px;background:#101e2e;min-width:0}
+.upload-progress summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;line-height:1.5}
+.upload-progress summary strong{font-size:13px;color:#dbf5ea}
+.upload-progress summary>span{font-size:11px;color:#9bb5ce;flex:none}
+.upload-transfer{display:grid;gap:6px;margin-top:12px;font-size:11px;color:#aac8da}
+.upload-transfer progress{display:block;width:100%;height:6px;accent-color:#6ee5c1}
+.upload-stage-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px;list-style:none;padding:0;margin:14px 0 0}
+.upload-stage-list li{min-width:0;display:grid;gap:3px;padding:8px 10px;border-left:2px solid #34516b;background:#0b1724;border-radius:4px}
+.upload-stage-list li>span{font-size:11px;line-height:1.4;color:#c0d4e7}
+.upload-stage-list small{font-size:10px;line-height:1.5;color:#8faac2;font-variant-numeric:tabular-nums}
+.upload-stage-list .upload-stage-active{border-left-color:#6ee5c1}
+.upload-stage-list .upload-stage-active small{color:#8aebcc}
+.upload-stage-list .upload-stage-failed{border-left-color:#f19aa7}
+.upload-stage-list .upload-stage-failed small{color:#ffc0c7}
+.upload-note{font-size:11px;line-height:1.6;color:#aac8da}
+@media(max-width:540px){
+ .upload-progress{padding:12px;margin-bottom:16px}
+ .upload-progress summary{align-items:flex-start;gap:8px}
+ .upload-progress summary strong{font-size:12px}
+ .upload-stage-list{gap:7px}
+ .upload-stage-list li{padding:7px}
+}
