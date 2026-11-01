@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using System.Text;
 using System.Text.Json;
 using ProofLab.Science;
@@ -68,7 +70,8 @@ public sealed record DirectorSession(
     string? ModelSha256 = null, MusePrediction? MusePrediction = null);
 
 public sealed class PendulumDirectorWorkflow(
-    IWebHostEnvironment environment, VideoMediaDecoder decoder, MuseExperimentStore? muse = null)
+    IWebHostEnvironment environment, VideoMediaDecoder decoder, MuseExperimentStore? muse = null,
+    ILogger<PendulumDirectorWorkflow>? logger = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
         { WriteIndented = true };
@@ -200,7 +203,18 @@ public sealed class PendulumDirectorWorkflow(
             throw new ArgumentException("Expected baseline or followup.");
         if (!decoder.Available)
             throw new InvalidOperationException("Local FFmpeg is not available.");
+        var total = Stopwatch.StartNew();
         await gate.WaitAsync(ct);
+        var timings = new Dictionary<string, double> { ["queue"] = total.Elapsed.TotalMilliseconds };
+        var phaseClock = Stopwatch.StartNew();
+        var phase = "validate";
+        void NextPhase(string next) {
+            timings[phase] = phaseClock.Elapsed.TotalMilliseconds;
+            phase = next; phaseClock.Restart();
+        }
+        long receivedBytes = 0;
+        string outcome = "failed";
+        string? timingPath = null;
         string? rawPath = null;
         string? posterPath = null;
         try
@@ -216,35 +230,39 @@ public sealed class PendulumDirectorWorkflow(
 
             var videoId = Guid.NewGuid().ToString("N");
             var folder = Folder(id);
+            timingPath = Path.Combine(folder, role + "-upload-" + videoId + ".timings.json");
             rawPath = Path.Combine(folder, role + extension);
             posterPath = Path.Combine(folder, role + ".jpg");
+            NextPhase("receive_and_hash");
+            using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             await using(var dest = new FileStream(rawPath, FileMode.CreateNew,
                 FileAccess.Write, FileShare.None, 128 * 1024, true))
             {
                 var readBuffer = new byte[128 * 1024];
-                long copied = 0;
                 while(true)
                 {
                     var n = await input.ReadAsync(readBuffer, ct);
                     if(n == 0) break;
-                    copied += n;
-                    if (copied > VideoClipPolicy.MaximumBytes)
+                    receivedBytes += n;
+                    if (receivedBytes > VideoClipPolicy.MaximumBytes)
                         throw new ArgumentException("Video exceeds size limit.");
+                    hasher.AppendData(readBuffer, 0, n);
                     await dest.WriteAsync(readBuffer.AsMemory(0,n),ct);
                 }
-                if(copied != bytes) throw new ArgumentException("Incomplete video upload.");
+                if(receivedBytes != bytes) throw new ArgumentException("Incomplete video upload.");
             }
 
-            string hash;
-            await using(var source = File.OpenRead(rawPath))
-                hash = Convert.ToHexString(await SHA256.HashDataAsync(source,ct))
-                    .ToLowerInvariant();
+            var hash = Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
             if(role=="followup" && hash==session.Baseline?.Sha256)
                 throw new ArgumentException("The second experiment must use a different video.");
+            NextPhase("probe");
             var media = await decoder.ProbeAsync(rawPath,ct);
+            NextPhase("local_tracking");
             var tracking = await decoder.TrackAsync(rawPath, ct);
+            NextPhase("spectral");
             var spectral = PendulumSpectralEstimator.Estimate(
                 tracking.Observations, tracking.DetectionRate);
+            NextPhase("poster");
             bool poster = false;
             try { await decoder.CreatePosterAsync(rawPath, posterPath, ct); poster = true; }
             catch(ArgumentException) { /* A missing poster is not proof of bad original. */ }
@@ -253,8 +271,11 @@ public sealed class PendulumDirectorWorkflow(
             const bool preview = false;
             var record = new DirectorVideoEvidence(role,videoId,filename,bytes,hash,
                 DateTimeOffset.UtcNow,media,tracking,spectral,poster,preview);
+            NextPhase("persist");
             await WriteNewAsync(PathFor(id, role + ".json"),record,ct);
-            return await LoadUnlockedAsync(id,ct);
+            var result = await LoadUnlockedAsync(id,ct);
+            outcome = "complete";
+            return result;
         }
         catch
         {
@@ -267,7 +288,25 @@ public sealed class PendulumDirectorWorkflow(
 
             throw;
         }
-        finally{gate.Release();}
+        finally{
+            timings[phase] = phaseClock.Elapsed.TotalMilliseconds;
+            var elapsed = total.Elapsed.TotalMilliseconds;
+            // Local diagnostics only: no video content, filenames, tokens or prompts.
+            logger?.LogInformation("Video upload {StudyId}/{Role}: outcome={Outcome} bytes={Bytes} totalMs={TotalMs} phasesMs={Phases}",
+                id, role, outcome, receivedBytes, elapsed, JsonSerializer.Serialize(timings));
+            gate.Release();
+            if (timingPath is not null) {
+                try {
+                    using var diagnosticTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    await File.WriteAllTextAsync(timingPath, JsonSerializer.Serialize(new {
+                        atUtc = DateTimeOffset.UtcNow, outcome, lastPhase = phase,
+                        expectedBytes = bytes, receivedBytes, totalMs = elapsed, phasesMs = timings
+                    }, Json), diagnosticTimeout.Token);
+                } catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException) {
+                    logger?.LogWarning("Upload timing file could not be saved ({ErrorType})", e.GetType().Name);
+                }
+            }
+        }
     }
 
     public async Task<DirectorSession> ConfirmBaselineAsync(string id,

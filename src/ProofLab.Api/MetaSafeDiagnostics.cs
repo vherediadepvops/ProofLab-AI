@@ -17,6 +17,7 @@ public static class MetaSafeDiagnostics
                 "INVALID_PROVIDER_REQUEST",
             HttpStatusCode.Unauthorized => "TOKEN_REJECTED_OR_EXPIRED",
             HttpStatusCode.Forbidden => "MODEL_ACCESS_FORBIDDEN",
+            HttpStatusCode.RequestEntityTooLarge => "PAYLOAD_TOO_LARGE",
             HttpStatusCode.TooManyRequests => "RATE_LIMIT",
             HttpStatusCode.PaymentRequired => "BILLING_OR_CREDIT_ISSUE",
             HttpStatusCode.NotFound => "MODEL_OR_ENDPOINT_NOT_FOUND",
@@ -31,9 +32,10 @@ public static class MetaSafeDiagnostics
             model,
             providerHttpStatus = upstream is null ? (int?)null : (int)upstream,
             category,
+            diagnosticId = MetaProviderErrors.Find(exception)?.DiagnosticId,
             requestMayHaveBeenBilled = true,
             retryAutomatically = false,
-            detail = "Only the upstream HTTP status is disclosed; no provider error body or API key is returned."
+            detail = "Use the diagnostic ID to locate private sanitized error details. No provider error body or API key is returned."
         }, statusCode: StatusCodes.Status502BadGateway);
     }
 }

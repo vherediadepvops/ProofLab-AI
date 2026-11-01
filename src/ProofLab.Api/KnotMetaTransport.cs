@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -5,7 +6,7 @@ namespace ProofLab.Api;
 
 /// <summary>One text-model inference, no tools, retries, or automatic follow-up.
 /// Token preflight is a conservative admission check, NOT an invoice estimate.</summary>
-public sealed class KnotMetaTransport(IHttpClientFactory clients) : IKnotTransport
+public sealed class KnotMetaTransport(IHttpClientFactory clients,ILogger<KnotMetaTransport>? logger=null) : IKnotTransport
 {
     public async Task<KnotProviderResult> LocateAsync(byte[][] images,string token,CancellationToken ct)
     {
@@ -25,7 +26,7 @@ public sealed class KnotMetaTransport(IHttpClientFactory clients) : IKnotTranspo
                     type="object",additionalProperties=false,
                     required=new[]{"frame","visible","x","y","confidence"},properties=fields
                 }}}}};
-        var payload=new {model=KnotPolicy.Model,input,stream=false,
+        var payload=new {model=KnotPolicy.Model,input,stream=false,store=false,
             max_output_tokens=KnotPolicy.MaximumOutputTokens,
             reasoning=new {effort="low"},text=new {format}};
         var http=clients.CreateClient("meta");
@@ -36,7 +37,7 @@ public sealed class KnotMetaTransport(IHttpClientFactory clients) : IKnotTranspo
             request.Content=JsonContent.Create(body);
             using var response=await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,ct);
             if(!response.IsSuccessStatusCode)
-                throw new HttpRequestException("Meta knot request failed.",null,response.StatusCode);
+                throw await MetaProviderErrors.CreateAsync(response,token,endpoint,logger,ct);
             await using var stream=await response.Content.ReadAsStreamAsync(ct);
             using var output=new MemoryStream();
             var buffer=new byte[8192];

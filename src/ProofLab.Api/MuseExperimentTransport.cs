@@ -1,9 +1,10 @@
+using Microsoft.Extensions.Logging;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 namespace ProofLab.Api;
 
-public sealed class MuseExperimentTransport(IHttpClientFactory clients):IMuseExperimentTransport
+public sealed class MuseExperimentTransport(IHttpClientFactory clients,ILogger<MuseExperimentTransport>? logger=null):IMuseExperimentTransport
 {
     public async Task<KnotProviderResult> EvaluateAsync(string inputJson,string token,CancellationToken ct)
     {
@@ -34,7 +35,7 @@ public sealed class MuseExperimentTransport(IHttpClientFactory clients):IMuseExp
                         properties=new {
                             classification=new {type="string",@enum=new[]{"PENDULUM_COMPATIBLE","OTHER_MOTION","INCONCLUSIVE"}},
                             justification=bilingual}}}}};
-        var payload=new {model=MuseExperimentPolicy.Model,stream=false,
+        var payload=new {model=MuseExperimentPolicy.Model,stream=false,store=false,
             max_output_tokens=MuseExperimentPolicy.MaximumOutputTokens,reasoning=new {effort="low"},
             text=new {format},input=new[]{
                 new {role="system",content=MuseExperimentPolicy.Prompt},
@@ -46,7 +47,7 @@ public sealed class MuseExperimentTransport(IHttpClientFactory clients):IMuseExp
             request.Content=JsonContent.Create(payload);
             using var response=await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,ct);
             if(!response.IsSuccessStatusCode)
-                throw new HttpRequestException("Meta investigator request failed.",null,response.StatusCode);
+                throw await MetaProviderErrors.CreateAsync(response,token,endpoint,logger,ct);
             await using var input=await response.Content.ReadAsStreamAsync(ct);
             using var output=new MemoryStream();var bytes=new byte[8192];int n;
             while((n=await input.ReadAsync(bytes,ct))>0){

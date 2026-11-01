@@ -38,11 +38,11 @@ public sealed partial class AssemblyMetaTransport(IHttpClientFactory clients,ILo
             }};
         var format=new {type="json_schema",name=grounding?"hanging_object_grounding":"hanging_assembly",strict=true,
             schema=new {type="object",additionalProperties=false,required=properties.Keys.ToArray(),properties}};
-        return new {model=AssemblyPolicy.Model,input,stream=false,max_output_tokens=AssemblyPolicy.MaximumOutputTokens,
+        return new {model=AssemblyPolicy.Model,input,stream=false,store=false,max_output_tokens=AssemblyPolicy.MaximumOutputTokens,
             reasoning=new {effort=grounding?"medium":"low"},text=new {format}};
     }
-    private static async Task<string> ReadResponse(HttpResponseMessage response,CancellationToken ct) {
-        if(!response.IsSuccessStatusCode)throw new HttpRequestException("Meta grounding request failed.",null,response.StatusCode);
+    private async Task<string> ReadResponse(HttpResponseMessage response,string token,string phase,CancellationToken ct) {
+        if(!response.IsSuccessStatusCode)throw await MetaProviderErrors.CreateAsync(response,token,phase,logger,ct);
         await using var stream=await response.Content.ReadAsStreamAsync(ct);
         using var output=new MemoryStream();var buffer=new byte[8192];int read;
         while((read=await stream.ReadAsync(buffer,ct))>0) {
@@ -51,11 +51,11 @@ public sealed partial class AssemblyMetaTransport(IHttpClientFactory clients,ILo
         }
         return System.Text.Encoding.UTF8.GetString(output.ToArray());
     }
-    private static async Task<string> Post(HttpClient http,string endpoint,object payload,string token,CancellationToken ct) {
+    private async Task<string> Post(HttpClient http,string endpoint,object payload,string token,CancellationToken ct) {
         using var request=new HttpRequestMessage(HttpMethod.Post,"https://api.meta.ai/v1/"+endpoint);
         request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",token);request.Content=JsonContent.Create(payload);
         using var response=await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,ct);
-        return await ReadResponse(response,ct);
+        return await ReadResponse(response,token,endpoint,ct);
     }
     private static KnotProviderResult Completed(string raw) {
         using var doc=JsonDocument.Parse(raw);var root=doc.RootElement;
@@ -113,7 +113,7 @@ public sealed partial class AssemblyMetaTransport(IHttpClientFactory clients,ILo
                 using var request=new HttpRequestMessage(HttpMethod.Post,"https://api.meta.ai/v1/files");
                 request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",token);request.Content=multipart;
                 using var response=await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,ct);
-                using var doc=JsonDocument.Parse(await ReadResponse(response,ct));
+                using var doc=JsonDocument.Parse(await ReadResponse(response,token,"files",ct));
                 fileId=doc.RootElement.GetProperty("id").GetString();
                 if(string.IsNullOrWhiteSpace(fileId) || fileId.Length>200 ||
                     !fileId.StartsWith("file-",StringComparison.Ordinal) ||
@@ -162,7 +162,7 @@ public sealed partial class AssemblyMetaTransport(IHttpClientFactory clients,ILo
 
     private static object DensePayload(List<object> content) {
         var row=new {type="array",items=new {type="number"}};
-        return new {model=AssemblyPolicy.Model,stream=false,max_output_tokens=12288,reasoning=new {effort="low"},
+        return new {model=AssemblyPolicy.Model,stream=false,store=false,max_output_tokens=12288,reasoning=new {effort="low"},
             input=new[]{new {type="message",role="user",content}},text=new {format=new {type="json_schema",name="dense_object_grounding",strict=true,
             schema=new {type="object",additionalProperties=false,required=new[]{"arrangement","camera","samples","points","target"},properties=new {
                 arrangement=new {type="string",@enum=new[]{"simple_pendulum","pulley_system","unclear"}},
@@ -178,7 +178,7 @@ public sealed partial class AssemblyMetaTransport(IHttpClientFactory clients,ILo
             required=new[]{"frame","visible","x","y","confidence"},properties=new {
                 frame=new {type="integer"},visible=new {type="boolean"},x=new {type="number"},
                 y=new {type="number"},confidence=new {type="number"}}};
-        return new {model=AssemblyPolicy.Model,stream=false,max_output_tokens=8192,
+        return new {model=AssemblyPolicy.Model,stream=false,store=false,max_output_tokens=8192,
             reasoning=new {effort="medium"},input=new[]{new {type="message",role="user",content}},
             text=new {format=new {type="json_schema",name="suspension_geometry_review",strict=true,
                 schema=new {type="object",additionalProperties=false,

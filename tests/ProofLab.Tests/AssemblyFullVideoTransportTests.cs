@@ -102,6 +102,10 @@ public sealed class AssemblyFullVideoTransportTests
                 }
             }
             else if (request.Content is not null) body = await request.Content.ReadAsStringAsync(ct);
+            if (path == "/v1/responses") {
+                using var payload = JsonDocument.Parse(body!);
+                Assert.False(payload.RootElement.GetProperty("store").GetBoolean());
+            }
             Requests.Add(new(request.Method.Method, path, body));
             Events.Add(request.Method.Method + " " + path);
             if (path == FailPath && request.Method != HttpMethod.Delete)

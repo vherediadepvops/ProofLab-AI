@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -73,13 +74,13 @@ public static class MuseContrastPolicy
             dataKind=r.GetProperty("dataKind")},MuseExperimentPolicy.Json);
     }
 }
-public sealed class MuseContrastTransport(IHttpClientFactory clients)
+public sealed class MuseContrastTransport(IHttpClientFactory clients,ILogger<MuseContrastTransport>? logger=null)
 {
     public async Task<string> EvaluateAsync(string input,string token,CancellationToken ct)
     {
         if(input.Length>18000||!SamManualApiTokenPolicy.Accepts(token))throw new ArgumentException("Invalid contrast input.");
         var bilingual=new {type="object",additionalProperties=false,required=new[]{"es","en"},properties=new {es=new{type="string"},en=new{type="string"}}};
-        var payload=new {model=MuseExperimentPolicy.Model,stream=false,max_output_tokens=4096,reasoning=new{effort="low"},
+        var payload=new {model=MuseExperimentPolicy.Model,stream=false,store=false,max_output_tokens=4096,reasoning=new{effort="low"},
             text=new{format=new{type="json_schema",name="scientific_contrast",strict=true,schema=new{type="object",additionalProperties=false,
                 required=new[]{"verdict","justification","limitations","nextStep"},properties=new{
                     verdict=new{type="string",@enum=new[]{"WITHIN_PREDECLARED_BAND","OUTSIDE_PREDECLARED_BAND","INCONCLUSIVE"}},
@@ -88,7 +89,7 @@ public sealed class MuseContrastTransport(IHttpClientFactory clients)
         using var req=new HttpRequestMessage(HttpMethod.Post,"https://api.meta.ai/v1/responses");
         req.Headers.Authorization=new AuthenticationHeaderValue("Bearer",token);req.Content=JsonContent.Create(payload);
         using var response=await clients.CreateClient("meta").SendAsync(req,HttpCompletionOption.ResponseHeadersRead,ct);
-        if(!response.IsSuccessStatusCode)throw new HttpRequestException("Meta contrast failed.",null,response.StatusCode);
+        if(!response.IsSuccessStatusCode)throw await MetaProviderErrors.CreateAsync(response,token,"contrast-responses",logger,ct);
         await using var stream=await response.Content.ReadAsStreamAsync(ct);using var result=new MemoryStream();var bytes=new byte[8192];int count;
         while((count=await stream.ReadAsync(bytes,ct))>0){if(result.Length+count>262144)throw new FormatException("Contrast response too large.");result.Write(bytes,0,count);}
         return System.Text.Encoding.UTF8.GetString(result.ToArray());

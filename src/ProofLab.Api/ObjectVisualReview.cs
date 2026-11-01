@@ -267,7 +267,7 @@ public sealed partial class AssemblyMetaTransport
             camera=new {type="string",@enum=new[]{"STATIC","MOVING","UNCLEAR"}},points=new {type="array",items=new {type="object",additionalProperties=false,
             required=new[]{"frame","visible","x","y","confidence","visual_reason"},properties=new {frame=new {type="integer"},visible=new {type="boolean"},
                 x=new {type="number"},y=new {type="number"},confidence=new {type="number"},visual_reason=new {type="string"}}}}}};
-        var payload=new {model=AssemblyPolicy.Model,stream=false,max_output_tokens=8192,reasoning=new {effort="medium"},
+        var payload=new {model=AssemblyPolicy.Model,stream=false,store=false,max_output_tokens=8192,reasoning=new {effort="medium"},
             input=new[]{new {type="message",role="user",content}},text=new {format=new {type="json_schema",name="visual_body_and_exit_verification",strict=true,
                 schema=new {type="object",additionalProperties=false,required=properties.Keys.ToArray(),properties}}}};
         return Completed(await Post(clients.CreateClient("meta"),"responses",payload,token,ct));

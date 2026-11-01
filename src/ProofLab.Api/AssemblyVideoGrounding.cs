@@ -227,6 +227,7 @@ public sealed partial class AssemblyLocator
         using var progress=AssemblyProgress.Begin(id,role);
         AssemblyProgress.Start("prepare");
         await gate.WaitAsync(ct);
+        string? diagnosticRoot=null;
         try {
             var (video,_,_)=await Source(id,role,ct);
             var key=AssemblyPolicy.VideoGroundingKey(video.Sha256);
@@ -257,7 +258,7 @@ public sealed partial class AssemblyLocator
                 throw new InvalidDataException("Invalid source frame timestamps.");
             if(mode=="api-meta-cache" && initial.Evidence is {} draft) {
                 AssemblyProgress.Done("prepare");
-                var savedRoot=Path.Combine(root,"runs",draft.RunId!);
+                var savedRoot=Path.Combine(root,"runs",draft.RunId!); diagnosticRoot=savedRoot;
                 var reviewed=await ReviewObject(savedRoot,draft,video,pts,input.ModelApiToken,ct);
                 var verified=AssemblyPolicy.Ground(reviewed);
                 await Save(Path.Combine(savedRoot,"object-review-stages.json"),progress.Read(),CancellationToken.None);
@@ -266,7 +267,7 @@ public sealed partial class AssemblyLocator
                     VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd);
             }
             var runId=Guid.NewGuid().ToString("N");var runRoot=Path.Combine(root,"runs",runId);
-            Directory.CreateDirectory(runRoot);
+            Directory.CreateDirectory(runRoot); diagnosticRoot=runRoot;
             var preparationClock=Stopwatch.StartNew();
             var ready=await PreparedVideo(root,video,pts,ct);
             var mp4=ready.Path;var prepared=ready.Frames;
@@ -309,6 +310,19 @@ public sealed partial class AssemblyLocator
             return new(key,video.Sha256,initial.MaximumEstimatedCostUsd,false,false,scene is not null,
                 AssemblyPolicy.GroundingStatus(evidence),scene,evidence,mode,false,EvidenceProtocol:evidence.Protocol,RequiredSparkCalls:evidence.Frames.Length/50,
                 VisualReviewEstimatedCostUsd:0);
+        } catch(Exception error) {
+            progress.FailActive();
+            if(diagnosticRoot is not null) {
+                try {
+                    await Save(Path.Combine(diagnosticRoot,"failure-diagnostic.json"),new {
+                        atUtc=DateTimeOffset.UtcNow, exceptionType=error.GetType().Name,
+                        provider=MetaProviderErrors.Find(error)
+                    },CancellationToken.None);
+                    await Save(Path.Combine(diagnosticRoot,"stages.json"),progress.Read(),CancellationToken.None);
+                } catch(IOException) { /* Diagnostics must not mask the original failure. */ }
+                catch(UnauthorizedAccessException) { }
+            }
+            throw;
         } finally {gate.Release();}
     }
 }

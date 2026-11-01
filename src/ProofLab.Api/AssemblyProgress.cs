@@ -23,7 +23,8 @@ public static class AssemblyProgress {
         public void Percent(string key,double percent) {lock(sync)if(stages.TryGetValue(key,out var s))stages[key]=s with {Percent=Math.Clamp(percent,0,100)};}
         public void Done(string key) {lock(sync)if(stages.TryGetValue(key,out var s))stages[key]=s with {End=DateTimeOffset.UtcNow,State="COMPLETED",Percent=100};}
         public Snapshot Read() {lock(sync)return new(Id,Started,stages.Select(s=>new Stage(s.Key,s.Value.State,(long)((s.Value.End??DateTimeOffset.UtcNow)-s.Value.Start).TotalMilliseconds,s.Value.Percent)).ToArray());}
-        public void Dispose() {lock(sync)foreach(var key in stages.Keys.ToArray()) {var s=stages[key];if(s.State=="IN_PROGRESS")stages[key]=s with {End=DateTimeOffset.UtcNow,State="FAILED"};}Current.Value=null;}
+        public void FailActive() {lock(sync)foreach(var key in stages.Keys.ToArray()) {var s=stages[key];if(s.State=="IN_PROGRESS")stages[key]=s with {End=DateTimeOffset.UtcNow,State="FAILED"};}}
+        public void Dispose() {FailActive();Current.Value=null;}
     }
     public static Run Begin(string study,string role) {
         if(Runs.Count>128)foreach(var key in Runs.OrderBy(x=>x.Value.Started).Take(32).Select(x=>x.Key))Runs.TryRemove(key,out _);
