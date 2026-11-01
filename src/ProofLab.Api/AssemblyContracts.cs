@@ -9,7 +9,9 @@ public sealed record AssemblyObservation(int Frame,string Role,bool Visible,doub
 public sealed record AssemblyGroundingReason(string Es,string En);
 public sealed record AssemblyGroundingTarget(string Status,AssemblyGroundingReason Justification);
 public sealed record AssemblyProposal(string Arrangement,AssemblyObservation[] Observations,KnotProposal Suspension,
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] AssemblyGroundingTarget? Target=null);
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] AssemblyGroundingTarget? Target=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? Camera=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] SuspensionConsensus? Consensus=null);
 public sealed record AssemblyEvidence(string CacheKey,string VideoSha256,string Model,string Protocol,
     KnotFrame[] Frames,string ResponseSha256,string ProviderResponseId,DateTimeOffset CreatedAtUtc,
     AssemblyProposal Proposal,int InputTokens,int OutputTokens,
@@ -192,6 +194,7 @@ public static partial class AssemblyPolicy
     {
         var target=evidence.Proposal.Target ?? throw new InvalidDataException("Missing object grounding decision.");
         if(target.Status=="NOT_VISIBLE")return "NOT_VISIBLE";
+        if(evidence.Proposal.Camera is not null)return DenseLocalizationPolicy.ObjectReady(evidence)?"READY":"AMBIGUOUS";
         return target.Status=="CLEAR_SINGLE_OBJECT" &&
             evidence.Proposal.Observations.Count(o=>o.Role=="object" && o.Visible && o.Confidence>=0.8)>=2
             ? "READY" : "AMBIGUOUS";
@@ -208,7 +211,7 @@ public static partial class AssemblyPolicy
             throw new InvalidDataException("Wrong automatic grounding provenance.");
         if(GroundingStatus(evidence)!="READY")return null;
         var frames=evidence.Frames;
-        if(frames.Length is not (3 or 50) || frames.Select(f=>f.Index).Distinct().Count()!=frames.Length ||
+        if((frames.Length is not (3 or 50) && !(evidence.Derivation==DenseLocalizationPolicy.Protocol && frames.Length is 100 or 150)) || frames.Select(f=>f.Index).Distinct().Count()!=frames.Length ||
             frames.Any(f=>f.Width!=frames[0].Width || f.Height!=frames[0].Height ||
                 f.Width is <2 or >8192 || f.Height is <2 or >8192))
             throw new InvalidDataException("Inconsistent native grounding frames.");

@@ -32,7 +32,7 @@ export function resolveSamSuspension(
     review.samResponseSha256===archive.receipt.responseJsonSha256 && review.sceneKey===s?.key) {
     if(review.answer.camera!=='STATIC' || !['RELOCATED','CONFIRMED'].includes(review.answer.decision))
       return none('SPARK_REVIEW_INCONCLUSIVE');
-    e={...e,points:review.answer.points};
+    e={...e,points:review.answer.points,refinement:null,consensus:null};
   }
   if(!e||!s||!track)return none('MISSING_SPARK_SUSPENSION');
   if(s.origin!=='SPARK_GROUNDING'||s.arrangement!=='simple_pendulum'||
@@ -40,11 +40,38 @@ export function resolveSamSuspension(
     e.evidenceKey!==s.evidenceKey||e.responseSha256!==s.responseSha256||
     e.model!=='muse-spark-1.3'||e.width!==track.frameWidth||e.height!==track.frameHeight||
     e.width!==s.width||e.height!==s.height)return none('SUSPENSION_PROVENANCE_MISMATCH');
-  const originalAnchors=e.points;
-  let anchors=originalAnchors;
-  const visuallyRefined=['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3'].includes(e.refinement??'');
+  let anchors=e.points;
+  const dense=e.refinement==='SPARK_DENSE_OBJECT_AND_EXIT_50_V1';
+  const visuallyRefined=dense || ['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3'].includes(e.refinement??'');
   const anchorLimit=Math.max(3,Math.min(e.width,e.height)*(visuallyRefined?.005:.04));
   const rejectedAnchorFrames:number[]=[];
+  let x:number,y:number,spread:number;
+  if(dense){
+    const c=e.consensus;
+    if(!c || c.status!=='CONSENSUS_ESTIMATE' || c.camera!=='STATIC' ||
+      !Array.isArray(anchors) || ![50,100,150].includes(anchors.length) || c.submitted!==anchors.length ||
+      anchors.some((p,i)=>p.frame!==i || !Number.isFinite(p.x)||!Number.isFinite(p.y)||
+        !Number.isFinite(p.confidence)||p.confidence<0||p.confidence>1||p.x<0||p.x>=1000||p.y<0||p.y>=1000) ||
+      !Array.isArray(c.inlierOrdinals) || new Set(c.inlierOrdinals).size!==c.inlierOrdinals.length ||
+      c.inlierOrdinals.some(i=>!Number.isInteger(i)||i<0||i>=anchors.length) ||
+      !Number.isFinite(c.timeCoverage)||c.timeCoverage<.6||c.timeCoverage>1)
+      return none('SPARK_DENSE_SUSPENSION_INCONCLUSIVE');
+    const usable=anchors.filter(p=>p.visible&&p.confidence>=.8);
+    const inliers=c.inlierOrdinals.map(i=>anchors[i]);
+    if(c.usable!==usable.length || inliers.length<10 || inliers.length<usable.length*.6 ||
+      inliers.length<anchors.length*.2 || inliers.some(p=>!p.visible||p.confidence<.8))
+      return none('SPARK_DENSE_SUSPENSION_INCONCLUSIVE');
+    const median=(values:number[])=>{const a=[...values].sort((a,b)=>a-b);return (a[Math.floor((a.length-1)/2)]+a[Math.floor(a.length/2)])/2;};
+    const nx=median(inliers.map(p=>p.x)),ny=median(inliers.map(p=>p.y));
+    if(c.x===null||c.y===null||!Number.isFinite(c.x)||!Number.isFinite(c.y)||Math.abs(nx-c.x)>1e-6||Math.abs(ny-c.y)>1e-6)
+      return none('SPARK_DENSE_SUSPENSION_INCONCLUSIVE');
+    x=nx*e.width/1000;y=ny*e.height/1000;
+    spread=Math.max(...inliers.map(p=>Math.hypot(p.x*e.width/1000-x,p.y*e.height/1000-y)));
+    if(!Number.isFinite(c.spreadPixels)||Math.abs(spread-c.spreadPixels)>1e-5||spread>anchorLimit)
+      return none('SUSPENSION_MOVES_OR_IS_AMBIGUOUS');
+    rejectedAnchorFrames.push(...anchors.filter(p=>!c.inlierOrdinals.includes(p.frame)).map(p=>p.frame));
+    anchors=inliers;
+  }else{
   const ordinalSet=Array.isArray(anchors)?anchors.map(p=>p.frame).sort((a,b)=>a-b).join(','):'';
   if(!Array.isArray(anchors)||anchors.length!==3||new Set(anchors.map(p=>p.frame)).size!==3||
     !['0,1,2','0,25,49'].includes(ordinalSet)||
@@ -66,11 +93,12 @@ export function resolveSamSuspension(
     rejectedAnchorFrames.push(...anchors.filter(a=>!group.includes(a)).map(a=>a.frame));
     anchors=group;
   }
-  const x=anchors.reduce((sum,p)=>sum+p.x*e.width/1000,0)/anchors.length;
-  const y=anchors.reduce((sum,p)=>sum+p.y*e.height/1000,0)/anchors.length;
-  const spread=Math.max(...anchors.map(p=>Math.hypot(p.x*e.width/1000-x,p.y*e.height/1000-y)));
+  x=anchors.reduce((sum,p)=>sum+p.x*e.width/1000,0)/anchors.length;
+  y=anchors.reduce((sum,p)=>sum+p.y*e.height/1000,0)/anchors.length;
+  spread=Math.max(...anchors.map(p=>Math.hypot(p.x*e.width/1000-x,p.y*e.height/1000-y)));
   if(spread>anchorLimit)
     return none('SUSPENSION_MOVES_OR_IS_AMBIGUOUS');
+  }
   const all=track.masks.map(m=>({x:m.centroidXpx,y:m.centroidYpx}));
   if(all.length<20||all.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)))
     return none('TOO_FEW_TRACKED_POSITIONS');

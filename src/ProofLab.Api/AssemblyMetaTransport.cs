@@ -96,7 +96,13 @@ public sealed partial class AssemblyMetaTransport(IHttpClientFactory clients,ILo
                 throw new ArgumentException("Invalid full-video grounding input.");
             AssemblyProgress.Start("upload");
             var uploadKey=KnotPolicy.Hash(token+"\n"+videoInput.SubmittedMp4Sha256);
-            if(UploadedFiles.TryGetValue(uploadKey,out var reused))fileId=reused;
+            if(!string.IsNullOrEmpty(videoInput.ProviderFileId)) {
+                if(!videoInput.ProviderFileId.StartsWith("file-") || videoInput.ProviderFileId.Length>200 ||
+                    videoInput.ProviderFileId.Any(c=>!char.IsAsciiLetterOrDigit(c)&&c!='-'&&c!='_'))
+                    throw new InvalidDataException("Invalid previously uploaded file reference.");
+                fileId=videoInput.ProviderFileId;
+            }
+            else if(UploadedFiles.TryGetValue(uploadKey,out var reused))fileId=reused;
             else {
             await using(var input=File.OpenRead(mp4Path)) {
                 using var multipart=new MultipartFormDataContent();
@@ -158,8 +164,9 @@ public sealed partial class AssemblyMetaTransport(IHttpClientFactory clients,ILo
         var row=new {type="array",items=new {type="number"}};
         return new {model=AssemblyPolicy.Model,stream=false,max_output_tokens=12288,reasoning=new {effort="low"},
             input=new[]{new {type="message",role="user",content}},text=new {format=new {type="json_schema",name="dense_object_grounding",strict=true,
-            schema=new {type="object",additionalProperties=false,required=new[]{"arrangement","samples","points","target"},properties=new {
+            schema=new {type="object",additionalProperties=false,required=new[]{"arrangement","camera","samples","points","target"},properties=new {
                 arrangement=new {type="string",@enum=new[]{"simple_pendulum","pulley_system","unclear"}},
+                camera=new {type="string",@enum=new[]{"STATIC","MOVING","UNCLEAR"}},
                 samples=new {type="array",items=row},points=new {type="array",items=row},
                 target=new {type="object",additionalProperties=false,required=new[]{"status","justification"},properties=new {
                     status=new {type="string",@enum=new[]{"CLEAR_SINGLE_OBJECT","AMBIGUOUS","NOT_VISIBLE"}},

@@ -1,5 +1,7 @@
 # Revisión del cuerpo con contexto ampliado — 30/10/2026
 
+> Documento histórico: describe un flujo anterior. Para las nuevas localizaciones de objeto y suspensión en 50 imágenes y hasta tres rondas, consulta [el protocolo actual](DENSE-LOCALIZATION.es.md). Su validación actual es local; los resultados de campañas anteriores no validan el cambio nuevo.
+
 ## Comportamiento
 
 La revisión visual existente de Spark recibe la escena completa, un recorte sin caja candidata por referencia y tres recortes de suspensión. No añade una inferencia ni una sección de interfaz. La selección inicial puede corresponder a una cuerda: por eso la región del cuerpo conserva un mínimo del 60% de la altura original (40% del ancho, ampliable por caja candidata). Spark debe localizar el cuerpo completo dentro del recorte, independientemente de forma, material o color. Cuerdas, manos y sombras no son el objetivo.

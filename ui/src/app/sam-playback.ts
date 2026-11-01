@@ -5,6 +5,8 @@ import { originalImageOffset, type ImagePivot, type ImageSize, type KinematicFra
 
 export interface SamSuspensionEvidence {
   refinement?:string|null;
+  consensus?:{status:string;camera:string;inlierOrdinals:number[];submitted:number;usable:number;
+    timeCoverage:number;x:number|null;y:number|null;spreadPixels:number}|null;
   sourceSha256:string;sceneKey:string;evidenceKey:string;responseSha256:string;model:string;
   width:number;height:number;
   points:{frame:number;visible:boolean;x:number;y:number;confidence:number}[];

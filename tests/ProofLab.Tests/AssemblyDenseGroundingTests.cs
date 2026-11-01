@@ -2,6 +2,20 @@ using System.Text.Json;
 using ProofLab.Api;
 namespace ProofLab.Tests;
 public sealed class AssemblyDenseGroundingTests {
+    [Theory][InlineData(50,false)][InlineData(49,true)][InlineData(3,true)]
+    public void NewProtocolRequiresEverySuspensionObservation(int count,bool rejected){
+        var json=JsonSerializer.Serialize(new {
+            arrangement="simple_pendulum",camera="STATIC",
+            samples=Enumerable.Range(0,50).Select(i=>new double[]{i,1,400+i,600,450+i,650,.95}),
+            points=Enumerable.Range(0,count).Select(i=>new double[]{i,1,500,100,.95}),
+            target=new {status="CLEAR_SINGLE_OBJECT",justification=new {es="Objeto visible.",en="Visible object."}}
+        });
+        if(rejected){Assert.Throws<FormatException>(()=>AssemblyPolicy.ParseGrounding(json,Frames));return;}
+        var result=AssemblyPolicy.ParseGrounding(json,Frames);
+        Assert.Equal(50,result.Suspension.Points.Length);
+        Assert.Equal("CONSENSUS_ESTIMATE",result.Consensus!.Status);
+        Assert.Equal(449,result.Observations[49].X1);
+    }
     private static readonly KnotFrame[] Frames=Enumerable.Range(0,50).Select(i=>new KnotFrame(i*10,i/6d,1080,1920,new string('a',64))).ToArray();
     private static string Payload(int bad=-1)=>JsonSerializer.Serialize(new {
         arrangement="simple_pendulum",

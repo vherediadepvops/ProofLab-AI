@@ -586,7 +586,15 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.sparkWasNeeded){
       const names=[['prepare','Preparar video','Prepare video'],['references','Extraer 50 imágenes','Extract 50 images'],['upload','Subir video a Spark','Upload video to Spark'],['inference','Respuesta de Spark','Spark response'],['verify','Validar respuesta','Validate response'],['target-review','Verificar objeto con Spark','Verify object with Spark']];
       const reviewOnly=this.sparkStages().some(s=>s.key==='target-review') && !this.sparkStages().some(s=>s.key==='inference');
-      rows.splice(0,1,...names.filter(([key])=>!reviewOnly || key==='prepare' || key==='target-review').map(([key,es,en])=>{const s=this.sparkStages().find(x=>x.key===key);return {key:'spark-'+key,label:this.es?es:en,state:s?.state??'NOT_STARTED',ms:s?.elapsedMs??0,percent:s?.percent};}));
+      const stages=this.sparkStages();
+      const initial=names.filter(([key])=>(!reviewOnly||key==='prepare'||key==='target-review') &&
+        (key!=='target-review'||stages.some(s=>s.key===key)));
+      const extra=stages.filter(s=>/^round-[23]-/.test(s.key)).map(s=>{
+        const match=/^round-([23])-(.+)$/.exec(s.key)!;
+        const name=names.find(n=>n[0]===match[2]);
+        return [s.key,`Ronda ${match[1]} · ${name?.[1]??match[2]}`,`Round ${match[1]} · ${name?.[2]??match[2]}`];
+      });
+      rows.splice(0,1,...[...initial,...extra].map(([key,es,en])=>{const s=stages.find(x=>x.key===key);return {key:'spark-'+key,label:this.es?es:en,state:s?.state??'NOT_STARTED',ms:s?.elapsedMs??0,percent:s?.percent};}));
     }
     if(!this.segmentedMode()){
       rows.splice(rows.length-1,1,{key:'sam',label:this.samWasReused?(this.es?'SAM · caché':'SAM · cache'):(this.es?'SAM · video completo':'SAM · full video'),
@@ -945,8 +953,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const previous=this.mode()==='api-meta' && this.cacheStatus()?.previousAttemptStatus
       ? (this.es?'Hay un intento anterior registrado. Este clic inicia un análisis nuevo y puede generar otro cobro. ':'A previous attempt is recorded. This click starts a new analysis and may incur another charge. '):'';
     if(this.groundingRequired())return previous+(this.es?
-      'Al pulsar Procesar autorizas enviar el video completo y sus imágenes de referencia a Spark y una segunda consulta para verificar visualmente las cajas; después, el video a SAM, con el costo combinado estimado mostrado, incluida una revisión de suspensión si hace falta. Si Spark no localiza el objeto, SAM no se envía.':
-      'Pressing Process authorizes the complete video and its reference images to Spark and a second call to visually verify the boxes, then the video to SAM, at the displayed combined estimated cost, including a suspension review if needed. If Spark cannot locate the object, SAM is not sent.');
+      'Procesar autoriza el video completo y 50 imágenes a Spark para localizar objeto y suspensión. Si la evidencia es insuficiente, se consultan hasta dos rondas adicionales de 50 imágenes distintas, reutilizando el video. Se detiene al obtener evidencia suficiente. El costo mostrado incluye las tres rondas y SAM. Si Spark no localiza el objeto, SAM no se envía.':
+      'Process authorizes the complete video and 50 images to Spark to locate the object and suspension. Insufficient evidence can trigger up to two further rounds of 50 distinct images, reusing the uploaded video. It stops when evidence is sufficient. The displayed cost includes all three rounds and SAM. If Spark cannot locate the object, SAM is not sent.');
     return previous+(this.es?'Al pulsar Procesar autorizas enviar este video a Meta y usar los créditos del costo mostrado.':
       'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.');
   }

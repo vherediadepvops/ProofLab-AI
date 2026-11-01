@@ -8,6 +8,12 @@ public static class AssemblyProgress {
     public sealed record Snapshot(string RunId,DateTimeOffset StartedAtUtc,Stage[] Stages);
     private static readonly ConcurrentDictionary<string,Run> Runs=new();
     private static readonly AsyncLocal<Run?> Current=new();
+    private static readonly AsyncLocal<string?> Prefix=new();
+    private sealed class RoundScope(string? previous):IDisposable {public void Dispose()=>Prefix.Value=previous;}
+    public static IDisposable Round(int number) {
+        if(number is <1 or >3)throw new ArgumentOutOfRangeException(nameof(number));
+        var scope=new RoundScope(Prefix.Value);Prefix.Value=number==1?"":$"round-{number}-";return scope;
+    }
     public sealed class Run:IDisposable {
         private readonly object sync=new();
         private readonly Dictionary<string,(DateTimeOffset Start,DateTimeOffset? End,string State,double? Percent)> stages=new();
@@ -21,12 +27,12 @@ public static class AssemblyProgress {
     }
     public static Run Begin(string study,string role) {
         if(Runs.Count>128)foreach(var key in Runs.OrderBy(x=>x.Value.Started).Take(32).Select(x=>x.Key))Runs.TryRemove(key,out _);
-        var run=new Run();Runs[study+":"+role]=run;Current.Value=run;return run;
+        var run=new Run();Runs[study+":"+role]=run;Current.Value=run;Prefix.Value="";return run;
     }
     public static Snapshot? Read(string study,string role)=>Runs.TryGetValue(study+":"+role,out var run)?run.Read():null;
-    public static void Start(string key)=>Current.Value?.Start(key);
-    public static void Done(string key)=>Current.Value?.Done(key);
-    public static void Upload(long bytes,long total)=>Current.Value?.Percent("upload",100d*bytes/total);
+    public static void Start(string key)=>Current.Value?.Start(Prefix.Value+key);
+    public static void Done(string key)=>Current.Value?.Done(Prefix.Value+key);
+    public static void Upload(long bytes,long total)=>Current.Value?.Percent(Prefix.Value+"upload",100d*bytes/total);
     public sealed class UploadContent(Stream source,long length):HttpContent {
         protected override bool TryComputeLength(out long value){value=length;return true;}
         protected override Task SerializeToStreamAsync(Stream target,TransportContext? context)=>Copy(target,CancellationToken.None);

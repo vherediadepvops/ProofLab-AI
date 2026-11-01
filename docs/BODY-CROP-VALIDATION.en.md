@@ -1,5 +1,7 @@
 # Body review with wider context — 2026-10-30
 
+> Historical document: this describes an earlier workflow. For new object and suspension localization across 50 images and up to three rounds, see [the current protocol](DENSE-LOCALIZATION.en.md). Current validation is local; earlier campaign results do not validate this change.
+
 ## Behavior
 
 The existing Spark visual review receives the full scene, one unmarked body crop per reference, and three suspension crops. It adds neither an inference nor a UI section. A coarse proposal may point to the cord: the search region therefore retains at least 60% of original height and 40% of width, enlarged further by candidate size. Spark identifies the entire suspended body regardless of shape, material or color. Cords, hands and shadows are excluded.

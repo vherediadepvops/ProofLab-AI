@@ -6,6 +6,7 @@ public sealed partial class AssemblyLocator
 {
     private async Task<AssemblyEvidence?> ReadObjectReview(string root,AssemblyEvidence draft,CancellationToken ct)
     {
+        if(File.Exists(Path.Combine(root,"dense-localization-attempt.json")))return await ReadDenseLocalization(root,draft,ct);
         var evidencePath=Path.Combine(root,"reviewed-evidence.json");
         if(!File.Exists(evidencePath))return null;
         var attempt=await Read<ObjectReviewAttempt>(Path.Combine(root,"object-review-attempt.json"),ct);

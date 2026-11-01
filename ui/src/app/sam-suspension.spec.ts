@@ -23,6 +23,28 @@ function experiment(width=1080,height=1920,offset=0) {
   return {archive,track,cx,cy,radius};
 }
 describe('Automatic Spark/SAM suspension estimates',()=>{
+  for(const count of [50,100,150]) it('uses dense suspension consensus from '+count+' frames without averaging the moving body',()=>{
+    const {archive,track,cx,cy}=experiment();
+    const e=archive.suspension!;
+    e.refinement='SPARK_DENSE_OBJECT_AND_EXIT_50_V1';
+    e.points=Array.from({length:count},(_,frame)=>({frame,visible:true,x:500,y:150,confidence:.95}));
+    e.consensus={status:'CONSENSUS_ESTIMATE',camera:'STATIC',inlierOrdinals:e.points.map(p=>p.frame),
+      submitted:count,usable:count,timeCoverage:1,x:500,y:150,spreadPixels:0};
+    const result=resolveSamSuspension(archive,track);
+    expect(result.pivot).not.toBeNull();
+    expect(result.pivot!.pivotXpx/480*1080).toBeCloseTo(cx,8);
+    expect(result.pivot!.pivotYpx/270*1920).toBeCloseTo(cy,8);
+    expect(samAngularFrameAt(track,result.pivot!,1)!.angularVelocityRadiansPerSecond!).toBeCloseTo(-.35*Math.PI,2);
+    // A minority of outlying Spark anchors must not suppress every SAM measurement.
+    e.points.forEach((p,i)=>{if(i%5===0){p.x=700;p.y=400;}});
+    e.consensus.inlierOrdinals=e.points.filter(p=>p.frame%5!==0).map(p=>p.frame);
+    const robust=resolveSamSuspension(archive,track);
+    expect(robust.pivot).not.toBeNull();expect(robust.rejectedAnchorFrames?.length).toBe(count/5);
+    e.consensus.camera='MOVING';
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    e.consensus.camera='STATIC';e.consensus.x=510;
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
   for(const protocol of ['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3']) it('preserves visually localized exit '+protocol,()=>{
     const {archive,track,cx,cy}=experiment(1080,1920,3);
     archive.suspension!.refinement=protocol;

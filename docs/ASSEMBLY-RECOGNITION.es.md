@@ -1,6 +1,8 @@
 # Reconocimiento del montaje y seguimiento por elemento
 
-> Estado actual: la sección **Reconocer montaje** se retiró del laboratorio a petición del usuario. **Procesar** ejecuta SAM directamente, con el token de sesión y el costo del video, sin reconocimiento previo ni US$0,05 adicionales. La ruta ampliada descrita abajo se conserva en el código; las definiciones ya revisadas y su caché siguen siendo válidas. Nuevos componentes de interfaz requieren consulta previa al usuario.
+> Documento histórico: describe un flujo anterior. Para las nuevas localizaciones de objeto y suspensión en 50 imágenes y hasta tres rondas, consulta [el protocolo actual](DENSE-LOCALIZATION.es.md). Su validación actual es local; los resultados de campañas anteriores no validan el cambio nuevo.
+
+> Estado histórico: la sección **Reconocer montaje** se retiró del laboratorio a petición del usuario. **Procesar** ejecuta SAM directamente, con el token de sesión y el costo del video, sin reconocimiento previo ni US$0,05 adicionales. La ruta ampliada descrita abajo se conserva en el código; las definiciones ya revisadas y su caché siguen siendo válidas. Nuevos componentes de interfaz requieren consulta previa al usuario.
 
 El laboratorio admite la identificación visual de un objeto suspendido sin fijar su color,
 material o forma (por ejemplo, una moneda), la cuerda, el nudo superior, una polea real y

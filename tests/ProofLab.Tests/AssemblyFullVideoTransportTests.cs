@@ -210,6 +210,31 @@ public sealed class AssemblyFullVideoTransportTests
     }
 
     [Fact]
+    public async Task ThreeDenseRoundsReuseOneUploadedVideoAndRequireFiftyExitObservations()
+    {
+        using var clip=new Clip(50);using var http=new FakeHttp();
+        var first=await Send(clip,http);
+        for(var round=0;round<2;round++)
+            await new AssemblyMetaTransport(http).LocateVideoGroundingAsync(clip.PathName,first.VideoInput,
+                clip.Anchors,clip.Images,Token,.25,http.UploadedCallback,Ct);
+        Assert.Single(http.Requests,r=>r.Method=="POST" && r.Path=="/v1/files");
+        var calls=http.Requests.Where(r=>r.Path=="/v1/responses").ToArray();
+        Assert.Equal(3,calls.Length);
+        Assert.DoesNotContain(http.Requests,r=>r.Method=="DELETE" || r.Path.EndsWith("input_tokens"));
+        foreach(var call in calls) {
+            using var doc=JsonDocument.Parse(call.Json!);
+            var root=doc.RootElement;
+            var content=root.GetProperty("input")[0].GetProperty("content").EnumerateArray();
+            Assert.Equal(first.VideoInput.ProviderFileId,content.Single(p=>p.GetProperty("type").GetString()=="input_file").GetProperty("file_id").GetString());
+            var properties=root.GetProperty("text").GetProperty("format").GetProperty("schema").GetProperty("properties");
+            Assert.Equal("array",properties.GetProperty("points").GetProperty("type").GetString());
+            Assert.Equal("array",properties.GetProperty("samples").GetProperty("type").GetString());
+            Assert.Contains("exactly 50 points",content.First().GetProperty("text").GetString());
+            Assert.True(properties.TryGetProperty("camera",out _));
+        }
+    }
+
+    [Fact]
     public async Task CannotSubmitInferenceBeforeUploadedReceiptIsPersisted()
     {
         using var clip = new Clip(); using var http = new FakeHttp { FailCallback = true };

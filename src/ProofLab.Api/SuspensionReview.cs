@@ -122,7 +122,7 @@ public sealed class SuspensionReviewService(PendulumSamCache sam,ISamVideoRuntim
         var a=await sam.ReadArchiveAsync(id,role,ct);
         var d=await Diagnose(a,ct);
         var result=d.GetProperty("current");
-        var required=a.Suspension is not null && result.ValueKind==JsonValueKind.Object &&
+        var required=a.Suspension is not null && a.Suspension.Refinement!=DenseLocalizationPolicy.Protocol && result.ValueKind==JsonValueKind.Object &&
             result.GetProperty("pivot").ValueKind==JsonValueKind.Null;
         var reason=result.ValueKind==JsonValueKind.Object?result.GetProperty("reason").GetString()!:"NO_TRACK";
         return new(a.Receipt.AnalysisId!,required,store.Pending(a),

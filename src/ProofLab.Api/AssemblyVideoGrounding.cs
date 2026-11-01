@@ -113,7 +113,8 @@ public sealed partial class AssemblyLocator
         var runs=await FullRuns(sha,ct);
         var legacyPending=File.Exists(Path.Combine(Folder(legacyKey),"attempt.json")) && legacy is null;
         return(legacy,runs,HistoricalAttemptPending(sha) || legacyPending ||
-            runs.Any(r=>r.Evidence is null && !r.NoInference));
+            runs.Any(r=>!r.NoInference && (r.Evidence is null ||
+                (File.Exists(Path.Combine(r.Root,"dense-localization-attempt.json")) && r.Reviewed is null))));
     }
     public async Task<SamSceneDefinition[]> TrackingHistoryAsync(string id,string role,CancellationToken ct,bool quote=false)
     {
@@ -147,7 +148,8 @@ public sealed partial class AssemblyLocator
             throw new InvalidDataException("Suspension scene mismatch.");
         return new(video.Sha256,scene.Key,evidence.CacheKey,evidence.ResponseSha256,evidence.Model,
             scene.Width,scene.Height,evidence.Proposal.Suspension.Points,
-            evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol?evidence.Derivation:null);
+            evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
+            evidence.Proposal.Consensus);
     }
     public Task<SamSceneDefinition?> TrackingAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,false);
     public Task<SamSceneDefinition?> TrackingForQuoteAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,true);
@@ -166,13 +168,13 @@ public sealed partial class AssemblyLocator
         var (video,_,_)=await Source(id,role,ct,quote);
         var records=await GroundingRecords(video.Sha256,ct);
         var key=AssemblyPolicy.VideoGroundingKey(video.Sha256);
-        var budget=AssemblyPolicy.VideoBudget(configuration)+ObjectReviewPolicy.EstimatedCostUsd;
+        var budget=AssemblyPolicy.VideoBudget(configuration)*DenseLocalizationPolicy.MaximumAttempts;
         bool fresh=mode=="api-meta";
         var latest=records.Runs.FirstOrDefault(r=>r.Evidence is not null);
         var reviewPending=latest is not null && File.Exists(Path.Combine(latest.Root,"object-review-attempt.json")) && latest.Reviewed is null;
         if(records.Pending || reviewPending)return new(key,video.Sha256,budget,false,true,false,"PRIOR_ATTEMPT",null,null,mode,fresh);
         if(fresh)return new(key,video.Sha256,budget,false,false,runtime.ManualTokenCallsPermitted,
-            "NEEDS_LOCALIZATION",null,null,mode,true,RequiredSparkCalls:2,VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd);
+            "NEEDS_LOCALIZATION",null,null,mode,true,RequiredSparkCalls:DenseLocalizationPolicy.MaximumAttempts,VisualReviewEstimatedCostUsd:0);
         var evidence=latest?.Reviewed;
         var human=latest is null?await ApprovedCore(id,role,ct,quote):null;
         var scene=human ?? (evidence is null?null:AssemblyPolicy.Ground(evidence));
@@ -182,7 +184,7 @@ public sealed partial class AssemblyLocator
         var draft=latest?.Evidence;
         return new(key,video.Sha256,draft is null?budget:ObjectReviewPolicy.EstimatedCostUsd,false,false,
             runtime.ManualTokenCallsPermitted,"NEEDS_LOCALIZATION",null,draft,mode,false,
-            RequiredSparkCalls:draft is null?2:1,VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd);
+            RequiredSparkCalls:draft is null?DenseLocalizationPolicy.MaximumAttempts:1,VisualReviewEstimatedCostUsd:draft is null?0:ObjectReviewPolicy.EstimatedCostUsd);
     }
 
     private sealed record PreparedManifest(string RelativeDirectory,string SourceSha256,string PtsSha256,string Mp4Sha256,long Bytes,KnotFrame[] Frames);
@@ -278,6 +280,7 @@ public sealed partial class AssemblyLocator
                 runId,AssemblyPolicy.Model,AssemblyPolicy.VideoGroundingProtocol,DateTimeOffset.UtcNow,
                 initial.MaximumEstimatedCostUsd,prepared.ToArray(),videoInput);
             ct.ThrowIfCancellationRequested();runtime.ReserveOrThrow(input.ModelApiToken);
+            await Save(Path.Combine(runRoot,"dense-localization-attempt.json"),new DenseAttempt(DenseLocalizationPolicy.Protocol,DenseLocalizationPolicy.MaximumAttempts),CancellationToken.None);
             await Save(Path.Combine(runRoot,"attempt.json"),attempt,CancellationToken.None);
             AssemblyVideoProviderResult result;
             using var deadline=new CancellationTokenSource(TimeSpan.FromMinutes(10));
@@ -297,14 +300,15 @@ public sealed partial class AssemblyLocator
             var evidence=new AssemblyEvidence(attempt.Key,video.Sha256,AssemblyPolicy.Model,AssemblyPolicy.VideoGroundingProtocol,
                 prepared.ToArray(),KnotPolicy.Hash(response.Raw),response.ProviderResponseId,DateTimeOffset.UtcNow,
                 proposal,response.InputTokens,response.OutputTokens,result.VideoInput,runId);
+            if(!DenseLocalizationPolicy.IsDense(evidence))throw new InvalidDataException("Full fifty-image object and suspension response required.");
             await Save(Path.Combine(runRoot,"evidence.json"),evidence,CancellationToken.None);
             AssemblyProgress.Done("verify");
-            evidence=await ReviewObject(runRoot,evidence,video,pts,input.ModelApiToken,deadline.Token);
+            evidence=await ContinueDenseLocalization(runRoot,evidence,video,pts,mp4,input.ModelApiToken,deadline.Token);
             var scene=AssemblyPolicy.Ground(evidence);
             await Save(Path.Combine(runRoot,"stages.json"),progress.Read(),CancellationToken.None);
             return new(key,video.Sha256,initial.MaximumEstimatedCostUsd,false,false,scene is not null,
-                AssemblyPolicy.GroundingStatus(evidence),scene,evidence,mode,false,EvidenceProtocol:evidence.Protocol,RequiredSparkCalls:2,
-                VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd);
+                AssemblyPolicy.GroundingStatus(evidence),scene,evidence,mode,false,EvidenceProtocol:evidence.Protocol,RequiredSparkCalls:evidence.Frames.Length/50,
+                VisualReviewEstimatedCostUsd:0);
         } finally {gate.Release();}
     }
 }

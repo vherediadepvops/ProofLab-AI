@@ -1,6 +1,8 @@
 # Assembly recognition and per-element tracking
 
-> Current status: **Recognize assembly** was removed from the lab at the user’s request. **Process** runs SAM directly using the session key and video estimate, without preliminary recognition or an extra US$0.05. The extended workflow below remains in the code; existing reviewed definitions and their cache remain valid. New interface components require prior consultation with the user.
+> Historical document: this describes an earlier workflow. For new object and suspension localization across 50 images and up to three rounds, see [the current protocol](DENSE-LOCALIZATION.en.md). Current validation is local; earlier campaign results do not validate this change.
+
+> Historical status: **Recognize assembly** was removed from the lab at the user’s request. **Process** runs SAM directly using the session key and video estimate, without preliminary recognition or an extra US$0.05. The extended workflow below remains in the code; existing reviewed definitions and their cache remain valid. New interface components require prior consultation with the user.
 
 The lab can propose identities for a suspended object of any color/material/shape
 (such as a coin), cord, upper knot, actual pulley and support. Live Meta accuracy

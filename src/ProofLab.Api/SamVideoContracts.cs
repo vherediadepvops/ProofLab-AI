@@ -27,7 +27,8 @@ public sealed record SamVideoPreflight(
 
 // Derived metadata beside the immutable receipt; never labels an AI estimate as human review.
 public sealed record SamSuspensionEvidence(string SourceSha256,string SceneKey,string EvidenceKey,
-    string ResponseSha256,string Model,int Width,int Height,KnotPoint[] Points, string? Refinement=null);
+    string ResponseSha256,string Model,int Width,int Height,KnotPoint[] Points, string? Refinement=null,
+    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SuspensionConsensus? Consensus=null);
 public sealed record SamVideoArtifact(
     SamVideoState State, SamVideoReceipt Receipt, string RawResponseJson,
     SamSuspensionEvidence? Suspension = null, SuspensionReviewEvidence? SuspensionReview=null,
