@@ -34,7 +34,8 @@ public sealed record AssemblyVideoProviderResult(KnotProviderResult Response,Ass
 public sealed class AssemblyNoInferenceSentException(Exception inner):Exception("No Spark inference was submitted.",inner);
 public sealed record AssemblyVideoAttempt(string Sha256,string Key,string RunId,string Model,string Protocol,
     DateTimeOffset CreatedAtUtc,double MaximumEstimatedCostUsd,KnotFrame[] Frames,AssemblyVideoInput VideoInput);
-public sealed record AssemblyGroundingOutcome(string Status,DateTimeOffset RecordedAtUtc);
+public sealed record AssemblyGroundingOutcome(string Status,DateTimeOffset RecordedAtUtc,
+    int? HttpStatus=null,string? VideoSha256=null,string? RunId=null);
 public sealed record AssemblyConfirmRequest(string VideoSha256,string CacheKey,bool ConfirmReviewed,string[] Roles);
 public sealed record SamSceneRole(string Id,string Role);
 public sealed record SamSceneSeed(int Frame,string Role,int X1,int Y1,int X2,int Y2);

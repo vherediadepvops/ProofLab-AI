@@ -19,3 +19,11 @@
 - The upload request includes post-transfer local analysis. Application-side receiving measurements can exclude proxy buffering; production Nginx has `proxy_request_buffering off`.
 - The observed incident returned HTTP 413 after successful video upload. Previous logs omitted the error body; the precise historical cause remains unproven. Response persistence is a plausible explanation to verify by repeating the video.
 - Validation: 472 .NET tests, Linux API publish and Angular production build passed. No paid Meta calls or CI runs.
+
+## Reintento manual después de HTTP 413 / Manual retry after HTTP 413
+
+Un rechazo HTTP 413 confirmado en la petición inicial de localización termina ese intento. Se guarda `PROVIDER_REJECTED_REQUEST` con HTTP, hash del video, ID de ejecución y fecha. Un nuevo clic manual puede crear otra ejecución; el registro fallido y el contador se conservan. No se reintenta automáticamente ni se afirma que no hubo cobro. Los resultados desconocidos (por ejemplo, conexión interrumpida, 408 o 500) siguen requiriendo conciliación. No se aplica esta excepción a errores posteriores a una respuesta inicial guardada.
+
+A confirmed HTTP 413 on the initial grounding request is terminal. Its provenance-bearing outcome permits a new explicit manual attempt, preserving history and accounting. Unknown outcomes remain unresolved; this is neither an automatic retry nor a no-charge assertion. Conflicting evidence and mismatched provenance are rejected. A historical rejection may be reconciled only with verified provider-status logs and an audit record; never delete the attempt to unblock it.
+
+Verificación / Validation: 477 .NET tests passed, Linux publish and Angular production build passed. No Meta calls or CI runs. The UI now distinguishes an unresolved previous attempt from an object recognition failure.

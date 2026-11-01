@@ -6,7 +6,7 @@ namespace ProofLab.Api;
 
 public sealed partial class AssemblyLocator
 {
-    private sealed record FullRun(string Root,AssemblyVideoAttempt Attempt,AssemblyEvidence? Evidence,bool NoInference,AssemblyEvidence? Reviewed=null);
+    private sealed record FullRun(string Root,AssemblyVideoAttempt Attempt,AssemblyEvidence? Evidence,bool ManualRetryAllowed,AssemblyEvidence? Reviewed=null);
     private string VideoRoot(string sha)=>Folder(AssemblyPolicy.VideoGroundingKey(sha));
     private static bool ValidSha(string value)=>value is {Length:64} && value.All(Uri.IsHexDigit);
     private static string PtsHash(double[] pts)=>KnotPolicy.Hash(string.Join("\n",pts.Select(p=>p.ToString("R",CultureInfo.InvariantCulture))));
@@ -95,14 +95,20 @@ public sealed partial class AssemblyLocator
                     throw new InvalidDataException("Full-video target differs from provider response.");
                 AssemblyPolicy.Ground(evidence); // Also checks key and automatic-scene invariants.
             }
-            var noInference=false;
+            var manualRetryAllowed=false;
             if(File.Exists(Path.Combine(root,"outcome.json"))) {
                 var outcome=await Read<AssemblyGroundingOutcome>(Path.Combine(root,"outcome.json"),ct);
-                noInference=outcome.Status=="NO_INFERENCE_SENT";
-                if(noInference && (evidence is not null || File.Exists(Path.Combine(root,"response.json"))))
+                manualRetryAllowed=outcome.Status=="NO_INFERENCE_SENT";
+                if(outcome.Status=="PROVIDER_REJECTED_REQUEST") {
+                    if(outcome.HttpStatus!=413 || outcome.VideoSha256!=sha || outcome.RunId!=runId ||
+                        outcome.RecordedAtUtc<attempt.CreatedAtUtc)
+                        throw new InvalidDataException("Provider rejection outcome provenance mismatch.");
+                    manualRetryAllowed=true;
+                }
+                if(manualRetryAllowed && (evidence is not null || File.Exists(Path.Combine(root,"response.json"))))
                     throw new InvalidDataException("Conflicting full-video attempt outcome.");
             }
-            records.Add(new(root,attempt,evidence,noInference,evidence is null?null:await ReadObjectReview(root,evidence,ct)));
+            records.Add(new(root,attempt,evidence,manualRetryAllowed,evidence is null?null:await ReadObjectReview(root,evidence,ct)));
         }
         return records.OrderByDescending(r=>r.Attempt.CreatedAtUtc).ThenByDescending(r=>r.Attempt.RunId).ToArray();
     }
@@ -113,7 +119,7 @@ public sealed partial class AssemblyLocator
         var runs=await FullRuns(sha,ct);
         var legacyPending=File.Exists(Path.Combine(Folder(legacyKey),"attempt.json")) && legacy is null;
         return(legacy,runs,HistoricalAttemptPending(sha) || legacyPending ||
-            runs.Any(r=>!r.NoInference && (r.Evidence is null ||
+            runs.Any(r=>!r.ManualRetryAllowed && (r.Evidence is null ||
                 (File.Exists(Path.Combine(r.Root,"dense-localization-attempt.json")) && r.Reviewed is null))));
     }
     public async Task<SamSceneDefinition[]> TrackingHistoryAsync(string id,string role,CancellationToken ct,bool quote=false)
@@ -291,6 +297,12 @@ public sealed partial class AssemblyLocator
                     uploaded=>Save(Path.Combine(runRoot,"video-input.json"),uploaded,CancellationToken.None),deadline.Token);
             } catch(AssemblyNoInferenceSentException) {
                 await Save(Path.Combine(runRoot,"outcome.json"),new AssemblyGroundingOutcome("NO_INFERENCE_SENT",DateTimeOffset.UtcNow),CancellationToken.None);
+                throw;
+            } catch(HttpRequestException error) when(error.StatusCode==System.Net.HttpStatusCode.RequestEntityTooLarge) {
+                // A confirmed rejection is terminal, unlike an interrupted/unknown response.
+                // Keep the attempt and accounting; only a new explicit manual request may retry.
+                await Save(Path.Combine(runRoot,"outcome.json"),new AssemblyGroundingOutcome(
+                    "PROVIDER_REJECTED_REQUEST",DateTimeOffset.UtcNow,413,video.Sha256,runId),CancellationToken.None);
                 throw;
             }
             AssemblyProgress.Start("verify");

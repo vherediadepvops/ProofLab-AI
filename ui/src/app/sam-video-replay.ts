@@ -963,8 +963,12 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       const q=this.adaptiveQuote(),r=this.readiness();
       if(!q)return this.es?'Actualiza el costo del procesamiento por segmentos.':'Refresh the segment processing cost.';
       if(q.requiresNewSparkCall && !this.groundingQuote()?.canRun)return this.es?
-        'Spark aún no puede localizar el objeto. Actualiza el costo y revisa el estado del intento.':
-        'Spark cannot localize the object yet. Refresh the cost and review the attempt status.';
+        (this.groundingQuote()?.priorAttempt?
+          'Un intento anterior de Spark quedó sin resolver. No se ha iniciado otra consulta; revisa los detalles del intento.':
+          'No se pudo habilitar la consulta a Spark. Actualiza el costo y comprueba la conexión y los permisos del servidor.'):
+        (this.groundingQuote()?.priorAttempt?
+          'A previous Spark attempt is unresolved. No new request has started; review the attempt details.':
+          'The Spark request could not be enabled. Refresh the cost and check the connection and server permissions.');
       if(!r?.paidRequestsSwitchEnabled || !r.creditsConfirmedByOwner ||
          !r.ownerApprovedPaidRequests || !r.manualTokenCallsPermitted)
         return this.es?'Los controles de créditos o pagos del servidor están deshabilitados.':

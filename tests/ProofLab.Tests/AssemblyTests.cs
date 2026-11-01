@@ -120,6 +120,7 @@ public sealed class AssemblyTests
     }
     private sealed class Transport:IAssemblyTransport {
         public int Calls;public bool Fail;public Func<Task>? Wait;
+        public System.Net.HttpStatusCode? RejectStatus;
         public string GroundingStatus="CLEAR_SINGLE_OBJECT";
         public bool NoInference;public int VideoCalls;public int InsufficientRounds;public int FailOnRound;public readonly List<string> FileIds=new();
         public double GroundingConfidence=.95;
@@ -140,6 +141,7 @@ public sealed class AssemblyTests
             var receipt=input with {ProviderFileId=string.IsNullOrEmpty(input.ProviderFileId)?"file-synthetic-"+VideoCalls:input.ProviderFileId};
             FileIds.Add(receipt.ProviderFileId);
             await uploaded(receipt);
+            if(RejectStatus is { } status)throw new HttpRequestException("Synthetic provider rejection",null,status);
             var result=await LocateGroundingAsync(images,token,ct);
             if(anchors.Length==50)result=result with {Raw=Envelope(JsonSerializer.Serialize(new {
                 arrangement="simple_pendulum",camera="STATIC",samples=Enumerable.Range(0,50).Select(i=>new double[]{i,1,400+i,700,450+i,800,GroundingConfidence}),
@@ -384,6 +386,51 @@ public sealed class AssemblyTests
         Assert.Equal("PRIOR_ATTEMPT",(await f.Open().GroundingQuoteAsync("s","baseline",Ct)).Status);
         await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
         Assert.Equal(1,f.Runtime.Reservations);Assert.Equal(1,f.Transport.Calls);
+    }
+    [Theory]
+    [InlineData("api-meta")]
+    [InlineData("api-meta-cache")]
+    public async Task Confirmed413PreservesHistoryAndAllowsOnlyANewManualAttempt(string mode) {
+        using var f=new Fixture();f.Transport.RejectStatus=System.Net.HttpStatusCode.RequestEntityTooLarge;
+        var request=f.GroundRequest() with {Mode=mode};
+        await Assert.ThrowsAsync<HttpRequestException>(()=>f.Open().GroundAsync("s","baseline",request,Ct));
+        var failed=f.GroundFolder;
+        var before=await File.ReadAllTextAsync(Path.Combine(failed,"attempt.json"));
+        var outcome=await File.ReadAllTextAsync(Path.Combine(failed,"outcome.json"));
+        Assert.Contains("PROVIDER_REJECTED_REQUEST",outcome);Assert.Contains("413",outcome);
+        Assert.False(File.Exists(Path.Combine(failed,"response.json")));
+        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(1,f.Runtime.Reservations);
+        var quote=await f.Open().GroundingQuoteAsync("s","baseline",Ct,mode);
+        Assert.Equal("NEEDS_LOCALIZATION",quote.Status);Assert.True(quote.CanRun);Assert.False(quote.PriorAttempt);
+        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(1,f.Runtime.Reservations);
+        f.Transport.RejectStatus=null;
+        var result=await f.Open().GroundAsync("s","baseline",request,Ct);
+        Assert.NotNull(result.Scene);Assert.NotEqual(failed,f.GroundFolder);
+        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(2,f.Runtime.Reservations);
+        Assert.Equal(before,await File.ReadAllTextAsync(Path.Combine(failed,"attempt.json")));
+        Assert.Equal(outcome,await File.ReadAllTextAsync(Path.Combine(failed,"outcome.json")));
+    }
+    [Fact] public async Task RejectedAttemptCannotHaveConflictingEvidenceOrWrongProvenance() {
+        using var f=new Fixture();f.Transport.RejectStatus=System.Net.HttpStatusCode.RequestEntityTooLarge;
+        await Assert.ThrowsAsync<HttpRequestException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
+        var path=Path.Combine(f.GroundFolder,"outcome.json");var original=await File.ReadAllTextAsync(path);
+        await File.WriteAllTextAsync(path,original.Replace(Sha,new string('b',64)));
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().GroundingQuoteAsync("s","baseline",Ct));
+        await File.WriteAllTextAsync(path,original);
+        await File.WriteAllTextAsync(Path.Combine(f.GroundFolder,"response.json"),Envelope(GroundingPoints()));
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().GroundingQuoteAsync("s","baseline",Ct));
+        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(1,f.Runtime.Reservations);
+    }
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.InternalServerError)]
+    [InlineData(System.Net.HttpStatusCode.RequestTimeout)]
+    public async Task UnknownProviderOutcomeStillRequiresReview(System.Net.HttpStatusCode status) {
+        using var f=new Fixture();f.Transport.RejectStatus=status;
+        await Assert.ThrowsAsync<HttpRequestException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
+        var quote=await f.Open().GroundingQuoteAsync("s","baseline",Ct);
+        Assert.Equal("PRIOR_ATTEMPT",quote.Status);Assert.False(quote.CanRun);
+        Assert.False(File.Exists(Path.Combine(f.GroundFolder,"outcome.json")));
+        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(1,f.Runtime.Reservations);
     }
     [Fact] public async Task GroundingFrameAndProviderReceiptAreAuthenticated() {
         using var f=new Fixture();await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
