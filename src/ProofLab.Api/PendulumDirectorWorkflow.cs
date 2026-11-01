@@ -228,6 +228,12 @@ public sealed class PendulumDirectorWorkflow(
             if (role == "baseline" && session.Proposal is not null)
                 throw new ArgumentException("The first video cannot be replaced after a proposal.");
 
+            // Drafts may be partial; freeze a new first video only with declared physical inputs.
+            if (role == "baseline" &&
+                (session.BaselineLengthMeters is not double length || !double.IsFinite(length) || length < .1 || length > 5 ||
+                 session.MassGrams is not double mass || !double.IsFinite(mass) || mass < 10 || mass > 5000))
+                throw new ArgumentException("Length (10–500 cm) and mass (10–5000 g) are required before uploading the first video.");
+
             var videoId = Guid.NewGuid().ToString("N");
             var folder = Folder(id);
             timingPath = Path.Combine(folder, role + "-upload-" + videoId + ".timings.json");

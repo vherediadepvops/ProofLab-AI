@@ -71,7 +71,7 @@ export class PendulumZoneOne extends PendulumDirector {
   canVisitStep(step:number):boolean {
     if(!this.session() || this.flowBusy())return false;
     if(step===1)return true;
-    if(step===2)return !!this.session()?.baseline && !this.parametersInvalid() && !this.draftSaving() && !this.draftError();
+    if(step===2)return !!this.session()?.baseline && this.requiredParametersReady() && this.requiredParametersSaved() && !this.parametersInvalid() && !this.draftSaving() && !this.draftError();
     // Navigation may reopen archived evidence; the player still verifies it before showing layers.
     if(step===3)return this.hasSavedSelection('baseline');
     if(step===4)return !!this.frozenForStudy() || (this.hasVerifiedResult('baseline') && !!this.session()?.humanReview);
@@ -325,7 +325,7 @@ export class PendulumZoneOne extends PendulumDirector {
   }
 
   async loadDemo():Promise<void> {
-    const current=this.session();if(!current || current.baseline || this.videoActionsBusy())return;
+    const current=this.session();if(!current || current.baseline || this.uploadBlocked())return;
     this.sourceChoice.set('demo');this.choosingUpload.set(false);this.demoLoading.set(true);this.previewState.set('loading');this.error.set('');
     try {
       const config=await firstValueFrom(this.demoHttp.get<{studyId:string}>('demo-video.json'));
@@ -411,8 +411,9 @@ export class PendulumZoneOne extends PendulumDirector {
     if (!file || this.registeringAndUploading() ||
         this.busy() || !!this.stageBusy() || this.connection.busy()) return;
 
-    if(!this.session() || this.parametersInvalid() || this.draftSaving() || this.draftError())return;
-    if(role==='followup' && (!this.frozenForStudy() || this.session()?.followup))return;
+    if(this.uploadBlocked()){control.value='';return;}
+    if(role==='followup' && (!this.frozenForStudy() || this.session()?.followup ||
+      this.parameterState(this.nextResearchLength(),.1,5)!=='valid')){control.value='';return;}
     this.sourceChoice.set('upload');this.previewState.set('loading');
     try {
       await this.upload(event, role);
@@ -430,6 +431,10 @@ export class PendulumZoneOne extends PendulumDirector {
     return !this.session() || this.parametersInvalid() || this.generatingCode() || this.draftSaving() || !!this.draftError() || this.recoveryLoading() || this.videoLoading() || this.busy() || this.resultState()==='loading' || this.connection.busy();
   }
 
+  uploadBlocked():boolean {
+    return this.videoActionsBusy() || !this.requiredParametersReady() || !this.requiredParametersSaved();
+  }
+
   async uploadNewTrial(event:Event):Promise<void> {
     const control=event.target as HTMLInputElement,file=control.files?.[0];
     if(!file || this.videoActionsBusy())return;
@@ -443,7 +448,8 @@ export class PendulumZoneOne extends PendulumDirector {
     if(this.session()?.baseline) {
       this.newFocusedStudy();
       await this.generateRecoveryCode();
-      if(!this.session()){control.value='';return;}
+      control.value='';
+      return; // The new setup must be entered and saved before selecting its video.
     }
     await this.uploadFocused(event,'baseline');
   }

@@ -100,7 +100,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       status:'PERIOD_CANDIDATE_REQUIRES_MANUAL_BOB_VERIFICATION'}
   };
 
-  it('starts empty, preserves null through save/recovery, and enables upload without invented inputs',async()=>{
+  it('starts with an editable empty draft and requires length and mass before upload',async()=>{
     const fixture=TestBed.createComponent(PendulumZoneOne),c=fixture.componentInstance;
     const http=TestBed.inject(HttpTestingController);fixture.detectChanges();
     expect(c.baselineLength()).toBeNull();expect(c.initialAngleDegrees()).toBeNull();expect(c.massGrams()).toBeNull();
@@ -114,11 +114,68 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       const input=el.querySelector('#'+id) as HTMLInputElement;
       expect(input.value).toBe('');expect(input.dataset['state']).toBe('missing');
     }
-    expect(c.videoActionsBusy()).toBeFalse();expect(c.parametersInvalid()).toBeFalse();expect(c.theoreticalPreview()).toBeNull();
+    expect(c.videoActionsBusy()).toBeFalse();expect(c.uploadBlocked()).toBeTrue();expect(c.parametersInvalid()).toBeFalse();expect(c.theoreticalPreview()).toBeNull();
+    expect((el.querySelector('.upload-new-video input') as HTMLInputElement).disabled).toBeTrue();
+    expect((el.querySelector('#focus-length') as HTMLInputElement).required).toBeTrue();
+    expect((el.querySelector('#focus-mass') as HTMLInputElement).required).toBeTrue();
+    expect((el.querySelector('#focus-angle') as HTMLInputElement).required).toBeFalse();
+    expect(el.querySelector('#length-input-state')?.textContent).toContain('Dato obligatorio');
+    fixture.componentRef.setInput('language','en');fixture.detectChanges();
+    expect(el.querySelector('#mass-input-state')?.textContent).toContain('Required value');
+    fixture.componentRef.setInput('language','es');fixture.detectChanges();
     expect(el.textContent).toContain('no precisión garantizada');
     const restoring=c.restore(blank.id);http.expectOne(studyUrl+'/'+blank.id).flush(blank);await restoring;
     expect(c.baselineLength()).toBeNull();expect(c.initialAngleDegrees()).toBeNull();expect(c.massGrams()).toBeNull();
     http.expectNone(theoryUrl);await verifyHttp(http);
+  });
+
+  it('sends no video or demo request when either required value is missing',async()=>{
+    const {component:c,fixture,http}=await init(false);
+    c.initialAngleDegrees.set(null);
+    for(const [length,mass] of [[null,null],[.5,null],[null,300]] as [number|null,number|null][]){
+      c.baselineLength.set(length);c.massGrams.set(mass);
+      c.session.set({...session,baselineLengthMeters:length,massGrams:mass,angleDegrees:null});
+      const control={files:[new File([new Uint8Array(15000)],'first.mp4')],value:'selected'};
+      await c.uploadNewTrial({target:control} as unknown as Event);await c.loadDemo();
+      expect(control.value).toBe('');expect(c.uploadBlocked()).toBeTrue();
+      http.expectNone(r=>r.url.includes('/video/') || r.url==='demo-video.json');
+    }
+    await verifyHttp(http);fixture.destroy();
+  });
+
+  it('waits for complete saved physical inputs and permits an omitted initial angle',async()=>{
+    const {component:c,fixture,http}=await init(false);
+    c.initialAngleDegrees.set(null);c.baselineLength.set(.5);c.massGrams.set(null);
+    c.session.set({...session,baselineLengthMeters:null,massGrams:null,angleDegrees:null});
+    c.updateDraft();await Promise.resolve();await Promise.resolve();
+    const partial=http.expectOne(studyUrl+'/'+session.id+'/draft');
+    expect(partial.request.body.massGrams).toBeNull();
+    partial.flush({...session,baselineLengthMeters:.5,massGrams:null,angleDegrees:null});
+    for(let i=0;i<6;i++)await Promise.resolve();
+    expect(c.uploadBlocked()).toBeTrue();
+    c.massGrams.set(300);c.updateDraft();await Promise.resolve();await Promise.resolve();
+    const complete=http.expectOne(studyUrl+'/'+session.id+'/draft');
+    const control={files:[new File([new Uint8Array(15000)],'first.mp4')],value:'selected'};
+    await c.uploadFocused({target:control} as unknown as Event,'baseline');
+    http.expectNone(r=>r.url.includes('/video/'));expect(c.uploadBlocked()).toBeTrue();
+    complete.flush({...session,angleDegrees:null});for(let i=0;i<6;i++)await Promise.resolve();
+    expect(c.uploadBlocked()).toBeFalse();http.expectNone(theoryUrl);
+    const uploading=c.uploadFocused({target:control} as unknown as Event,'baseline');
+    http.expectOne(r=>r.url.includes('/video/baseline')).flush({...session,angleDegrees:null,baseline:video});
+    await uploading;expect(c.session()?.baseline?.sha256).toBe(video.sha256);
+    await verifyHttp(http);fixture.destroy();
+  });
+
+  it('keeps saved results accessible for historical studies with missing physical inputs',async()=>{
+    const {component:c,fixture,http}=await init(false);
+    c.baselineLength.set(null);c.massGrams.set(null);c.initialAngleDegrees.set(null);
+    c.session.set({...session,baselineLengthMeters:null,massGrams:null,angleDegrees:null,baseline:video});
+    c.acceptProcessed({studyId:session.id,videoRole:'baseline',sourceSha256:video.sha256,analysisId:'f'.repeat(32),port:5391});
+    c.onPreviewState('ready');c.onProcessingFinished(true);fixture.detectChanges();
+    expect(c.canVisitStep(2)).toBeFalse();expect(c.canVisitStep(3)).toBeTrue();
+    expect(fixture.nativeElement.querySelector('app-sam-video-replay')).toBeNull();
+    c.setJourneyStep(3);expect(c.flowStep()).toBe(3);
+    http.expectNone(r=>r.method==='POST');await verifyHttp(http);fixture.destroy();
   });
 
   it('distinguishes zero angle, invalid zero length, and cleared fields without changing measurements',async()=>{
@@ -432,13 +489,13 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     http.expectNone(()=>true);http.verify();fixture.destroy();
   });
 
-  it('uploads another video into a NEW trial without replacing the previous recording',async()=>{
+  it('opens a new empty setup before another recording can be uploaded',async()=>{
     const {component,fixture,root,http}=await init();
     const original={...session,baseline:video,step:'AWAITING_HUMAN_BOB_REVIEW'};
     component.session.set(original);fixture.detectChanges();component.onPreviewState('ready');await verifyHttp(http);
     component.choosingUpload.set(false);fixture.detectChanges();
-    expect(root.querySelectorAll('.video-toolbar .new-trial').length).toBe(0);
-    expect(root.querySelectorAll('.video-toolbar input[type=file]').length).toBe(1);
+    expect(root.querySelectorAll('.video-toolbar .new-trial').length).toBe(1);
+    expect(root.querySelectorAll('.video-toolbar input[type=file]').length).toBe(0);
     const file=new File([new Uint8Array(15000)],'new-trial.mp4',{type:'video/mp4'});
     const input={files:[file],value:'chosen'};
     const nextId='f'.repeat(32);
@@ -451,10 +508,10 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(create.request.body.massGrams).toBeNull();
     create.flush({...session,id:nextId,baselineLengthMeters:null,angleDegrees:null,massGrams:null});
     for(let i=0;i<8;i++)await Promise.resolve();
-    const upload=http.expectOne(r=>r.url.includes('/'+nextId+'/video/baseline'));
-    expect(upload.request.body).toBe(file);
-    upload.flush({...session,id:nextId,baseline:{...video,originalFilename:'new-trial.mp4'}});
+    http.expectNone(r=>r.url.includes('/video/'));
     await transfer;fixture.detectChanges();
+    expect(component.session()?.baseline).toBeNull();expect(component.uploadBlocked()).toBeTrue();
+    expect((root.querySelector('.upload-new-video input') as HTMLInputElement).disabled).toBeTrue();
     expect(component.session()?.id).toBe(nextId);
     expect(original.id).toBe(session.id);expect(original.baseline).toBe(video);
     expect(input.value).toBe('');
@@ -518,7 +575,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     component.session.set(original);fixture.detectChanges();component.onPreviewState('ready');await verifyHttp(http);
     component.playbackReady.set(true);component.resultState.set('ready');
     component.beginNewTrial();fixture.detectChanges();
-    expect(root.querySelector('.new-trial')).toBeNull();
+    expect(root.querySelector('.new-trial')).not.toBeNull();
     component.cancelNewTrial();fixture.detectChanges();
     expect(component.session()).toBe(original);
     expect(component.playbackReady()).toBeTrue();

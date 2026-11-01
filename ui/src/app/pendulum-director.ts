@@ -120,9 +120,10 @@ export class PendulumDirector implements OnInit {
   parameterState(value:number|null, min:number, max:number):'missing'|'valid'|'invalid' {
     return value===null?'missing':Number.isFinite(value)&&value>=min&&value<=max?'valid':'invalid';
   }
-  parameterLabel(value:number|null,min:number,max:number):string {
+  parameterLabel(value:number|null,min:number,max:number,required=false):string {
     const state=this.parameterState(value,min,max);
-    return state==='missing'?(this.es?'Sin dato · opcional':'Not provided · optional'):
+    return state==='missing'?(required?(this.es?'Dato obligatorio':'Required value'):
+      (this.es?'Sin dato · opcional':'Not provided · optional')):
       state==='valid'?(this.es?'Dato ingresado':'Value provided'):
       (this.es?'Revisa el rango permitido':'Check the allowed range');
   }
@@ -132,6 +133,14 @@ export class PendulumDirector implements OnInit {
     this.parameterState(this.massGrams(),10,5000)==='invalid' ||
     (this.includeSecondTrial() && this.followUpMode()==='manual' &&
       this.parameterState(this.manualFollowUpLength(),.1,5)!=='valid'));
+  readonly requiredParametersReady=computed(()=>
+    this.parameterState(this.baselineLength(),.1,5)==='valid' &&
+    this.parameterState(this.massGrams(),10,5000)==='valid');
+  requiredParametersSaved():boolean {
+    const study=this.session();
+    return !!study && this.parameterState(study.baselineLengthMeters,.1,5)==='valid' &&
+      this.parameterState(study.massGrams??null,10,5000)==='valid';
+  }
   readonly theoryInputsReady=computed(()=>this.baselineLength()!==null &&
     this.initialAngleDegrees()!==null && this.massGrams()!==null && !this.parametersInvalid());
 
@@ -385,6 +394,11 @@ export class PendulumDirector implements OnInit {
     const file=control.files?.[0];
     const s=this.session();
     if(!s || !file || this.stageBusy())return;
+    if(role==='baseline' && (!this.requiredParametersReady() || !this.requiredParametersSaved())){
+      this.error.set(this.es?'Ingresa y guarda la longitud y la masa antes de cargar el video.':
+        'Enter and save the length and mass before uploading the video.');
+      control.value='';return;
+    }
     if(file.size < 10000 || file.size > 240000000 ||
        !/\.(mov|mp4|m4v|webm|mkv|avi|3gp|3g2)$/i.test(file.name)){
       this.error.set(this.es
