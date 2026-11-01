@@ -154,6 +154,14 @@ public sealed class MuseExperimentTests
     }
     private static MuseEvaluation Evaluation(MuseObservation o,MuseInvestigatorAnswer a)=>new(Study,o.Id,
         "synthetic-not-provider",MuseExperimentPolicy.Model,KnotPolicy.Hash(Envelope(a)),a,1000,100,DateTimeOffset.UtcNow,.001675);
+    [Fact] public void ConstructingTheStoreDoesNotOpenSqliteUntilResearchStateIsRequested(){
+        using var f=new Fixture();var store=f.Open();
+        var database=Path.Combine(f.Root,".private","physics","muse-experiments.sqlite");
+        Assert.False(File.Exists(database));
+        Assert.Null(store.Prediction(Study));
+        Assert.True(File.Exists(database));
+        Assert.Null(f.Open().Prediction(Study));
+    }
     [Fact] public void FrozenPredictionSurvivesRestartAndCannotBeRewritten() {
         using var f=new Fixture();var store=f.Open();var o=store.SaveObservation(Observation());var a=Answer();
         store.BeginAttempt(o);store.SaveRaw(o.Id,Envelope(a));store.Complete(o,Evaluation(o,a));

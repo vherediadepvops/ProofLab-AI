@@ -57,12 +57,18 @@ public sealed partial class AssemblyLocator
             return null; // Still unresolved: no automatic paid retry.
         }
     }
-    private async Task<FullRun[]> FullRuns(string sha,CancellationToken ct)
+    private async Task<FullRun[]> FullRuns(string sha,CancellationToken ct,string? requestedRunId=null)
     {
+        if(requestedRunId is not null && (requestedRunId.Length!=32 ||
+            requestedRunId.Any(c=>c is not (>= '0' and <= '9' or >= 'a' and <= 'f'))))
+            throw new ArgumentException("Invalid Spark run identity.");
         var runs=Path.Combine(VideoRoot(sha),"runs");
         if(!Directory.Exists(runs))return [];
         var records=new List<FullRun>();
-        foreach(var root in Directory.GetDirectories(runs).OrderBy(p=>p,StringComparer.Ordinal)) {
+        var candidates=requestedRunId is null
+            ? Directory.GetDirectories(runs).OrderBy(p=>p,StringComparer.Ordinal).ToArray()
+            : new[]{Path.Combine(runs,requestedRunId)};
+        foreach(var root in candidates) {
             var runId=Path.GetFileName(root);
             if(runId.Length!=32 || runId.Any(c=>!Uri.IsHexDigit(c)))continue;
             var path=Path.Combine(root,"attempt.json");if(!File.Exists(path))continue;
@@ -157,6 +163,30 @@ public sealed partial class AssemblyLocator
             evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
             evidence.Proposal.Consensus);
     }
+    public async Task<SamSceneDefinition?> TrackingRunAsync(string id,string role,string runId,CancellationToken ct)
+    {
+        var (video,_,_)=await Source(id,role,ct,true);
+        var run=(await FullRuns(video.Sha256,ct,runId)).SingleOrDefault() ??
+            throw new FileNotFoundException("Requested Spark run unavailable.");
+        return run.Reviewed is null?null:AssemblyPolicy.Ground(run.Reviewed);
+    }
+    public async Task<SamSuspensionEvidence?> SuspensionRunAsync(string id,string role,string runId,
+        SamSceneDefinition scene,CancellationToken ct)
+    {
+        var (video,_,_)=await Source(id,role,ct,true);
+        if(scene.VideoSha256!=video.Sha256)throw new InvalidDataException("Suspension source mismatch.");
+        var run=(await FullRuns(video.Sha256,ct,runId)).SingleOrDefault() ??
+            throw new FileNotFoundException("Requested Spark run unavailable.");
+        var evidence=new[]{run.Reviewed,run.Evidence}.FirstOrDefault(e=>
+            e?.CacheKey==scene.EvidenceKey && e.ResponseSha256==scene.ResponseSha256);
+        if(evidence is null || AssemblyPolicy.Ground(evidence)?.Key!=scene.Key)
+            throw new InvalidDataException("Suspension scene does not match the requested Spark run.");
+        if(scene.Origin!=AssemblyPolicy.GroundingOrigin || scene.Arrangement!="simple_pendulum")return null;
+        return new(video.Sha256,scene.Key,evidence.CacheKey,evidence.ResponseSha256,evidence.Model,
+            scene.Width,scene.Height,evidence.Proposal.Suspension.Points,
+            evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
+            evidence.Proposal.Consensus);
+    }
     public Task<SamSceneDefinition?> TrackingAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,false);
     public Task<SamSceneDefinition?> TrackingForQuoteAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,true);
     private async Task<SamSceneDefinition?> TrackingCore(string id,string role,CancellationToken ct,bool quote)
@@ -172,15 +202,17 @@ public sealed partial class AssemblyLocator
     private async Task<AssemblyGroundingQuote> VideoQuote(string id,string role,CancellationToken ct,bool quote,string mode)
     {
         var (video,_,_)=await Source(id,role,ct,quote);
-        var records=await GroundingRecords(video.Sha256,ct);
         var key=AssemblyPolicy.VideoGroundingKey(video.Sha256);
         var budget=AssemblyPolicy.VideoBudget(configuration)*DenseLocalizationPolicy.MaximumAttempts;
         bool fresh=mode=="api-meta";
-        var latest=records.Runs.FirstOrDefault(r=>r.Evidence is not null);
-        var reviewPending=latest is not null && File.Exists(Path.Combine(latest.Root,"object-review-attempt.json")) && latest.Reviewed is null;
-        if(records.Pending || reviewPending)return new(key,video.Sha256,budget,false,true,false,"PRIOR_ATTEMPT",null,null,mode,fresh);
+        // A new explicit operation is independent of historical cache entries.
+        // GroundAsync still owns the process gate and source file locks.
         if(fresh)return new(key,video.Sha256,budget,false,false,runtime.ManualTokenCallsPermitted,
             "NEEDS_LOCALIZATION",null,null,mode,true,RequiredSparkCalls:DenseLocalizationPolicy.MaximumAttempts,VisualReviewEstimatedCostUsd:0);
+        var records=await GroundingRecords(video.Sha256,ct);
+        var latest=records.Runs.FirstOrDefault(r=>r.Evidence is not null);
+        var reviewPending=latest is not null && File.Exists(Path.Combine(latest.Root,"object-review-attempt.json")) && latest.Reviewed is null;
+        if(records.Pending || reviewPending)return new(key,video.Sha256,budget,false,true,false,"PRIOR_ATTEMPT",null,null,mode,false);
         var evidence=latest?.Reviewed;
         var human=latest is null?await ApprovedCore(id,role,ct,quote):null;
         var scene=human ?? (evidence is null?null:AssemblyPolicy.Ground(evidence));
@@ -275,7 +307,7 @@ public sealed partial class AssemblyLocator
             var runId=Guid.NewGuid().ToString("N");var runRoot=Path.Combine(root,"runs",runId);
             Directory.CreateDirectory(runRoot); diagnosticRoot=runRoot;
             var preparationClock=Stopwatch.StartNew();
-            var ready=await PreparedVideo(root,video,pts,ct);
+            var ready=await PreparedVideo(mode=="api-meta"?runRoot:root,video,pts,ct);
             var mp4=ready.Path;var prepared=ready.Frames;
             foreach(var i in Enumerable.Range(0,prepared.Length))File.Copy(Path.Combine(ready.Directory,$"frame-{i}.jpg"),Path.Combine(runRoot,$"frame-{i}.jpg"));
             var pixels=await Task.WhenAll(Enumerable.Range(0,prepared.Length).Select(i=>File.ReadAllBytesAsync(Path.Combine(runRoot,$"frame-{i}.jpg"),ct)));

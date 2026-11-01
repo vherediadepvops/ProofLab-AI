@@ -6,8 +6,8 @@ using Microsoft.AspNetCore.Routing;
 namespace ProofLab.Api;
 
 /// <summary>
-/// New operator-only, loopback experiment route. The existing SAM endpoints,
-/// paid gates and SQLite evidence archive are not modified or bypassed.
+/// Explicit manual analysis routes. Direct Meta uses a new exact Spark run;
+/// combined mode may reuse verified evidence. Paid gates apply to both.
 /// </summary>
 public static class SamAdaptiveEndpoints
 {
@@ -24,14 +24,14 @@ public static class SamAdaptiveEndpoints
         this IEndpointRouteBuilder app)
     {
         app.MapGet(Route+"/preflight",async (
-            string id,string role,int? targetCoreFrames,int? maxInFlight,
+            string id,string role,int? targetCoreFrames,int? maxInFlight,string? mode,string? sceneRunId,
             SamAdaptiveLiveService service,HttpContext ctx,CancellationToken ct)=>
         {
             if(!Loopback(ctx))return Results.StatusCode(403);
             try
             {
                 return Results.Ok(await service.PreflightAsync(
-                    id,role,targetCoreFrames??53,maxInFlight??0,ct));
+                    id,role,targetCoreFrames??53,maxInFlight??0,ct,mode,sceneRunId));
             }
             catch(ArgumentException){return Results.BadRequest(new{
                 error="Unsafe adaptive plan parameters."});}
@@ -48,12 +48,12 @@ public static class SamAdaptiveEndpoints
         // This is independently billable and requires its own exact quote,
         // explicit transfer/payment consent and backend credit gates.
         app.MapGet(Route+"/spark-quote",async(
-            string id,string role,AssemblyLocator locator,HttpContext ctx,
+            string id,string role,string? mode,AssemblyLocator locator,HttpContext ctx,
             CancellationToken ct)=>
         {
             if(!Loopback(ctx))return Results.StatusCode(403);
             try{return Results.Ok(await locator.GroundingQuoteAsync(
-                id,role,ct,"api-meta-cache"));}
+                id,role,ct,mode));}
             catch(ArgumentException){return Results.BadRequest();}
             catch(FileNotFoundException){return Results.NotFound();}
             catch(InvalidDataException){return Results.Conflict();}
@@ -79,7 +79,7 @@ public static class SamAdaptiveEndpoints
             try
             {
                 return Results.Ok(await locator.GroundAsync(id,role,
-                    request with{Mode="api-meta-cache"},ct));
+                    request,ct));
             }
             catch(ArgumentException){return Results.BadRequest();}
             catch(FileNotFoundException){return Results.NotFound();}

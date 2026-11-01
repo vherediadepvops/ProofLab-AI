@@ -89,12 +89,12 @@ public sealed class PendulumDirectorKinematicsStore(
     public async Task<DirectorKinematicsRecord> ReadLatestAsync(
         string studyId, string role, CancellationToken ct)
     {
-        var session = await director.ReadAsync(studyId, ct);
-        var video = VideoFor(session, role);
+        var (video,_)=await director.GetOriginalForQuoteAsync(studyId,role,ct);
+        var sessionId=studyId.ToLowerInvariant();
         await gate.WaitAsync(ct);
         try
         {
-            var folder = Folder(session.Id, role);
+            var folder = Folder(sessionId, role);
             if (!Directory.Exists(folder))
                 throw new FileNotFoundException("No pivot revision exists.");
             var latest = Directory.GetFiles(folder, "*.json")
@@ -106,7 +106,7 @@ public sealed class PendulumDirectorKinematicsStore(
             var record = await JsonSerializer.DeserializeAsync<DirectorKinematicsRecord>(
                 source, Json, ct) ??
                     throw new InvalidDataException("Invalid pivot revision.");
-            if (record.StudyId != session.Id ||
+            if (record.StudyId != sessionId ||
                 record.VideoId != video.VideoId ||
                 record.Role != role ||
                 !string.Equals(record.VideoSha256, video.Sha256,

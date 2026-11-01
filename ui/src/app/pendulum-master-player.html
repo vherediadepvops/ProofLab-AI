@@ -283,8 +283,10 @@
   @if(periodMeasurement(); as measurement) {
     <app-sam-period-panel [measurement]="measurement" [source]="periodSource()" [language]="language()"/>
   }
-  @if(periodSource(); as researchSource) {
-    <app-muse-investigator [source]="researchSource" [language]="language()" (frozen)="researchFrozen.emit($event)"/>
+  @if(!guided() || presentation()==='predict' || presentation()==='compare') {
+    @if(periodSource(); as researchSource) {
+      <app-muse-investigator [source]="researchSource" [language]="language()" (frozen)="researchFrozen.emit($event)"/>
+    }
   }
   </aside>
   @if(droppedFrames()>0) {

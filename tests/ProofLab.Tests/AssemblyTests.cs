@@ -689,4 +689,49 @@ public sealed class AssemblyTests
         Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
         Assert.True((await f.Open().GroundingQuoteAsync("s","baseline",Ct)).PriorAttempt);
     }
+
+    [Fact] public async Task FreshGroundingBypassesHistoricalResponsesAndPreparedMediaWithoutRewritingThem(){
+        using var f=new Fixture();var locator=f.Open();
+        var first=await locator.GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var root=Path.Combine(f.Root,".private","physics","assembly",AssemblyPolicy.VideoGroundingKey(Sha));
+        var oldResponse=Path.Combine(root,"runs",first.Evidence!.RunId!,"response.json");
+        await File.AppendAllTextAsync(oldResponse," ");var oldBytes=await File.ReadAllTextAsync(oldResponse);
+        var oldPrepared=Path.Combine(root,"prepared-fifty-boundaries-v2.json");
+        await File.WriteAllTextAsync(oldPrepared,"invalid old prepared cache");
+        var quote=await locator.GroundingQuoteAsync("s","baseline",Ct,"api-meta");
+        Assert.True(quote.FreshRequired);Assert.False(quote.CacheHit);Assert.False(quote.PriorAttempt);Assert.Equal(1,f.Transport.VideoCalls);
+        var fresh=await locator.GroundAsync("s","baseline",f.GroundRequest() with{Mode="api-meta"},Ct);
+        Assert.NotEqual(first.Evidence.RunId,fresh.Evidence!.RunId);Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(2,f.Runtime.Reservations);
+        Assert.Equal(100,f.Frames.Calls);Assert.Equal(2,f.Frames.BatchCalls);
+        Assert.Equal(fresh.Scene!.Key,(await locator.TrackingRunAsync("s","baseline",fresh.Evidence.RunId!,Ct))!.Key);
+        Assert.Equal(oldBytes,await File.ReadAllTextAsync(oldResponse));Assert.Equal("invalid old prepared cache",await File.ReadAllTextAsync(oldPrepared));
+        await Assert.ThrowsAsync<InvalidDataException>(()=>locator.TrackingRunAsync("s","baseline",first.Evidence.RunId!,Ct));
+    }
+
+    [Fact] public async Task ExactSparkRunPinsSceneAndSuspensionAndRejectsWrongOrChangedEvidence(){
+        using var f=new Fixture();var locator=f.Open();var request=f.GroundRequest() with{Mode="api-meta"};
+        var first=await locator.GroundAsync("s","baseline",request,Ct);var second=await locator.GroundAsync("s","baseline",request,Ct);
+        var firstId=first.Evidence!.RunId!;var secondId=second.Evidence!.RunId!;
+        Assert.Equal(first.Scene!.Key,(await locator.TrackingRunAsync("s","baseline",firstId,Ct))!.Key);
+        var suspension=await locator.SuspensionRunAsync("s","baseline",firstId,first.Scene,Ct);
+        Assert.Equal(first.Scene.Key,suspension!.SceneKey);Assert.Equal(first.Evidence.ResponseSha256,suspension.ResponseSha256);
+        await Assert.ThrowsAsync<InvalidDataException>(()=>locator.SuspensionRunAsync("s","baseline",secondId,first.Scene,Ct));
+        var response=Path.Combine(f.Root,".private","physics","assembly",AssemblyPolicy.VideoGroundingKey(Sha),"runs",secondId,"response.json");
+        await File.AppendAllTextAsync(response," ");
+        Assert.Equal(first.Scene.Key,(await locator.TrackingRunAsync("s","baseline",firstId,Ct))!.Key);
+        Assert.Equal(first.Scene.Key,(await locator.SuspensionRunAsync("s","baseline",firstId,first.Scene,Ct))!.SceneKey);
+        await Assert.ThrowsAsync<InvalidDataException>(()=>locator.TrackingRunAsync("s","baseline",secondId,Ct));
+        await Assert.ThrowsAsync<ArgumentException>(()=>locator.TrackingRunAsync("s","baseline","../untrusted",Ct));
+        await Assert.ThrowsAsync<FileNotFoundException>(()=>locator.TrackingRunAsync("s","baseline",new string('f',32),Ct));
+        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(2,f.Runtime.Reservations);
+    }
+
+    [Theory] [InlineData("cache-only")] [InlineData("none")] [InlineData("unknown")]
+    public async Task NonApiSelectionsCannotStartSpark(string mode){
+        using var f=new Fixture();var locator=f.Open();
+        await Assert.ThrowsAsync<ArgumentException>(()=>locator.GroundingQuoteAsync("s","baseline",Ct,mode));
+        await Assert.ThrowsAsync<ArgumentException>(()=>locator.GroundAsync("s","baseline",f.GroundRequest() with{Mode=mode},Ct));
+        Assert.Equal(0,f.Transport.VideoCalls);Assert.Equal(0,f.Runtime.Reservations);Assert.Equal(0,f.Frames.Calls);
+    }
+
 }

@@ -6,11 +6,11 @@ import {LabConnection} from './lab-connection';
 const sha='a'.repeat(64),id='b'.repeat(32),key='c'.repeat(64),scene='d'.repeat(64),batch='e'.repeat(32);
 const root='http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+id;
 const url=root+'/sam-adaptive/baseline';
-const quote={sourceSha256:sha,sparkSceneKey:'',planSha256:key,suggestedBatchId:batch,sourceFrames:667,
+const quote={mode:'api-meta-cache',sourceSha256:sha,sparkSceneKey:'',planSha256:key,suggestedBatchId:batch,sourceFrames:667,
  parts:13,simultaneousRequests:4,totalSamEstimatedUsd:.2,remainingTrialSlots:null,canRunWithManualToken:true,
  existingSparkSceneVerified:false,requiresNewSparkCall:true};
 const exact={...quote,sparkSceneKey:scene,parts:4,totalSamEstimatedUsd:.14,existingSparkSceneVerified:true,requiresNewSparkCall:false};
-const spark={cacheKey:key,videoSha256:sha,maximumEstimatedCostUsd:.25,canRun:true,priorAttempt:false,status:'NEEDS_LOCALIZATION',scene:null};
+const spark={mode:'api-meta-cache',cacheKey:key,videoSha256:sha,maximumEstimatedCostUsd:.25,canRun:true,priorAttempt:false,status:'NEEDS_LOCALIZATION',scene:null};
 const located={...spark,status:'READY',canRun:false,scene:{key:scene,videoSha256:sha}};
 const access={manualTokenCallsPermitted:true,paidRequestsSwitchEnabled:true,creditsConfirmedByOwner:true,
  ownerApprovedPaidRequests:true,remainingRequests:0,usedRequests:43,manualRequestsUnlimited:true};
@@ -48,7 +48,7 @@ describe('Integrated manual Meta segments',()=>{
   await tick();const all=x.h.match(()=>true);expect(all.length).toBe(3);
   for(const r of all){expect(r.request.method).toBe('GET');
    if(r.request.url.includes('/sam-adaptive/')&&r.request.url.includes('/preflight?'))r.flush(q);
-   else if(r.request.url.endsWith('/spark-quote'))r.flush(g);
+   else if(r.request.url.includes('/spark-quote?mode='))r.flush(g);
    else if(r.request.url.endsWith('/readiness'))r.flush(access);else r.flush(media);}
   await p;x.f.detectChanges();
  }
@@ -118,7 +118,7 @@ describe('Integrated manual Meta segments',()=>{
   expect(locate.request.body.confirmVideoTransfer).toBeTrue();
   await x.c.process();x.h.expectNone(r=>r.method==='POST');
   locate.flush(located);await tick();
-  x.h.expectOne(url+'/preflight?targetCoreFrames=53').flush(exact);await tick();
+  x.h.expectOne(url+'/preflight?targetCoreFrames=53&mode=api-meta-cache').flush(exact);await tick();
   const sam=x.h.expectOne(url+'/manual-batch');
   expect(sam.request.body.sceneKey).toBe(scene);expect(sam.request.body.maximumSamCostUsd).toBe(.14);
   sam.flush(done);await finalProgress(x);await p;
@@ -149,7 +149,7 @@ describe('Integrated manual Meta segments',()=>{
  it('stops before SAM if the exact quote exceeds the approved estimate',async()=>{
   const x=setup();await check(x);const p=x.c.process();
   x.h.expectOne(url+'/spark-once').flush(located);await tick();
-  x.h.expectOne(url+'/preflight?targetCoreFrames=53').flush({...exact,totalSamEstimatedUsd:.21});
+  x.h.expectOne(url+'/preflight?targetCoreFrames=53&mode=api-meta-cache').flush({...exact,totalSamEstimatedUsd:.21});
   await p;expect(x.c.error()).toContain('actualiza el costo');x.h.expectNone(r=>r.method==='POST');
  });
  it('does not publish an incomplete or unverified seam result',async()=>{

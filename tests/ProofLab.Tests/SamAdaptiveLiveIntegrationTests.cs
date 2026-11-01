@@ -306,9 +306,77 @@ public sealed class SamAdaptiveLiveIntegrationTests
         Assert.Equal(4,f.Transport.Calls);
     }
 
+
+    [Fact] public async Task FreshQuotesIgnoreHistoricalScenesAndRecoveryReports(){
+        using var f=new Fixture();f.Scenes.RejectHistoricalReads=true;
+        var folder=Path.Combine(f.Store,"batches",new string('c',32));Directory.CreateDirectory(folder);
+        var path=Path.Combine(folder,"report.json");const string corrupt="{synthetic invalid historical JSON";
+        await File.WriteAllTextAsync(path,corrupt);
+        var upper=await f.Quote("api-meta");
+        Assert.Equal("api-meta",upper.Mode);Assert.Null(upper.SceneRunId);
+        Assert.True(upper.RequiresNewSparkCall);Assert.False(upper.ExistingSparkSceneVerified);
+        Assert.Equal("",upper.SparkSceneKey);Assert.Null(upper.RecoveryFromBatchId);
+        Assert.Equal(0,f.Scenes.TrackingReads);Assert.Equal(0,f.Scenes.QuoteReads);Assert.Empty(f.Scenes.ExactRuns);
+        var exact=await f.Quote("api-meta",f.Scenes.ExactRunId);
+        Assert.Equal("api-meta",exact.Mode);Assert.Equal(f.Scenes.ExactRunId,exact.SceneRunId);
+        Assert.False(exact.RequiresNewSparkCall);Assert.True(exact.ExistingSparkSceneVerified);
+        Assert.Equal(f.Scenes.Runs[f.Scenes.ExactRunId].Key,exact.SparkSceneKey);Assert.Null(exact.RecoveryFromBatchId);
+        Assert.Equal(0,f.Scenes.TrackingReads);Assert.Equal(0,f.Scenes.QuoteReads);
+        Assert.All(f.Scenes.ExactRuns,run=>Assert.Equal(f.Scenes.ExactRunId,run));
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
+        Assert.Equal(corrupt,await File.ReadAllTextAsync(path));
+    }
+
+    [Fact] public async Task FreshWholeVideoRetryKeepsExactSparkRunAndMode(){
+        using var f=new Fixture();f.Scenes.RejectHistoricalReads=true;f.Transport.EmptySegments=true;
+        var quote=await f.Quote("api-meta",f.Scenes.ExactRunId);var request=Request(quote,retry:true);
+        var result=await f.Service.RunWithOneRetryAsync("study","baseline",request,default);
+        Assert.Equal("PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW",result.Status);
+        Assert.True(result.DerivedSeamsVerified);Assert.Equal(667,result.DerivedFramesWithMasks);Assert.Equal(1,result.Parts);
+        Assert.Equal(request.ClientBatchId,result.AutomaticRetryOfBatchId);Assert.NotEqual(request.ClientBatchId,result.BatchId);
+        Assert.Equal(4,f.Transport.Calls);Assert.Equal(4,f.Runtime.Reserved);Assert.Equal(0,f.Transport.ActiveAtFullDispatch);
+        foreach(var id in new[]{request.ClientBatchId,result.BatchId}){
+            var context=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(Path.Combine(f.Store,"batches",id,"batch-context.json"),default);
+            Assert.Equal("api-meta",context.Mode);Assert.Equal(f.Scenes.ExactRunId,context.SceneRunId);
+            Assert.Equal(quote.SparkSceneKey,context.Scene.Key);Assert.Null(context.RecoveryFromBatchId);
+        }
+        Assert.Equal(0,f.Scenes.TrackingReads);Assert.Equal(0,f.Scenes.QuoteReads);
+        Assert.All(f.Scenes.ExactRuns,run=>Assert.Equal(f.Scenes.ExactRunId,run));
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.RunWithOneRetryAsync("study","baseline",request,default));
+        Assert.Equal(4,f.Transport.Calls);Assert.Equal(4,f.Runtime.Reserved);
+    }
+
+    [Fact] public async Task ChangedExactSparkRunStopsBeforeAnySamReservation(){
+        using var f=new Fixture();f.Scenes.RejectHistoricalReads=true;
+        var quote=await f.Quote("api-meta",f.Scenes.ExactRunId);var otherRun=new string('d',32);
+        var otherScene=Scene() with{EvidenceKey=new string('e',64)};
+        otherScene=otherScene with{Key=AssemblyPolicy.DefinitionKey(otherScene)};f.Scenes.Runs.Add(otherRun,otherScene);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.RunWithOneRetryAsync("study","baseline",Request(quote with{SceneRunId=otherRun}),default));
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);Assert.Equal(0,f.Scenes.TrackingReads);Assert.Equal(0,f.Scenes.QuoteReads);
+        Assert.Empty(Directory.Exists(f.Store)?Directory.GetFiles(f.Store,"batch-started.json",SearchOption.AllDirectories):[]);
+    }
+
+    [Fact] public async Task FreshWithoutAnExactSparkRunOrWithHistoricalRecoveryCannotStartSam(){
+        using var f=new Fixture();var quote=await f.Quote("api-meta",f.Scenes.ExactRunId);f.Scenes.RejectHistoricalReads=true;
+        foreach(var invalid in new[]{quote with{SceneRunId=null},quote with{RecoveryFromBatchId=new string('f',32)}}){
+            await Assert.ThrowsAsync<ArgumentException>(()=>f.Service.RunWithOneRetryAsync("study","baseline",Request(invalid),default));
+        }
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);Assert.Equal(0,f.Scenes.TrackingReads);Assert.Equal(0,f.Scenes.QuoteReads);
+        Assert.Empty(Directory.Exists(f.Store)?Directory.GetFiles(f.Store,"batch-started.json",SearchOption.AllDirectories):[]);
+    }
+
+    [Theory] [InlineData("cache-only")] [InlineData("none")] [InlineData("unknown")]
+    public async Task NonApiSelectionsCannotQuoteOrStartPaidBatches(string mode){
+        using var f=new Fixture();var quote=await f.Quote();var request=Request(quote with{Mode=mode},retry:true);
+        await Assert.ThrowsAsync<ArgumentException>(()=>f.Quote(mode));
+        await Assert.ThrowsAsync<ArgumentException>(()=>f.Service.RunWithOneRetryAsync("study","baseline",request,default));
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
+        Assert.Empty(Directory.Exists(f.Store)?Directory.GetFiles(f.Store,"batch-started.json",SearchOption.AllDirectories):[]);
+    }
+
     private static SamAdaptiveLiveRunRequest Request(SamAdaptiveLiveQuote q,double? maximum=null,string? batchId=null,bool retry=false,double? combined=null)=>new(){
         MaxInFlight=q.SimultaneousRequests,ModelApiToken=Token,VideoSha256=q.SourceSha256,SceneKey=q.SparkSceneKey,PlanSha256=q.PlanSha256,
-        ClientBatchId=batchId??q.SuggestedBatchId,MaximumSamCostUsd=maximum??q.TotalSamEstimatedUsd,RecoveryFromBatchId=q.RecoveryFromBatchId,
+        ClientBatchId=batchId??q.SuggestedBatchId,MaximumSamCostUsd=maximum??q.TotalSamEstimatedUsd,RecoveryFromBatchId=q.RecoveryFromBatchId,Mode=q.Mode,SceneRunId=q.SceneRunId,
         ConfirmPrivateVideoTransfer=true,ConfirmUpToManyBillableSamCalls=true,ConfirmNoAutomaticRetry=true,
         ConfirmOneContinuousRetry=retry,MaximumCombinedSamCostUsd=combined??q.MaximumSamWithRetryEstimatedUsd
     };
@@ -332,12 +400,25 @@ public sealed class SamAdaptiveLiveIntegrationTests
                 ["Meta:UnlimitedManualRequests"]="true"}).Build();
             Service=new(Runtime,Scenes,Transport,Clips,new MetaLiveAccess(config,new MetaCallSafetyBudget(43)),new Env(root),config);
         }
-        public Task<SamAdaptiveLiveQuote> Quote()=>Service.PreflightAsync("study","baseline",53,4,default);
+        public Task<SamAdaptiveLiveQuote> Quote(string? mode=null,string? sceneRunId=null)=>Service.PreflightAsync("study","baseline",53,4,default,mode,sceneRunId);
         public void Dispose()=>Directory.Delete(root,true);
     }
     private sealed class Scenes:IAssemblyScenes{
         public SamSceneDefinition? Scene=SamAdaptiveLiveIntegrationTests.Scene();
-        public Task<SamSceneDefinition?> ApprovedAsync(string id,string role,CancellationToken ct)=>Task.FromResult(Scene);
+        public readonly string ExactRunId=new('b',32);
+        public readonly Dictionary<string,SamSceneDefinition> Runs=new();
+        public readonly List<string> ExactRuns=new();
+        public bool RejectHistoricalReads;public int TrackingReads,QuoteReads;
+        public Scenes(){Runs.Add(ExactRunId,SamAdaptiveLiveIntegrationTests.Scene());}
+        public Task<SamSceneDefinition?> ApprovedAsync(string id,string role,CancellationToken ct){
+            if(RejectHistoricalReads)throw new InvalidOperationException("Synthetic test forbids historical scene lookup.");
+            return Task.FromResult(Scene);
+        }
+        public Task<SamSceneDefinition?> TrackingAsync(string id,string role,CancellationToken ct){TrackingReads++;return ApprovedAsync(id,role,ct);}
+        public Task<SamSceneDefinition?> TrackingForQuoteAsync(string id,string role,CancellationToken ct){QuoteReads++;return ApprovedAsync(id,role,ct);}
+        public Task<SamSceneDefinition?> TrackingRunAsync(string id,string role,string runId,CancellationToken ct){
+            ExactRuns.Add(runId);return Task.FromResult(Runs.GetValueOrDefault(runId));
+        }
     }
     private sealed class Runtime:ISamVideoRuntime{
         public double[] Pts=Enumerable.Range(0,667).Select(i=>i/30d).ToArray();

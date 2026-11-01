@@ -212,8 +212,12 @@ public sealed class PendulumSamCache(
         };
     }
 
-    public async Task<SamVideoPreflight> PreflightAsync(
-        string studyId, string role, CancellationToken ct)
+    public Task<SamVideoPreflight> PreflightAsync(string studyId,string role,CancellationToken ct)=>
+        PreflightAsync(runtime,studyId,role,ct);
+
+    // Metadata quotes must not construct or open the SQLite evidence index.
+    public static async Task<SamVideoPreflight> PreflightAsync(
+        ISamVideoRuntime runtime,string studyId,string role,CancellationToken ct)
     {
         var video = await runtime.GetQuoteSourceAsync(studyId,role,ct);
         var count = await runtime.GetFrameCountAsync(video,ct);

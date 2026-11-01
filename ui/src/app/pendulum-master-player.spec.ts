@@ -61,6 +61,27 @@ describe('One-clock three-view pendulum laboratory',()=>{
       .compileComponents();
   });
 
+
+  it('defers the research SQLite request while showing source and measured results',async()=>{
+    const {fixture,component}=init();
+    const http=TestBed.inject(HttpTestingController);
+    spyOn(component,'periodSource').and.returnValue({
+      studyId:study,role:'baseline',originalVideoSha256:sha,analysisId:'e'.repeat(32),
+      providerResponseSha256:'f'.repeat(64),providerModel:'sam-3.1',objectId:'1',
+      pivotRevisionId:null,pivotProvenance:'SYNTHETIC_TEST'
+    });
+    for(const presentation of ['source','understand']){
+      fixture.componentRef.setInput('presentation',presentation);fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-muse-investigator')).toBeNull();
+      http.expectNone(r=>r.url.includes('/muse'));
+    }
+    fixture.componentRef.setInput('presentation','predict');fixture.detectChanges();
+    const request=http.expectOne('http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+study+'/muse');
+    expect(request.request.method).toBe('GET');
+    request.flush({observation:null,evaluation:null,prediction:null,attemptStatus:null,manualCallsPermitted:false,maximumEstimatedCostUsd:.05});
+    await Promise.resolve();fixture.destroy();http.verify();
+  });
+
   function init(){
     const fixture=TestBed.createComponent(PendulumMasterPlayer);
     fixture.componentRef.setInput('videoUrl','http://127.0.0.1:5391/test.mp4');

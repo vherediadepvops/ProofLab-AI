@@ -7,6 +7,8 @@ namespace ProofLab.Api;
 public sealed class MuseExperimentStore
 {
     private readonly string connectionString,lockFolder;
+    private readonly object initializationGate=new();
+    private bool initialized;
     private static readonly JsonSerializerOptions Json=new(JsonSerializerDefaults.Web);
     public MuseExperimentStore(IWebHostEnvironment env)
     {
@@ -15,7 +17,12 @@ public sealed class MuseExperimentStore
         connectionString=new SqliteConnectionStringBuilder {
             DataSource=Path.Combine(root,"muse-experiments.sqlite"),Pooling=false,DefaultTimeout=10
         }.ToString();
-        using var db=Open();using var cmd=db.CreateCommand();
+    }
+    private void EnsureInitialized(SqliteConnection db)
+    {
+        lock(initializationGate) {
+            if(initialized)return;
+            using var cmd=db.CreateCommand();
         cmd.CommandText="""
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS muse_observations(
@@ -36,9 +43,16 @@ public sealed class MuseExperimentStore
             CREATE TRIGGER IF NOT EXISTS muse_prediction_no_delete BEFORE DELETE ON muse_predictions
               BEGIN SELECT RAISE(ABORT,'Immutable prediction'); END;
             """;
-        cmd.ExecuteNonQuery();
+
+            cmd.ExecuteNonQuery();initialized=true;
+        }
     }
-    private SqliteConnection Open(){var db=new SqliteConnection(connectionString);db.Open();return db;}
+    private SqliteConnection Open()
+    {
+        var db=new SqliteConnection(connectionString);
+        try {db.Open();EnsureInitialized(db);return db;}
+        catch {db.Dispose();throw;}
+    }
     public static void StudyId(string id) {
         if(string.IsNullOrEmpty(id)||id.Length!=32||id.Any(c=>!Uri.IsHexDigit(c)))throw new ArgumentException("Invalid study.");
     }

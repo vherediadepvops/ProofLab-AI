@@ -503,13 +503,13 @@ app.MapGet("/api/science/director/pendulum/sessions/{id}/sam/{role}/status",
     catch(InvalidDataException){return Results.Conflict(new{error="Source or cache integrity mismatch."});}
 });
 app.MapGet("/api/science/director/pendulum/sessions/{id}/sam/{role}/preflight",
-    async (string id,string role,PendulumSamCache sam,
+    async (string id,string role,ISamVideoRuntime runtime,
         HttpContext context,CancellationToken ct) =>
 {
     if(context.Connection.RemoteIpAddress is not System.Net.IPAddress address ||
        !System.Net.IPAddress.IsLoopback(address))
         return Results.StatusCode(403);
-    try {return Results.Ok(await sam.PreflightAsync(id,role,ct));}
+    try {return Results.Ok(await PendulumSamCache.PreflightAsync(runtime,id,role,ct));}
     catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new{error="Original video unavailable."});}
     catch(InvalidDataException){return Results.Conflict(new{error="Video frame timing integrity mismatch."});}

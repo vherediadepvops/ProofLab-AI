@@ -104,10 +104,22 @@ public sealed class PendulumDirectorWorkflow(
     {
         if (role is not ("baseline" or "followup"))
             throw new ArgumentException("Invalid video role.");
-        var session = await ReadAsync(id, ct);
-        var record = role == "baseline" ? session.Baseline : session.Followup;
-        if (record is null)
-            throw new FileNotFoundException("No original video for this trial.");
+        // Original media resolution is independent of research prediction/cache
+        // storage. Upload and research state transitions still validate their full history.
+        DirectorSession session;
+        DirectorVideoEvidence record;
+        await gate.WaitAsync(ct);
+        try {
+            session=await ReadOptionalAsync<DirectorSession>(PathFor(id,"session.json"),ct)
+                ?? throw new FileNotFoundException("Director session not found.");
+            if(session.Id!=id.ToLowerInvariant() || session.ModelSha256 is not null &&
+               !string.Equals(session.ModelSha256,CalculateModelHash(session),StringComparison.Ordinal))
+                throw new InvalidDataException("Theoretical model snapshot integrity mismatch.");
+            record=await ReadOptionalAsync<DirectorVideoEvidence>(PathFor(id,role+".json"),ct)
+                ?? throw new FileNotFoundException("No original video for this trial.");
+            if(record.Role!=role || record.UploadedAtUtc<session.CreatedAtUtc)
+                throw new InvalidDataException("Original video identity or chronology mismatch.");
+        } finally {gate.Release();}
         var ext = VideoClipPolicy.CheckNameAndSize(record.OriginalFilename, record.Bytes);
         var path = PathFor(session.Id, role + ext);
         var info = new FileInfo(path);

@@ -72,10 +72,11 @@ public sealed partial class SamAdaptiveLiveService
             await WriteJson(Path.Combine(BatchDir(parent),"automatic-retry.json"),
                 new RetryLink(parent,child,first.SourceSha256,first.SparkSceneKey,combined,DateTimeOffset.UtcNow),CancellationToken.None);
             try{
-                var (source,scene,pts,plan,_)=await Context(studyId,role,request.TargetCoreFrames,1,CancellationToken.None,null,parent);
+                var (source,scene,pts,plan,_)=await Context(studyId,role,request.TargetCoreFrames,1,CancellationToken.None,null,parent,request.Mode,request.SceneRunId);
                 var quote=AutomaticQuote(source,scene,pts,plan,parent);
                 var retry=new SamAdaptiveLiveRunRequest{
                     ModelApiToken=request.ModelApiToken,VideoSha256=source.Sha256,SceneKey=scene.Key,
+                    Mode=request.Mode,SceneRunId=request.SceneRunId,
                     PlanSha256=quote.PlanSha256,ClientBatchId=child,MaximumSamCostUsd=quote.TotalSamEstimatedUsd,
                     TargetCoreFrames=request.TargetCoreFrames,MaxInFlight=1,
                     ConfirmPrivateVideoTransfer=true,ConfirmUpToManyBillableSamCalls=true,ConfirmNoAutomaticRetry=true

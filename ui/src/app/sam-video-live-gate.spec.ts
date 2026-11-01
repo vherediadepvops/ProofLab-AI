@@ -31,6 +31,7 @@ describe('SAM guided manual processing and parallel quotes',()=>{
     f.componentRef.setInput('autoCheck',auto);f.componentRef.setInput('studyId',id);
     f.componentRef.setInput('videoSha256',sha);f.detectChanges();
     const c=f.componentInstance;
+    c.mode.set('api-meta-cache');
     // Exercise the retained native compatibility path. Default cache-first routing
     // is covered separately by sam-segments-flow; fresh API routing by sam-fresh-flow.
     spyOn<any>(c,'segmentedMode').and.returnValue(false);
@@ -332,7 +333,7 @@ describe('SAM guided manual processing and parallel quotes',()=>{
       grounding:needsGrounding,readiness:{...ready,...unlimited}});
     expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBe(.75);
     expect(ctx.f.nativeElement.querySelector('.paid-cost').textContent).toContain('0.75');
-    expect(ctx.c.nextActionDescription()).toContain('costo combinado estimado');
+    expect(ctx.c.nextActionDescription()).toContain('El costo mostrado incluye');
     ctx.h.expectNone(r=>r.method==='POST');
   });
   it('requires available allowance for both requests on legacy bounded sessions',async()=>{
@@ -439,7 +440,7 @@ describe('SAM guided manual processing and parallel quotes',()=>{
       readiness:{...ready,...unlimited}});
     expect(ctx.c.canProcess()).toBeTrue();expect(ctx.c.displayedCost()).toBeCloseTo(.775,6);
     expect(ctx.f.nativeElement.querySelector('.paid-cost').textContent).toContain('Estimado US$ 0.78');
-    expect(ctx.c.nextActionDescription()).toContain('video completo y sus imágenes de referencia a Spark');
+    expect(ctx.c.nextActionDescription()).toContain('video completo y 50 imágenes a Spark');
     expect(ctx.c.nextActionDescription()).not.toContain('tres fotogramas');
     const p=ctx.c.process(),r=ctx.h.expectOne(groundUrl);
     expect(r.request.body.maximumEstimatedCostUsd).toBe(.4);

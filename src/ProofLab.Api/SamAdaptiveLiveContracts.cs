@@ -4,6 +4,8 @@ namespace ProofLab.Api;
 public sealed class SamAdaptiveLiveRunRequest
 {
     public string ModelApiToken { get; init; }="";
+    public string? Mode { get; init; }
+    public string? SceneRunId { get; init; }
     public string VideoSha256 { get; init; }="";
     public string SceneKey { get; init; }="";
     public string PlanSha256 { get; init; }="";
@@ -31,9 +33,10 @@ public sealed record SamAdaptiveLiveQuote(
     int IdealPartsWithoutSparkCoverage,
     int VerifiedSparkSeedCount,
     bool ReducedForSparseSparkSeeds,string? RecoveryFromBatchId=null,
-    double ContinuousRetryEstimatedUsd=0,double MaximumSamWithRetryEstimatedUsd=0);
+    double ContinuousRetryEstimatedUsd=0,double MaximumSamWithRetryEstimatedUsd=0,
+    string Mode="api-meta-cache",string? SceneRunId=null);
 
-public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight,string? RecoveryFromBatchId=null,SamAdaptiveWindow[]? NativeWindows=null,string? AutomaticRetryOfBatchId=null);
+public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight,string? RecoveryFromBatchId=null,SamAdaptiveWindow[]? NativeWindows=null,string? AutomaticRetryOfBatchId=null,string Mode="api-meta-cache",string? SceneRunId=null);
 
 public sealed record SamAdaptiveDerivation(string BatchId,bool NativeProviderResult,
     bool SeamsVerified,string SourcePtsSha256,string[] PartResponseSha256);

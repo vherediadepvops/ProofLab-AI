@@ -19,10 +19,11 @@ describe('Inline session token dialog',()=>{
     f.componentRef.setInput('studyId',id);f.componentRef.setInput('videoSha256',sha);
     f.detectChanges();
     const c=f.componentInstance,con=TestBed.inject(LabConnection);
+    c.mode.set('api-meta-cache');
     const field=document.createElement('input');field.type='password';con.register(field);
     c.preflight.set({sourceSha256:sha,sourceFrames:1938,durationSeconds:32.33,
       estimatedCostUsd:.39,supportsSingleCall:true,codec:'hevc',timingSource:'test',framePtsSha256:''});
-    c.adaptiveQuote.set({sourceSha256:sha,existingSparkSceneVerified:true,
+    c.adaptiveQuote.set({mode:'api-meta-cache',planSha256:'c'.repeat(64),suggestedBatchId:'d'.repeat(32),sourceSha256:sha,existingSparkSceneVerified:true,
       requiresNewSparkCall:false,canRunWithManualToken:true,parts:3,simultaneousRequests:3,
       totalSamEstimatedUsd:.39} as any);
     c.readiness.set({manualTokenCallsPermitted:true,paidRequestsSwitchEnabled:true,
