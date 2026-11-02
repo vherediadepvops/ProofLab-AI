@@ -43,21 +43,78 @@
     @if(state(); as s) {
       @if(s.evaluation; as evaluation) {
         @if(interpretationMatchesSource()) {
-          <div class="decision"><strong>{{phenomenonDecision() || (es?'Respuesta registrada de Muse Spark':'Recorded Muse Spark response')}}</strong><span>{{evaluation.model}}</span></div>
-          @if(phenomenon(); as phenomenon) {
-            <p class="interpretation-justification">{{text(phenomenon.justification)}}</p>
-          } @else {
-            <p class="fine">{{es?'La respuesta registrada no incluye una clasificación del fenómeno. No se deduce de la propuesta de experimento.':
-              'The recorded response does not include a phenomenon classification. It is not inferred from the experiment proposal.'}}</p>
-          }
-          <p class="interpretation-answer">{{text(evaluation.answer.justification)}}</p>
-          <p class="limitations"><strong>{{es?'Límites de la interpretación:':'Interpretation limits:'}}</strong> {{text(evaluation.answer.limitations)}}</p>
-          <details class="interpretation-provenance"><summary>{{es?'Procedencia y costo':'Provenance and cost'}}</summary>
-            <p class="fine">{{es?'Respuesta real registrada':'Recorded provider response'}}: {{evaluation.responseId}}</p>
-            <p class="fine">{{es?'Costo por tokens estimado, no factura':'Estimated token cost, not an invoice'}}: US$ {{evaluation.tokenCostEstimateUsd.toFixed(4)}}</p>
-            <p class="fine">{{es?'Integridad de la respuesta':'Response integrity'}}</p><code>{{evaluation.rawResponseSha256}}</code>
-            @if(s.observation; as observation){<p class="fine">{{es?'Evidencia preparada':'Prepared evidence'}}: {{observation.id}}</p><code>{{observation.payloadSha256}}</code>}
-          </details>
+          <section class="v93-spark-head" aria-label="Muse Spark">
+            <span class="v93-spark-kicker">✦ Muse Spark 1.3 · {{es?'INFERENCIA DE IA':'AI INFERENCE'}}</span>
+            <h2>{{phenomenonDecision() || decision()}}</h2>
+            <p>{{text(evaluation.answer.justification)}}</p>
+            <small>{{es?'Conclusión provisional · la inspección humana y la incertidumbre total siguen pendientes.':
+              'Provisional interpretation · human review and total uncertainty remain pending.'}}</small>
+          </section>
+          <div class="v93-spark-tabs" role="tablist" [attr.aria-label]="es?'Secciones de Muse Spark':'Muse Spark sections'">
+            <button type="button" role="tab" [attr.aria-selected]="interpretationTab()==='summary'"
+              (click)="interpretationTab.set('summary')">{{es?'Resumen':'Summary'}}</button>
+            <button type="button" role="tab" [attr.aria-selected]="interpretationTab()==='evidence'"
+              (click)="interpretationTab.set('evidence')">{{es?'Evidencia':'Evidence'}}</button>
+            <button type="button" role="tab" [attr.aria-selected]="interpretationTab()==='limits'"
+              (click)="interpretationTab.set('limits')">{{es?'Límites':'Limits'}}</button>
+            <button type="button" role="tab" [attr.aria-selected]="interpretationTab()==='record'"
+              (click)="interpretationTab.set('record')">{{es?'Registro':'Record'}}</button>
+          </div>
+          <section class="v93-tab-body" role="tabpanel">
+            @switch(interpretationTab()) {
+              @case('summary') {
+                <h3>{{es?'¿Por qué Spark llega a esa conclusión?':'Why does Spark reach this conclusion?'}}</h3>
+                @if(phenomenon(); as phenomenon) {
+                  <p class="v93-reason">{{text(phenomenon.justification)}}</p>
+                } @else {
+                  <p>{{es?'La respuesta no contiene una clasificación del fenómeno.':
+                    'The response does not include a phenomenon classification.'}}</p>
+                }
+                <h4>{{es?'La siguiente pregunta científica':'The next scientific question'}}</h4>
+                <p>{{es?'¿Qué cambia al variar la longitud? La hipótesis numérica y su banda se reservan para Predecir.':
+                  'What changes when length varies? The numeric hypothesis and its band belong in Predict.'}}</p>
+                <p class="v93-provenance">{{es?'SAM detecta · ProofLab mide · Muse Spark interpreta':
+                  'SAM detects · ProofLab measures · Muse Spark interprets'}}</p>
+              }
+              @case('evidence') {
+                <h3>{{es?'Tres fuentes, tres responsabilidades':'Three sources, three responsibilities'}}</h3>
+                <p>{{es?'Spark recibe mediciones resumidas de SAM y los tiempos originales, no analiza de nuevo el video.':
+                  'Spark receives summarized SAM measurements and original timestamps, not the video again.'}}</p>
+                @if(evidenceSnapshot(); as m) {
+                  <div class="v93-metric-row">
+                    <div><small>SAM · {{es?'detección':'detection'}}</small><strong>{{m.coverage===null?'—':number(m.coverage*100,1)+' %'}}</strong></div>
+                    <div><small>ProofLab · {{es?'período':'period'}}</small><strong>{{number(m.period,3)}} s</strong></div>
+                    <div><small>{{es?'Ciclos usados':'Cycles used'}}</small><strong>{{m.usedCycles===null?'—':m.usedCycles}} / {{m.completeCycles===null?'—':m.completeCycles}}</strong></div>
+                  </div>
+                }
+                <p class="v93-scope">{{es?'La cobertura no certifica la identidad del objeto ni su exactitud física.':
+                  'Coverage does not certify object identity or physical accuracy.'}}</p>
+                <details><summary>{{es?'Qué datos recibe Muse Spark':'What Muse Spark receives'}}</summary>
+                  <p>{{es?'Período, ciclos, pérdidas de seguimiento, geometría del arco, muestras de centros, longitud declarada y limitaciones.':
+                    'Period, cycles, tracking gaps, arc geometry, sampled centroids, declared length and limitations.'}}</p>
+                </details>
+              }
+              @case('limits') {
+                <h3>{{es?'Qué impide afirmar una demostración':'Why this is not a scientific proof'}}</h3>
+                <p class="v93-warning">{{text(evaluation.answer.limitations)}}</p>
+                <p>{{es?'La suspensión y la longitud física aún requieren verificación independiente.':
+                  'The suspension and physical length still require independent verification.'}}</p>
+                <p>{{es?'Un intervalo del 95 % describe repetibilidad del período; no representa la certeza de Spark ni la incertidumbre total.':
+                  'A 95% interval describes period repeatability, not Spark accuracy or total uncertainty.'}}</p>
+              }
+              @case('record') {
+                <h3>{{es?'Respuesta original conservada':'Original provider response preserved'}}</h3>
+                <p class="fine">{{es?'Modelo':'Model'}}: {{evaluation.model}}</p>
+                <p class="fine">{{es?'Identificador de respuesta':'Response ID'}}: {{evaluation.responseId}}</p>
+                <p class="fine">{{es?'Costo por tokens estimado, no factura':'Estimated token cost, not an invoice'}}: US$ {{evaluation.tokenCostEstimateUsd.toFixed(4)}}</p>
+                <p class="fine">{{es?'Hash de respuesta':'Response hash'}}:</p><code>{{evaluation.rawResponseSha256}}</code>
+                @if(s.observation; as o){<p class="fine">{{es?'Evidencia preparada':'Prepared evidence'}}: {{o.id}}</p><code>{{o.payloadSha256}}</code>}
+                <p class="v93-scope">{{es?'Las huellas comprueban integridad local; no certifican el fenómeno.':
+                  'Hashes verify local integrity, not the physical phenomenon.'}}</p>
+              }
+            }
+          </section>
+          <p class="v93-scope">{{es?'Límite de esta interpretación:':'Interpretation limitation:'}} {{text(evaluation.answer.limitations)}}</p>
         } @else {
           <p class="warning interpretation-mismatch" role="status">{{es?'No se pudo vincular esta respuesta con el video, análisis y geometría actuales. Su texto no se muestra como interpretación de esta evidencia.':
             'This response could not be linked to the current video, analysis and geometry. Its text is not shown as an interpretation of this evidence.'}}</p>
@@ -96,11 +153,89 @@
   @if(state(); as s) {
     @if(isFollowup) {
       @if(prediction(); as p){<p>🔒 {{es?'Predicción guardada':'Stored prediction'}}: {{p.periodSeconds.toFixed(3)}} s · ±{{p.tolerancePercent}} % · {{(p.nextLengthMeters*100).toFixed(0)}} cm</p>}
+      @if(verifiedComparison(); as band){
+        <section class="v93-band" [attr.aria-label]="es?'Banda de predicción y período medido':'Predicted band and measured period'">
+          <h3>{{es?'Predicción frente a medición del segundo video':'Prediction versus the second video measurement'}}</h3>
+          <p>{{es?'La banda se fijó antes de observar la prueba 2. El período observado procede de la evidencia preparada con SAM.':
+            'The band was fixed before trial 2. The observed period comes from measured SAM evidence.'}}</p>
+          <svg viewBox="0 0 560 145" role="img" [attr.aria-label]="es?'Banda predeclarada y dos valores medidos':'Predeclared band with predicted and measured values'">
+            <path d="M42 115H518" stroke="#53657d" stroke-width="2"/>
+            <rect [attr.x]="band.bandX" [attr.width]="band.bandWidth" y="40" height="63" rx="8" fill="#6ee5c122" stroke="#6ee5c1"/>
+            <path [attr.d]="'M'+band.expectedX+' 24V110'" stroke="#c8b4ff" stroke-width="3" stroke-dasharray="5 4"/>
+            <circle [attr.cx]="band.observedX" cy="71" r="8" [attr.fill]="band.inBand?'#6ee5c1':'#f5b181'" stroke="#1b2937" stroke-width="2"/>
+            <text [attr.x]="band.expectedX" y="16" fill="#d9ceff" text-anchor="middle" font-size="12">{{number(band.expected,3)}} s</text>
+            <text [attr.x]="band.observedX" y="136" [attr.fill]="band.inBand?'#b2fce2':'#ffcfaa'" text-anchor="middle" font-size="12">{{number(band.observed,3)}} s</text>
+          </svg>
+          <div class="v93-band-legend"><span>◆ {{es?'Predicho':'Predicted'}}: {{number(band.expected,3)}} s</span>
+            <span>● {{es?'Medido':'Measured'}}: {{number(band.observed,3)}} s</span></div>
+          <p class="v93-scope">{{es?(band.inBand?'La observación está dentro de la tolerancia práctica; esto NO demuestra la hipótesis.':
+              'La observación está fuera de la tolerancia práctica; revisa las limitaciones antes de concluir.'):
+              (band.inBand?'The observation is inside the practical tolerance; this does NOT prove the hypothesis.':
+              'The observation is outside the practical tolerance; review limitations before concluding.')}}</p>
+        </section>
+      }
       @if(contrast()?.evaluation; as result){
-        <div class="decision"><strong>{{contrastVerdict()}}</strong><span>Muse Spark</span></div>
-        <p>{{text(result.answer.justification)}}</p><p class="limitations"><strong>{{es?'Límites:':'Limits:'}}</strong> {{text(result.answer.limitations)}}</p><p><strong>{{es?'Siguiente paso:':'Next step:'}}</strong> {{text(result.answer.nextStep)}}</p>
-        @if(!contrastMatches()){<p class="warning">{{es?'Este contraste pertenece a un análisis anterior.':'This comparison belongs to an earlier analysis.'}}</p>}
-        <button type="button" class="report" (click)="downloadReport('contrast')" [disabled]="downloading()">{{downloading()?(es?'Preparando descarga…':'Preparing download…'):(es?'Descargar contraste y fuentes':'Download comparison and sources')}}</button>
+        @if(contrastMatches()) {
+          <section class="v93-contrast-head">
+            <span class="v93-spark-kicker">✦ Muse Spark · {{es?'CONTRASTE DE EVIDENCIAS':'EVIDENCE COMPARISON'}}</span>
+            <h3>{{contrastVerdict()}}</h3>
+            <p>{{text(result.answer.justification)}}</p>
+            <small>{{es?'Inferencia condicionada a la medición, no una demostración causal.':
+              'Inference conditional on measurements, not causal proof.'}}</small>
+          </section>
+          <div class="v93-spark-tabs" role="tablist" [attr.aria-label]="es?'Vistas del contraste':'Comparison views'">
+            <button type="button" [attr.aria-selected]="comparisonTab()==='summary'"
+              (click)="comparisonTab.set('summary')">{{es?'Lectura':'Interpretation'}}</button>
+            <button type="button" [attr.aria-selected]="comparisonTab()==='data'"
+              (click)="comparisonTab.set('data')">{{es?'Datos':'Data'}}</button>
+            <button type="button" [attr.aria-selected]="comparisonTab()==='limits'"
+              (click)="comparisonTab.set('limits')">{{es?'Límites':'Limits'}}</button>
+            <button type="button" [attr.aria-selected]="comparisonTab()==='record'"
+              (click)="comparisonTab.set('record')">{{es?'Registro':'Record'}}</button>
+          </div>
+          <section class="v93-tab-body" role="tabpanel">
+            @switch(comparisonTab()) {
+              @case('summary'){
+                <h3>{{es?'¿Qué ocurrió en la segunda prueba?':'What happened in the second trial?'}}</h3>
+                <p>{{text(result.answer.justification)}}</p>
+                <h4>{{es?'Siguiente paso':'Next step'}}</h4><p>{{text(result.answer.nextStep)}}</p>
+              }
+              @case('data'){
+                <h3>{{es?'Predicción frente a observación':'Prediction versus observation'}}</h3>
+                @if(prediction(); as predicted){<div class="v93-prediction-grid">
+                  <div><small>{{es?'Predicho':'Predicted'}}</small><strong>{{number(predicted.periodSeconds,3)}} s</strong></div>
+                  <div><small>{{es?'Tolerancia predeclarada':'Predeclared tolerance'}}</small><strong>±{{predicted.tolerancePercent}} %</strong></div>
+                  @if(statisticalSummary(); as stats){
+                    @if(stats.second; as measured){<div><small>{{es?'Medido por ProofLab':'Measured by ProofLab'}}</small><strong>{{number(measured.estimateSeconds,3)}} s</strong></div>}
+                    @if(stats.comparison; as comp){<div><small>{{es?'Diferencia observada':'Observed difference'}}</small><strong>{{number(comp.relativeDifferencePercent,3)}} %</strong></div>}
+                  }
+                </div>}
+                <p class="v93-scope">{{es?'Comparación con evidencia del segundo video. La tolerancia práctica no es un intervalo estadístico.':
+                  'Comparison using second-video evidence. Practical tolerance is not a statistical interval.'}}</p>
+              }
+              @case('limits'){
+                <h3>{{es?'Qué no demuestra este contraste':'What this comparison does not prove'}}</h3>
+                <p class="v93-warning">{{text(result.answer.limitations)}}</p>
+                <p>{{es?'Comprueba longitud, suspensión, cámara y repetibilidad antes de atribuir causalidad.':
+                  'Verify length, suspension, camera and repeatability before attributing causality.'}}</p>
+              }
+              @case('record'){
+                <h3>{{es?'Cadena de evidencia conservada':'Saved evidence chain'}}</h3>
+                <p>{{es?'La comparación conserva la predicción congelada y la respuesta del proveedor.':
+                  'The comparison retains the frozen prediction and provider response.'}}</p>
+                <p class="fine">{{es?'Respuesta':'Response'}}: {{result.responseId}}</p>
+                @if(contrast()?.evidence; as evidence){<p class="fine">{{es?'Hash de evidencia':'Evidence hash'}}:</p><code>{{evidence.sha256}}</code>}
+                <p class="v93-scope">{{es?'El hash verifica integridad local, no prueba física.':
+                  'The hash verifies local integrity, not physical proof.'}}</p>
+              }
+            }
+          </section>
+          <button type="button" class="report" (click)="downloadReport('contrast')" [disabled]="downloading()">
+            {{es?'Descargar contraste y fuentes':'Download comparison and sources'}}</button>
+        } @else {
+          <p class="warning">{{es?'Esta respuesta pertenece a otro análisis y no se mostrará como resultado actual.':
+            'This response belongs to another analysis and is not shown as a current result.'}}</p>
+        }
       } @else {
         <div class="actions">
           <label>{{es?'Longitud del segundo experimento (m)':'Second experiment length (m)'}}
@@ -113,6 +248,50 @@
         @if(contrast()?.attemptStatus){<p class="warning">{{es?'Revisa el intento registrado; no se repite automáticamente.':'Inspect the recorded attempt; it is not retried automatically.'}}</p>}
       }
     } @else if(s.evaluation; as evaluation) {
+      @if(comparisonModel(); as m) {
+        <section class="v93-predict-board" aria-label="Pendulum prediction">
+          <div class="v93-board-head">
+            <small>{{es?'MODELO IDEAL · NO ES UN VIDEO':'IDEAL MODEL · NOT A RECORDING'}}</small>
+            <h3>{{es?'¿Cuál de los dos tarda más?':'Which pendulum takes longer?'}}</h3>
+            <p>{{es?'Comparación matemática ilustrativa; no altera los datos del video 1.':
+              'Illustrative mathematical comparison; it does not modify trial 1.'}}</p>
+          </div>
+          <div class="v93-model-labels">
+            <span><strong>{{number(m.l1*100,0)}} cm</strong><small>{{es?'Prueba 1':'Trial 1'}}</small></span>
+            <span><strong>{{number(m.l2*100,0)}} cm</strong><small>{{es?'Prueba 2 propuesta':'Proposed trial 2'}}</small></span>
+          </div>
+          <svg viewBox="0 0 450 225" role="img" [attr.aria-label]="es?'Dos péndulos ideales con períodos diferentes':'Two ideal pendulums with different periods'">
+            <path d="M78 34H152 M296 34H370" stroke="#9cb2cb" stroke-width="5" stroke-linecap="round"/>
+            @if(modelCoordinates(); as pos) {
+              <path [attr.d]="'M115 34L'+pos.x1+' '+pos.y1" stroke="#80e1c5" stroke-width="2"/>
+              <circle [attr.cx]="pos.x1" [attr.cy]="pos.y1" r="12" fill="#65cdb4" stroke="#c9fff1" stroke-width="2"/>
+              <path [attr.d]="'M333 34L'+pos.x2+' '+pos.y2" stroke="#bea8f6" stroke-width="2"/>
+              <circle [attr.cx]="pos.x2" [attr.cy]="pos.y2" r="12" fill="#a995dc" stroke="#eadfff" stroke-width="2"/>
+            }
+            <circle cx="115" cy="34" r="4" fill="#e6f6fa"/><circle cx="333" cy="34" r="4" fill="#e6f6fa"/>
+          </svg>
+          <button type="button" class="v93-model-play" (click)="toggleModel()">
+            {{modelRunning()?(es?'Pausar simulación':'Pause simulation'):(es?'▶ Reproducir simulación':'▶ Play simulation')}}
+          </button>
+          <p class="v93-scope">{{es?'Modelo matemático ideal, no medición de un segundo video.':
+            'Ideal mathematical model, not a second-video measurement.'}}</p>
+        </section>
+        <section class="v93-prediction-card">
+          <h3>{{es?'Si aumentamos la longitud, ¿aumentará el período?':
+            'If we increase length, does the period increase?'}}</h3>
+          <p>{{es?'Muse propone la hipótesis; ProofLab calcula T₂ = T₁ × √(L₂/L₁) usando la medición del video 1.':
+            'Muse proposes the hypothesis; ProofLab computes T₂ = T₁ × √(L₂/L₁) using trial 1.'}}</p>
+          <div class="v93-prediction-grid">
+            <div><small>{{es?'Período medido T₁':'Measured period T₁'}}</small><strong>{{number(m.t1,3)}} s</strong></div>
+            <div><small>{{es?'Período esperado T₂':'Expected period T₂'}}</small><strong>{{number(m.t2,3)}} s</strong></div>
+            <div><small>{{es?'Tolerancia práctica':'Practical tolerance'}}</small><strong>±{{m.tol}} %</strong></div>
+            <div><small>{{es?'Banda predeclarada':'Predeclared band'}}</small>
+              <strong>{{number(m.lower,3)}}–{{number(m.upper,3)}} s</strong></div>
+          </div>
+          <p class="v93-scope">{{es?'No es un intervalo estadístico del 95 % ni aceptación automática de la hipótesis.':
+            'Not a 95% confidence interval or automatic hypothesis acceptance.'}}</p>
+        </section>
+      }
       <div class="decision"><strong>{{phenomenonDecision() || decision()}}</strong><span>{{evaluation.model}}</span></div>
       <p>
         @if(phenomenon(); as phenomenon) {
@@ -136,6 +315,23 @@
         <p class="fine">{{es?'Banda práctica fijada antes de subir el video 2; no es un intervalo de confianza.':
           'Practical band fixed before video 2 is uploaded; not a confidence interval.'}}</p>
       }
+      @if(!s.prediction && evaluation.answer.decision==='PROPOSE_EXPERIMENT' && evaluationMatchesSource()) {
+        <div class="v93-freeze">
+          <h3>{{es?'Antes de subir el segundo video':'Before uploading trial 2'}}</h3>
+          <p>{{es?'1. Revisa el objeto y la suspensión. 2. Congela esta predicción. 3. Graba y analiza el video 2. 4. Contrasta los resultados en Comprobar.':
+            '1. Review the object and suspension. 2. Freeze this prediction. 3. Record and analyze trial 2. 4. Compare in the final step.'}}</p>
+          <label><input type="checkbox" [checked]="reviewedPrediction()" (change)="reviewedPrediction.set($any($event.target).checked)"/>
+            <span>{{es?'Confirmo haber revisado las mediciones y la hipótesis antes de ver la segunda prueba.':
+              'I confirm that I reviewed the measurements and hypothesis before seeing trial 2.'}}</span></label>
+          <button class="primary" type="button" (click)="freezePrediction()"
+            [disabled]="!reviewedPrediction() || !!busy() || connection.busy()">
+            {{es?'Congelar predicción':'Freeze prediction'}} →
+          </button>
+          <p class="v93-scope">{{es?'La confirmación del seguimiento también debe estar guardada en el servidor. Un resultado de Spark no es prueba científica.':
+            'Tracking review must also be recorded on the server. A Spark answer is not scientific proof.'}}</p>
+        </div>
+      }
+      @if(s.prediction){<p class="v93-freeze-done" role="status">🔒 {{es?'Predicción congelada antes de la prueba 2':'Prediction frozen before trial 2'}}</p>}
       <details class="narrative"><summary>{{es?'Hipótesis y protocolo de la prueba':'Hypothesis and experiment protocol'}}</summary>
         <h4>{{es?'Hipótesis falsable':'Falsifiable hypothesis'}}</h4><p>{{text(evaluation.answer.hypothesis)}}</p>
         <h4>{{es?'Protocolo':'Protocol'}}</h4><p>{{text(evaluation.answer.protocol)}}</p>

@@ -139,7 +139,7 @@ interface SamAdaptiveReport {
             }
             <div class="sam-buttons">
               <button type="button" class="sam-refresh" (click)="voidCheck()" [disabled]="!hasSource() || checking() || processing() || sending() || connection.busy()">{{!apiEnabled()?(es?'Actualizar caché':'Refresh cache'):(es?'Actualizar costo':'Refresh cost')}}</button>
-              <button type="button" class="sam-submit" (click)="process()" [disabled]="!canProcess()">{{processing() || connection.busy()?(es?'Procesando…':'Processing…'):(es?'Procesar':'Process')}}</button>
+              <button type="button" class="sam-submit" (click)="process()" [disabled]="!canProcess()">{{processing() || connection.busy()?(es?'Procesando…':'Processing…'):autoMuseAfterSam()&&apiEnabled()&&videoRole()==='baseline'?(es?'Procesar + interpretar con Muse':'Process + interpret with Muse'):(es?'Procesar':'Process')}}</button>
             </div>
             <fieldset class="sam-sources" [disabled]="sourcesLocked()">
               <legend>{{es?'Fuentes de procesamiento':'Processing sources'}}</legend>
@@ -147,6 +147,19 @@ interface SamAdaptiveReport {
               <label><input type="checkbox" [disabled]="sourcesLocked()" [checked]="cacheEnabled()" (change)="selectSource('cache',$any($event.target).checked)"/> {{es?'Caché + SQLite':'Cache + SQLite'}}</label>
             </fieldset>
             <small class="sam-source-help">{{sourceDescription()}}</small>
+            @if(autoMuseAfterSam() && apiEnabled() && videoRole()==='baseline' && !stageRetryQuote()) {
+              <div class="sam-muse-consent" role="note">
+                <strong>✦ Muse Spark 1.3 · {{es?'interpretación automática después de SAM':'automatic interpretation after SAM'}}</strong>
+                <p>{{es?'Al pulsar «Procesar + interpretar con Muse» autorizas, además del análisis de video mostrado, enviar únicamente el resumen de mediciones y limitaciones a Muse Spark. Máximo adicional: US$ 0,05. No se vuelve a subir el video y no se genera otra consulta si ya hay una respuesta válida guardada.':
+                  'Clicking “Process + interpret with Muse” also authorizes transferring only the measured data summary and limitations to Muse Spark. Additional maximum: US$ 0.05. The video is not resent and a valid saved answer is reused.'}}</p>
+                @if(displayedCost()>0){<small>{{es?'Máximo combinado estimado':'Estimated combined maximum'}}: US$ {{(displayedCost()+0.05).toFixed(2)}} · {{es?'no es una factura':'not an invoice'}}</small>}
+              </div>
+            }
+            @if(museAutoStatus()!=='idle') {
+              <p class="sam-muse-auto-status" role="status" [class.stage-error]="museAutoStatus()==='failed'">
+                {{museAutoMessage()}}
+              </p>
+            }
             @if(mode()==='api-meta' && stageRetryQuote(); as retry) {
               <div class="sam-stage-retry" role="group" [attr.aria-label]="es?'Reintentar solo SAM':'Retry SAM only'">
                 <strong>{{es?'Retomar desde la etapa SAM':'Continue from the SAM stage'}}</strong>
@@ -154,6 +167,11 @@ interface SamAdaptiveReport {
                   'The previous Spark localization and prepared MP4 are reused. Earlier stages will not run again; Meta must process SAM again and may charge again.'}}</p>
                 <div class="sam-retry-price">{{es?'Costo máximo de un NUEVO intento SAM':'Maximum cost of a NEW SAM request'}}:
                   <strong>US$ {{costLabel(retry.estimatedSamUsd)}}</strong></div>
+                @if(autoMuseAfterSam() && videoRole()==='baseline'){
+                  <p>{{es?'Al reintentar autorizas también la interpretación automática de Muse Spark con un máximo adicional de US$ 0,05; no se vuelve a enviar el video a Muse.':
+                    'Retry also authorizes automatic Muse Spark interpretation, at most US$ 0.05 extra; video is not sent to Muse.'}}</p>
+                  <small>{{es?'Máximo combinado estimado':'Estimated combined maximum'}}: US$ {{(retry.estimatedSamUsd+0.05).toFixed(2)}}</small>
+                }
                 @if(!retry.alreadyRequested) {
                   <button type="button" class="sam-retry-button" [disabled]="!canStageRetry()"
                     (click)="retryStage()">{{es?'Reintentar SAM · US$ ':'Retry SAM · US$ '}}{{costLabel(retry.estimatedSamUsd)}}</button>
@@ -404,6 +422,10 @@ interface SamAdaptiveReport {
     .sam-actions .sam-submit:enabled:hover{background:#166534;border-color:#86efac}
     .sam-actions .sam-submit:focus-visible{outline:2px solid #bbf7d0;outline-offset:3px}
     .sam-actions .sam-submit:disabled{background:#303843;border-color:#48515e;color:#aab6c5;opacity:1;animation:none;box-shadow:none}
+    .sam-muse-consent{margin:12px 0;padding:12px 13px;border-radius:9px;border:1px solid #666089;background:#1a2133;color:#e2d7ff}
+    .sam-muse-consent strong{font-size:12px}.sam-muse-consent p{font-size:11px;line-height:1.65;margin:6px 0;color:#d0c7e1}
+    .sam-muse-consent small{font-size:11px;color:#f6dba7}.sam-muse-auto-status{font-size:12px;margin:10px 0;color:#b9ffe1}
+    .sam-muse-auto-status.stage-error{color:#f6b4ba}
     .sam-stage-retry{flex-basis:100%;margin-top:14px;padding:13px 14px;border:1px solid #d6a453;border-radius:8px;background:#2b271a;color:#ffe8b8}
     .sam-stage-retry>strong{font-size:13px}.sam-stage-retry p{font-size:11px;margin:7px 0;color:#f4d3a2}
     .sam-retry-price{font-size:12px;margin:10px 0}.sam-retry-price strong{font-size:19px;margin-left:6px;color:#fff0ce}
@@ -516,6 +538,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     });
   }
   readonly guided=input(false);
+  readonly autoMuseAfterSam=input(false);
   readonly sourcePending=input(false);
   readonly recoveryRunning=input(false);
   // True once the original is registered on the server; browser decoding is independent.
@@ -769,6 +792,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       sha===this.videoSha256() && port===this.localApiPort() && this.mode()==='api-meta';
     // This explicit click authorizes one NEW potentially billable SAM request,
     // not a free continuation of the provider's incomplete SSE stream.
+    this.processAuthorizedMuse=this.autoMuseAfterSam() && this.videoRole()==='baseline';
+    this.museAutoStatus.set('idle');
     this.processingReset.emit();this.beginProcessing();this.startStageTrace(true);
     this.stageRetryActive.set(true);this.processingPhase.set('sam');this.sending.set(true);
     this.adaptiveProgress.set(null);this.adaptiveResult.set(null);this.error.set('');
@@ -811,8 +836,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         throw Error('STAGE_RETRY_INCOMPLETE');
       this.adaptiveResult.set(report);this.processingPhase.set('validating');
       this.viewStartedAt=Date.now();opened=true;
-      this.cacheUpdated.emit({studyId:this.studyId(),videoRole:this.videoRole(),sourceSha256:sha,
-        analysisId:report.batchId,adaptiveBatchId:report.batchId,port});
+      const selection={studyId:this.studyId(),videoRole:this.videoRole(),sourceSha256:sha,
+        analysisId:report.batchId,adaptiveBatchId:report.batchId,port};
+      await this.interpretAfterSam(selection,token,current);
+      if(current())this.cacheUpdated.emit(selection);
     }catch{
       if(current()){
         this.error.set(this.es?
@@ -823,8 +850,78 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     }finally{
       if(this.adaptivePollHandle!==null)clearInterval(this.adaptivePollHandle);
       this.adaptivePollHandle=null;this.sending.set(false);
+      this.processAuthorizedMuse=false;
       if(!opened || !current())this.finishProcessing();
     }
+  }
+  readonly museAutoStatus=signal<'idle'|'reading'|'preparing'|'evaluating'|'saved'|'failed'>('idle');
+  private processAuthorizedMuse=false;
+  private readonly museAttempted=new Set<string>();
+  museAutoMessage():string{
+    switch(this.museAutoStatus()){
+      case 'reading':return this.es?'Muse Spark: comprobando la respuesta guardada…':'Muse Spark: checking saved response…';
+      case 'preparing':return this.es?'Muse Spark: preparando el resumen de mediciones…':'Muse Spark: preparing measured evidence…';
+      case 'evaluating':return this.es?'Muse Spark: interpretando las mediciones…':'Muse Spark: interpreting measurements…';
+      case 'saved':return this.es?'Muse Spark: interpretación registrada. Se mostrará en Entender.':'Muse Spark: interpretation saved. View it in Understand.';
+      case 'failed':return this.es?'Muse Spark no pudo completar su interpretación; SAM quedó guardado. Revisa el intento registrado, sin reenvío automático.':
+        'Muse Spark did not complete its interpretation; SAM was saved. Inspect the recorded attempt, with no automatic retry.';
+      default:return '';
+    }
+  }
+  private async interpretAfterSam(selection:SamProcessingSelection,token:string,current:()=>boolean):Promise<void>{
+    if(!this.processAuthorizedMuse || selection.videoRole!=='baseline' || !this.apiEnabled() ||
+       !token || !current() || !this.http)return;
+    const key=[selection.studyId,selection.sourceSha256,selection.analysisId,
+      selection.adaptiveBatchId??'',selection.port].join(':');
+    if(this.museAttempted.has(key))return;
+    this.museAttempted.add(key);
+    const url=this.base+'/'+selection.studyId+'/muse';
+    const headers={'X-ProofLab-Manual-Action':'muse-research'};
+    type RecordState={observation:null|{id:string;analysisId:string;videoSha256:string;payloadJson?:string};
+      evaluation:null|{responseId:string};prediction:unknown;attemptStatus:string|null;
+      manualCallsPermitted:boolean};
+    const matches=(s:RecordState)=>{
+      const o=s.observation;
+      if(!o || o.analysisId!==selection.analysisId || o.videoSha256!==selection.sourceSha256 ||
+         !o.payloadJson)return false;
+      try{
+        const identity=JSON.parse(o.payloadJson)?.identity;
+        return identity?.studyId===selection.studyId &&
+          identity?.videoSha256===selection.sourceSha256 &&
+          identity?.analysisId===selection.analysisId &&
+          (identity?.adaptiveBatchId??null)===(selection.adaptiveBatchId??null) &&
+          (identity?.pivotRevisionId??null)===null;
+      }catch{return false;}
+    };
+    try {
+      this.museAutoStatus.set('reading');
+      let state=await firstValueFrom(this.http.get<RecordState>(url).pipe(timeout(15000)));
+      if(!current())return;
+      if(matches(state) && state.evaluation){this.museAutoStatus.set('saved');return;}
+      if(matches(state) && (state.attemptStatus || state.prediction)){this.museAutoStatus.set('failed');return;}
+      this.museAutoStatus.set('preparing');
+      state=await firstValueFrom(this.http.post<RecordState>(url+'/prepare',{
+        videoSha256:selection.sourceSha256,analysisId:selection.analysisId,
+        pivotRevisionId:null,adaptiveBatchId:selection.adaptiveBatchId??null
+      },{headers}).pipe(timeout(90000)));
+      if(!current())return;
+      if(!matches(state) || !state.observation || !state.manualCallsPermitted ||
+         state.attemptStatus){this.museAutoStatus.set('failed');return;}
+      if(state.evaluation){this.museAutoStatus.set('saved');return;}
+      this.museAutoStatus.set('evaluating');
+      try {
+        state=await firstValueFrom(this.http.post<RecordState>(url+'/evaluate',{
+          observationId:state.observation.id,modelApiToken:token,
+          confirmMeasuredDataTransfer:true,confirmPaidCall:true,
+          maximumEstimatedCostUsd:.05
+        },{headers}).pipe(timeout(210000)));
+      }catch{
+        // Reconcile an unknown outcome once, READ-ONLY. Never POST a second paid request.
+        state=await firstValueFrom(this.http.get<RecordState>(url).pipe(timeout(15000)));
+      }
+      if(!current())return;
+      this.museAutoStatus.set(matches(state)&&!!state.evaluation?'saved':'failed');
+    }catch{if(current())this.museAutoStatus.set('failed');}
   }
   private get base():string {
     return apiOrigin(this.localApiPort())+
@@ -856,6 +953,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.transferConsent.set(false);
     this.paidConsent.set(false);
     this.retryConsent.set(false);
+    this.processAuthorizedMuse=false;this.museAutoStatus.set('idle');
     this.adaptiveQuote.set(null);
     this.adaptiveProgress.set(null);
     this.adaptiveResult.set(null);
@@ -948,11 +1046,20 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   async process():Promise<void> {
     if(!this.canProcess())return;
+    // Clicking Process authorizes exactly one follow-up Muse consultation,
+    // priced and disclosed above, only after valid baseline SAM evidence exists.
+    this.processAuthorizedMuse=this.autoMuseAfterSam() && this.apiEnabled() && this.videoRole()==='baseline';
+    this.museAutoStatus.set('idle');
     if(this.segmentedMode() && this.cachedResultAvailable()) {
       const cached=this.reusableEvidence()!;
       this.processingReset.emit();this.beginProcessing();this.startStageTrace(true);this.viewStartedAt=Date.now();
-      this.cacheUpdated.emit({studyId:this.studyId(),videoRole:this.videoRole(),sourceSha256:cached.sourceSha256,
-        analysisId:cached.analysisId!,adaptiveBatchId:cached.adaptiveBatchId??undefined,port:this.localApiPort()});
+      const selection={studyId:this.studyId(),videoRole:this.videoRole(),sourceSha256:cached.sourceSha256,
+        analysisId:cached.analysisId!,adaptiveBatchId:cached.adaptiveBatchId??undefined,port:this.localApiPort()};
+      const token=this.connection.tokenForManualRequest();
+      if(token)await this.interpretAfterSam(selection,token,()=>!this.disposed &&
+        selection.sourceSha256===this.videoSha256() && selection.studyId===this.studyId());
+      this.processAuthorizedMuse=false;
+      this.cacheUpdated.emit(selection);
       return;
     }
     if(this.segmentedMode()) {
@@ -1439,8 +1546,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         throw Error('SEGMENT_RESULT_INCONCLUSIVE');
       this.processingPhase.set('validating');this.viewStartedAt=Date.now();
       opened=true;
-      this.cacheUpdated.emit({studyId:this.studyId(),videoRole:this.videoRole(),
-        sourceSha256:sha,analysisId:report.batchId,adaptiveBatchId:report.batchId,port});
+      const selection={studyId:this.studyId(),videoRole:this.videoRole(),
+        sourceSha256:sha,analysisId:report.batchId,adaptiveBatchId:report.batchId,port};
+      await this.interpretAfterSam(selection,token,current);
+      if(current())this.cacheUpdated.emit(selection);
     }catch(e){
       if(current()){
         const code=e instanceof Error?e.message:'';
@@ -1614,6 +1723,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       this.sending.set(false);
       if(serial===this.serial){
         this.transferConsent.set(false);this.paidConsent.set(false);this.retryConsent.set(false);
+        this.processAuthorizedMuse=false;
       }
     }
   }

@@ -160,18 +160,38 @@ public sealed class MuseExperimentStore
             throw new InvalidDataException("Frozen prediction integrity failure.");
         return p;
     }
+    public MusePrediction Freeze(MuseObservation o,MuseEvaluation e)
+    {
+        if(e.ObservationId!=o.Id || e.StudyId!=o.StudyId ||
+           e.Answer.Decision!="PROPOSE_EXPERIMENT")
+            throw new InvalidOperationException("No eligible Muse proposal to freeze.");
+        var existing=Prediction(o.StudyId);
+        if(existing is not null){
+            if(existing.ObservationId!=o.Id || existing.ResponseId!=e.ResponseId)
+                throw new InvalidOperationException("Another proposal was already frozen.");
+            return existing;
+        }
+        var stored=Evaluation(o.Id);
+        if(stored is null || stored.ResponseId!=e.ResponseId ||
+           stored.RawResponseSha256!=e.RawResponseSha256)
+            throw new InvalidOperationException("Provider interpretation is not verified.");
+        var stamp=DateTimeOffset.UtcNow;
+        var json=JsonSerializer.Serialize(MuseExperimentPolicy.FreezePayload(o,stored,stamp),Json);
+        using var db=Open();using var tx=db.BeginTransaction();
+        using var freeze=db.CreateCommand();freeze.Transaction=tx;
+        freeze.CommandText="INSERT INTO muse_predictions VALUES($s,$o,$r,$t,$p,$h)";
+        freeze.Parameters.AddWithValue("$s",o.StudyId);freeze.Parameters.AddWithValue("$o",o.Id);
+        freeze.Parameters.AddWithValue("$r",e.ResponseId);freeze.Parameters.AddWithValue("$t",stamp.ToString("O"));
+        freeze.Parameters.AddWithValue("$p",json);freeze.Parameters.AddWithValue("$h",KnotPolicy.Hash(json));
+        freeze.ExecuteNonQuery();
+        tx.Commit();
+        return Prediction(o.StudyId)??throw new InvalidDataException("Frozen prediction was not persisted.");
+    }
     public void Complete(MuseObservation o,MuseEvaluation e)
     {
         using var db=Open();using var tx=db.BeginTransaction();
-        if(e.Answer.Decision=="PROPOSE_EXPERIMENT") {
-            var stamp=DateTimeOffset.UtcNow;
-            var json=JsonSerializer.Serialize(MuseExperimentPolicy.FreezePayload(o,e,stamp),Json);
-            using var freeze=db.CreateCommand();freeze.Transaction=tx;
-            freeze.CommandText="INSERT INTO muse_predictions VALUES($s,$o,$r,$t,$p,$h)";
-            freeze.Parameters.AddWithValue("$s",o.StudyId);freeze.Parameters.AddWithValue("$o",o.Id);
-            freeze.Parameters.AddWithValue("$r",e.ResponseId);freeze.Parameters.AddWithValue("$t",stamp.ToString("O"));
-            freeze.Parameters.AddWithValue("$p",json);freeze.Parameters.AddWithValue("$h",KnotPolicy.Hash(json));freeze.ExecuteNonQuery();
-        }
+        // Muse's scientific interpretation is recorded now; freezing a numeric
+        // prediction is an independent, explicit human-reviewed step.
         using var cmd=db.CreateCommand();cmd.Transaction=tx;
         cmd.CommandText="UPDATE muse_attempts SET evaluation=$e,status='COMPLETED' WHERE observation_id=$id AND response_sha=$h AND evaluation IS NULL";
         cmd.Parameters.AddWithValue("$id",o.Id);cmd.Parameters.AddWithValue("$h",e.RawResponseSha256);

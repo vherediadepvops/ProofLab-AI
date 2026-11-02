@@ -99,6 +99,49 @@ describe('One complete-video SAM request and archived-result recovery',()=>{
   x.h.expectOne(root+'/assembly/baseline/grounding/progress').flush({startedAtUtc:'2000-01-01T00:00:00Z',stages:[]});await stale;
   expect(x.c.sparkStages().length).toBe(1);x.h.expectNone(r=>r.method==='POST');x.f.destroy();
  });
+ it('automatically interprets verified baseline SAM once with the disclosed Muse cost and no second video upload',async()=>{
+  const x=setup();x.f.componentRef.setInput('autoMuseAfterSam',true);x.f.detectChanges();
+  await check(x,exact,located);
+  expect(x.f.nativeElement.textContent).toContain('Máximo adicional: US$ 0,05');
+  expect(x.f.nativeElement.textContent).toContain('Procesar + interpretar con Muse');
+  const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
+  x.h.expectOne(url+'/manual-batch').flush(done);await finalProgress(x);await tick();
+  const muse=root+'/muse',emptyMuse={observation:null,evaluation:null,prediction:null,
+    attemptStatus:null,manualCallsPermitted:true};
+  const recorded={id:'f'.repeat(64),analysisId:batch,videoSha256:sha,
+    payloadJson:JSON.stringify({identity:{studyId:id,videoSha256:sha,analysisId:batch,
+      adaptiveBatchId:batch,pivotRevisionId:null}})};
+  const initial=x.h.expectOne(muse);expect(initial.request.method).toBe('GET');initial.flush(emptyMuse);
+  await tick();
+  const prep=x.h.expectOne(muse+'/prepare');
+  expect(prep.request.body).toEqual({videoSha256:sha,analysisId:batch,pivotRevisionId:null,
+    adaptiveBatchId:batch});
+  prep.flush({...emptyMuse,observation:recorded});await tick();
+  const evaluate=x.h.expectOne(muse+'/evaluate');
+  expect(evaluate.request.body.observationId).toBe(recorded.id);
+  expect(evaluate.request.body.confirmPaidCall).toBeTrue();
+  expect(evaluate.request.body.confirmMeasuredDataTransfer).toBeTrue();
+  expect(evaluate.request.body.maximumEstimatedCostUsd).toBe(.05);
+  expect(evaluate.request.headers.get('X-ProofLab-Manual-Action')).toBe('muse-research');
+  evaluate.flush({...emptyMuse,observation:recorded,evaluation:{responseId:'saved-receipt'}});await p;
+  expect(x.c.museAutoStatus()).toBe('saved');
+  expect(emit).toHaveBeenCalledOnceWith(jasmine.objectContaining({analysisId:batch}));
+  x.h.expectNone(r=>r.method==='POST');
+  unlock(x);x.f.destroy();
+ });
+ it('uses a stored Muse interpretation after SAM and does not pay again',async()=>{
+  const x=setup();x.f.componentRef.setInput('autoMuseAfterSam',true);x.f.detectChanges();
+  await check(x,exact,located);
+  const p=x.c.process();x.h.expectOne(url+'/manual-batch').flush(done);
+  await finalProgress(x);await tick();
+  x.h.expectOne(root+'/muse').flush({observation:{id:'f'.repeat(64),analysisId:batch,videoSha256:sha,
+    payloadJson:JSON.stringify({identity:{studyId:id,videoSha256:sha,analysisId:batch,
+      adaptiveBatchId:batch,pivotRevisionId:null}})},
+    evaluation:{responseId:'existing'},prediction:null,attemptStatus:'COMPLETED',manualCallsPermitted:true});
+  await p;expect(x.c.museAutoStatus()).toBe('saved');
+  x.h.expectNone(r=>r.url.includes('/muse') && r.method==='POST');
+  unlock(x);x.f.destroy();
+ });
  it('quotes one whole video and starts Spark then one SAM only after the click',async()=>{
   const x=setup();await check(x);
   expect(x.c.localApiPort()).toBe(5391);expect(x.c.canProcess()).toBeTrue();

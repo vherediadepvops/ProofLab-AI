@@ -65,7 +65,76 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   readonly source=input.required<SamPeriodSource>();
   readonly language=input<'es'|'en'>('es');
   readonly view=input<'research'|'interpretation'>('research');
+  readonly autoInterpretation=input(false);
   readonly interpretationOpened=signal(false);
+  readonly interpretationTab=signal<'summary'|'evidence'|'limits'|'record'>('summary');
+  readonly comparisonTab=signal<'summary'|'data'|'limits'|'record'>('summary');
+  readonly reviewedPrediction=signal(false);
+  readonly modelRunning=signal(false);
+  readonly modelTime=signal(0);
+  private modelTimer:ReturnType<typeof setInterval>|null=null;
+  readonly evidenceSnapshot=computed(()=>{
+    try{
+      const raw=this.state()?.observation?.payloadJson;
+      if(!raw)return null;
+      const a=JSON.parse(raw)?.measurement?.assessment;
+      if(!a)return null;
+      return {
+        period:typeof a.periodSeconds==='number'?a.periodSeconds:null,
+        usedCycles:typeof a.usedCycles==='number'?a.usedCycles:null,
+        completeCycles:typeof a.completeCycles==='number'?a.completeCycles:null,
+        detectedFrames:typeof a.detectedFrames==='number'?a.detectedFrames:null,
+        totalFrames:typeof a.totalFrames==='number'?a.totalFrames:null,
+        coverage:typeof a.detectionCoverage==='number'?a.detectionCoverage:null
+      };
+    }catch{return null;}
+  });
+  readonly comparisonModel=computed(()=>{
+    const s=this.state(),e=s?.evaluation,o=s?.observation;
+    if(this.isFollowup || !e||!o||e.answer.decision!=='PROPOSE_EXPERIMENT' ||
+       !this.evaluationMatchesSource())return null;
+    try{
+      const v=JSON.parse(o.payloadJson),l1=v.baselineLengthMeters,
+        t1=v.measurement?.assessment?.periodSeconds,
+        l2=e.answer.nextLengthMeters,t2=e.answer.periodSeconds,tol=e.answer.tolerancePercent;
+      if(l2===null||t2===null||tol===null)return null;
+      if([l1,l2,t1,t2,tol].some(x=>typeof x!=='number'||!Number.isFinite(x)||x<=0))return null;
+      return {l1,l2,t1,t2,tol,lower:t2*(1-tol/100),upper:t2*(1+tol/100)};
+    }catch{return null;}
+  });
+  readonly verifiedComparison=computed(()=>{
+    if(!this.isFollowup || !this.contrastMatches())return null;
+    const frozen=this.prediction(),evidence=this.contrast()?.evidence;
+    if(!frozen || !evidence)return null;
+    try{
+      const observed=JSON.parse(evidence.payloadJson)?.measurement?.assessment?.periodSeconds;
+      const expected=frozen.periodSeconds,tolerance=frozen.tolerancePercent;
+      if(typeof observed!=='number'||!Number.isFinite(observed)||observed<=0||
+         !Number.isFinite(expected)||expected<=0||!Number.isFinite(tolerance)||tolerance<=0)return null;
+      const low=expected*(1-tolerance/100),high=expected*(1+tolerance/100);
+      const min=Math.max(0,Math.min(low,observed)-Math.max(.05,expected*.06));
+      const max=Math.max(high,observed)+Math.max(.05,expected*.06);
+      const x=(v:number)=>42+476*(v-min)/(max-min);
+      return {expected,observed,low,high,tolerance,differencePercent:100*(observed-expected)/expected,
+        bandX:x(low),bandWidth:x(high)-x(low),expectedX:x(expected),observedX:x(observed),
+        inBand:observed>=low&&observed<=high};
+    }catch{return null;}
+  });
+  readonly modelCoordinates=computed(()=>{
+    const m=this.comparisonModel(),t=this.modelTime();
+    if(!m)return null;
+    const a1=.27*Math.cos(2*Math.PI*t/m.t1),a2=.27*Math.cos(2*Math.PI*t/m.t2);
+    const len1=132,len2=Math.max(78,Math.min(167,132*m.l2/m.l1));
+    return {x1:115+len1*Math.sin(a1),y1:34+len1*Math.cos(a1),
+      x2:333+len2*Math.sin(a2),y2:34+len2*Math.cos(a2)};
+  });
+  toggleModel():void{
+    if(this.modelTimer!==null){clearInterval(this.modelTimer);this.modelTimer=null;
+      this.modelRunning.set(false);return;}
+    if(!this.comparisonModel())return;
+    this.modelRunning.set(true);
+    this.modelTimer=setInterval(()=>this.modelTime.update(t=>t+.05),50);
+  }
   private interpretationContext='';
   readonly frozen=output<FrozenMusePrediction|null>();
   readonly connection=inject(LabConnection);
@@ -165,8 +234,18 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     this.busy.set(null);this.error.set('');this.downloadError.set(false);
   }
   ngOnChanges():void {
+    const previous=this.interpretationContext;
     this.resetInterpretationContext();
-    if(!this.interpretationView())void this.load();
+    if(this.interpretationView()) {
+      // Only the Step 3 experience opts into automatic READ of the saved answer.
+      // This GET is not a provider inference and spends no Meta credits.
+      if(this.autoInterpretation() && (previous!==this.interpretationContext || !this.state())) {
+        this.interpretationOpened.set(true);this.interpretationTab.set('summary');
+        void this.load();
+      }
+    } else {
+      this.reviewedPrediction.set(false);void this.load();
+    }
   }
   async openInterpretation():Promise<void> {
     if(!this.interpretationView() || this.busy() || this.connection.busy())return;
@@ -192,7 +271,31 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     if(JSON.stringify([this.connection.port(),this.source()])!==context || !this.canEvaluate())return;
     await this.evaluate();
   }
-  ngOnDestroy():void{this.serial++;this.subscription.unsubscribe();}
+  async freezePrediction():Promise<void> {
+    const s=this.state(),source=this.source();
+    if(this.isFollowup || this.busy() || this.connection.busy() ||
+       !this.reviewedPrediction() || !s?.evaluation || !this.evaluationMatchesSource() ||
+       s.prediction || s.evaluation.answer.decision!=='PROPOSE_EXPERIMENT' ||
+       s.evaluation.answer.periodSeconds===null ||
+       s.evaluation.answer.nextLengthMeters===null)return;
+    const serial=++this.serial;this.busy.set('preparing');this.error.set('');
+    try {
+      const frozen=await firstValueFrom(this.http.post<MuseState>(this.url()+'/freeze',{
+        observationId:s.evaluation.observationId,responseId:s.evaluation.responseId
+      },{headers:this.headers}));
+      if(serial===this.serial && this.source().studyId===source.studyId &&
+         frozen.prediction?.observationId===s.evaluation.observationId){
+        this.accept(frozen);
+      }
+    }catch{if(serial===this.serial)this.error.set(this.es?
+      'No se pudo congelar la predicción. Confirma primero la revisión del seguimiento y la evidencia actual.':
+      'Could not freeze the prediction. First confirm tracking review and current evidence.');}
+    finally{if(serial===this.serial)this.busy.set(null);}
+  }
+  ngOnDestroy():void{
+    if(this.modelTimer!==null)clearInterval(this.modelTimer);
+    this.modelTimer=null;this.serial++;this.subscription.unsubscribe();
+  }
   private accept(state:MuseState):void {
     this.state.set(state);
     // The interpretation view never unlocks prediction or bypasses the tracking review.

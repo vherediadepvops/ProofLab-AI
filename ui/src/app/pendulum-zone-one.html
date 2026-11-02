@@ -177,6 +177,29 @@
           @if(modelError()){<p class="focus-error" role="alert">{{modelError()}}</p>}
         </section>
 
+        @if(flowStep()===3) {
+          <header class="v93-stage-heading">
+            <span class="focus-eyebrow">{{es?'ENTENDER · OBSERVACIÓN E INTERPRETACIÓN':'UNDERSTAND · OBSERVATION & INTERPRETATION'}}</span>
+            <h2>{{es?'Lo que observó ProofLab. Lo que infiere Spark.':
+              'What ProofLab measured. What Spark infers.'}}</h2>
+            <p>{{es?'Medición, interpretación de IA y revisión humana aparecen separadas, con sus límites visibles.':
+              'Measurements, AI interpretation and human review remain separate, with visible limitations.'}}</p>
+          </header>
+        } @else if(flowStep()===4) {
+          <header class="v93-stage-heading">
+            <span class="focus-eyebrow">{{es?'PREDECIR · ANTES DEL SEGUNDO VIDEO':'PREDICT · BEFORE VIDEO TWO'}}</span>
+            <h2>{{es?'Dos longitudes, una pregunta medible.':'Two lengths, one measurable question.'}}</h2>
+            <p>{{es?'La hipótesis debe quedar congelada antes de grabar y analizar la segunda prueba.':
+              'Freeze the hypothesis before recording and analyzing the second trial.'}}</p>
+          </header>
+        } @else if(flowStep()===5) {
+          <header class="v93-stage-heading">
+            <span class="focus-eyebrow">{{es?'COMPROBAR · PREDICCIÓN FRENTE A EVIDENCIA':'COMPARE · PREDICTION VERSUS EVIDENCE'}}</span>
+            <h2>{{es?'¿Coincide lo predicho con lo observado?':'Does observation match the prediction?'}}</h2>
+            <p>{{es?'Solo las medidas verificadas del segundo video se comparan con la banda congelada.':
+              'Only verified second-video measurements are compared with the frozen band.'}}</p>
+          </header>
+        }
         <section class="focus-video" [attr.aria-busy]="videoLoading() || resultState()==='loading'">
           @if(sourcePending() && !uploadActiveId()) {<app-lab-activity [label]="demoLoading()?(es?'Descargando video de ejemplo…':'Downloading example video…'):(es?'Preparando carga…':'Preparing upload…')" [detail]="demoLoading()?(es?'Obteniendo el archivo para tu investigación.':'Fetching the file for your study.'):(es?'Esperando a que terminen los cambios de parámetros.':'Waiting for parameter changes to finish saving.')"/>}
           @if(s.baseline) {
@@ -230,10 +253,11 @@
             <p class="confidence-note">{{es?'Verde significa dato ingresado, no precisión garantizada. El intervalo del 95 % se calcula después, si hay ciclos suficientes, y describe solo la repetibilidad del período; no la confianza de toda la investigación.':'Green means a value was entered, not guaranteed accuracy. A 95% interval is calculated later if enough cycles are available; it describes period repeatability only, not confidence in the whole study.'}}</p>
           </div>
           @if(s.preparationPending!==true && requiredParametersSaved()) {
-          <app-sam-video-replay [guided]="true" [language]="language()" [sourcePending]="sourcePending()" [recoveryRunning]="recovering()" [mediaReady]="originalRegistered((activeTrial()==='followup' && s.followup?.sha256)?'followup':'baseline')" [validationState]="resultState()" [studyId]="s.id" [videoRole]="(activeTrial()==='followup' && s.followup?.sha256)?'followup':'baseline'" [videoSha256]="(activeTrial()==='followup' && s.followup?.sha256?s.followup?.sha256:s.baseline?.sha256)??''" (processingReset)="onProcessingReset()" (processingStarted)="onProcessingStarted()" (processingFailed)="onProcessingFinished(false)" (cacheUpdated)="acceptProcessed($event)"/>
+          <app-sam-video-replay [guided]="true" [autoMuseAfterSam]="true" [language]="language()" [sourcePending]="sourcePending()" [recoveryRunning]="recovering()" [mediaReady]="originalRegistered((activeTrial()==='followup' && s.followup?.sha256)?'followup':'baseline')" [validationState]="resultState()" [studyId]="s.id" [videoRole]="(activeTrial()==='followup' && s.followup?.sha256)?'followup':'baseline'" [videoSha256]="(activeTrial()==='followup' && s.followup?.sha256?s.followup?.sha256:s.baseline?.sha256)??''" (processingReset)="onProcessingReset()" (processingStarted)="onProcessingStarted()" (processingFailed)="onProcessingFinished(false)" (cacheUpdated)="acceptProcessed($event)"/>
           } @else {<p class="focus-note">{{s.preparationPending===true?(es?'Completa los tres datos y pulsa Siguiente en Preparar.':'Enter all three values and press Next in Prepare.'):(es?'Esta investigación no tiene los tres datos completos. Puedes consultar sus resultados guardados. Para un nuevo análisis, inicia otra investigación.':'This study does not have all three values. You can view its saved results. Start another study for a new analysis.')}}</p>}
           <div class="process-roles"><p><strong>Muse Spark</strong><span>{{es?'Localiza el objeto y revisa el montaje.':'Locates the object and reviews the setup.'}}</span></p><p><strong>SAM</strong><span>{{es?'Segmenta y sigue el movimiento.':'Segments and tracks motion.'}}</span></p><p><strong>ProofLab</strong><span>{{es?'Calcula medidas a partir de posiciones y tiempos.':'Calculates measurements from positions and times.'}}</span></p></div>
-          <p class="focus-note">{{es?'La consulta científica a Muse Spark se autoriza después, con su propio costo visible.':'The scientific Muse Spark consultation is authorized later with its own visible cost.'}}</p>
+          <p class="focus-note">{{es?'Con API Meta activa, el botón Procesar autoriza también la interpretación automática de Muse Spark, con su costo adicional visible antes del envío. Solo Caché + SQLite no realiza consultas a Meta.':
+            'With Meta API selected, Process also authorizes automatic Muse Spark interpretation, with its additional cost disclosed before sending. Cache + SQLite alone makes no Meta calls.'}}</p>
           @if(hasVerifiedResult(activeTrial())){<button class="primary-button stage-next" type="button" (click)="setJourneyStep(activeTrial()==='followup'?5:3)" [disabled]="flowBusy()">{{es?'Ver resultados':'View results'}} <span aria-hidden="true">→</span></button>}
         </section>
       </div>

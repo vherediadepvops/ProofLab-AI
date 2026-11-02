@@ -78,6 +78,8 @@ public sealed class MuseExperimentTests
         using var f=new Fixture();var store=f.Open();var o=store.SaveObservation(Observation(version:"MUSE_SAM_INVESTIGATOR_V2"));var a=Answer(classified:false);
         Assert.DoesNotContain("\"motion\"",o.PayloadJson);
         store.BeginAttempt(o);store.SaveRaw(o.Id,Envelope(a));store.Complete(o,Evaluation(o,a));
+        Assert.Null(store.Prediction(Study)); // Interpretation alone cannot pre-approve a hypothesis.
+        store.Freeze(o,Evaluation(o,a));
         var before=store.Prediction(Study)!;
         var newIdentity=JsonSerializer.SerializeToElement(new {protocol=MuseExperimentPolicy.Version,
             studyId=Study,workerHash="new-worker-with-motion"},Json);
@@ -165,6 +167,10 @@ public sealed class MuseExperimentTests
     [Fact] public void FrozenPredictionSurvivesRestartAndCannotBeRewritten() {
         using var f=new Fixture();var store=f.Open();var o=store.SaveObservation(Observation());var a=Answer();
         store.BeginAttempt(o);store.SaveRaw(o.Id,Envelope(a));store.Complete(o,Evaluation(o,a));
+        Assert.Null(store.Prediction(Study));
+        var first=store.Freeze(o,Evaluation(o,a));
+        var second=f.Open().Freeze(o,Evaluation(o,a));
+        Assert.Equal(first,second);
         var p=store.Prediction(Study)!;Assert.Equal(p,f.Open().Prediction(Study));
         Assert.Equal("COMPLETED",store.AttemptStatus(o.Id));Assert.DoesNotContain(Token,p.PayloadJson);
         using var db=f.Database();using var cmd=db.CreateCommand();
@@ -187,6 +193,7 @@ public sealed class MuseExperimentTests
     [Fact] public void ReceiptTamperingIsDetectedEvenWhenAnswerIsUnchanged() {
         using var f=new Fixture();var s=f.Open();var o=s.SaveObservation(Observation());var a=Answer();
         s.BeginAttempt(o);s.SaveRaw(o.Id,Envelope(a));s.Complete(o,Evaluation(o,a));
+        s.Freeze(o,Evaluation(o,a));
         using var db=f.Database();using var cmd=db.CreateCommand();
         cmd.CommandText="UPDATE muse_attempts SET evaluation=$e";
         cmd.Parameters.AddWithValue("$e",JsonSerializer.Serialize(Evaluation(o,a) with {ResponseId="fake-id"},Json));cmd.ExecuteNonQuery();
@@ -276,6 +283,8 @@ public sealed class MuseExperimentTests
         Assert.Null(MuseExperimentPolicy.Parse(previousJson,doc.RootElement).Phenomenon);
         using var f=new Fixture();var store=f.Open();var o=store.SaveObservation(Observation(version:version));
         store.BeginAttempt(o);store.SaveRaw(o.Id,Envelope(old));store.Complete(o,Evaluation(o,old));
+        Assert.Null(store.Prediction(Study));
+        store.Freeze(o,Evaluation(o,old));
         var frozen=store.Prediction(Study)!;
         Assert.DoesNotContain("phenomenon",frozen.PayloadJson);
         Assert.Equal(frozen.PayloadJson,f.Open().Prediction(Study)!.PayloadJson);

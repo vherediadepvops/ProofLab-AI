@@ -72,6 +72,29 @@ describe('Muse investigator',()=>{
     expect(received).toEqual([frozen]);expect(f.componentInstance.prediction()?.periodSeconds).toBe(1.79);
     expect(TestBed.inject(LabConnection).busy()).toBeFalse();f.destroy();
   });
+  it('separates the paid Muse interpretation from the explicit later prediction freeze',async()=>{
+    const t={es:'Propuesta condicional.',en:'Conditional proposal.'};
+    const a={decision:'PROPOSE_EXPERIMENT',justification:t,limitations:t,protocol:t,
+      hypothesis:t,falsification:t,nextLengthMeters:.8,periodSeconds:1.79,tolerancePercent:5};
+    const evaluation={model:'muse-spark-1.3',responseId:'saved-receipt',
+      observationId:'observation',studyId:'study',rawResponseSha256:'c'.repeat(64),
+      tokenCostEstimateUsd:.001,answer:a};
+    const f=await init({...prepared,evaluation});
+    const c=f.componentInstance;f.detectChanges();
+    expect(c.state()?.prediction).toBeNull();
+    expect(f.nativeElement.textContent).toContain('Congelar predicción');
+    c.reviewedPrediction.set(true);f.detectChanges();
+    const run=c.freezePrediction(),post=http.expectOne(base+'/freeze');
+    expect(post.request.method).toBe('POST');
+    expect(post.request.body).toEqual({observationId:'observation',responseId:'saved-receipt'});
+    const frozen={studyId:'study',observationId:'observation',responseId:'saved-receipt',
+      frozenAtUtc:'2026-11-02',sha256:'hash',payloadJson:JSON.stringify({
+        prediction:{nextLengthMeters:.8,periodSeconds:1.79,tolerancePercent:5}})};
+    post.flush({...prepared,evaluation,prediction:frozen});await run;f.detectChanges();
+    expect(c.prediction()?.periodSeconds).toBe(1.79);
+    expect(f.nativeElement.textContent).toContain('Predicción congelada');
+    http.expectNone(r=>r.url.endsWith('/evaluate'));f.destroy();
+  });
   it('reconciles a failed request with a read, never a second paid request',async()=>{
     token();const f=await init(prepared);const p=f.componentInstance.evaluate();
     http.expectOne(base+'/evaluate').flush({}, {status:502,statusText:'Failed'});
@@ -180,7 +203,7 @@ describe('Muse complete second-video workflow',()=>{
     const t={es:'Evidencia insuficiente.',en:'Insufficient evidence.'};
     sent.flush({evidence,evaluation:{responseId:'real-receipt',answer:{verdict:'INCONCLUSIVE',justification:t,limitations:t,nextStep:t}},attemptStatus:'COMPLETED'});
     await run;f.detectChanges();expect(f.nativeElement.textContent).toContain('Contraste inconcluso');expect(f.componentInstance.canContrast()).toBeFalse();
-    expect(f.nativeElement.querySelectorAll('section').length).toBe(1);f.destroy();
+    expect(f.nativeElement.querySelectorAll('section').length).toBeGreaterThan(1);f.destroy();
   });
   it('does not use a comparison that belongs to another analysis',async()=>{
     const f=await init({...empty,evidence:{...evidence,payloadJson:JSON.stringify({analysisId:'old',sourceSha256:'second',followupLengthMeters:.7})}});
@@ -200,7 +223,10 @@ describe('Muse complete second-video workflow',()=>{
     expect(f.componentInstance.statisticalSummary()?.comparison?.tolerancePercent).toBe(5);
     expect(f.componentInstance.statisticalSummary()?.comparison?.globalPValue).toBeNull();
     expect(f.componentInstance.state()?.prediction?.payloadJson).toBe(original.payloadJson);
-    expect(f.nativeElement.querySelectorAll('section').length).toBe(1);f.destroy();
+    expect(f.componentInstance.verifiedComparison()?.observed).toBe(1.78);
+    expect(f.nativeElement.querySelector('.v93-band svg')).not.toBeNull();
+    expect(f.nativeElement.textContent).toContain('Predicción frente a medición del segundo video');
+    f.destroy();
   });
   it('reconciles a failed contrast without resending to Meta',async()=>{
     const f=await init({...empty,evidence});const run=f.componentInstance.evaluateContrast();
@@ -273,6 +299,23 @@ describe('Muse interpretation in Understand',()=>{
     field.type='password';field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';
     connection.register(field);connection.confirmToken();return connection;
   }
+  it('automatically opens the recorded Step 3 answer read-only without a provider POST',async()=>{
+    const fixture=TestBed.createComponent(MuseInvestigator);
+    fixture.componentRef.setInput('source',source);
+    fixture.componentRef.setInput('view','interpretation');
+    fixture.componentRef.setInput('autoInterpretation',true);
+    fixture.detectChanges();
+    const request=http.expectOne(base);expect(request.request.method).toBe('GET');
+    request.flush(saved());await fixture.whenStable();fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Muse Spark: compatible con un péndulo');
+    expect(fixture.nativeElement.querySelector('.v93-spark-tabs')).not.toBeNull();
+    const before=fixture.componentInstance.state()?.evaluation?.responseId;
+    fixture.componentRef.setInput('language','en');fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Spark interprets SAM measurements');
+    expect(fixture.componentInstance.state()?.evaluation?.responseId).toBe(before);
+    http.expectNone(r=>r.url.includes('/muse') && r.method==='POST');
+    http.expectNone(r=>r.url.includes('/muse'));fixture.destroy();
+  });
   it('keeps SQLite untouched until the interpretation is explicitly opened',async()=>{
     const fixture=init(),connection=TestBed.inject(LabConnection);
     fixture.componentRef.setInput('language','en');fixture.detectChanges();
@@ -357,6 +400,9 @@ describe('Muse interpretation in Understand',()=>{
     expect(root.textContent).toContain(words.phenomenon.es);
     expect(root.textContent).toContain(words.justification.es);
     expect(root.textContent).toContain(words.limitations.es);
+    const record=Array.from(root.querySelectorAll('.v93-spark-tabs button')).
+      find(button=>button.textContent?.includes('Registro')) as HTMLButtonElement;
+    expect(record).toBeDefined();record.click();fixture.detectChanges();
     expect(root.textContent).toContain(state.evaluation.responseId);
     expect(root.textContent).not.toContain(words.future.es);
     expect(root.querySelector('.prediction')).toBeNull();

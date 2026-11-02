@@ -73,6 +73,40 @@ public sealed class MuseExperimentService(
         return store.SaveObservation(new(key,id,request.VideoSha256,request.AnalysisId,
             DateTimeOffset.UtcNow,payload,KnotPolicy.Hash(payload)));
     }
+    public async Task<MuseExperimentState> FreezeAsync(string id,MuseFreezeRequest request,CancellationToken ct)
+    {
+        using var held=store.LockStudy(id);
+        var study=await director.ReadAsync(id,ct);
+        if(study.Baseline is null || study.Followup is not null ||
+           study.HumanReview?.BobConfirmed!=true)
+            throw new InvalidOperationException("Review the tracked object before freezing a prediction.");
+        var observation=store.Observation(request.ObservationId)
+            ??throw new FileNotFoundException("Muse evidence missing.");
+        if(observation.StudyId!=id || observation.VideoSha256!=study.Baseline.Sha256)
+            throw new ArgumentException("Muse result does not match this study.");
+        var evaluation=store.Evaluation(observation.Id)
+            ??throw new InvalidOperationException("Muse interpretation not complete.");
+        if(evaluation.ResponseId!=request.ResponseId || evaluation.Answer.Decision!="PROPOSE_EXPERIMENT")
+            throw new InvalidOperationException("No eligible Muse proposal to freeze.");
+        // Idempotent recovery for a lost HTTP reply. An existing frozen decision
+        // is immutable; do not re-run PrepareAsync once it is frozen.
+        var frozen=store.Prediction(id);
+        if(frozen is not null){
+            if(frozen.ObservationId!=observation.Id || frozen.ResponseId!=evaluation.ResponseId)
+                throw new InvalidOperationException("This study already has a different frozen prediction.");
+            return State(id);
+        }
+        using var doc=JsonDocument.Parse(observation.PayloadJson);
+        var identity=doc.RootElement.GetProperty("identity");
+        var current=await PrepareAsync(id,new(observation.VideoSha256,observation.AnalysisId,
+            identity.GetProperty("pivotRevisionId").GetString(),
+            identity.TryGetProperty("adaptiveBatchId",out var batch)?batch.GetString():null),ct);
+        if(current.Id!=observation.Id)
+            throw new InvalidOperationException("Source changed; do not freeze an old prediction.");
+        store.Freeze(observation,evaluation);
+        return State(id);
+    }
+
     public async Task<MuseExperimentState> EvaluateAsync(string id,MuseExperimentRunRequest request,CancellationToken ct)
     {
         using var held=store.LockStudy(id);

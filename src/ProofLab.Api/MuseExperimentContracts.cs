@@ -11,6 +11,7 @@ public sealed record MuseInvestigatorAnswer(string Decision,MuseText Justificati
     MuseText Protocol,MuseText Hypothesis,MuseText Falsification,
     double? NextLengthMeters,double? PeriodSeconds,double? TolerancePercent,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] MusePhenomenon? Phenomenon=null);
+public sealed record MuseFreezeRequest(string ObservationId,string ResponseId);
 public sealed record MuseObservation(string Id,string StudyId,string VideoSha256,string AnalysisId,
     DateTimeOffset CreatedAtUtc,string PayloadJson,string PayloadSha256);
 public sealed record MusePrediction(string StudyId,string ObservationId,string ResponseId,

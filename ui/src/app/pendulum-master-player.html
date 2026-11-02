@@ -298,14 +298,20 @@
     </p>
     <p class="guided-vector-key"><span>v · {{es?'velocidad':'velocity'}}</span><span>a · {{es?'aceleración total':'total acceleration'}}</span> · {{es?'Flechas con escalas visuales distintas.':'Arrows use different visual scales.'}}</p>
   }
+    @if(guided() && presentation()==='understand') {
+      @if(periodMeasurement(); as measurement) {
+        <app-sam-period-panel [measurement]="measurement" [source]="periodSource()" [language]="language()"/>
+      }
+    }
   </div>
   <aside class="player-evidence" [hidden]="guided() && !analysisVisible()">
-  @if(periodMeasurement(); as measurement) {
-    <app-sam-period-panel [measurement]="measurement" [source]="periodSource()" [language]="language()">
-      @if(presentation()==='understand' ? periodSource() : null; as researchSource) {
-        <app-muse-investigator period-interpretation [source]="researchSource" [language]="language()" [view]="'interpretation'"/>
-      }
-    </app-sam-period-panel>
+  @if(!guided() || presentation()!=='understand') {
+    @if(periodMeasurement(); as measurement) {
+      <app-sam-period-panel [measurement]="measurement" [source]="periodSource()" [language]="language()"/>
+    }
+  }
+  @if(presentation()==='understand' ? periodSource() : null; as researchSource) {
+    <app-muse-investigator period-interpretation [source]="researchSource" [language]="language()" [view]="'interpretation'" [autoInterpretation]="true"/>
   }
   @if(!guided() || presentation()==='predict' || presentation()==='compare') {
     @if(periodSource(); as researchSource) {
