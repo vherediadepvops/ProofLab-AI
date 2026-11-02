@@ -14,6 +14,7 @@ public static class ObjectReviewPolicy
     public const string LegacyProtocol="SPARK_VISUAL_OBJECT_REVIEW_V1";
     public const string SuspensionProtocol="SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2";
     public const string Protocol="SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3";
+    public const string DenseBodyProtocol="SPARK_DENSE_BODY_CROPS_V4";
     public const double EstimatedCostUsd=.10;
     public const string Prompt="""
         Independently audit candidate boxes for ONE suspended experimental body across these ordered images.
@@ -219,7 +220,7 @@ public static class ObjectReviewPolicy
     {
         AssemblyMetaTransport.ValidateReceipt(review.Raw,review.ProviderResponseId,review.InputTokens,review.OutputTokens);
         var proposal=Parse(AssemblyMetaTransport.OutputText(review.Raw),draft,images);
-        var protocol=images.Any(i=>i.BodyCrop is not null)?Protocol:images.Any(i=>i.SuspensionCrop is not null)?SuspensionProtocol:LegacyProtocol;
+        var protocol=images.Any(i=>i.BodyCrop is not null)?(draft.Derivation==DenseLocalizationPolicy.Protocol?DenseBodyProtocol:Protocol):images.Any(i=>i.SuspensionCrop is not null)?SuspensionProtocol:LegacyProtocol;
         return draft with {Proposal=proposal,ResponseSha256=KnotPolicy.Hash(protocol+"\n"+draft.ResponseSha256+"\n"+KnotPolicy.Hash(review.Raw)),
             ProviderResponseId=review.ProviderResponseId,InputTokens=draft.InputTokens+review.InputTokens,
             OutputTokens=draft.OutputTokens+review.OutputTokens,Derivation=protocol};

@@ -6,7 +6,7 @@ namespace ProofLab.Api;
 
 public sealed partial class AssemblyLocator
 {
-    private sealed record FullRun(string Root,AssemblyVideoAttempt Attempt,AssemblyEvidence? Evidence,bool ManualRetryAllowed,AssemblyEvidence? Reviewed=null);
+    private sealed record FullRun(string Root,AssemblyVideoAttempt Attempt,AssemblyEvidence? Evidence,bool ManualRetryAllowed,AssemblyEvidence? Reviewed=null,AssemblyEvidence? Dense=null);
     private string VideoRoot(string sha)=>Folder(AssemblyPolicy.VideoGroundingKey(sha));
     private static bool ValidSha(string value)=>value is {Length:64} && value.All(Uri.IsHexDigit);
     private static string PtsHash(double[] pts)=>KnotPolicy.Hash(string.Join("\n",pts.Select(p=>p.ToString("R",CultureInfo.InvariantCulture))));
@@ -114,7 +114,9 @@ public sealed partial class AssemblyLocator
                 if(manualRetryAllowed && (evidence is not null || File.Exists(Path.Combine(root,"response.json"))))
                     throw new InvalidDataException("Conflicting full-video attempt outcome.");
             }
-            records.Add(new(root,attempt,evidence,manualRetryAllowed,evidence is null?null:await ReadObjectReview(root,evidence,ct)));
+            var dense=evidence is not null && File.Exists(Path.Combine(root,"dense-localization-attempt.json"))
+                ?await ReadDenseLocalization(root,evidence,ct):null;
+            records.Add(new(root,attempt,evidence,manualRetryAllowed,evidence is null?null:await ReadObjectReview(root,evidence,ct),dense));
         }
         return records.OrderByDescending(r=>r.Attempt.CreatedAtUtc).ThenByDescending(r=>r.Attempt.RunId).ToArray();
     }
@@ -126,7 +128,7 @@ public sealed partial class AssemblyLocator
         var legacyPending=File.Exists(Path.Combine(Folder(legacyKey),"attempt.json")) && legacy is null;
         return(legacy,runs,HistoricalAttemptPending(sha) || legacyPending ||
             runs.Any(r=>!r.ManualRetryAllowed && (r.Evidence is null ||
-                (File.Exists(Path.Combine(r.Root,"dense-localization-attempt.json")) && r.Reviewed is null))));
+                (File.Exists(Path.Combine(r.Root,"dense-localization-attempt.json")) && r.Dense is null))));
     }
     public async Task<SamSceneDefinition[]> TrackingHistoryAsync(string id,string role,CancellationToken ct,bool quote=false)
     {
@@ -134,8 +136,6 @@ public sealed partial class AssemblyLocator
         var records=await GroundingRecords(video.Sha256,ct);
         var scenes=new List<SamSceneDefinition>();
         foreach(var run in records.Runs) {
-            var scene=run.Evidence is null?null:AssemblyPolicy.Ground(run.Evidence);
-            if(scene is not null)scenes.Add(scene);
             var verified=run.Reviewed is null?null:AssemblyPolicy.Ground(run.Reviewed);
             if(verified is not null)scenes.Add(verified);
         }
@@ -150,7 +150,7 @@ public sealed partial class AssemblyLocator
         var (video,_,_)=await Source(id,role,ct,true);
         if(scene.VideoSha256!=video.Sha256)throw new InvalidDataException("Suspension source mismatch.");
         var records=await GroundingRecords(video.Sha256,ct);
-        var evidence=records.Runs.SelectMany(r=>new[]{r.Reviewed,r.Evidence}).Append(records.Legacy)
+        var evidence=records.Runs.SelectMany(r=>new[]{r.Reviewed,r.Dense,r.Evidence}).Append(records.Legacy)
             .FirstOrDefault(e=>e?.CacheKey==scene.EvidenceKey && e.ResponseSha256==scene.ResponseSha256);
         if(evidence is null) {
             if(records.Runs.Any(r=>r.Evidence?.CacheKey==scene.EvidenceKey))throw new InvalidDataException("Suspension response mismatch.");
@@ -160,7 +160,7 @@ public sealed partial class AssemblyLocator
             throw new InvalidDataException("Suspension scene mismatch.");
         return new(video.Sha256,scene.Key,evidence.CacheKey,evidence.ResponseSha256,evidence.Model,
             scene.Width,scene.Height,evidence.Proposal.Suspension.Points,
-            evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
+            evidence.Derivation==ObjectReviewPolicy.DenseBodyProtocol?DenseLocalizationPolicy.Protocol:evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
             evidence.Proposal.Consensus);
     }
     public async Task<SamSceneDefinition?> TrackingRunAsync(string id,string role,string runId,CancellationToken ct)
@@ -177,14 +177,14 @@ public sealed partial class AssemblyLocator
         if(scene.VideoSha256!=video.Sha256)throw new InvalidDataException("Suspension source mismatch.");
         var run=(await FullRuns(video.Sha256,ct,runId)).SingleOrDefault() ??
             throw new FileNotFoundException("Requested Spark run unavailable.");
-        var evidence=new[]{run.Reviewed,run.Evidence}.FirstOrDefault(e=>
+        var evidence=new[]{run.Reviewed,run.Dense,run.Evidence}.FirstOrDefault(e=>
             e?.CacheKey==scene.EvidenceKey && e.ResponseSha256==scene.ResponseSha256);
         if(evidence is null || AssemblyPolicy.Ground(evidence)?.Key!=scene.Key)
             throw new InvalidDataException("Suspension scene does not match the requested Spark run.");
         if(scene.Origin!=AssemblyPolicy.GroundingOrigin || scene.Arrangement!="simple_pendulum")return null;
         return new(video.Sha256,scene.Key,evidence.CacheKey,evidence.ResponseSha256,evidence.Model,
             scene.Width,scene.Height,evidence.Proposal.Suspension.Points,
-            evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
+            evidence.Derivation==ObjectReviewPolicy.DenseBodyProtocol?DenseLocalizationPolicy.Protocol:evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
             evidence.Proposal.Consensus);
     }
     public Task<SamSceneDefinition?> TrackingAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,false);
@@ -203,12 +203,12 @@ public sealed partial class AssemblyLocator
     {
         var (video,_,_)=await Source(id,role,ct,quote);
         var key=AssemblyPolicy.VideoGroundingKey(video.Sha256);
-        var budget=AssemblyPolicy.VideoBudget(configuration)*DenseLocalizationPolicy.MaximumAttempts;
+        var budget=AssemblyPolicy.VideoBudget(configuration)*DenseLocalizationPolicy.MaximumAttempts+ObjectReviewPolicy.EstimatedCostUsd;
         bool fresh=mode=="api-meta";
         // A new explicit operation is independent of historical cache entries.
         // GroundAsync still owns the process gate and source file locks.
         if(fresh)return new(key,video.Sha256,budget,false,false,runtime.ManualTokenCallsPermitted,
-            "NEEDS_LOCALIZATION",null,null,mode,true,RequiredSparkCalls:DenseLocalizationPolicy.MaximumAttempts,VisualReviewEstimatedCostUsd:0);
+            "NEEDS_LOCALIZATION",null,null,mode,true,RequiredSparkCalls:DenseLocalizationPolicy.MaximumAttempts+1,VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd);
         var records=await GroundingRecords(video.Sha256,ct);
         var latest=records.Runs.FirstOrDefault(r=>r.Evidence is not null);
         var reviewPending=latest is not null && File.Exists(Path.Combine(latest.Root,"object-review-attempt.json")) && latest.Reviewed is null;
@@ -219,10 +219,10 @@ public sealed partial class AssemblyLocator
         if(scene is not null || evidence is not null)return new(key,video.Sha256,0,true,false,scene is not null,
             scene is not null?"READY":AssemblyPolicy.GroundingStatus(evidence!),scene,evidence,mode,false,
             EvidenceProtocol:evidence?.Protocol ?? AssemblyPolicy.Protocol,RequiredSparkCalls:0);
-        var draft=latest?.Evidence;
+        var draft=latest?.Dense ?? latest?.Evidence;
         return new(key,video.Sha256,draft is null?budget:ObjectReviewPolicy.EstimatedCostUsd,false,false,
             runtime.ManualTokenCallsPermitted,"NEEDS_LOCALIZATION",null,draft,mode,false,
-            RequiredSparkCalls:draft is null?DenseLocalizationPolicy.MaximumAttempts:1,VisualReviewEstimatedCostUsd:draft is null?0:ObjectReviewPolicy.EstimatedCostUsd);
+            RequiredSparkCalls:draft is null?DenseLocalizationPolicy.MaximumAttempts+1:1,VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd);
     }
 
     private sealed record PreparedManifest(string RelativeDirectory,string SourceSha256,string PtsSha256,string Mp4Sha256,long Bytes,KnotFrame[] Frames);
@@ -349,11 +349,12 @@ public sealed partial class AssemblyLocator
             await Save(Path.Combine(runRoot,"evidence.json"),evidence,CancellationToken.None);
             AssemblyProgress.Done("verify");
             evidence=await ContinueDenseLocalization(runRoot,evidence,video,pts,mp4,input.ModelApiToken,deadline.Token);
+            evidence=await ReviewObject(runRoot,evidence,video,pts,input.ModelApiToken,deadline.Token);
             var scene=AssemblyPolicy.Ground(evidence);
             await Save(Path.Combine(runRoot,"stages.json"),progress.Read(),CancellationToken.None);
             return new(key,video.Sha256,initial.MaximumEstimatedCostUsd,false,false,scene is not null,
-                AssemblyPolicy.GroundingStatus(evidence),scene,evidence,mode,false,EvidenceProtocol:evidence.Protocol,RequiredSparkCalls:evidence.Frames.Length/50,
-                VisualReviewEstimatedCostUsd:0);
+                AssemblyPolicy.GroundingStatus(evidence),scene,evidence,mode,false,EvidenceProtocol:evidence.Protocol,RequiredSparkCalls:evidence.Frames.Length/50+1,
+                VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd);
         } catch(Exception error) {
             progress.FailActive();
             if(diagnosticRoot is not null) {

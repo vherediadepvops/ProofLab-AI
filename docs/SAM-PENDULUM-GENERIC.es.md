@@ -1,5 +1,17 @@
 # Péndulos de distintas formas: Spark + SAM
 
+## Actualización vigente — 2 de noviembre de 2026
+
+La localización densa de Spark conserva sus 50 referencias por ronda (hasta 150 si necesita las tres rondas). Antes de usar sus cajas como indicaciones para SAM, ahora se comprueba el cuerpo oscilante con recortes ampliados independientes. La revisión debe distinguir el cuerpo de la cuerda, la sombra y el soporte, sin depender de que sea una plomada, pelota, moneda o tuerca.
+
+La evidencia revisada usa `SPARK_DENSE_BODY_CROPS_V4`; conserva el consenso de suspensión de las referencias densas. Los resultados densos antiguos sin esta revisión no se reutilizan como una localización ya verificada. Se mantienen los hashes de archivos, imágenes y respuestas y los tiempos originales: no se restaura el costoso hash de píxeles decodificados por fotograma. El presupuesto cotizado incluye hasta US$0,10 para la revisión del cuerpo; no se inicia una llamada por el mero hecho de actualizar la cotización.
+
+Verificación: 512 pruebas locales aprobadas, incluidas caja sobre la cuerda corregida hacia el cuerpo, revisión inconclusa, integridad de recortes y referencias de una segunda ronda. Son pruebas con respuestas simuladas, no una certificación de precisión del proveedor. Esta corrección no ejecutó llamadas a Meta ni modificó resultados históricos.
+
+## Descripción histórica del flujo inicial
+
+El texto siguiente documenta la primera versión (tres referencias y conteo de tokens) y no describe todos los pasos del flujo vigente.
+
 ## Flujo y modos
 El botón **Procesar** conserva la tarjeta y los controles existentes. **API Meta** ejecuta una evaluación nueva de Muse Spark sobre el video completo y después un análisis SAM nuevo. **API Meta + caché** reutiliza máscaras auténticas compatibles; si faltan, puede reutilizar una localización válida o iniciar el flujo completo. Una respuesta SAM vacía se conserva en el historial, pero no es un HIT útil.
 

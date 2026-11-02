@@ -1,5 +1,17 @@
 # Pendulums of different shapes: Spark + SAM
 
+## Current update — November 2, 2026
+
+Dense Spark localization retains 50 references per round (up to 150 when all three rounds are needed). Before its boxes guide SAM, independent enlarged crops now verify the oscillating body. The review must distinguish the body from the cord, shadow and support, regardless of whether it is a plumb bob, ball, coin or nut.
+
+Reviewed evidence uses `SPARK_DENSE_BODY_CROPS_V4` and retains suspension consensus from the dense references. Older dense results without this review are not reused as verified localization. File, image and response hashes and original timestamps remain; the expensive per-frame decoded-pixel hash is not restored. The quoted budget includes up to US$0.10 for body review; updating a quote does not itself start inference.
+
+Validation: 512 passing local tests, including a cord box corrected to the body, inconclusive review, crop integrity and second-round references. These tests use simulated provider responses, not a provider-accuracy certification. This fix made no Meta calls and did not rewrite historical results.
+
+## Historical description of the initial flow
+
+The following text documents the first version (three references and token counting), not every step of the current flow.
+
 ## Flow and modes
 The existing **Process** button and cards remain. **Meta API** runs a fresh Muse Spark evaluation of the complete video, followed by fresh SAM analysis. **Meta API + cache** reuses compatible authentic masks; otherwise it can reuse valid localization or start the complete flow. Empty SAM responses remain historical evidence, not useful cache hits.
 

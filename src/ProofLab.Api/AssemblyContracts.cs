@@ -199,7 +199,7 @@ public static partial class AssemblyPolicy
     {
         var target=evidence.Proposal.Target ?? throw new InvalidDataException("Missing object grounding decision.");
         if(target.Status=="NOT_VISIBLE")return "NOT_VISIBLE";
-        if(evidence.Proposal.Camera is not null)return DenseLocalizationPolicy.ObjectReady(evidence)?"READY":"AMBIGUOUS";
+        if(evidence.Proposal.Camera is not null && evidence.Derivation!=ObjectReviewPolicy.DenseBodyProtocol)return DenseLocalizationPolicy.ObjectReady(evidence)?"READY":"AMBIGUOUS";
         return target.Status=="CLEAR_SINGLE_OBJECT" &&
             evidence.Proposal.Observations.Count(o=>o.Role=="object" && o.Visible && o.Confidence>=0.8)>=2
             ? "READY" : "AMBIGUOUS";
@@ -216,7 +216,7 @@ public static partial class AssemblyPolicy
             throw new InvalidDataException("Wrong automatic grounding provenance.");
         if(GroundingStatus(evidence)!="READY")return null;
         var frames=evidence.Frames;
-        if((frames.Length is not (3 or 50) && !(evidence.Derivation==DenseLocalizationPolicy.Protocol && frames.Length is 100 or 150)) || frames.Select(f=>f.Index).Distinct().Count()!=frames.Length ||
+        if((frames.Length is not (3 or 50) && !(evidence.Derivation is DenseLocalizationPolicy.Protocol or ObjectReviewPolicy.DenseBodyProtocol && frames.Length is 100 or 150)) || frames.Select(f=>f.Index).Distinct().Count()!=frames.Length ||
             frames.Any(f=>f.Width!=frames[0].Width || f.Height!=frames[0].Height ||
                 f.Width is <2 or >8192 || f.Height is <2 or >8192))
             throw new InvalidDataException("Inconsistent native grounding frames.");
