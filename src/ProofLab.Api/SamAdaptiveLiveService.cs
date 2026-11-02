@@ -46,6 +46,44 @@ public sealed partial class SamAdaptiveLiveService(
     private static bool ValidBatchId(string? s)=>
         s is {Length:32} && s.All(c=>c is >= '0' and <= '9' or >= 'a' and <= 'f');
     private string BatchDir(string id)=>Path.Combine(StoreRoot,"batches",id);
+    private static bool BatchOwnedBy(SamAdaptiveBatchContext ctx,string studyId,string role,SamVideoSource source)=>
+        ctx.StudyId==studyId && ctx.VideoRole==role &&
+        ctx.SourceVideoId==source.VideoId && ctx.Scene.VideoSha256==source.Sha256;
+
+    // A video SHA may occur in several independent experiments. Neither an old
+    // Spark run nor a same-content video proves the ownership of a SAM batch.
+    // Legacy unbound batches are kept as read-only archives, never eligible for
+    // an automatic recovery or another paid SAM stage retry.
+    private async Task<bool> BatchOwnedAsync(string batchId,string studyId,string role,
+        SamVideoSource source,CancellationToken ct)
+    {
+        if(!ValidBatchId(batchId))return false;
+        var folder=BatchDir(batchId);
+        var contextFile=Path.Combine(folder,"batch-context.json");
+        var startedFile=Path.Combine(folder,"batch-started.json");
+        if(!File.Exists(contextFile) || !File.Exists(startedFile))return false;
+        var context=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(contextFile,ct);
+        if(!BatchOwnedBy(context,studyId,role,source))return false;
+        using var receipt=JsonDocument.Parse(await File.ReadAllTextAsync(startedFile,ct));
+        var record=receipt.RootElement;
+        bool Matches(string key,string value)=>record.TryGetProperty(key,out var property) &&
+            property.ValueKind==JsonValueKind.String && property.GetString()==value;
+        return Matches("batchId",batchId) && Matches("studyId",studyId) &&
+            Matches("videoRole",role) && Matches("sourceVideoId",source.VideoId) &&
+            Matches("sourceSha256",source.Sha256);
+    }
+    public async Task<SamAdaptiveLiveReport?> LatestOwnedResultAsync(
+        string studyId,string role,CancellationToken ct)
+    {
+        var source=await runtime.GetVerifiedSourceAsync(studyId,role,ct);
+        foreach(var result in await RecoverableResultsAsync(source.Sha256,ct)){
+            try{
+                if(await BatchOwnedAsync(result.BatchId,studyId,role,source,ct))
+                    return result;
+            }catch(IOException){}catch(JsonException){}catch(InvalidDataException){}
+        }
+        return null;
+    }
     private static async Task WriteImmutable(string path,string contents,CancellationToken ct)
     {
         await using var fs=new FileStream(path,FileMode.CreateNew,
@@ -310,10 +348,11 @@ public sealed partial class SamAdaptiveLiveService(
                 new[]{SamAdaptiveGroundedPlan.BuildPrompt(scene,plan.Windows.Single())};
             ct.ThrowIfCancellationRequested();
             await WriteJson(Path.Combine(folder,"batch-context.json"),
-                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,plan.MaxInFlight,request.RecoveryFromBatchId,plan.OriginalPacketCopy?plan.Windows.ToArray():null,automaticParent,mode,request.SceneRunId),
+                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,plan.MaxInFlight,request.RecoveryFromBatchId,plan.OriginalPacketCopy?plan.Windows.ToArray():null,automaticParent,mode,request.SceneRunId,studyId,role,source.VideoId),
                 CancellationToken.None);
             await WriteJson(Path.Combine(folder,"batch-started.json"),new{
                 batchId,createdAtUtc=created,sourceSha256=source.Sha256,
+                studyId,videoRole=role,sourceVideoId=source.VideoId,
                 sceneKey=scene.Key,planSha256=key,mode,sceneRunId=request.SceneRunId,
                 protocol=Protocol,expectedParts=plan.PartCount,
                 quotedMaximumUsd=exact.TotalSamEstimatedUsd,
@@ -536,6 +575,10 @@ public sealed partial class SamAdaptiveLiveService(
         var folder=BatchDir(batchId);
         var context=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(
             Path.Combine(folder,"batch-context.json"),ct);
+        if((context.StudyId is not null || context.VideoRole is not null ||
+            context.SourceVideoId is not null) &&
+           !await BatchOwnedAsync(batchId,studyId,role,source,ct))
+            throw new InvalidDataException("SAM batch belongs to another study, role or registered video.");
         var scene=context.Scene;
         var pts=await runtime.ReadSourceFramePtsAsync(source,ct);
         AssemblyPolicy.Validate(scene,source.Sha256,pts.Length);

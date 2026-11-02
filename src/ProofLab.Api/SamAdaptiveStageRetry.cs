@@ -49,7 +49,8 @@ public sealed partial class SamAdaptiveLiveService
                !File.Exists(contextFile))continue;
             try {
                 var report=await ReadReportAsync(batchId,ct);
-                if(report is null || report.SourceSha256!=source.Sha256)continue;
+                if(report is null || report.SourceSha256!=source.Sha256 ||
+                   !await BatchOwnedAsync(batchId,studyId,role,source,ct))continue;
                 var context=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(contextFile,ct);
                 if(context.Mode!=PendulumSamCache.FreshMode || !ValidBatchId(context.SceneRunId) ||
                    context.Scene.VideoSha256!=source.Sha256 || context.Scene.Key!=report.SparkSceneKey)continue;
@@ -72,7 +73,8 @@ public sealed partial class SamAdaptiveLiveService
             if(doc.RootElement.TryGetProperty("manualRetryOfBatchId",out var previous) &&
                previous.ValueKind==JsonValueKind.String) {
                 var parentId=previous.GetString();
-                if(!ValidBatchId(parentId))return null;
+                if(!ValidBatchId(parentId) ||
+                   !await BatchOwnedAsync(parentId!,studyId,role,source,ct))return null;
                 var parent=await ReadReportAsync(parentId!,ct);
                 var claimFile=Path.Combine(BatchDir(parentId!),"manual-stage-retry.json");
                 if(parent is null || parent.SourceSha256!=source.Sha256 ||

@@ -61,9 +61,15 @@ public static class ResearchRecoveryEndpoints
                         }
                         continue;
                     }
-                    var batch = await adaptive.LatestRecoverableResultAsync(clip.Sha256, ct);
+                    var batch = await adaptive.LatestOwnedResultAsync(id, role, ct);
                     SamVideoArtifact? archived = null;
-                    try { archived = await sam.ReadArchiveAsync(id, role, ct); }
+                    try {
+                        archived = await sam.ReadArchiveAsync(id, role, ct);
+                        // Same bytes can be uploaded into a new investigation.
+                        // Native historical archives remain available via explicit
+                        // cache reuse, but must not automatically revive new studies.
+                        if(archived.Receipt.VideoId!=clip.VideoId)archived=null;
+                    }
                     catch (InvalidDataException) { unavailable.Add(role); }
                     catch (InvalidOperationException) { unavailable.Add(role); }
                     catch (FileNotFoundException) { }

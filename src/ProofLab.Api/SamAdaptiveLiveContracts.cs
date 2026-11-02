@@ -36,7 +36,8 @@ public sealed record SamAdaptiveLiveQuote(
     double ContinuousRetryEstimatedUsd=0,double MaximumSamWithRetryEstimatedUsd=0,
     string Mode="api-meta-cache",string? SceneRunId=null);
 
-public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight,string? RecoveryFromBatchId=null,SamAdaptiveWindow[]? NativeWindows=null,string? AutomaticRetryOfBatchId=null,string Mode="api-meta-cache",string? SceneRunId=null);
+public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight,string? RecoveryFromBatchId=null,SamAdaptiveWindow[]? NativeWindows=null,string? AutomaticRetryOfBatchId=null,string Mode="api-meta-cache",string? SceneRunId=null,
+    string? StudyId=null,string? VideoRole=null,string? SourceVideoId=null);
 
 public sealed record SamAdaptiveDerivation(string BatchId,bool NativeProviderResult,
     bool SeamsVerified,string SourcePtsSha256,string[] PartResponseSha256);

@@ -89,6 +89,10 @@ public sealed class SamAdaptiveLiveIntegrationTests
         Assert.Equal(await File.ReadAllBytesAsync(source),await File.ReadAllBytesAsync(reused));
         var archive=await f.Service.ReadPlaybackAsync("study","baseline",completed.BatchId,default);
         Assert.True(archive.Derivation!.SeamsVerified);
+        Assert.Null(await f.Service.StageRetryQuoteAsync("another-study","baseline",default));
+        Assert.Null(await f.Service.LatestOwnedResultAsync("another-study","baseline",default));
+        await Assert.ThrowsAsync<InvalidDataException>(()=>
+            f.Service.ReadPlaybackAsync("another-study","baseline",completed.BatchId,default));
         Assert.Equal(failed.Status,(await f.Service.ReadReportAsync(failed.BatchId,default))!.Status);
         var saved=await f.Service.StageRetryQuoteAsync("study","baseline",default);
         Assert.True(saved?.AlreadyRequested);Assert.Equal(completed.BatchId,saved?.NewBatchId);
@@ -97,6 +101,66 @@ public sealed class SamAdaptiveLiveIntegrationTests
         Assert.Equal(2,f.Transport.Calls);
         Assert.Equal(0,f.Scenes.TrackingReads);
         Assert.Equal(0,f.Scenes.QuoteReads);
+    }
+
+    [Fact]
+    public async Task SameVideoBytesInNewResearchMustNotOfferOldSamRetryOrRecoverOldMasks()
+    {
+        using var f=new Fixture();
+        var quote=await f.Quote("api-meta",f.Scenes.ExactRunId);
+        f.Transport.Fail=true;
+        var old=await f.Service.RunOnceAsync("study","baseline",Request(quote),default);
+        Assert.Equal(1,old.FailedParts);
+        // Both studies share the same SHA and exact Spark run. Their registered
+        // video IDs and scientific research IDs are different.
+        var current=await f.Runtime.GetVerifiedSourceAsync("study","baseline",default);
+        var uploaded=await f.Runtime.GetVerifiedSourceAsync("another-study","baseline",default);
+        Assert.Equal(current.Sha256,uploaded.Sha256);
+        Assert.NotEqual(current.VideoId,uploaded.VideoId);
+        Assert.NotNull(await f.Scenes.TrackingRunAsync("another-study","baseline",f.Scenes.ExactRunId,default));
+        Assert.Null(await f.Service.StageRetryQuoteAsync("another-study","baseline",default));
+        Assert.Null(await f.Service.LatestOwnedResultAsync("another-study","baseline",default));
+        Assert.NotNull(await f.Service.StageRetryQuoteAsync("study","baseline",default));
+        f.Transport.Fail=false;
+        var next=await f.Service.RunOnceAsync("study","baseline",Request(await f.Quote("api-meta",f.Scenes.ExactRunId)),default);
+        Assert.Equal("PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW",next.Status);
+        Assert.Equal(next.BatchId,(await f.Service.LatestOwnedResultAsync("study","baseline",default))?.BatchId);
+        Assert.Null(await f.Service.LatestOwnedResultAsync("another-study","baseline",default));
+        await Assert.ThrowsAsync<InvalidDataException>(()=>
+            f.Service.ReadPlaybackAsync("another-study","baseline",next.BatchId,default));
+        f.Runtime.OverrideVideoId="synthetic-reuploaded";
+        Assert.Null(await f.Service.LatestOwnedResultAsync("study","baseline",default));
+        await Assert.ThrowsAsync<InvalidDataException>(()=>
+            f.Service.ReadPlaybackAsync("study","baseline",next.BatchId,default));
+        f.Runtime.OverrideVideoId=null;
+        await Assert.ThrowsAsync<InvalidDataException>(()=>
+            f.Service.ReadPlaybackAsync("study","followup",next.BatchId,default));
+        Assert.Equal(2,f.Transport.Calls);
+        Assert.Equal(2,f.Runtime.Reserved); // No additional Meta calls for another study.
+    }
+
+    [Fact]
+    public async Task HistoricUnboundFailedBatchCannotAuthorizeASecondPaidSamRequest()
+    {
+        using var f=new Fixture();f.Transport.Fail=true;
+        var q=await f.Quote("api-meta",f.Scenes.ExactRunId);
+        var failed=await f.Service.RunOnceAsync("study","baseline",Request(q),default);
+        var folder=Path.Combine(f.Store,"batches",failed.BatchId);
+        // Simulate old immutable archive metadata with no study/video ownership.
+        var contextPath=Path.Combine(folder,"batch-context.json");
+        var context=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(contextPath,default);
+        await File.WriteAllTextAsync(contextPath,JsonSerializer.Serialize(context with{
+            StudyId=null,VideoRole=null,SourceVideoId=null}));
+        var startedPath=Path.Combine(folder,"batch-started.json");
+        var started=System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(startedPath))!;
+        started.AsObject().Remove("studyId");
+        started.AsObject().Remove("videoRole");
+        started.AsObject().Remove("sourceVideoId");
+        await File.WriteAllTextAsync(startedPath,started.ToJsonString());
+        Assert.NotNull(await f.Service.ReadReportAsync(failed.BatchId,default)); // Evidence remains intact.
+        Assert.Null(await f.Service.StageRetryQuoteAsync("study","baseline",default));
+        Assert.Null(await f.Service.StageRetryQuoteAsync("another-study","baseline",default));
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reserved);
     }
 
     [Fact]
@@ -634,16 +698,20 @@ public sealed class SamAdaptiveLiveIntegrationTests
         public Task<SamSceneDefinition?> TrackingForQuoteAsync(string id,string role,CancellationToken ct){QuoteReads++;return ApprovedAsync(id,role,ct);}
         public Task<SamSceneDefinition?> TrackingRunAsync(string id,string role,string runId,CancellationToken ct){
             ExactRuns.Add(runId);
-            return Task.FromResult(id=="study" && role=="baseline"?Runs.GetValueOrDefault(runId):null);
+            // Deliberately use a SHA-keyed shared Spark run across studies:
+            // Spark identity alone must NEVER authorize a SAM stage retry.
+            return Task.FromResult(Runs.GetValueOrDefault(runId));
         }
     }
     private sealed class Runtime:ISamVideoRuntime{
         public double[] Pts=Enumerable.Range(0,667).Select(i=>i/30d).ToArray();
-        public int Reserved;
+        public int Reserved;public string? OverrideVideoId;
         public bool LiveCallsPermitted=>true;
         public void ReserveOrThrow()=>Interlocked.Increment(ref Reserved);
         public Task<SamVideoSource> GetVerifiedSourceAsync(string id,string role,CancellationToken ct)=>
-            Task.FromResult(new SamVideoSource(Sha,"synthetic","synthetic.mp4","h264",1080,1920,667/30d));
+            Task.FromResult(new SamVideoSource(Sha,OverrideVideoId ?? (id=="study" && role=="baseline"?"synthetic":
+                id=="another-study"?"synthetic-other":"synthetic-followup"),
+                "synthetic.mp4","h264",1080,1920,667/30d));
         public Task<double[]> ReadFramePtsAsync(string path,CancellationToken ct)=>Task.FromResult(Pts);
         public Task CreateMp4Async(string source,string dest,CancellationToken ct)=>throw new NotSupportedException();
     }
