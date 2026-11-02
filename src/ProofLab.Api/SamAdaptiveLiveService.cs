@@ -330,6 +330,8 @@ public sealed partial class SamAdaptiveLiveService(
             async Task Execute(SamAdaptiveWindow window)
             {
                 var taken=false;
+                SamVideoSseProgress? lastProgress=null;
+                var partTimer=Stopwatch.StartNew();
                 try
                 {
                     await slots.WaitAsync(deadline.Token);
@@ -367,6 +369,7 @@ public sealed partial class SamAdaptiveLiveService(
                     var progressLog=Path.Combine(partDir,"progress.jsonl");
                     async ValueTask Progress(SamVideoSseProgress p)
                     {
+                        lastProgress=p;
                         var line=JsonSerializer.Serialize(new{
                             timeUtc=DateTimeOffset.UtcNow,part=window.Part,
                             p.Stage,p.Events,p.DeltaEvents,p.OutputChars,
@@ -420,8 +423,32 @@ public sealed partial class SamAdaptiveLiveService(
                     var path=Path.Combine(folder,"part-"+window.Part.ToString("D2",
                         CultureInfo.InvariantCulture));
                     Directory.CreateDirectory(path);
+                    // Capture received data privately for diagnosis; playback only reads
+                    // response.json with its completed receipt, never this pending file.
+                    var streamFailure=e as SamVideoSseException;
+                    string? pendingCapture=null;
+                    if(streamFailure?.PendingOutputText is {Length:>0} pending)
+                    {
+                        try{
+                            await WriteImmutable(Path.Combine(path,"incomplete-output.txt"),pending,CancellationToken.None);
+                            await WriteJson(Path.Combine(path,"incomplete-output.json"),new{
+                                status="UNVERIFIED_INCOMPLETE_NOT_FOR_PLAYBACK",completed=false,
+                                outputChars=pending.Length,sha256=Hash(pending),
+                                recordedAtUtc=DateTimeOffset.UtcNow},CancellationToken.None);
+                            pendingCapture="SAVED_UNVERIFIED";
+                        }
+                        catch(Exception captureError) when(captureError is IOException or UnauthorizedAccessException)
+                        {pendingCapture="CAPTURE_WRITE_FAILED";}
+                    }
                     try{await WriteJson(Path.Combine(path,"failure.json"),
                         new{part=window.Part,status=failure,
+                            exceptionType=e.GetType().FullName,
+                            exceptionHResult=e.HResult,
+                            causeType=streamFailure?.CauseType,
+                            causeHResult=streamFailure?.CauseHResult,
+                            lastProgress=streamFailure?.LastProgress ?? lastProgress,
+                            elapsedMs=partTimer.ElapsedMilliseconds,
+                            pendingCapture,
                             httpStatus=(int?)(e as HttpRequestException)?.StatusCode,
                             protocolCode=(e as SamVideoSseException)?.Code,
                             providerEvent=(e as SamVideoSseException)?.ProviderEvent,

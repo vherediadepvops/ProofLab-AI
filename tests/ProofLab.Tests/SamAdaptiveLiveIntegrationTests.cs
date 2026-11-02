@@ -577,6 +577,31 @@ public sealed class SamAdaptiveLiveIntegrationTests
             new(599,"object",20,30,40,50)],null,null,AssemblyPolicy.GroundingOrigin);
         return draft with{Key=AssemblyPolicy.DefinitionKey(draft)};
     }
+    [Fact]
+    public async Task IncompleteProviderOutput_IsArchivedPrivatelyButNeverAcceptedOrRetried()
+    {
+        using var f=new Fixture();
+        const string wire="PRIVATE_SYNTHETIC_INCOMPLETE_MASK";
+        using var reader=new StringReader("data: "+JsonSerializer.Serialize(new {
+            type="response.output_text.delta",delta=wire})+"\n\n");
+        f.Transport.InjectedFailure=await Assert.ThrowsAsync<SamVideoSseException>(
+            ()=>SamVideoSseParser.ReadAsync(reader,null,default));
+        var result=await f.Service.RunWithOneRetryAsync("study","baseline",Request(await f.Quote()),default);
+        Assert.Equal(1,result.FailedParts);Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reserved);
+        var folder=Path.Combine(f.Store,"batches",result.BatchId,"part-00");
+        var failure=await File.ReadAllTextAsync(Path.Combine(folder,"failure.json"));
+        Assert.DoesNotContain(wire,failure);
+        using var json=JsonDocument.Parse(failure);
+        Assert.Equal("SAM_SSE_MISSING_COMPLETION",json.RootElement.GetProperty("protocolCode").GetString());
+        Assert.Equal("SAVED_UNVERIFIED",json.RootElement.GetProperty("pendingCapture").GetString());
+        Assert.Equal(wire.Length,json.RootElement.GetProperty("lastProgress").GetProperty("outputChars").GetInt32());
+        Assert.Equal(wire,await File.ReadAllTextAsync(Path.Combine(folder,"incomplete-output.txt")));
+        Assert.Contains("UNVERIFIED_INCOMPLETE_NOT_FOR_PLAYBACK",await File.ReadAllTextAsync(Path.Combine(folder,"incomplete-output.json")));
+        Assert.False(File.Exists(Path.Combine(folder,"response.json")));
+        Assert.False(File.Exists(Path.Combine(folder,"receipt.json")));
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Service.ReadPlaybackAsync("study","baseline",result.BatchId,default));
+    }
+
     private sealed class Fixture:IDisposable{
         private readonly string root=Path.Combine(Path.GetTempPath(),"prooflab-segments-"+Guid.NewGuid().ToString("N"));
         public string Store=>Path.Combine(root,".private","segments");
@@ -650,6 +675,7 @@ public sealed class SamAdaptiveLiveIntegrationTests
     private sealed class Transport:ISamVideoTransport{
         public int Calls,Active,MaximumActive;public bool Fail,FailSegmentsOnly,EmptySegments,EmptyWhole,BrokenSeams;
         public System.Net.HttpStatusCode? FailureStatus;
+        public Exception? InjectedFailure;
         public string LastPrompt="";public int ActiveAtFullDispatch=-1;
         public readonly System.Collections.Concurrent.ConcurrentBag<SamAdaptiveWindow> Windows=new();
         public async Task<SamApiCompletedResult> UploadAndSegmentAsync(string path,string prompt,
@@ -661,6 +687,7 @@ public sealed class SamAdaptiveLiveIntegrationTests
                 while(Interlocked.CompareExchange(ref MaximumActive,active,before)!=before);
             try{
                 await Task.Delay(20,ct);
+                if(InjectedFailure is not null)throw InjectedFailure;
                 if((Fail || (FailSegmentsOnly && w.InputFrames<667)) && w.Part==0)
                     throw new HttpRequestException("Synthetic part failure",null,FailureStatus);
                 var indices=BrokenSeams && w.InputFrames<667?Enumerable.Range(w.CoreStart-w.InputStart,w.CoreEndExclusive-w.CoreStart):

@@ -19,6 +19,12 @@ public sealed class SamVideoSseException(string code,string? providerEvent=null,
     public string Code { get; } = code;
     public string? ProviderEvent { get; } = providerEvent;
     public string? ProviderReason { get; } = providerReason;
+    public SamVideoSseProgress? LastProgress { get; internal set; }
+    public string? CauseType { get; internal set; }
+    public int? CauseHResult { get; internal set; }
+    // Private evidence only. Never serialize this into an HTTP error or log it.
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal string? PendingOutputText { get; set; }
 }
 
 /// <summary>
@@ -64,9 +70,11 @@ public static class SamVideoSseParser
         var completed = false;
         var providerResponseId = "PROVIDER_RESPONSE_ID_UNAVAILABLE";
         int? billedFrames = null;
+        var lastStage = "SSE_WAITING";
 
         async ValueTask Report(string stage)
         {
+            lastStage = stage;
             if (progress is not null)
                 await progress(new SamVideoSseProgress(
                     stage, events, deltas, output.Length));
@@ -82,8 +90,15 @@ public static class SamVideoSseParser
         bool MatchesAccumulated(string value)
         {
             if (value.Length != output.Length) return false;
-            for (var i=0; i<value.Length; i++)
-                if(value[i] != output[i]) return false;
+            // Indexing StringBuilder per character walks its chunk chain repeatedly.
+            // Compare each chunk once, without allocating a second full output string.
+            var offset = 0;
+            foreach (var chunk in output.GetChunks())
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!chunk.Span.SequenceEqual(value.AsSpan(offset, chunk.Length))) return false;
+                offset += chunk.Length;
+            }
             return true;
         }
 
@@ -130,6 +145,7 @@ public static class SamVideoSseParser
                         break;
 
                     case "response.output_text.done":
+                        await Report("SSE_TEXT_VERIFY_STARTED");
                         // Fallback only: some providers return all output in the
                         // done event and no deltas. NEVER duplicate prior deltas.
                         if (message.TryGetProperty("text", out var doneText) &&
@@ -144,6 +160,7 @@ public static class SamVideoSseParser
                         break;
 
                     case "response.content_part.done":
+                        await Report("SSE_CONTENT_PART_VERIFY_STARTED");
                         // Official Meta cookbook: providers may finalize the
                         // output_text lane with content_part.done and never
                         // emit response.output_text.done.
@@ -190,11 +207,15 @@ public static class SamVideoSseParser
                         {
                             foreach (var item in messages.EnumerateArray())
                             {
+                                if (item.ValueKind != JsonValueKind.Object)
+                                    throw new SamVideoSseException("SAM_SSE_BAD_COMPLETION");
                                 if (!item.TryGetProperty("content", out var contents) ||
                                     contents.ValueKind != JsonValueKind.Array)
                                     continue;
                                 foreach (var part in contents.EnumerateArray())
                                 {
+                                    if (part.ValueKind != JsonValueKind.Object)
+                                        throw new SamVideoSseException("SAM_SSE_BAD_COMPLETION");
                                     if (part.TryGetProperty("type", out var partType) &&
                                         partType.ValueKind == JsonValueKind.String &&
                                         partType.GetString() == "output_text" &&
@@ -226,40 +247,56 @@ public static class SamVideoSseParser
             return false;
         }
 
-        await Report("SSE_WAITING");
-        while (true)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            var line = await reader.ReadLineAsync(ct);
-            if (line is null)
+            await Report("SSE_WAITING");
+            while (true)
             {
-                if (await ConsumeEvent()) break;
-                break;
+                ct.ThrowIfCancellationRequested();
+                var line = await reader.ReadLineAsync(ct);
+                if (line is null)
+                {
+                    if (await ConsumeEvent()) break;
+                    break;
+                }
+                if (line.Length == 0)
+                {
+                    if (await ConsumeEvent()) break;
+                    continue;
+                }
+                if (!line.StartsWith("data:", StringComparison.Ordinal))
+                    continue; // SSE comments, event:, id:, retry:, keepalives
+                var content = line.AsSpan(5);
+                if (content.Length > 0 && content[0] == ' ')
+                    content = content[1..];
+                if (dataLines.Length > 0)
+                    dataLines.Append('\n');
+                if (content.Length > MaximumEventChars - dataLines.Length)
+                    throw new SamVideoSseException("SAM_SSE_EVENT_LIMIT_EXCEEDED");
+                dataLines.Append(content);
             }
-            if (line.Length == 0)
+            if (!completed)
             {
-                if (await ConsumeEvent()) break;
-                continue;
+                await Report("SSE_EOF_WITHOUT_COMPLETION");
+                throw new SamVideoSseException("SAM_SSE_MISSING_COMPLETION");
             }
-            if (!line.StartsWith("data:", StringComparison.Ordinal))
-                continue; // SSE comments, event:, id:, retry:, keepalives
-            var content = line.AsSpan(5);
-            if (content.Length > 0 && content[0] == ' ')
-                content = content[1..];
-            if (dataLines.Length > 0)
-                dataLines.Append('\n');
-            if (content.Length > MaximumEventChars - dataLines.Length)
-                throw new SamVideoSseException("SAM_SSE_EVENT_LIMIT_EXCEEDED");
-            dataLines.Append(content);
-        }
-        if (!completed)
-        {
-            await Report("SSE_EOF_WITHOUT_COMPLETION");
-            throw new SamVideoSseException("SAM_SSE_MISSING_COMPLETION");
-        }
 
-        // Meta explicitly allows zero matches: completed with empty lane.
-        return new SamVideoSseResult(
-            output.ToString(), providerResponseId, billedFrames, events, deltas);
+            // Meta explicitly allows zero matches: completed with empty lane.
+            return new SamVideoSseResult(
+                output.ToString(), providerResponseId, billedFrames, events, deltas);
+        }
+        catch (Exception error) when (error is not OperationCanceledException && error is not OutOfMemoryException)
+        {
+            // Preserve categorical diagnostics, never raw provider/error messages.
+            var failure = error as SamVideoSseException ?? new SamVideoSseException(
+                error is IOException or HttpRequestException ? "SAM_SSE_READ_INTERRUPTED" : "SAM_SSE_READER_FAILURE");
+            failure.LastProgress = new(lastStage, events, deltas, output.Length);
+            failure.CauseType = error.GetType().FullName;
+            failure.CauseHResult = error.HResult;
+            // A partial lane is NOT a completed response, receipt, or playable evidence.
+            if (!completed && output.Length > 0) failure.PendingOutputText = output.ToString();
+            if (ReferenceEquals(failure, error)) throw;
+            throw failure;
+        }
     }
 }

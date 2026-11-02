@@ -28,6 +28,103 @@ public sealed class SamVideoSseParserTests
             reader, logger, CancellationToken.None, limit);
     }
 
+    private sealed class LinesReader(IEnumerable<string> lines, Exception? terminalError=null) : TextReader
+    {
+        private readonly IEnumerator<string> cursor=lines.GetEnumerator();
+        public override ValueTask<string?> ReadLineAsync(CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            if(cursor.MoveNext()) return ValueTask.FromResult<string?>(cursor.Current);
+            if(terminalError is not null) throw terminalError;
+            return ValueTask.FromResult<string?>(null);
+        }
+        protected override void Dispose(bool disposing) {if(disposing)cursor.Dispose();base.Dispose(disposing);}
+    }
+
+    private static IEnumerable<string> FragmentedStream(string text, bool mismatch=false, bool complete=true)
+    {
+        for(var start=0;start<text.Length;start+=7402)
+        {
+            yield return "data: "+JsonSerializer.Serialize(new {type="response.output_text.delta",
+                delta=text.Substring(start,Math.Min(7402,text.Length-start))});
+            yield return "";
+        }
+        yield return "data: "+JsonSerializer.Serialize(new {type="response.output_text.done",text});
+        yield return "";
+        yield return "data: "+JsonSerializer.Serialize(new {type="response.content_part.done",
+            part=new {type="output_text",text=mismatch?text[..^1]+"!":text}});
+        yield return "";
+        if(complete) {yield return Completion.Trim();yield return "";}
+    }
+
+    [Fact]
+    public async Task LargeFragmentedResponse_WithBothFinalTextEvents_PreservesOutputExactlyOnce()
+    {
+        // Production-sized regression: thousands of StringBuilder chunks, 14M characters.
+        var text=new string('x',13_952_274)+"z";
+        using var reader=new LinesReader(FragmentedStream(text));
+        var result=await SamVideoSseParser.ReadAsync(reader,null,default);
+        Assert.Equal(text,result.OutputText);
+        Assert.Equal((text.Length+7401)/7402,result.DeltaEvents);
+        Assert.Equal(result.DeltaEvents+3,result.Events);
+    }
+
+    [Fact]
+    public async Task FragmentedFinalTextMismatch_StillRejectsSameLengthDifferenceAtEnd()
+    {
+        using var reader=new LinesReader(FragmentedStream(new string('x',100_000),mismatch:true));
+        var error=await Assert.ThrowsAsync<SamVideoSseException>(()=>SamVideoSseParser.ReadAsync(reader,null,default));
+        Assert.Equal("SAM_SSE_FINAL_TEXT_MISMATCH",error.Code);
+        Assert.Equal("SSE_CONTENT_PART_VERIFY_STARTED",error.LastProgress!.Stage);
+        Assert.Equal(100_000,error.LastProgress.OutputChars);
+    }
+
+    [Fact]
+    public async Task FinalTextWithoutCompletion_RemainsUnverifiedAndRetainsPrivateDiagnosticData()
+    {
+        const string text="private incomplete synthetic mask";
+        using var reader=new LinesReader(FragmentedStream(text,complete:false));
+        var error=await Assert.ThrowsAsync<SamVideoSseException>(()=>SamVideoSseParser.ReadAsync(reader,null,default));
+        Assert.Equal("SAM_SSE_MISSING_COMPLETION",error.Code);
+        Assert.Equal(text,error.PendingOutputText);
+        Assert.DoesNotContain(text,error.ToString());
+    }
+
+    [Fact]
+    public async Task BrokenConnection_PreservesCountsAndSafeCauseWithoutExposingErrorMessage()
+    {
+        const string text="private synthetic output";
+        using var reader=new LinesReader(FragmentedStream(text,complete:false),new IOException("secret-token-and-provider-url"));
+        var error=await Assert.ThrowsAsync<SamVideoSseException>(()=>SamVideoSseParser.ReadAsync(reader,null,default));
+        Assert.Equal("SAM_SSE_READ_INTERRUPTED",error.Code);
+        Assert.Equal(typeof(IOException).FullName,error.CauseType);
+        Assert.Equal("SSE_CONTENT_PART_DONE",error.LastProgress!.Stage);
+        Assert.Equal(text.Length,error.LastProgress.OutputChars);
+        Assert.Equal(1,error.LastProgress.DeltaEvents);
+        Assert.Equal(text,error.PendingOutputText);
+        Assert.DoesNotContain("secret-token",error.ToString());
+        Assert.DoesNotContain(text,error.ToString());
+    }
+
+    [Fact]
+    public async Task CancellationDuringFinalVerification_DoesNotReturnCompletedEvidence()
+    {
+        using var cancel=new CancellationTokenSource();
+        using var reader=new LinesReader(FragmentedStream(new string('x',100_000)));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>SamVideoSseParser.ReadAsync(reader,p=>{
+            if(p.Stage=="SSE_TEXT_VERIFY_STARTED")cancel.Cancel();
+            return ValueTask.CompletedTask;
+        },cancel.Token));
+    }
+
+    [Fact]
+    public async Task MalformedCompletedOutput_HasTypedDiagnosticInsteadOfGenericFailure()
+    {
+        var error=await Assert.ThrowsAsync<SamVideoSseException>(()=>ParseAsync(Event(new {
+            type="response.completed",response=new {status="completed",output=new[]{42}}})));
+        Assert.Equal("SAM_SSE_BAD_COMPLETION",error.Code);
+    }
+
     [Fact]
     public async Task CompletedStream_PreservesOnlyDeltasAndFrameUsage()
     {
