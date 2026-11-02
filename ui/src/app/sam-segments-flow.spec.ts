@@ -228,4 +228,56 @@ describe('One complete-video SAM request and archived-result recovery',()=>{
   x.f.componentRef.setInput('language','en');x.f.detectChanges();expect(x.c.stageStateLabel('RECOVERY_REQUIRED')).toBe('Resume with code');
   await x.c.process();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
  });
+ it('offers an explicit SAM-only retry with the possible new charge and no Spark call',async()=>{
+  const x=setup();await check(x,exact,located);x.c.mode.set('api-meta');
+  const next='f'.repeat(32),plan='7'.repeat(64),runId='3'.repeat(32);
+  const retry={failedBatchId:batch,newBatchId:next,videoSha256:sha,sparkSceneKey:scene,
+    sceneRunId:runId,planSha256:plan,frames:667,estimatedSamUsd:.1334,
+    targetCoreFrames:53,alreadyRequested:false,previousMayHaveBeenBilled:true};
+  x.c.stageRetryQuote.set(retry);x.f.detectChanges();
+  expect(x.f.nativeElement.textContent).toContain('Retomar desde la etapa SAM');
+  expect(x.f.nativeElement.textContent).toContain('US$ 0.14');
+  expect(x.c.canProcess()).toBeFalse();expect(x.c.canStageRetry()).toBeTrue();
+  const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.retryStage();
+  const post=x.h.expectOne(url+'/manual-stage-retry');
+  expect(post.request.body).toEqual({failedBatchId:batch,newBatchId:next,
+    videoSha256:sha,planSha256:plan,modelApiToken:'LLM_SYNTHETIC_LOCAL_TEST_KEY_1234567890',
+    maximumEstimatedCostUsd:.1334,confirmPotentialSecondCharge:true,confirmVideoTransfer:true});
+  expect(post.request.headers.get('X-ProofLab-Manual-Action')).toBe('sam-adaptive-stage-retry');
+  expect(x.c.canStageRetry()).toBeFalse();
+  await x.c.retryStage();x.h.expectNone(r=>r.method==='POST');
+  post.flush({...done,batchId:next,planSha256:plan});await tick();
+  x.h.expectOne(url+'/batches/'+next+'/progress').flush({...completedProgress,batchId:next});
+  await p;expect(emit).toHaveBeenCalledOnceWith(jasmine.objectContaining({
+    analysisId:next,adaptiveBatchId:next,sourceSha256:sha}));
+  expect(x.c.stageRows().find(r=>r.key==='spark-reused')?.state).toBe('COMPLETED');
+  expect(x.c.stageRows().find(r=>r.key==='clip-reused')?.state).toBe('COMPLETED');
+  x.h.expectNone(r=>r.url.includes('/spark-once') || r.url.includes('/manual-batch'));
+  unlock(x);x.f.destroy();
+ });
+ it('rejects a claimed retry report from a different plan before opening overlays',async()=>{
+  const x=setup();await check(x,exact,located);x.c.mode.set('api-meta');
+  const next='f'.repeat(32),plan='7'.repeat(64);
+  x.c.stageRetryQuote.set({failedBatchId:batch,newBatchId:next,videoSha256:sha,
+    sparkSceneKey:scene,sceneRunId:'3'.repeat(32),planSha256:plan,frames:667,
+    targetCoreFrames:53,estimatedSamUsd:.1334,alreadyRequested:true,previousMayHaveBeenBilled:true});
+  const emit=spyOn(x.c.cacheUpdated,'emit'),run=x.c.recoverStageRetry();
+  x.h.expectOne(url+'/batches/'+next+'/report').flush({...done,batchId:next,planSha256:key});
+  await run;expect(emit).not.toHaveBeenCalled();expect(x.c.error()).toContain('aún no tiene un informe');
+  x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('recovers an already claimed SAM retry using GET without any new paid request',async()=>{
+  const x=setup();await check(x,exact,located);x.c.mode.set('api-meta');
+  const next='f'.repeat(32),plan='7'.repeat(64);
+  x.c.stageRetryQuote.set({failedBatchId:batch,newBatchId:next,videoSha256:sha,
+    sparkSceneKey:scene,sceneRunId:'3'.repeat(32),planSha256:plan,frames:667,
+    targetCoreFrames:53,estimatedSamUsd:.1334,alreadyRequested:true,previousMayHaveBeenBilled:true});
+  expect(x.c.canStageRetry()).toBeFalse();
+  const emit=spyOn(x.c.cacheUpdated,'emit'),run=x.c.recoverStageRetry();
+  const request=x.h.expectOne(url+'/batches/'+next+'/report');
+  expect(request.request.method).toBe('GET');
+  request.flush({...done,batchId:next,planSha256:plan});await run;
+  expect(emit).toHaveBeenCalledOnceWith(jasmine.objectContaining({analysisId:next}));
+  x.h.expectNone(r=>r.method==='POST');unlock(x);x.f.destroy();
+ });
 });

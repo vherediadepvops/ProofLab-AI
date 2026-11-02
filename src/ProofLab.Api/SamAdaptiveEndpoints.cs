@@ -140,6 +140,43 @@ public static class SamAdaptiveEndpoints
                 error="Adaptive request blocked: budget, credit, prior attempt, source or owner approval."});}
         });
 
+        // A separate, owner-initiated retry from the failed SAM stage only.
+        // A read-only quote never repeats Spark or opens a billable request.
+        app.MapGet(Route+"/manual-stage-retry/quote",async (
+            string id,string role,SamAdaptiveLiveService service,
+            HttpContext ctx,CancellationToken ct)=>
+        {
+            if(!Loopback(ctx))return Results.StatusCode(403);
+            ctx.Response.Headers.CacheControl="no-store";
+            try{
+                var quote=await service.StageRetryQuoteAsync(id,role,ct);
+                return quote is null?Results.NotFound():Results.Ok(quote);
+            }
+            catch(ArgumentException){return Results.BadRequest();}
+            catch(FileNotFoundException){return Results.NotFound();}
+            catch(InvalidDataException){return Results.Conflict();}
+            catch(InvalidOperationException){return Results.Conflict();}
+        });
+
+        app.MapPost(Route+"/manual-stage-retry",async (
+            string id,string role,SamStageRetryRequest request,
+            SamAdaptiveLiveService service,HttpContext ctx,CancellationToken ct)=>
+        {
+            if(!Loopback(ctx) || !ApiRequestAccess.Origin(ctx,true) ||
+               ctx.Request.Headers["X-ProofLab-Manual-Action"]!="sam-adaptive-stage-retry" ||
+               ctx.Request.ContentLength is >4096)
+                return Results.StatusCode(403);
+            ctx.Response.Headers.CacheControl="no-store";
+            if(!SamManualApiTokenPolicy.Accepts(request.ModelApiToken))
+                return Results.BadRequest(new{error="Manual Meta key invalid."});
+            try{return Results.Ok(await service.RunStageRetryAsync(id,role,request,ct));}
+            catch(ArgumentException){return Results.BadRequest();}
+            catch(FileNotFoundException){return Results.NotFound();}
+            catch(InvalidDataException){return Results.Conflict(new{error="Stored SAM clip or source is inconsistent."});}
+            catch(InvalidOperationException){return Results.Conflict(new{error="No verified failed run or explicit retry authorization available."});}
+            catch(IOException){return Results.Conflict(new{error="Retry claimed; inspect its result, do not submit twice."});}
+        });
+
         app.MapGet(Route+"/batches/{batchId}/progress",async(
             string batchId,SamAdaptiveLiveService service,
             HttpContext ctx,CancellationToken ct)=>

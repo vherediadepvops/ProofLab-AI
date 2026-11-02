@@ -237,7 +237,7 @@ public sealed partial class SamAdaptiveLiveService(
         => await RunBatchCore(studyId,role,request,ct);
 
     private async Task<SamAdaptiveLiveReport> RunBatchCore(
-        string studyId,string role,SamAdaptiveLiveRunRequest request,CancellationToken ct,string? automaticParent=null)
+        string studyId,string role,SamAdaptiveLiveRunRequest request,CancellationToken ct,string? automaticParent=null,string? manualPreparedParent=null)
     {
         var mode=PendulumSamCache.NormalizeMode(request.Mode); // Reject cache-only before any provider preparation/reservation.
         if(request.ConfirmOneContinuousRetry)
@@ -287,7 +287,9 @@ public sealed partial class SamAdaptiveLiveService(
             var clipDir=Path.Combine(folder,"clips");
             SamAdaptiveClipManifest manifests;
             try {
-                manifests=await clipBuilder.PrepareAsync(source,pts,plan,clipDir,ct);
+                manifests=manualPreparedParent is null?
+                    await clipBuilder.PrepareAsync(source,pts,plan,clipDir,ct):
+                    await ReusePreparedClipAsync(source,pts,plan,clipDir,manualPreparedParent,ct);
             } catch {
                 await WriteJson(Path.Combine(folder,"preparation-failed.json"),
                     new{finishedAtUtc=DateTimeOffset.UtcNow},CancellationToken.None);
@@ -318,6 +320,7 @@ public sealed partial class SamAdaptiveLiveService(
                 approvedByOwner=true,model="sam-3.1",
                 confirmOneContinuousRetry=request.ConfirmOneContinuousRetry,
                 maximumCombinedSamCostUsd=request.MaximumCombinedSamCostUsd,automaticRetryOfBatchId=automaticParent,
+                manualRetryOfBatchId=manualPreparedParent,
                 noAutomaticRetry=!request.ConfirmOneContinuousRetry
             },CancellationToken.None);
             var results=new PartOutcome[plan.PartCount];

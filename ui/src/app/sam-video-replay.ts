@@ -63,6 +63,11 @@ interface SamAdaptiveQuote {
   continuousRetryEstimatedUsd?:number;maximumSamWithRetryEstimatedUsd?:number;
   mode?:'api-meta'|'api-meta-cache';sceneRunId?:string|null;
 }
+interface SamStageRetryQuote {
+  failedBatchId:string;newBatchId:string;videoSha256:string;sparkSceneKey:string;
+  sceneRunId:string;planSha256:string;frames:number;estimatedSamUsd:number;
+  targetCoreFrames:number;alreadyRequested:boolean;previousMayHaveBeenBilled:boolean;
+}
 interface SamAdaptivePartProgress {
   part:number;state:string;events:number;deltas:number;outputChars:number;elapsedMs?:number;
 }
@@ -107,7 +112,7 @@ interface SamAdaptiveReport {
                   <strong [class.paid-cost]="!freeCacheAvailable()" [class.free-cost]="freeCacheAvailable()">{{freeCacheAvailable()?'US$ 0.00':((groundingRequired() || reviewBudget()>0 || reviewOnlyRequired() || adaptiveQuote()?.requiresNewSparkCall)?(es?'Estimado US$ ':'Estimated US$ '):'US$ ')+costLabel(displayedCost())}}</strong>
                   <small>{{freeCacheAvailable()?(es?'desde caché · sin cobro':'from cache · no charge'):((groundingRequired() || reviewBudget()>0 || reviewOnlyRequired() || adaptiveQuote()?.requiresNewSparkCall)?(es?'Costo estimado · no es una factura':'Estimated cost · not an invoice'):(es?'Usará créditos · estimado':'Uses credits · estimate'))}}</small>
                 </div>
-                @if(!freeCacheAvailable() && groundingRequired()) {
+                @if(!stageRetryQuote() && !freeCacheAvailable() && groundingRequired()) {
                   <small class="sam-meta-estimate">SAM {{es?'estimado':'estimate'}} US$ {{costLabel(pf.estimatedCostUsd)}} + Spark {{es?'hasta':'up to'}} US$ {{groundingQuote()!.maximumEstimatedCostUsd.toFixed(2)}}</small>
                 }
                 @if(segmentedMode() && adaptiveQuote(); as aq) {
@@ -142,6 +147,29 @@ interface SamAdaptiveReport {
               <label><input type="checkbox" [disabled]="sourcesLocked()" [checked]="cacheEnabled()" (change)="selectSource('cache',$any($event.target).checked)"/> {{es?'Caché + SQLite':'Cache + SQLite'}}</label>
             </fieldset>
             <small class="sam-source-help">{{sourceDescription()}}</small>
+            @if(mode()==='api-meta' && stageRetryQuote(); as retry) {
+              <div class="sam-stage-retry" role="group" [attr.aria-label]="es?'Reintentar solo SAM':'Retry SAM only'">
+                <strong>{{es?'Retomar desde la etapa SAM':'Continue from the SAM stage'}}</strong>
+                <p>{{es?'Spark y el MP4 original ya preparados se reutilizan. No se repiten las etapas anteriores; Meta debe procesar otra vez SAM y puede volver a cobrar.':
+                  'The previous Spark localization and prepared MP4 are reused. Earlier stages will not run again; Meta must process SAM again and may charge again.'}}</p>
+                <div class="sam-retry-price">{{es?'Costo máximo de un NUEVO intento SAM':'Maximum cost of a NEW SAM request'}}:
+                  <strong>US$ {{costLabel(retry.estimatedSamUsd)}}</strong></div>
+                @if(!retry.alreadyRequested) {
+                  <button type="button" class="sam-retry-button" [disabled]="!canStageRetry()"
+                    (click)="retryStage()">{{es?'Reintentar SAM · US$ ':'Retry SAM · US$ '}}{{costLabel(retry.estimatedSamUsd)}}</button>
+                } @else {
+                  <button type="button" (click)="recoverStageRetry()" [disabled]="!!processing()||connection.busy()">
+                    {{es?'Consultar reintento guardado · sin nuevo cobro':'Inspect saved retry · no new charge'}}
+                  </button>
+                }
+                @if(!tokenEntered()){<button type="button" class="sam-settings-link" (click)="openTokenDialog()">
+                  {{es?'Registrar token Meta':'Enter Meta key'}}</button>}
+              </div>
+            } @else if(mode()==='api-meta' && !processing() && !checking() && preflight()) {
+              <button type="button" class="sam-retry-discover" (click)="findStageRetry()">
+                {{es?'Buscar reintento SAM pendiente':'Find available SAM retry'}}
+              </button>
+            }
           </div>
           @if(checking()) {
             <app-lab-activity class="sam-progress" [label]="es?'Calculando costo…':'Estimating cost…'"
@@ -376,6 +404,11 @@ interface SamAdaptiveReport {
     .sam-actions .sam-submit:enabled:hover{background:#166534;border-color:#86efac}
     .sam-actions .sam-submit:focus-visible{outline:2px solid #bbf7d0;outline-offset:3px}
     .sam-actions .sam-submit:disabled{background:#303843;border-color:#48515e;color:#aab6c5;opacity:1;animation:none;box-shadow:none}
+    .sam-stage-retry{flex-basis:100%;margin-top:14px;padding:13px 14px;border:1px solid #d6a453;border-radius:8px;background:#2b271a;color:#ffe8b8}
+    .sam-stage-retry>strong{font-size:13px}.sam-stage-retry p{font-size:11px;margin:7px 0;color:#f4d3a2}
+    .sam-retry-price{font-size:12px;margin:10px 0}.sam-retry-price strong{font-size:19px;margin-left:6px;color:#fff0ce}
+    .sam-actions .sam-retry-button:enabled{background:#6ee5c1;color:#08251f;border-color:#6ee5c1;font-weight:700}
+    .sam-retry-discover{margin-top:11px;font-size:11px;align-self:flex-start}
     @keyframes sam-ready-pulse{0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}50%{box-shadow:0 0 0 5px rgba(74,222,128,.24)}}
     @media(prefers-reduced-motion:reduce){.sam-actions .sam-submit:enabled{animation:none;transition:none}}
     .sam-message{display:flex;align-items:baseline;flex-wrap:wrap;gap:5px;margin-top:16px;padding-top:13px;border-top:1px solid #343e4a;color:#a9c8da;font-size:12px;line-height:1.55}
@@ -535,6 +568,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly adaptiveQuote=signal<SamAdaptiveQuote|null>(null);
   readonly adaptiveProgress=signal<SamAdaptiveProgress|null>(null);
   readonly adaptiveResult=signal<SamAdaptiveReport|null>(null);
+  readonly stageRetryQuote=signal<SamStageRetryQuote|null>(null);
+  readonly stageRetryActive=signal(false);
   private adaptivePollHandle:ReturnType<typeof setInterval>|null=null;
   readonly stageTraceStarted=signal(false);
   readonly traceClock=signal(0);
@@ -582,6 +617,20 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   stageRows():{key:string;label:string;state:string;ms:number;percent?:number|null}[] {
     const p=this.adaptiveProgress(),now=this.traceClock(),phase=p?.phase;
+    if(this.stageRetryActive())return [
+      {key:'spark-reused',label:this.es?'Spark · reutilizado':'Spark · reused',state:'COMPLETED',ms:0},
+      {key:'clip-reused',label:this.es?'MP4 · reutilizado':'MP4 · reused',state:'COMPLETED',ms:p?.preparationElapsedMs??0},
+      {key:'sam-0',label:this.es?'SAM · reintento manual':'SAM · manual retry',
+        state:p?.perPart[0]?.state??(this.traceFailed?'FAILED':'IN_PROGRESS'),
+        ms:p?.perPart[0]?.elapsedMs??Math.max(0,now-this.traceStartedAt)},
+      {key:'validation',label:this.es?'Verificación':'Verification',
+        state:phase==='COMPLETED'?'COMPLETED':phase==='FAILED'?'FAILED':
+          phase==='VALIDATING'?'IN_PROGRESS':'NOT_STARTED',ms:p?.validationElapsedMs??0},
+      {key:'view',label:this.es?'Validación de resultados':'Result validation',
+        state:this.viewFinishedAt?'COMPLETED':this.traceFailed?'FAILED':
+          this.traceAwaitingRecovery?'RECOVERY_REQUIRED':this.viewStartedAt?'IN_PROGRESS':'NOT_STARTED',
+        ms:this.viewStartedAt?Math.max(0,(this.viewFinishedAt||now)-this.viewStartedAt):0}
+    ];
     if(this.samWasReused && this.segmentedMode())return [
       {key:'cache',label:this.es?'Caché verificada':'Verified cache',state:'COMPLETED',ms:0},
       {key:'view',label:this.es?'Validación de resultados':'Result validation',
@@ -650,6 +699,133 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private adaptiveUrl():string {
     return this.base+'/'+this.studyId()+'/sam-adaptive/'+this.videoRole();
   }
+  private validStageRetryQuote(q:SamStageRetryQuote):boolean {
+    return q.videoSha256===this.videoSha256() &&
+      /^[a-f0-9]{32}$/.test(q.failedBatchId) && /^[a-f0-9]{32}$/.test(q.newBatchId) &&
+      q.failedBatchId!==q.newBatchId && /^[a-f0-9]{32}$/.test(q.sceneRunId) &&
+      /^[a-f0-9]{64}$/.test(q.sparkSceneKey) && /^[a-f0-9]{64}$/.test(q.planSha256) &&
+      Number.isSafeInteger(q.frames) && q.frames>=50 && q.frames<=2500 &&
+      Number.isInteger(q.targetCoreFrames) && q.targetCoreFrames>0 &&
+      Number.isFinite(q.estimatedSamUsd) && q.estimatedSamUsd>0 && q.estimatedSamUsd<=.50;
+  }
+  async findStageRetry():Promise<void> {
+    if(!this.http || this.mode()!=='api-meta' || !this.hasSource() ||
+       this.processing() || this.checking() || this.sending())return;
+    const url=this.adaptiveUrl(),sha=this.videoSha256(),port=this.localApiPort(),serial=this.serial;
+    try{
+      const q=await firstValueFrom(this.http.get<SamStageRetryQuote>(
+        url+'/manual-stage-retry/quote').pipe(timeout(20000)));
+      if(!this.disposed && this.serial===serial && url===this.adaptiveUrl() &&
+        port===this.localApiPort() && sha===this.videoSha256() && this.validStageRetryQuote(q)){
+        this.stageRetryQuote.set(q);this.error.set('');
+      }
+    }catch{
+      if(!this.disposed && this.serial===serial && url===this.adaptiveUrl())
+        this.stageRetryQuote.set(null);
+    }
+  }
+  canStageRetry():boolean {
+    const q=this.stageRetryQuote(),access=this.readiness();
+    return this.mode()==='api-meta' && !!q && this.validStageRetryQuote(q) &&
+      !q.alreadyRequested && !!access?.creditsConfirmedByOwner &&
+      !!access.ownerApprovedPaidRequests && access.paidRequestsSwitchEnabled===true &&
+      access.manualTokenCallsPermitted===true && this.tokenEntered() &&
+      this.mediaReady() && !this.recoveryRunning() && !this.sourcePending() &&
+      !this.processing() && !this.sending() && !this.checking() && !this.connection.busy();
+  }
+  async recoverStageRetry():Promise<void> {
+    const q=this.stageRetryQuote();
+    if(!q?.alreadyRequested || !this.http || this.processing() || this.connection.busy())return;
+    const url=this.adaptiveUrl(),sha=this.videoSha256(),serial=this.serial;
+    try{
+      const report=await firstValueFrom(this.http.get<SamAdaptiveReport>(
+        url+'/batches/'+q.newBatchId+'/report').pipe(timeout(10000)));
+      if(serial!==this.serial || url!==this.adaptiveUrl() || sha!==this.videoSha256())return;
+      if(report.batchId!==q.newBatchId || report.sourceSha256!==sha ||
+         report.sparkSceneKey!==q.sparkSceneKey || report.planSha256!==q.planSha256 ||
+         report.parts!==1 || report.startedParts!==1)throw Error('RETRY_REPORT_MISMATCH');
+      this.adaptiveResult.set(report);
+      if(report.status==='PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW' &&
+         report.derivedSeamsVerified && (report.derivedFramesWithMasks??0)>0) {
+        this.processingReset.emit();this.beginProcessing();this.startStageTrace(true);
+        this.stageRetryActive.set(true);this.processingPhase.set('validating');
+        this.viewStartedAt=Date.now();
+        this.cacheUpdated.emit({studyId:this.studyId(),videoRole:this.videoRole(),sourceSha256:sha,
+          analysisId:report.batchId,adaptiveBatchId:report.batchId,port:this.localApiPort()});
+        this.error.set('');
+      }else this.error.set(this.es?
+        'El reintento SAM quedó inconcluso. No se enviará otra solicitud.':
+        'The SAM retry is inconclusive. No further request will be sent.');
+    }catch{this.error.set(this.es?
+      'El reintento aún no tiene un informe final recuperable. Revisa su estado antes de cualquier otro análisis.':
+      'The retry has no recoverable final report yet. Inspect its status before another analysis.');}
+  }
+  async retryStage():Promise<void> {
+    if(!this.canStageRetry() || !this.http)return;
+    const q=this.stageRetryQuote()!,token=this.connection.tokenForManualRequest();
+    if(!token)return;
+    const url=this.adaptiveUrl(),sha=this.videoSha256(),port=this.localApiPort(),serial=++this.serial;
+    const current=()=>!this.disposed && this.serial===serial && url===this.adaptiveUrl() &&
+      sha===this.videoSha256() && port===this.localApiPort() && this.mode()==='api-meta';
+    // This explicit click authorizes one NEW potentially billable SAM request,
+    // not a free continuation of the provider's incomplete SSE stream.
+    this.processingReset.emit();this.beginProcessing();this.startStageTrace(true);
+    this.stageRetryActive.set(true);this.processingPhase.set('sam');this.sending.set(true);
+    this.adaptiveProgress.set(null);this.adaptiveResult.set(null);this.error.set('');
+    this.stageRetryQuote.set({...q,alreadyRequested:true}); // fail closed on lost HTTP reply
+    let opened=false,polling=false;
+    const poll=async()=>{
+      if(polling || !current())return;polling=true;
+      try{
+        const status=await firstValueFrom(this.http!.get<SamAdaptiveProgress>(
+          url+'/batches/'+q.newBatchId+'/progress').pipe(timeout(8000)));
+        if(current() && status.batchId===q.newBatchId)this.adaptiveProgress.set(status);
+      }catch{/* no automatic provider retry */}
+      finally{polling=false;}
+    };
+    this.adaptivePollHandle=setInterval(()=>{void poll();},2000);
+    try{
+      let report:SamAdaptiveReport|null=null;
+      try{
+        report=await firstValueFrom(this.http.post<SamAdaptiveReport>(
+          url+'/manual-stage-retry',{
+            failedBatchId:q.failedBatchId,newBatchId:q.newBatchId,
+            videoSha256:sha,planSha256:q.planSha256,modelApiToken:token,
+            maximumEstimatedCostUsd:q.estimatedSamUsd,
+            confirmPotentialSecondCharge:true,confirmVideoTransfer:true
+          },{headers:{'X-ProofLab-Manual-Action':'sam-adaptive-stage-retry'}})
+          .pipe(timeout(70*60*1000)));
+      }catch{
+        // A lost/blocked reply may coexist with a running paid operation.
+        // Reconciliation is read-only and must never POST again.
+        try{report=await firstValueFrom(this.http.get<SamAdaptiveReport>(
+          url+'/batches/'+q.newBatchId+'/report').pipe(timeout(8000)));}
+        catch{report=null;}
+      }
+      if(!current())return;
+      await poll();
+      if(!report || report.batchId!==q.newBatchId || report.sourceSha256!==sha ||
+         report.sparkSceneKey!==q.sparkSceneKey || report.planSha256!==q.planSha256 ||
+         report.status!=='PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW' ||
+         report.derivedSeamsVerified!==true || !(report.derivedFramesWithMasks!>0))
+        throw Error('STAGE_RETRY_INCOMPLETE');
+      this.adaptiveResult.set(report);this.processingPhase.set('validating');
+      this.viewStartedAt=Date.now();opened=true;
+      this.cacheUpdated.emit({studyId:this.studyId(),videoRole:this.videoRole(),sourceSha256:sha,
+        analysisId:report.batchId,adaptiveBatchId:report.batchId,port});
+    }catch{
+      if(current()){
+        this.error.set(this.es?
+          'No se completó el reintento SAM. Consulta el resultado guardado; no se repetirá el envío. El intento anterior puede haber sido facturado.':
+          'The SAM retry did not complete. Inspect its saved result; no second retry will be sent. The previous attempt may have been billed.');
+        this.failProcessing();
+      }
+    }finally{
+      if(this.adaptivePollHandle!==null)clearInterval(this.adaptivePollHandle);
+      this.adaptivePollHandle=null;this.sending.set(false);
+      if(!opened || !current())this.finishProcessing();
+    }
+  }
   private get base():string {
     return apiOrigin(this.localApiPort())+
       '/api/science/director/pendulum/sessions';
@@ -683,6 +859,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.adaptiveQuote.set(null);
     this.adaptiveProgress.set(null);
     this.adaptiveResult.set(null);
+    this.stageRetryQuote.set(null);this.stageRetryActive.set(false);
     this.stageTraceStarted.set(false);this.traceAwaitingRecovery=false;
     if(this.traceTicker!==null)clearInterval(this.traceTicker);this.traceTicker=null;
   }
@@ -726,6 +903,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   canProcess():boolean {
     if(this.recoveryRunning() || !this.hasSource())return false;
+    if(this.mode()==='api-meta' && this.stageRetryQuote())return false;
     if(this.segmentedMode() && this.cachedResultAvailable())return this.mediaReady() && !this.sourcePending() &&
       !this.processing() && !this.sending() && !this.checking() && !this.connection.busy();
     if(!this.apiEnabled() || this.traceAwaitingRecovery)return false;
@@ -950,6 +1128,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   displayedCost():number {
     if(!this.apiEnabled() || this.freeCacheAvailable())return 0;
+    if(this.mode()==='api-meta' && this.stageRetryQuote())return this.stageRetryQuote()!.estimatedSamUsd;
     if(this.segmentedMode())
       return (this.adaptiveQuote()?this.combinedSamCost(this.adaptiveQuote()!):0)+
         (this.adaptiveQuote()?.requiresNewSparkCall?this.groundingQuote()?.maximumEstimatedCostUsd??0:0);
@@ -960,6 +1139,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   costLabel(value:number):string {return (Math.ceil(value*100-1e-8)/100).toFixed(2);}
   nextActionDescription():string {
     if(this.freeCacheAvailable())return this.es?'Resultado comprobado en SQLite. Procesar carga las mediciones sin llamadas a Meta.':'Checked SQLite result. Process loads measurements without Meta calls.';
+    if(this.mode()==='api-meta' && this.stageRetryQuote())return this.es?
+      'Reintentar SAM utiliza las etapas anteriores y muestra el costo de una nueva inferencia; no pulses Procesar.':
+      'Retry SAM reuses earlier stages and shows the cost of a new inference; do not click Process.';
     if(this.segmentedMode()){
       const q=this.adaptiveQuote();
       return q?(this.es?
@@ -986,6 +1168,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.traceAwaitingRecovery)return this.es?
       'Retoma el resultado con el código de recuperación antes de iniciar otro análisis.':
       'Resume the saved result with the recovery code before starting another analysis.';
+    if(this.mode()==='api-meta' && this.stageRetryQuote())return this.es?
+      'El análisis SAM anterior falló. Usa Reintentar SAM para conservar las etapas completadas.':
+      'The previous SAM analysis failed. Use Retry SAM to keep completed stages.';
     if(this.segmentedMode()){
       const q=this.adaptiveQuote(),r=this.readiness();
       if(!q)return this.es?'Actualiza el costo del video completo.':'Refresh the complete-video cost.';
@@ -1067,7 +1252,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const serial=++this.serial,mode=this.paidMode(),sha=this.videoSha256(),useCache=this.cacheEnabled(),useApi=this.apiEnabled();
     this.processingReset.emit();this.checking.set(true);this.error.set('');
     this.adaptiveQuote.set(null);this.adaptiveResult.set(null);this.groundingQuote.set(null);
-    this.adaptiveProgress.set(null);this.readiness.set(null);this.preflight.set(null);this.reusableEvidence.set(null);
+    this.stageRetryQuote.set(null);this.adaptiveProgress.set(null);this.readiness.set(null);this.preflight.set(null);this.reusableEvidence.set(null);
     try {
       const root=apiOrigin(this.localApiPort());
       const [reuse,preflight]=await Promise.all([
@@ -1103,7 +1288,14 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           (this.es?'No se pudo preparar el presupuesto del video completo. Revisa el video y la evidencia de Spark; no se envió nada a Meta.':
           'Could not prepare the complete-video quote. Review the video and Spark evidence; nothing was sent to Meta.')));
       }
-    }finally{if(serial===this.serial)this.checking.set(false);}
+    }finally{
+      if(serial===this.serial){
+        this.checking.set(false);
+        // Returning to the saved investigation checks the failed stage without
+        // another click, using only read-only receipts. No Meta request is sent.
+        if(this.autoCheck() && this.mode()==='api-meta')void this.findStageRetry();
+      }
+    }
   }
 
   private recoverableAdaptiveReply(error:unknown):boolean {
@@ -1273,6 +1465,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       if(this.adaptivePollHandle!==null)clearInterval(this.adaptivePollHandle);
       this.adaptivePollHandle=null;this.sending.set(false);
       if(!opened || !current())this.finishProcessing();
+      if(current() && this.mode()==='api-meta' && (this.adaptiveResult()?.failedParts??0)>0)
+        void this.findStageRetry(); // read-only: never resubmit to Meta
     }
   }
 

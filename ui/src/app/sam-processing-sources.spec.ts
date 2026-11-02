@@ -121,6 +121,26 @@ describe('Processing source checkboxes',()=>{
     }
   });
 
+  it('discovers the failed SAM stage when returning to an API-only investigation without charging',async()=>{
+    const x=setup(true);
+    x.f.componentRef.setInput('autoCheck',true);x.f.detectChanges();
+    const p=x.c.check();metadata(x);await tick();paidQuotes(x,'api-meta');await p;await tick();
+    const retryId='f'.repeat(32),previousId='8'.repeat(32);
+    const r=x.h.expectOne(adaptive+'/manual-stage-retry/quote');
+    expect(r.request.method).toBe('GET');expect(r.request.body).toBeNull();
+    r.flush({failedBatchId:previousId,newBatchId:retryId,
+      videoSha256:sha,sparkSceneKey:scene,sceneRunId:runId,planSha256:plan,
+      frames:120,estimatedSamUsd:.024,targetCoreFrames:53,
+      alreadyRequested:false,previousMayHaveBeenBilled:true});
+    await tick();x.f.detectChanges();
+    expect(x.c.stageRetryQuote()?.newBatchId).toBe(retryId);
+    expect(x.c.canProcess()).toBeFalse();
+    expect(x.c.canStageRetry()).toBeTrue();
+    expect(x.c.displayedCost()).toBeCloseTo(.024,8);
+    expect(x.host.textContent).toContain('Retomar desde la etapa SAM');
+    expect(x.host.textContent).toContain('US$ 0.03');
+    x.h.expectNone(req=>req.method==='POST');x.f.destroy();
+  });
   it('quotes one fresh complete-video request without consulting reusable evidence',async()=>{
     const x=setup(true);await checkFresh(x);expect(x.c.cachedResultAvailable()).toBeFalse();expect(x.c.canProcess()).toBeTrue();
     expect(x.c.displayedCost()).toBeCloseTo(.274);
