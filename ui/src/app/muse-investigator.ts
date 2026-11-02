@@ -16,11 +16,46 @@ export interface FrozenMusePrediction {
   studyId:string;observationId:string;responseId:string;frozenAtUtc:string;payloadJson:string;sha256:string;
 }
 interface MuseState {
-  observation:null|{id:string;analysisId:string;videoSha256?:string;payloadJson:string;payloadSha256:string};
+  observation:null|{id:string;studyId?:string;analysisId:string;videoSha256?:string;payloadJson:string;payloadSha256:string};
   evaluation:null|{model:string;responseId:string;observationId?:string;studyId?:string;rawResponseSha256:string;tokenCostEstimateUsd:number;
     answer:{decision:string;justification:Bilingual;limitations:Bilingual;protocol:Bilingual;
       hypothesis:Bilingual;falsification:Bilingual;phenomenon?:MusePhenomenon|null;nextLengthMeters:number|null;periodSeconds:number|null;tolerancePercent:number|null}};
   prediction:FrozenMusePrediction|null;attemptStatus:string|null;manualCallsPermitted:boolean;maximumEstimatedCostUsd:number;
+}
+type MuseJsonObject=Record<string,unknown>;
+function museObject(value:unknown):MuseJsonObject|null {
+  return value!==null && typeof value==='object' && !Array.isArray(value)
+    ? value as MuseJsonObject : null;
+}
+function museText(value:unknown):value is string {
+  return typeof value==='string' && value.trim().length>0;
+}
+function museObservationMatchesSource(observation:MuseState['observation'],source:SamPeriodSource):boolean {
+  if(!observation || source.role!=='baseline' || source.providerModel!=='sam-3.1' ||
+    ![source.studyId,source.originalVideoSha256,source.analysisId,source.providerResponseSha256,
+      source.objectId,source.pivotProvenance,observation.id,observation.payloadSha256].every(museText) ||
+    (source.pivotRevisionId!==null && !museText(source.pivotRevisionId)) ||
+    (source.adaptiveBatchId!=null && !museText(source.adaptiveBatchId)) ||
+    observation.studyId!==source.studyId || observation.videoSha256!==source.originalVideoSha256 ||
+    observation.analysisId!==source.analysisId)return false;
+  try {
+    const payload=museObject(JSON.parse(observation.payloadJson));
+    const identity=museObject(payload?.['identity']);
+    const measurement=museObject(payload?.['measurement']);
+    const measuredSource=museObject(measurement?.['source']);
+    if(!identity || !measuredSource)return false;
+    return identity['studyId']===source.studyId && identity['videoSha256']===source.originalVideoSha256 &&
+      identity['analysisId']===source.analysisId && identity['responseSha256']===source.providerResponseSha256 &&
+      identity['pivotRevisionId']===source.pivotRevisionId &&
+      (identity['adaptiveBatchId']??null)===(source.adaptiveBatchId??null) &&
+      measuredSource['studyId']===source.studyId && measuredSource['role']==='baseline' &&
+      measuredSource['originalVideoSha256']===source.originalVideoSha256 &&
+      measuredSource['analysisId']===source.analysisId &&
+      measuredSource['providerResponseSha256']===source.providerResponseSha256 &&
+      measuredSource['providerModel']===source.providerModel && measuredSource['objectId']===source.objectId &&
+      measuredSource['pivotRevisionId']===source.pivotRevisionId &&
+      measuredSource['pivotProvenance']===source.pivotProvenance;
+  } catch {return false;}
 }
 @Component({
   selector:'app-muse-investigator',standalone:true,imports:[LabActivity],
@@ -29,6 +64,9 @@ interface MuseState {
 export class MuseInvestigator implements OnChanges,OnDestroy {
   readonly source=input.required<SamPeriodSource>();
   readonly language=input<'es'|'en'>('es');
+  readonly view=input<'research'|'interpretation'>('research');
+  readonly interpretationOpened=signal(false);
+  private interpretationContext='';
   readonly frozen=output<FrozenMusePrediction|null>();
   readonly connection=inject(LabConnection);
   private readonly http=inject(HttpClient);
@@ -110,17 +148,39 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     finally{this.downloading.set(false);}
   }
   readonly headers=new HttpHeaders({'X-ProofLab-Manual-Action':'muse-research'});
-  private readonly subscription=this.connection.changed.subscribe(()=>void this.load());
+  private readonly subscription=this.connection.changed.subscribe(()=>{
+    this.resetInterpretationContext();
+    if(!this.interpretationView())void this.load();
+  });
   get es():boolean{return this.language()==='es';}
   text(value:Bilingual):string{return this.es?value.es:value.en;}
   url():string{return apiOrigin(this.connection.port())+'/api/science/director/pendulum/sessions/'+this.source().studyId+'/muse';}
-  ngOnChanges():void{void this.load();}
+  interpretationView():boolean{return this.view()==='interpretation';}
+  private resetInterpretationContext():void {
+    const key=JSON.stringify([this.connection.port(),this.source()]);
+    if(key===this.interpretationContext)return;
+    this.interpretationContext=key;this.serial++;
+    this.interpretationOpened.set(false);
+    this.state.set(null);this.contrast.set(null);this.followupLength.set(null);
+    this.busy.set(null);this.error.set('');this.downloadError.set(false);
+  }
+  ngOnChanges():void {
+    this.resetInterpretationContext();
+    if(!this.interpretationView())void this.load();
+  }
+  async openInterpretation():Promise<void> {
+    if(!this.interpretationView() || this.busy() || this.connection.busy())return;
+    this.resetInterpretationContext();this.interpretationOpened.set(true);
+    await this.load();
+  }
   ngOnDestroy():void{this.serial++;this.subscription.unsubscribe();}
   private accept(state:MuseState):void {
-    this.state.set(state);this.frozen.emit(state.prediction);
+    this.state.set(state);
+    // The interpretation view never unlocks prediction or bypasses the tracking review.
+    if(!this.interpretationView())this.frozen.emit(state.prediction);
   }
   async load():Promise<void>{
-    if(this.busy()==='evaluating')return;
+    if(this.busy()==='evaluating' || (this.interpretationView() && !this.interpretationOpened()))return;
     const serial=++this.serial,url=this.url(),followup=this.isFollowup;this.busy.set('loading');this.error.set('');this.state.set(null);this.contrast.set(null);this.followupLength.set(null);
     try {
       const state=await firstValueFrom(this.http.get<MuseState>(url));
@@ -133,7 +193,8 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     finally {if(serial===this.serial)this.busy.set(null);}
   }
   async prepare():Promise<void>{
-    if(this.busy()||this.connection.busy()||this.state()?.prediction)return;
+    if(this.busy()||this.connection.busy()||this.state()?.prediction ||
+       (this.interpretationView() && !this.interpretationOpened()))return;
     const serial=++this.serial,source=this.source();
     this.busy.set('preparing');this.error.set('');
     try {
@@ -149,6 +210,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   canEvaluate():boolean {
     const s=this.state();
     return !this.busy()&&!this.connection.busy()&&!!s?.observation&&!s.evaluation&&!s.attemptStatus&&
+      (!this.interpretationView() || (this.interpretationOpened() && this.interpretationObservationMatchesSource()))&&
       s.observation.analysisId===this.source().analysisId&&s.manualCallsPermitted&&this.connection.hasToken();
   }
   async evaluate():Promise<void> {
@@ -164,8 +226,11 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
       if(serial===this.serial)this.accept(state);
     }catch {
       if(serial===this.serial) {
-        try{this.accept(await firstValueFrom(this.http.get<MuseState>(url)));}catch{}
-        this.error.set(this.es?'No se completó la evaluación. Revisa el intento guardado; no se reintentó automáticamente.':
+        try {
+          const recovered=await firstValueFrom(this.http.get<MuseState>(url));
+          if(serial===this.serial)this.accept(recovered);
+        } catch {}
+        if(serial===this.serial)this.error.set(this.es?'No se completó la evaluación. Revisa el intento guardado; no se reintentó automáticamente.':
           'Evaluation did not complete. Inspect the saved attempt; it was not automatically retried.');
       }
     }finally{this.connection.busy.set(false);if(serial===this.serial)this.busy.set(null);}
@@ -174,6 +239,16 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     const p=this.state()?.prediction;
     if(!p)return null;
     try{return JSON.parse(p.payloadJson).prediction;}catch{return null;}
+  }
+  interpretationObservationMatchesSource():boolean {
+    return museObservationMatchesSource(this.state()?.observation??null,this.source());
+  }
+  interpretationMatchesSource():boolean {
+    const state=this.state(),observation=state?.observation,evaluation=state?.evaluation;
+    return this.interpretationObservationMatchesSource() && !!observation && !!evaluation &&
+      evaluation.observationId===observation.id && evaluation.studyId===this.source().studyId &&
+      evaluation.model==='muse-spark-1.3' && museText(evaluation.responseId) &&
+      museText(evaluation.rawResponseSha256);
   }
   evaluationMatchesSource():boolean {
     const s=this.state(),o=s?.observation,e=s?.evaluation,source=this.source();

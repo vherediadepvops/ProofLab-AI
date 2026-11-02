@@ -1,4 +1,11 @@
 :host{display:block;margin-top:16px;color:#edf3fb}
+:host([period-interpretation]){margin:16px 0}
+.muse-card.interpretation-card{padding:16px}
+.open-interpretation{margin-top:12px;max-width:100%}
+.evidence-input ul{margin:10px 0;padding-left:18px;color:#bacbe2;font-size:11px;line-height:1.65}
+.evidence-input li+li{margin-top:6px}
+.interpretation-card .decision{gap:8px}
+.interpretation-provenance code{font-size:9px}
 .muse-card{background:#191f35;border:1px solid #4a466d;border-radius:12px;padding:20px}
 header,.decision,.actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .eyebrow{font-size:12px;font-weight:650;letter-spacing:.02em;color:#c8baff}

@@ -1,16 +1,88 @@
-<section class="muse-card">
+<section class="muse-card" [class.interpretation-card]="interpretationView()">
   <header><div><span class="eyebrow">Muse Spark</span>
-    <h3>{{isFollowup?(es?'Contraste de la predicción':'Prediction comparison'):(es?'Interpretación y próxima prueba':'Interpretation and next experiment')}}</h3></div>
-    @if(state()?.prediction){<span class="lock">🔒 {{es?'Predicción congelada':'Prediction frozen'}}</span>}
+    <h3>{{interpretationView()?(es?'Interpretación de la evidencia':'Evidence interpretation'):isFollowup?(es?'Contraste de la predicción':'Prediction comparison'):(es?'Interpretación y próxima prueba':'Interpretation and next experiment')}}</h3></div>
+    @if(!interpretationView() && state()?.prediction){<span class="lock">🔒 {{es?'Predicción congelada':'Prediction frozen'}}</span>}
   </header>
-  <p class="intro">{{es?'Muse Spark interpreta las mediciones de SAM, la geometría y la incertidumbre para clasificar el movimiento y decidir si conviene otra prueba.':
-    'Muse Spark interprets SAM measurements, geometry and uncertainty to classify the motion and decide whether another experiment is appropriate.'}}</p>
+  @if(interpretationView()) {
+    <p class="intro">{{es?'Muse Spark interpreta las mediciones de SAM y puede preparar una propuesta que revisarás en Predecir.':
+      'Muse Spark interprets SAM measurements and may prepare a proposal for review in Predict.'}}</p>
+    @if(!interpretationOpened()) {
+      <p class="fine">{{es?'Abre la interpretación para consultar una respuesta guardada o preparar una consulta. Un envío nuevo se autoriza aparte, con su costo visible.':
+        'Open the interpretation to view a saved response or prepare a consultation. A new request is authorized separately with its cost shown.'}}</p>
+      <button class="open-interpretation" type="button" (click)="openInterpretation()" [disabled]="!!busy()||connection.busy()">
+        {{es?'Ver interpretación de Muse Spark':'View Muse Spark interpretation'}}
+      </button>
+    }
+  } @else {
+    <p class="intro">{{es?'Muse Spark interpreta las mediciones de SAM, la geometría y la incertidumbre para clasificar el movimiento y decidir si conviene otra prueba.':
+      'Muse Spark interprets SAM measurements, geometry and uncertainty to classify the motion and decide whether another experiment is appropriate.'}}</p>
+  }
   @if(busy(); as phase) {
     <app-lab-activity [label]="phase==='evaluating'?(es?'Muse está evaluando la evidencia…':'Muse is evaluating the evidence…'):
       phase==='preparing'?(es?'Verificando mediciones guardadas…':'Verifying saved measurements…'):(es?'Cargando bitácora…':'Loading lab log…')"
       [detail]="phase==='evaluating'?(es?'Una inferencia, sin reintentos automáticos.':'One inference, no automatic retries.'):
         (es?'Proceso local; no consume créditos de Meta.':'Local operation; no Meta credits used.')"/>
   }
+  @if(interpretationView()) {
+    @if(state(); as s) {
+      @if(s.evaluation; as evaluation) {
+        @if(interpretationMatchesSource()) {
+          <div class="decision"><strong>{{phenomenonDecision() || (es?'Respuesta registrada de Muse Spark':'Recorded Muse Spark response')}}</strong><span>{{evaluation.model}}</span></div>
+          @if(phenomenon(); as phenomenon) {
+            <p class="interpretation-justification">{{text(phenomenon.justification)}}</p>
+          } @else {
+            <p class="fine">{{es?'La respuesta registrada no incluye una clasificación del fenómeno. No se deduce de la propuesta de experimento.':
+              'The recorded response does not include a phenomenon classification. It is not inferred from the experiment proposal.'}}</p>
+          }
+          <p class="interpretation-answer">{{text(evaluation.answer.justification)}}</p>
+          <p class="limitations"><strong>{{es?'Límites de la interpretación:':'Interpretation limits:'}}</strong> {{text(evaluation.answer.limitations)}}</p>
+          <details class="interpretation-provenance"><summary>{{es?'Procedencia y costo':'Provenance and cost'}}</summary>
+            <p class="fine">{{es?'Respuesta real registrada':'Recorded provider response'}}: {{evaluation.responseId}}</p>
+            <p class="fine">{{es?'Costo por tokens estimado, no factura':'Estimated token cost, not an invoice'}}: US$ {{evaluation.tokenCostEstimateUsd.toFixed(4)}}</p>
+            <p class="fine">{{es?'Integridad de la respuesta':'Response integrity'}}</p><code>{{evaluation.rawResponseSha256}}</code>
+            @if(s.observation; as observation){<p class="fine">{{es?'Evidencia preparada':'Prepared evidence'}}: {{observation.id}}</p><code>{{observation.payloadSha256}}</code>}
+          </details>
+        } @else {
+          <p class="warning interpretation-mismatch" role="status">{{es?'No se pudo vincular esta respuesta con el video, análisis y geometría actuales. Su texto no se muestra como interpretación de esta evidencia.':
+            'This response could not be linked to the current video, analysis and geometry. Its text is not shown as an interpretation of this evidence.'}}</p>
+        }
+      } @else {
+        <p class="fine">{{es?'La interpretación está pendiente de una respuesta registrada de Muse Spark.':
+          'Interpretation is awaiting a recorded response from Muse Spark.'}}</p>
+        <div class="actions">
+          <button type="button" (click)="prepare()" [disabled]="!!busy()||connection.busy()">
+            {{s.observation?(es?'Actualizar evidencia':'Refresh evidence'):(es?'Preparar evidencia':'Prepare evidence')}}
+          </button>
+          @if(s.observation) {
+            <button class="primary" type="button" (click)="evaluate()" [disabled]="!canEvaluate()">
+              {{es?'Consultar Muse · máx. US$ 0,05':'Ask Muse · max. US$ 0.05'}}
+            </button>
+          }
+        </div>
+        @if(s.observation) {
+          <p class="fine">{{es?'Se enviarán mediciones y limitaciones, sin volver a subir el video. Al consultar confirmas ese envío y el costo máximo estimado. La propuesta se revisa en Predecir, después de confirmar el seguimiento.':
+            'Measurements and limitations will be sent without uploading the video again. Asking Muse confirms this transfer and estimated cost ceiling. Review the proposal in Predict after confirming the tracking.'}}</p>
+          @if(!interpretationObservationMatchesSource()){<p class="warning">{{es?'La evidencia preparada no coincide con este análisis. Actualízala antes de consultar.':'Prepared evidence does not match this analysis. Refresh it before asking Muse.'}}</p>}
+          @if(!connection.hasToken()){<button class="link" type="button" (click)="connection.openSettings()">{{es?'Configurar token':'Configure token'}}</button>}
+          @if(!s.manualCallsPermitted){<p class="warning">{{es?'El servidor no tiene cupo de envío disponible.':'The server has no available request allowance.'}}</p>}
+          @if(s.attemptStatus){<p class="warning">{{es?'Existe un intento registrado que requiere revisión. No se harán reintentos automáticos.':
+            'A recorded attempt requires review. There will be no automatic retries.'}}</p>}
+        }
+      }
+    }
+    <details class="evidence-input"><summary>{{es?'Ver qué recibe Muse Spark':'What Muse Spark receives'}}</summary>
+      <ul>
+        <li>{{es?'Período, ciclos, cobertura, huecos y límites calculados a partir de SAM y los tiempos originales.':
+          'Period, cycles, coverage, gaps and limits calculated from SAM and original timestamps.'}}</li>
+        <li>{{es?'Diagnósticos geométricos y una muestra de centros detectados con sus índices de fotograma y tiempos originales (PTS).':
+          'Geometry diagnostics and a sample of detected centroids with their frame indices and original timestamps (PTS).'}}</li>
+        <li>{{es?'Longitud y ángulo declarados, suspensión, estado de la revisión y opciones calculadas para una próxima prueba.':
+          'Declared length and angle, suspension, review status and calculated options for a next experiment.'}}</li>
+      </ul>
+      <p class="fine">{{es?'Recibe un resumen de la evidencia; el video no se vuelve a enviar. Los datos ausentes y las limitaciones se conservan en la consulta.':
+        'It receives an evidence summary; the video is not sent again. Missing data and limitations remain part of the consultation.'}}</p>
+    </details>
+  } @else {
   @if(state(); as s) {
     @if(isFollowup) {
       @if(prediction(); as p){<p>🔒 {{es?'Predicción guardada':'Stored prediction'}}: {{p.periodSeconds.toFixed(3)}} s · ±{{p.tolerancePercent}} % · {{(p.nextLengthMeters*100).toFixed(0)}} cm</p>}
@@ -111,6 +183,7 @@
     <p class="fine">{{es?'Incertidumbre total y p-valor global: no disponibles. Faltan errores de longitud, seguimiento, suspensión, cámara y reloj. No se declara la hipótesis aceptada al 95 %. El criterio congelado conserva su tolerancia práctica original.':'Total uncertainty and global p-value: unavailable. Length, tracking, suspension, camera and clock errors remain unquantified. The hypothesis is not declared 95% accepted. The frozen criterion retains its original practical tolerance.'}}</p>
     <p class="fine">{{es?'95 % corresponde a α = 0,05 (5 %) en un contraste bilateral compatible. No es la probabilidad de que la hipótesis sea verdadera. No se ha realizado un contraste global con ese nivel.':'95% corresponds to α = 0.05 (5%) for a matching two-sided test. This is not the probability that the hypothesis is true. No global test at this level has been performed.'}}</p>
     </details>
+  }
   }
   @if(downloadError()){<p class="warning" role="alert">{{es?'No se pudo descargar el archivo. Tus resultados siguen guardados.':'Could not download the file. Your results remain saved.'}}</p>}
   @if(error()){<p class="warning" role="alert">{{error()}}</p>

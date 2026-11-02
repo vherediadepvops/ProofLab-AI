@@ -48,7 +48,7 @@ export class PendulumZoneOne extends PendulumDirector {
   readonly flowSteps=[
     {id:1 as const,es:'Preparar',en:'Prepare',subEs:'Tu experimento',subEn:'Your experiment'},
     {id:2 as const,es:'Analizar',en:'Analyze',subEs:'Muse Spark + SAM',subEn:'Muse Spark + SAM'},
-    {id:3 as const,es:'Entender',en:'Understand',subEs:'Mediciones y evidencia',subEn:'Measurements and evidence'},
+    {id:3 as const,es:'Entender',en:'Understand',subEs:'Muse Spark interpreta',subEn:'Muse Spark interprets'},
     {id:4 as const,es:'Predecir',en:'Predict',subEs:'Muse Spark propone',subEn:'Muse Spark proposes'},
     {id:5 as const,es:'Comprobar',en:'Compare',subEs:'Comparar resultados',subEn:'Compare results'}
   ];
@@ -291,7 +291,7 @@ export class PendulumZoneOne extends PendulumDirector {
           this.applyRestoredSession(snapshot.session);this.musePrediction.set(snapshot.session.musePrediction??null);
           this.sourceChoice.set('upload');this.choosingUpload.set(false);this.previewState.set(snapshot.session.baseline?'deferred':'empty');
           this.activeTrial.set(snapshot.session.followup?'followup':'baseline');
-          this.flowStep.set(snapshot.session.followup||snapshot.session.musePrediction?4:snapshot.session.baseline && snapshot.session.preparationPending!==true?2:1);
+          this.flowStep.set(snapshot.session.followup || (snapshot.session.musePrediction && snapshot.session.humanReview)?4:snapshot.session.baseline && snapshot.session.preparationPending!==true?2:1);
         } else {
           this.session.set(snapshot.session);this.musePrediction.set(snapshot.session.musePrediction??null);
         }
@@ -303,7 +303,7 @@ export class PendulumZoneOne extends PendulumDirector {
             this.roleSelections[result.videoRole]={...result,port};
         }
         const selected=this.roleSelections[this.activeTrial()];
-        if(first && selected)this.recoveredDestination=this.activeTrial()==='followup'?(snapshot.session.musePrediction?5:4):snapshot.session.musePrediction?4:3;
+        if(first && selected)this.recoveredDestination=this.activeTrial()==='followup'?(snapshot.session.musePrediction?5:4):(snapshot.session.musePrediction && snapshot.session.humanReview)?4:3;
         if(selected && selected.analysisId!==this.samSelection()?.analysisId){this.acceptProcessed(selected);this.resultState.set('loading');}
         const recent=snapshot.operations.some(o=>o.finishedAtUtc && Date.now()-Date.parse(o.finishedAtUtc)<6000);
         if(running.length || recent){
@@ -385,7 +385,9 @@ export class PendulumZoneOne extends PendulumDirector {
     if(!prediction || prediction.studyId===this.session()?.id)this.musePrediction.set(prediction);
   }
   frozenForStudy():FrozenMusePrediction|null {
-    const p=this.musePrediction();return p?.studyId===this.session()?.id?p:null;
+    const p=this.musePrediction(),s=this.session();
+    // A stored proposal does not replace the first-video tracking review.
+    return p?.studyId===s?.id && (!!s?.humanReview || !!s?.followup)?p:null;
   }
   nextResearchLength():number|null {
     const p=this.frozenForStudy();if(!p)return null;

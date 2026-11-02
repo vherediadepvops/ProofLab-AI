@@ -20,10 +20,57 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     http.match(theoryUrl).forEach(r=>r.flush(theory(true)));
     expect(zone.session()?.id).toBe(id);expect(zone.activeTrial()).toBe('followup');
     expect(zone.processedAnalysis('followup')).toBe('f'.repeat(32));expect(zone.frozenForStudy()?.sha256).toBe('c'.repeat(64));
-    zone.onProcessingFinished(true);zone.selectTrial('baseline');
+    zone.onProcessingFinished(true);
+    expect(zone.flowStep()).toBe(5);expect(zone.canVisitStep(4)).toBeTrue();
+    zone.selectTrial('baseline');
     expect(zone.processedAnalysis('baseline')).toBe('e'.repeat(32));
     expect(localStorage.getItem('prooflab-director-current')).toBe(id);http.expectNone(r=>r.method==='POST');http.verify();fixture.destroy();
   });
+  it('recovers a prediction made in Understand without treating it as human review',async()=>{
+    const {component,http,fixture}=await init(false,false);
+    const prediction={studyId:session.id,observationId:'saved-observation',responseId:'saved-muse-response',
+      frozenAtUtc:'2026-10-30T00:00:00Z',sha256:'c'.repeat(64),
+      payloadJson:'{"prediction":{"periodSeconds":1.79,"nextLengthMeters":0.8,"tolerancePercent":5}}'};
+    const restored={...session,baseline:{...video,localEvidenceStatus:'READY' as const},
+      preparationPending:false,step:'AWAITING_HUMAN_BOB_REVIEW',humanReview:null,
+      musePrediction:prediction};
+    const pending=component.resumeResearch(session.id);
+    const recovery=http.expectOne(studyUrl+'/'+session.id+'/recovery');
+    expect(recovery.request.method).toBe('GET');
+    recovery.flush({session:restored,operations:[],unavailable:[],selections:[{
+      studyId:session.id,videoRole:'baseline',sourceSha256:video.sha256,
+      analysisId:'e'.repeat(32),adaptiveBatchId:'e'.repeat(32)}]});
+    await pending;http.expectOne(theoryUrl).flush(theory());
+    expect(component.flowStep()).not.toBe(4);
+    expect(component.musePrediction()).toEqual(prediction);
+    expect(component.session()?.humanReview).toBeNull();
+    component.onProcessingFinished(true);
+    expect(component.flowStep()).toBe(3);
+    expect(component.hasVerifiedResult('baseline')).toBeTrue();
+    expect(component.frozenForStudy()).toBeNull();
+    expect(component.canVisitStep(4)).toBeFalse();
+    component.setJourneyStep(4);expect(component.flowStep()).toBe(3);
+    const input=document.createElement('input');input.type='file';
+    Object.defineProperty(input,'files',{value:[new File(['source'],'second.mp4',{type:'video/mp4'})]});
+    await component.uploadFocused({target:input} as unknown as Event,'followup');
+    expect(component.session()?.followup).toBeNull();
+    component.checkedVideo.set(true);
+    await component.continueToPrediction();
+    expect(component.flowStep()).toBe(3);
+    http.expectNone(r=>r.method==='POST');
+    component.onPreviewState('ready');
+    const advancing=component.continueToPrediction();
+    const review=http.expectOne(studyUrl+'/'+session.id+'/review-baseline');
+    expect(review.request.method).toBe('POST');
+    review.flush({...restored,humanReview:{bobConfirmed:true,reviewedAtUtc:'2026-10-30T00:01:00Z'}});
+    await advancing;
+    expect(component.flowStep()).toBe(4);expect(component.canVisitStep(4)).toBeTrue();
+    expect(component.frozenForStudy()).toEqual(prediction);
+    expect(component.frozenForStudy()?.payloadJson).toBe(prediction.payloadJson);
+    http.expectNone(r=>r.method==='POST'||r.url.includes('/muse'));
+    await verifyHttp(http);fixture.destroy();
+  });
+
   it('keeps a recovered in-flight operation pending without submitting another request',async()=>{
     const fixture=TestBed.createComponent(PendulumZoneOne),zone=fixture.componentInstance;
     const http=TestBed.inject(HttpTestingController),id='d'.repeat(32);

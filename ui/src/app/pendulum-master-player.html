@@ -301,7 +301,11 @@
   </div>
   <aside class="player-evidence" [hidden]="guided() && !analysisVisible()">
   @if(periodMeasurement(); as measurement) {
-    <app-sam-period-panel [measurement]="measurement" [source]="periodSource()" [language]="language()"/>
+    <app-sam-period-panel [measurement]="measurement" [source]="periodSource()" [language]="language()">
+      @if(presentation()==='understand' ? periodSource() : null; as researchSource) {
+        <app-muse-investigator period-interpretation [source]="researchSource" [language]="language()" [view]="'interpretation'"/>
+      }
+    </app-sam-period-panel>
   }
   @if(!guided() || presentation()==='predict' || presentation()==='compare') {
     @if(periodSource(); as researchSource) {

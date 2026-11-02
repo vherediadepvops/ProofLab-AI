@@ -209,3 +209,214 @@ describe('Muse complete second-video workflow',()=>{
     await run;expect(f.componentInstance.canContrast()).toBeFalse();expect(TestBed.inject(LabConnection).busy()).toBeFalse();f.destroy();
   });
 });
+
+describe('Muse interpretation in Understand',()=>{
+  const source:SamPeriodSource={studyId:'d'.repeat(32),role:'baseline',originalVideoSha256:'a'.repeat(64),
+    analysisId:'e'.repeat(32),adaptiveBatchId:'e'.repeat(32),providerResponseSha256:'f'.repeat(64),
+    providerModel:'sam-3.1',objectId:'1',pivotRevisionId:'reviewed-pivot',pivotProvenance:'HUMAN_IMAGE'};
+  const base='http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+source.studyId+'/muse';
+  const empty={observation:null,evaluation:null,prediction:null,attemptStatus:null,
+    manualCallsPermitted:true,maximumEstimatedCostUsd:.05};
+  const words={
+    justification:{es:'La evidencia registrada permite interpretar el movimiento.',en:'The recorded evidence supports interpreting the motion.'},
+    limitations:{es:'La incertidumbre total no está evaluada.',en:'Total uncertainty has not been assessed.'},
+    phenomenon:{es:'La trayectoria medida conserva oscilaciones alrededor de la suspensión.',en:'The measured path preserves oscillations around the suspension.'},
+    future:{es:'PROPUESTA_FUTURA_SOLO_PREDECIR',en:'FUTURE_PROPOSAL_PREDICT_ONLY'}
+  };
+  function prepared(selected:SamPeriodSource=source){
+    const identity={protocol:'MUSE_SAM_INVESTIGATOR_V3',studyId:selected.studyId,
+      videoSha256:selected.originalVideoSha256,analysisId:selected.analysisId,
+      responseSha256:selected.providerResponseSha256,pivotRevisionId:selected.pivotRevisionId??null,
+      adaptiveBatchId:selected.adaptiveBatchId??null};
+    return {...empty,observation:{id:'b'.repeat(64),studyId:selected.studyId,
+      analysisId:selected.analysisId,videoSha256:selected.originalVideoSha256,
+      payloadSha256:'c'.repeat(64),payloadJson:JSON.stringify({identity,baselineLengthMeters:.5,
+        measurement:{source:{...selected},assessment:{status:'CANDIDATE',periodSeconds:1.4,
+          statisticalStandardUncertaintySeconds:.001,usedCycles:10}}})}};
+  }
+  function saved(selected:SamPeriodSource=source){
+    const state=prepared(selected),responseId='synthetic-recorded-muse-receipt';
+    return {...state,evaluation:{studyId:selected.studyId,observationId:state.observation.id,
+      model:'muse-spark-1.3',responseId,rawResponseSha256:'6'.repeat(64),tokenCostEstimateUsd:.001,
+      answer:{decision:'PROPOSE_EXPERIMENT',justification:words.justification,limitations:words.limitations,
+        hypothesis:words.future,protocol:words.future,falsification:words.future,
+        nextLengthMeters:.8,periodSeconds:1.4*Math.sqrt(1.6),tolerancePercent:5,
+        phenomenon:{classification:'PENDULUM_COMPATIBLE',justification:words.phenomenon}}},
+      prediction:{studyId:selected.studyId,observationId:state.observation.id,responseId,
+        frozenAtUtc:'2026-10-30T00:00:00Z',sha256:'7'.repeat(64),
+        payloadJson:JSON.stringify({prediction:{nextLengthMeters:.8,periodSeconds:1.4*Math.sqrt(1.6),tolerancePercent:5}})}};
+  }
+  function mutatePayload(state:{observation:{payloadJson:string}},change:(payload:any)=>void):void {
+    const payload=JSON.parse(state.observation.payloadJson);change(payload);
+    state.observation.payloadJson=JSON.stringify(payload);
+  }
+  let http:HttpTestingController;
+  beforeEach(async()=>{
+    await TestBed.configureTestingModule({imports:[MuseInvestigator],
+      providers:[provideHttpClient(),provideHttpClientTesting()]}).compileComponents();
+    http=TestBed.inject(HttpTestingController);
+  });
+  afterEach(()=>http.verify());
+  function init(selected:SamPeriodSource=source){
+    const fixture=TestBed.createComponent(MuseInvestigator);
+    fixture.componentRef.setInput('source',selected);fixture.componentRef.setInput('view','interpretation');
+    fixture.detectChanges();http.expectNone(r=>r.url.includes('/muse'));
+    return fixture;
+  }
+  async function open(fixture:ReturnType<typeof init>,state:object=empty){
+    void fixture.componentInstance.openInterpretation();
+    const request=http.expectOne(base);expect(request.request.method).toBe('GET');request.flush(state);
+    await fixture.whenStable();fixture.detectChanges();
+  }
+  function token(){
+    const connection=TestBed.inject(LabConnection),field=document.createElement('input');
+    field.type='password';field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';
+    connection.register(field);connection.confirmToken();return connection;
+  }
+  it('keeps SQLite untouched until the interpretation is explicitly opened',async()=>{
+    const fixture=init(),connection=TestBed.inject(LabConnection);
+    fixture.componentRef.setInput('language','en');fixture.detectChanges();
+    connection.changed.next();fixture.detectChanges();
+    http.expectNone(r=>r.url.includes('/muse'));
+    const button=Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .find(b=>b.textContent?.includes('View Muse Spark interpretation'));
+    expect(button).toBeDefined();button!.click();
+    const request=http.expectOne(base);expect(request.request.method).toBe('GET');
+    request.flush(empty);await fixture.whenStable();fixture.detectChanges();
+    expect(fixture.componentInstance.canEvaluate()).toBeFalse();
+    http.expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+  it('shows the recorded answer, limits and inputs in ES and EN without future-trial cards or another read',async()=>{
+    const fixture=init(),state=saved(),received:unknown[]=[];
+    fixture.componentInstance.frozen.subscribe(value=>received.push(value));
+    await open(fixture,state);
+    const root=fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('Interpretación de la evidencia');
+    expect(root.textContent).toContain(words.phenomenon.es);
+    expect(root.textContent).toContain(words.justification.es);
+    expect(root.textContent).toContain(words.limitations.es);
+    expect(root.textContent).toContain(state.evaluation.responseId);
+    expect(root.textContent).not.toContain(words.future.es);
+    expect(root.querySelector('.prediction')).toBeNull();
+    expect(root.querySelector('.statistics-scope')).toBeNull();
+    const details=root.querySelector('details.evidence-input') as HTMLDetailsElement;
+    expect(details).not.toBeNull();details.open=true;details.dispatchEvent(new Event('toggle'));
+    fixture.componentRef.setInput('language','en');fixture.detectChanges();
+    expect(root.textContent).toContain('Evidence interpretation');
+    expect(root.textContent).toContain(words.justification.en);
+    expect(root.textContent).toContain(words.limitations.en);
+    expect(root.textContent).not.toContain(words.future.en);
+    expect(fixture.componentInstance.state()?.prediction?.payloadJson).toBe(state.prediction.payloadJson);
+    expect(received).toEqual([]);
+    http.expectNone(r=>r.url.includes('/muse'));fixture.destroy();
+  });
+  it('prepares and evaluates only manually, withholding frozen output until the research view recovers it',async()=>{
+    token();const fixture=init(),component=fixture.componentInstance,received:unknown[]=[];
+    component.frozen.subscribe(value=>received.push(value));await open(fixture);
+    const preparing=component.prepare(),prepare=http.expectOne(base+'/prepare');
+    expect(prepare.request.method).toBe('POST');
+    expect(prepare.request.body).toEqual({videoSha256:source.originalVideoSha256,analysisId:source.analysisId,
+      pivotRevisionId:source.pivotRevisionId,adaptiveBatchId:source.adaptiveBatchId});
+    expect(prepare.request.headers.get('X-ProofLab-Manual-Action')).toBe('muse-research');
+    prepare.flush(prepared());await preparing;fixture.detectChanges();
+    expect(component.canEvaluate()).toBeTrue();
+    const evaluating=component.evaluate();void component.evaluate();
+    const evaluate=http.expectOne(base+'/evaluate');
+    expect(evaluate.request.body.observationId).toBe(prepared().observation.id);
+    expect(evaluate.request.body.confirmPaidCall).toBeTrue();
+    expect(evaluate.request.body.confirmMeasuredDataTransfer).toBeTrue();
+    expect(evaluate.request.body.maximumEstimatedCostUsd).toBe(.05);
+    const state=saved();evaluate.flush(state);await evaluating;fixture.detectChanges();
+    expect(component.view()).toBe('interpretation');expect(received).toEqual([]);
+    expect(component.state()?.prediction?.sha256).toBe(state.prediction.sha256);
+    expect(component.canEvaluate()).toBeFalse();
+    fixture.componentRef.setInput('view','research');fixture.detectChanges();
+    const recover=http.expectOne(base);expect(recover.request.method).toBe('GET');
+    recover.flush(state);await fixture.whenStable();fixture.detectChanges();
+    expect(received).toEqual([state.prediction]);
+    http.expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+  it('keeps a failed history read local and retries only after another explicit action',async()=>{
+    const fixture=init();void fixture.componentInstance.openInterpretation();
+    http.expectOne(base).flush({}, {status:503,statusText:'Unavailable'});
+    await fixture.whenStable();fixture.detectChanges();
+    expect(fixture.componentInstance.error()).toBeTruthy();
+    expect(fixture.componentInstance.state()).toBeNull();
+    http.expectNone(r=>r.url.includes('/muse'));
+    const pending=fixture.componentInstance.load();
+    const retry=http.expectOne(base);expect(retry.request.method).toBe('GET');
+    retry.flush(saved());await pending;fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain(words.justification.es);
+    http.expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+  it('discards a late history response and requires a new click after selecting another SAM result',async()=>{
+    const fixture=init();void fixture.componentInstance.openInterpretation();
+    const old=http.expectOne(base),next={...source,analysisId:'9'.repeat(32),adaptiveBatchId:'9'.repeat(32),
+      providerResponseSha256:'8'.repeat(64)};
+    fixture.componentRef.setInput('source',next);fixture.detectChanges();
+    http.expectNone(r=>r.url.includes('/muse'));
+    old.flush(saved());await fixture.whenStable();fixture.detectChanges();
+    expect(fixture.componentInstance.state()).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain(words.justification.es);
+    await open(fixture,saved(next));
+    expect(fixture.nativeElement.textContent).toContain(words.justification.es);
+    http.expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+  it('does not attribute an answer whose stored source or receipt differs from the selected evidence',async()=>{
+    const cases:{name:string;change:(state:ReturnType<typeof saved>)=>void}[]=[
+      {name:'video SHA',change:s=>{s.observation.videoSha256='9'.repeat(64);}},
+      {name:'analysis',change:s=>mutatePayload(s,p=>p.identity.analysisId='9'.repeat(32))},
+      {name:'provider response',change:s=>mutatePayload(s,p=>p.identity.responseSha256='9'.repeat(64))},
+      {name:'pivot revision',change:s=>mutatePayload(s,p=>p.identity.pivotRevisionId='different-pivot')},
+      {name:'batch',change:s=>mutatePayload(s,p=>p.identity.adaptiveBatchId='9'.repeat(32))},
+      {name:'measured object',change:s=>mutatePayload(s,p=>p.measurement.source.objectId='2')},
+      {name:'evaluation owner',change:s=>{s.evaluation.studyId='9'.repeat(32);}},
+      {name:'observation receipt',change:s=>{s.evaluation.observationId='9'.repeat(64);}},
+      {name:'raw response receipt',change:s=>{s.evaluation.rawResponseSha256='';}}
+    ];
+    for(const item of cases){
+      const fixture=init(),state=saved();item.change(state);await open(fixture,state);
+      expect(fixture.nativeElement.textContent).withContext(item.name).not.toContain(words.justification.es);
+      expect(fixture.nativeElement.textContent).withContext(item.name).not.toContain(words.phenomenon.es);
+      expect(fixture.componentInstance.canEvaluate()).withContext(item.name).toBeFalse();
+      http.expectNone(r=>r.method==='POST');fixture.destroy();
+    }
+  });
+  it('does not send a prepared observation from a different pivot or batch to Meta',async()=>{
+    token();
+    for(const field of ['pivotRevisionId','adaptiveBatchId']){
+      const fixture=init(),state=prepared();
+      mutatePayload(state,p=>p.identity[field]='different-'+field);
+      await open(fixture,state);
+      expect(fixture.componentInstance.canEvaluate()).withContext(field).toBeFalse();
+      await fixture.componentInstance.evaluate();
+      http.expectNone(r=>r.method==='POST');fixture.destroy();
+    }
+  });
+  it('keeps genuine historical explanations readable without inventing a phenomenon or a batch',async()=>{
+    const legacySource={...source,adaptiveBatchId:null};
+    for(const protocol of ['MUSE_SAM_INVESTIGATOR_V1','MUSE_SAM_INVESTIGATOR_V2']){
+      const fixture=init(legacySource),state=saved(legacySource);
+      mutatePayload(state,p=>{p.identity.protocol=protocol;delete p.identity.adaptiveBatchId;delete p.measurement.source.adaptiveBatchId;});
+      const historical={...state,evaluation:{...state.evaluation,answer:{...state.evaluation.answer,phenomenon:null}}};
+      await open(fixture,historical);
+      expect(fixture.nativeElement.textContent).withContext(protocol).toContain(words.justification.es);
+      expect(fixture.nativeElement.textContent).withContext(protocol).toContain(words.limitations.es);
+      expect(fixture.nativeElement.textContent).withContext(protocol).not.toContain(words.phenomenon.es);
+      expect(fixture.componentInstance.phenomenon()).toBeNull();
+      http.expectNone(r=>r.method==='POST');fixture.destroy();
+    }
+  });
+  it('keeps a recorded inconclusive interpretation visible without creating a prediction',async()=>{
+    const fixture=init(),state=saved(),received:unknown[]=[];
+    fixture.componentInstance.frozen.subscribe(value=>received.push(value));
+    const inconclusive={...state,prediction:null,evaluation:{...state.evaluation,answer:{
+      ...state.evaluation.answer,decision:'INCONCLUSIVE',nextLengthMeters:null,periodSeconds:null,tolerancePercent:null,
+      phenomenon:{classification:'INCONCLUSIVE',justification:words.phenomenon}}}};
+    await open(fixture,inconclusive);
+    expect(fixture.nativeElement.textContent).toContain(words.justification.es);
+    expect(fixture.nativeElement.textContent).toContain(words.limitations.es);
+    expect(fixture.componentInstance.prediction()).toBeNull();expect(received).toEqual([]);
+    http.expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+});

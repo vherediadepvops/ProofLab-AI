@@ -23,6 +23,8 @@ New SAM analyses send **the complete video in one request**, without splitting i
 
 The upload progress list reports only work performed during upload. It does not wait for browser playback or show deferred local calculations as unfinished upload stages. This removes work from the initial wait; transfer time still depends on file size and connection. API Meta / Cache + SQLite selection, explicit analysis consent and existing provider limits remain in force.
 
+In **Understand (step 3)**, the **Muse Spark · Evidence interpretation** card appears inside the measurement panel, before Quality and method. **View Muse Spark interpretation** retrieves the scientific record only when clicked; entering the step, processing or changing language does not query that log or call the provider. An answer is shown only when it matches the current video, SAM analysis, pivot and batch. If none exists, Prepare evidence and Ask Muse remain separate manual actions with the US$0.05 estimated ceiling displayed. The existing consultation interprets measurements and may store a proposal for Predict; it does not resend the video or rerun SAM. Human review remains required before a second experiment, including when recovering a stored proposal.
+
 ## Competition provenance
 
 This is a **new project**, distinct from the pre-event private prototype at

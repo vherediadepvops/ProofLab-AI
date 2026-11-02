@@ -39,6 +39,7 @@
       ? 'Se observa periodicidad, pero la geometría del arco no está resuelta. Estas mediciones son insumos para la evaluación de Muse Spark.'
       : 'Periodicity is observed, but the arc geometry is unresolved. These measurements are inputs for evaluation by Muse Spark.'}}</p>
   }
+  <ng-content select="[period-interpretation]"/>
   <details>
     <summary>{{es?'Calidad y método':'Quality and method'}}</summary>
     <p class="uncertainty-detail"><strong>{{es?'Incertidumbre estadística estándar · u':'Statistical standard uncertainty · u'}}: {{uncertainty()}} s</strong></p>

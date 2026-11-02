@@ -23,6 +23,8 @@ Los análisis SAM nuevos envían **el video completo en una sola solicitud**, si
 
 El progreso de carga presenta únicamente el trabajo realizado durante la subida. No espera la reproducción del navegador ni muestra los cálculos locales aplazados como fases de carga sin terminar. Esto retira trabajo de la espera inicial; el tiempo de transferencia sigue dependiendo del tamaño y la conexión. Se conservan la selección API Meta / Caché + SQLite, el consentimiento para analizar y los límites del proveedor.
 
+En **Entender (paso 3)**, la tarjeta **Muse Spark · Interpretación de la evidencia** aparece dentro del panel de medición, antes de Calidad y método. **Ver interpretación de Muse Spark** recupera el registro científico solo al pulsar; entrar en el paso, procesar o cambiar idioma no consulta esa bitácora ni llama al proveedor. Una respuesta se muestra solo si corresponde al video, análisis SAM, pivote y lote actuales. Si falta, Preparar evidencia y Consultar Muse son acciones manuales separadas, con el máximo estimado de US$0,05 visible. La consulta existente interpreta las medidas y puede guardar una propuesta para Predecir; no vuelve a enviar el video ni SAM. La revisión humana sigue siendo necesaria antes de la segunda prueba, también al recuperar una propuesta guardada.
+
 ## Procedencia del código competitivo
 
 Este es un proyecto **nuevo**, independiente del prototipo privado anterior

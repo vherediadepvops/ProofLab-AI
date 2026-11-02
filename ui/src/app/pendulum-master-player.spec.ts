@@ -100,24 +100,46 @@ describe('One-clock three-view pendulum laboratory',()=>{
     http.expectNone(()=>true);subscription.unsubscribe();fixture.destroy();http.verify();
   });
 
-  it('defers the research SQLite request while showing source and measured results',async()=>{
-    const {fixture,component}=init();
-    const http=TestBed.inject(HttpTestingController);
-    spyOn(component,'periodSource').and.returnValue({
-      studyId:study,role:'baseline',originalVideoSha256:sha,analysisId:'e'.repeat(32),
-      providerResponseSha256:'f'.repeat(64),providerModel:'sam-3.1',objectId:'1',
-      pivotRevisionId:null,pivotProvenance:'SYNTHETIC_TEST'
+  it('projects interpretation without opening SQLite and hands a saved prediction to research only',async()=>{
+    const {fixture,component}=init(),http=TestBed.inject(HttpTestingController);
+    const source={studyId:study,role:'baseline',originalVideoSha256:sha,analysisId:'e'.repeat(32),
+      providerResponseSha256:'f'.repeat(64),providerModel:'sam-3.1' as const,objectId:'1',
+      pivotRevisionId:null,pivotProvenance:'SYNTHETIC_TEST',adaptiveBatchId:null};
+    spyOn(component,'periodSource').and.returnValue(source);
+    spyOn(component,'periodMeasurement').and.returnValue({
+      framePtsSeconds:[0,.02,.04],centroids:[],sourceWidth:640,sourceHeight:360,
+      imageWidth:640,imageHeight:360,pivot:null,arrangement:'legacy_pendulum'
     });
-    for(const presentation of ['source','understand']){
-      fixture.componentRef.setInput('presentation',presentation);fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('app-muse-investigator')).toBeNull();
-      http.expectNone(r=>r.url.includes('/muse'));
-    }
+    component.samVerified.set(true);
+    const received:unknown[]=[];component.researchFrozen.subscribe(value=>received.push(value));
+    fixture.componentRef.setInput('presentation','source');fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-muse-investigator')).toBeNull();
+    http.expectNone(r=>r.url.includes('/muse'));
+    fixture.componentRef.setInput('presentation','understand');fixture.detectChanges();
+    const root=fixture.nativeElement as HTMLElement;
+    const panel=root.querySelector('app-sam-period-panel')!;
+    const interpretation=panel.querySelector('app-muse-investigator')!;
+    expect(interpretation).not.toBeNull();
+    expect(panel.querySelector('.metrics')!.compareDocumentPosition(interpretation)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(interpretation.compareDocumentPosition(panel.querySelector('.quality')!.closest('details')!)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    http.expectNone(r=>r.url.includes('/muse'));
+    const button=Array.from(interpretation.querySelectorAll('button'))
+      .find(b=>b.textContent?.includes('Ver interpretación de Muse Spark'))!;
+    expect(button).toBeDefined();button.click();
+    const endpoint='http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+study+'/muse';
+    const request=http.expectOne(endpoint);expect(request.request.method).toBe('GET');
+    const prediction={studyId:study,observationId:'saved-observation',responseId:'saved-receipt',
+      frozenAtUtc:'2026-10-30T00:00:00Z',sha256:'9'.repeat(64),
+      payloadJson:'{"prediction":{"periodSeconds":1.79,"nextLengthMeters":0.8,"tolerancePercent":5}}'};
+    const state={observation:null,evaluation:null,prediction,attemptStatus:null,manualCallsPermitted:false,maximumEstimatedCostUsd:.05};
+    request.flush(state);for(let i=0;i<6;i++)await Promise.resolve();fixture.detectChanges();
+    expect(received).toEqual([]);
     fixture.componentRef.setInput('presentation','predict');fixture.detectChanges();
-    const request=http.expectOne('http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+study+'/muse');
-    expect(request.request.method).toBe('GET');
-    request.flush({observation:null,evaluation:null,prediction:null,attemptStatus:null,manualCallsPermitted:false,maximumEstimatedCostUsd:.05});
-    await Promise.resolve();fixture.destroy();http.verify();
+    expect(panel.querySelector('app-muse-investigator')).toBeNull();
+    const recover=http.expectOne(endpoint);expect(recover.request.method).toBe('GET');
+    recover.flush(state);for(let i=0;i<6;i++)await Promise.resolve();fixture.detectChanges();
+    expect(received).toEqual([prediction]);
+    http.expectNone(r=>r.method==='POST');fixture.destroy();http.verify();
   });
 
   function init(){
