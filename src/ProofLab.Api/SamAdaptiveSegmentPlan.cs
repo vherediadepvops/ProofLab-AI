@@ -4,6 +4,12 @@ using System.Text;
 
 namespace ProofLab.Api;
 
+public sealed class SamSingleVideoFrameLimitException : ArgumentException
+{
+    public SamSingleVideoFrameLimitException()
+        : base("Use one complete video with 50 to 2500 original frames; automatic splitting is disabled.") { }
+}
+
 /// <summary>
 /// Dynamic frame-exact proposal for a FUTURE authorized SAM experiment.
 /// Pure offline arithmetic. The 50-frame minimum is a BILLING floor per
@@ -27,8 +33,8 @@ public sealed record SamAdaptiveWindow(
 
 public sealed class SamAdaptiveSegmentPlan
 {
-    // New requests use fewer seams; archived native plans can still contain eight parts.
-    public const int MaximumNewNativeParts=3;
+    // Every new request contains the whole original; archives retain their saved windows.
+    public const int MaximumNewNativeParts=1;
     public const int MinimumBilledFrames=50;
     public const int TargetCoreFrames=53;
     public const int OverlapFrames=2;
@@ -37,6 +43,11 @@ public sealed class SamAdaptiveSegmentPlan
     public const int MaximumConcurrency=32;
     public const double SamUsdPerFrame=0.0002;
     public const double DefaultMaximumSamUsd=0.50;
+    public static void RequireSingleSourceFrames(int frames)
+    {
+        if(frames is <MinimumBilledFrames or >MaximumSourceFrames)
+            throw new SamSingleVideoFrameLimitException();
+    }
 
     public int SourceFrames { get; }
     public int RequestedTargetCoreFrames { get; }

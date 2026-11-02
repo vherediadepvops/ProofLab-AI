@@ -8,7 +8,7 @@ public sealed partial class SamAdaptiveLiveService
     private sealed record RetryLink(string ParentBatchId,string ChildBatchId,string SourceSha256,
         string SceneKey,double CombinedSamEstimateUsd,DateTimeOffset CreatedAtUtc);
     private static SamAdaptiveSegmentPlan AutomaticContinuousPlan(int frames,int target)=>
-        SamAdaptiveSegmentPlan.RestoreNative(frames,target,1,[new(0,0,frames,0,frames)]);
+        FullOriginalPlan(frames,target);
     private static string RetryId(string parent)=>Hash("ONE_CONTINUOUS_RETRY_V1:"+parent)[..32];
     private static bool CompletedEvidence(SamAdaptiveLiveReport r)=>
         r.Status=="PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW" &&

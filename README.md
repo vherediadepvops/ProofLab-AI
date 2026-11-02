@@ -19,6 +19,8 @@ The Laboratory accepts the recording before the three physical inputs are comple
 
 New recordings explicitly defer the experimental local tracker and its spectral period calculation. These are computed only when a local consumer needs them (human baseline review, manual pivot analysis or local comparison), and saved in a source-linked companion record without rewriting the original video evidence. Existing embedded local evidence remains readable. An inconclusive local signal remains inconclusive. Spark/SAM continue to receive their original video inputs; the thumbnail does not replace the recording sent for analysis.
 
+New SAM analyses send **the complete video in one request**, without splitting it into segments or automatically retrying. The quote counts each frame once, subject to the existing billing minimum, and progress shows original preparation, SAM and verification. Spark localization and source identity, pixel and timestamp checks remain; a video outside single-request limits is rejected without splitting it. API Meta remains the initial selection; cache modes and previously segmented results remain readable. A manual recovery of an inconclusive result also uses a single complete-video request.
+
 The upload progress list reports only work performed during upload. It does not wait for browser playback or show deferred local calculations as unfinished upload stages. This removes work from the initial wait; transfer time still depends on file size and connection. API Meta / Cache + SQLite selection, explicit analysis consent and existing provider limits remain in force.
 
 ## Competition provenance

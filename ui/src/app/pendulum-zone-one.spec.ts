@@ -583,13 +583,13 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       http.expectOne(samUrl+'/preflight').flush({sourceSha256:video.sha256,sourceFrames:1828,
         estimatedCostUsd:.3656,durationSeconds:30.5,codec:'hevc',supportsSingleCall:true});
       http.expectNone(samUrl+'/reusable');for(let i=0;i<8;i++)await Promise.resolve();
-      http.expectOne(adaptiveUrl+'/preflight?targetCoreFrames=53&mode=api-meta').flush({
+      http.expectOne(adaptiveUrl+'/preflight?mode=api-meta').flush({
         mode:'api-meta',sceneRunId:null,sourceSha256:video.sha256,sparkSceneKey:'',
         sourcePtsSha256:'a'.repeat(64),planSha256:'c'.repeat(64),suggestedBatchId:'f'.repeat(32),
-        sourceFrames:1828,parts:3,simultaneousRequests:3,submittedFrames:1848,billableFrames:1848,
-        totalSamEstimatedUsd:.3696,maximumAllowedSamUsd:.50,continuousRetryEstimatedUsd:.3656,
-        maximumSamWithRetryEstimatedUsd:.7352,remainingTrialSlots:null,canRunWithManualToken:true,
-        existingSparkSceneVerified:false,requiresNewSparkCall:true,idealPartsWithoutSparkCoverage:3,
+        sourceFrames:1828,parts:1,simultaneousRequests:1,submittedFrames:1828,billableFrames:1828,
+        totalSamEstimatedUsd:.3656,maximumAllowedSamUsd:.50,continuousRetryEstimatedUsd:0,
+        maximumSamWithRetryEstimatedUsd:.3656,remainingTrialSlots:null,canRunWithManualToken:true,
+        existingSparkSceneVerified:false,requiresNewSparkCall:true,idealPartsWithoutSparkCoverage:1,
         verifiedSparkSeedCount:0,reducedForSparseSparkSeeds:false});
       http.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush({
         apiKeyConfigured:false,liveCallsPermitted:false,manualTokenCallsPermitted:true,

@@ -13,10 +13,11 @@ const access={apiKeyConfigured:false,liveCallsPermitted:false,manualTokenCallsPe
   paidRequestsSwitchEnabled:true,creditsConfirmedByOwner:true,ownerApprovedPaidRequests:true,
   remainingRequests:0,usedRequests:0,manualRequestsUnlimited:true};
 const freshQuote={mode:'api-meta',sourceSha256:sha,sparkSceneKey:'',sourcePtsSha256:media.framePtsSha256,
-  planSha256:plan,suggestedBatchId:batch,sourceFrames:120,parts:3,simultaneousRequests:3,
-  submittedFrames:140,billableFrames:140,totalSamEstimatedUsd:.028,maximumAllowedSamUsd:.50,
+  planSha256:plan,suggestedBatchId:batch,sourceFrames:120,parts:1,simultaneousRequests:1,
+  submittedFrames:120,billableFrames:120,totalSamEstimatedUsd:.024,maximumAllowedSamUsd:.50,
+  continuousRetryEstimatedUsd:0,maximumSamWithRetryEstimatedUsd:.024,
   remainingTrialSlots:null,canRunWithManualToken:true,existingSparkSceneVerified:false,requiresNewSparkCall:true,
-  idealPartsWithoutSparkCoverage:3,verifiedSparkSeedCount:0,reducedForSparseSparkSeeds:false,sceneRunId:null};
+  idealPartsWithoutSparkCoverage:1,verifiedSparkSeedCount:0,reducedForSparseSparkSeeds:false,sceneRunId:null};
 const sparkQuote={cacheKey:'3'.repeat(64),videoSha256:sha,maximumEstimatedCostUsd:.25,mode:'api-meta',
   freshRequired:true,protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2',cacheHit:false,priorAttempt:false,
   canRun:true,status:'NEEDS_LOCALIZATION',scene:null};
@@ -26,8 +27,8 @@ const exactQuote={...freshQuote,sparkSceneKey:scene,sceneRunId:runId,existingSpa
 const reusable={sourceSha256:sha,cacheHit:true,analysisId:batch,adaptiveBatchId:batch,excludedResults:0,
   quality:{usable:true,reason:'MEASUREMENTS_AVAILABLE'},storage:'sqlite'};
 const miss={...reusable,cacheHit:false,analysisId:null,adaptiveBatchId:null,quality:null,excludedResults:1};
-const done={batchId:batch,sourceSha256:sha,sparkSceneKey:scene,planSha256:plan,parts:3,startedParts:3,
-  completedParts:3,failedParts:0,skippedParts:0,estimatedSamUsd:.028,
+const done={batchId:batch,sourceSha256:sha,sparkSceneKey:scene,planSha256:plan,parts:1,startedParts:1,
+  completedParts:1,failedParts:0,skippedParts:0,estimatedSamUsd:.024,
   status:'PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW',derivedFramesWithMasks:120,derivedSeamsVerified:true};
 const pathIs=(url:string)=>(r:HttpRequest<unknown>)=>new URL(r.urlWithParams).pathname===new URL(url).pathname;
 const query=(r:HttpRequest<unknown>,name:string)=>new URL(r.urlWithParams).searchParams.get(name);
@@ -58,7 +59,7 @@ describe('Processing source checkboxes',()=>{
   function cacheOnly(x:Context){select(x,'cache',true);select(x,'api',false);expect(x.c.mode()).toBe('cache-only');}
   function metadata(x:Context){const r=x.h.expectOne(pathIs(sam+'/preflight'));expect(r.request.method).toBe('GET');r.flush(media);}
   function paidQuotes(x:Context,mode:'api-meta'|'api-meta-cache',quote:unknown={...freshQuote,mode},spark:unknown={...sparkQuote,mode}){
-    const q=x.h.expectOne(pathIs(adaptive+'/preflight'));expect(q.request.method).toBe('GET');expect(query(q.request,'mode')).toBe(mode);q.flush(quote as object);
+    const q=x.h.expectOne(pathIs(adaptive+'/preflight'));expect(q.request.method).toBe('GET');expect(query(q.request,'mode')).toBe(mode);expect(query(q.request,'targetCoreFrames')).toBeNull();q.flush(quote as object);
     x.h.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush(access);
     const g=x.h.expectOne(pathIs(adaptive+'/spark-quote'));expect(g.request.method).toBe('GET');expect(query(g.request,'mode')).toBe(mode);g.flush(spark as object);
   }
@@ -103,14 +104,35 @@ describe('Processing source checkboxes',()=>{
   it('keeps the mixed flow after a miss and propagates its mode',async()=>{
     const x=setup(true);select(x,'cache',true);const p=x.c.check();
     x.h.expectOne(pathIs(sam+'/reusable')).flush(miss);metadata(x);await tick();paidQuotes(x,'api-meta-cache');await p;
-    expect(x.c.canProcess()).toBeTrue();expect(x.c.displayedCost()).toBeCloseTo(.278);x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+    expect(x.c.canProcess()).toBeTrue();expect(x.c.displayedCost()).toBeCloseTo(.274);x.h.expectNone(r=>r.method==='POST');x.f.destroy();
   });
-  it('quotes fresh segments without consulting reusable evidence',async()=>{
+  it('explains the complete-video frame limit in both languages without submitting',async()=>{
+    for(const language of ['es','en'] as const){
+      const x=setup();x.f.componentRef.setInput('language',language);x.f.detectChanges();
+      const p=x.c.check();metadata(x);await tick();
+      x.h.expectOne(pathIs(adaptive+'/preflight')).flush({error:'SAM_SINGLE_VIDEO_FRAME_LIMIT',
+        minimumFrames:50,maximumFrames:2500,automaticSplitting:false},{status:400,statusText:'Bad Request'});
+      x.h.expectOne(pathIs(adaptive+'/spark-quote')).flush(sparkQuote);
+      x.h.expectOne(r=>r.url.endsWith('/api/meta/readiness')).flush(access);await p;
+      expect(x.c.canProcess()).toBeFalse();expect(x.c.error()).toContain('50');
+      expect(x.c.error()).toContain('2500');
+      expect(x.c.error()).toContain(language==='es'?'no se dividirá automáticamente':'will not be split automatically');
+      x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+    }
+  });
+
+  it('quotes one fresh complete-video request without consulting reusable evidence',async()=>{
     const x=setup(true);await checkFresh(x);expect(x.c.cachedResultAvailable()).toBeFalse();expect(x.c.canProcess()).toBeTrue();
-    expect(x.c.displayedCost()).toBeCloseTo(.278);x.h.expectNone(pathIs(sam+'/reusable'));x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+    expect(x.c.displayedCost()).toBeCloseTo(.274);
+    expect(x.c.adaptiveQuote()).toEqual(jasmine.objectContaining({parts:1,simultaneousRequests:1,
+      submittedFrames:120,billableFrames:120,continuousRetryEstimatedUsd:0,maximumSamWithRetryEstimatedUsd:.024}));
+    x.h.expectNone(pathIs(sam+'/reusable'));x.h.expectNone(r=>r.method==='POST');x.f.destroy();
   });
-  it('rejects mixed or cached initial quotes in API-only mode',async()=>{
-    for(const q of [{...freshQuote,mode:'api-meta-cache'},{...exactQuote,sceneRunId:null}]){
+  it('rejects stale multi-request, retry and mismatched fresh quotes before any POST',async()=>{
+    for(const q of [{...freshQuote,mode:'api-meta-cache'},{...exactQuote,sceneRunId:null},
+      {...freshQuote,parts:2},{...freshQuote,simultaneousRequests:2},
+      {...freshQuote,submittedFrames:121},{...freshQuote,billableFrames:121},
+      {...freshQuote,continuousRetryEstimatedUsd:.024,maximumSamWithRetryEstimatedUsd:.048}]){
       const x=setup(true);await checkFresh(x,q);expect(x.c.canProcess()).toBeFalse();await x.c.process();x.h.expectNone(r=>r.method==='POST');x.f.destroy();}
   });
   it('discards old API quotes after switching to cache-only',async()=>{
@@ -119,19 +141,43 @@ describe('Processing source checkboxes',()=>{
     stale.flush(media);await old;expect(x.c.mode()).toBe('cache-only');expect(x.c.canProcess()).toBeTrue();
     expect(x.c.displayedCost()).toBe(0);expect(x.c.adaptiveQuote()).toBeNull();expect(x.c.readiness()).toBeNull();x.h.expectNone(()=>true);x.f.destroy();
   });
-  it('pins fresh Spark evidence to the exact batch and freezes the source controls',async()=>{
-    const x=setup(true);await checkFresh(x);const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
-    const spark=x.h.expectOne(pathIs(adaptive+'/spark-once'));expect(spark.request.body.mode).toBe('api-meta');
-    expect(spark.request.body.maximumEstimatedCostUsd).toBe(.25);x.f.detectChanges();
-    expect(checkbox(x,'api').disabled).toBeTrue();expect(checkbox(x,'cache').disabled).toBeTrue();
-    checkbox(x,'cache').click();expect(x.c.mode()).toBe('api-meta');spark.flush(located);await tick();
-    const exact=x.h.expectOne(pathIs(adaptive+'/preflight'));expect(query(exact.request,'mode')).toBe('api-meta');expect(query(exact.request,'sceneRunId')).toBe(runId);
-    exact.flush(exactQuote);await tick();const request=x.h.expectOne(pathIs(adaptive+'/manual-batch'));
-    expect(request.request.body.mode).toBe('api-meta');expect(request.request.body.sceneRunId).toBe(runId);
-    expect(request.request.body.sceneKey).toBe(scene);expect(request.request.body.clientBatchId).toBe(batch);request.flush(done);await tick();
-    x.h.expectOne(pathIs(adaptive+'/batches/'+batch+'/progress')).flush({batchId:batch,parts:3,started:3,completed:3,failed:0,phase:'COMPLETED',perPart:[]});await p;
-    expect(emit).toHaveBeenCalledWith(jasmine.objectContaining({sourceSha256:sha,analysisId:batch,adaptiveBatchId:batch}));
-    x.f.componentRef.setInput('validationState','ready');x.f.detectChanges();expect(x.c.processing()).toBeFalse();expect(x.con.busy()).toBeFalse();
-    x.h.expectNone(pathIs(sam+'/reusable'));x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+  it('pins exact Spark evidence to one full-video request in fresh and mixed modes',async()=>{
+    for(const mode of ['api-meta','api-meta-cache'] as const){
+      const x=setup(true);if(mode==='api-meta-cache')select(x,'cache',true);
+      const checking=x.c.check();if(mode==='api-meta-cache')x.h.expectOne(pathIs(sam+'/reusable')).flush(miss);
+      metadata(x);await tick();paidQuotes(x,mode,{...freshQuote,mode},{...sparkQuote,mode});await checking;
+      const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
+      const spark=x.h.expectOne(pathIs(adaptive+'/spark-once'));expect(spark.request.body.mode).toBe(mode);
+      expect(spark.request.body.maximumEstimatedCostUsd).toBe(.25);x.f.detectChanges();
+      expect(checkbox(x,'api').disabled).toBeTrue();expect(checkbox(x,'cache').disabled).toBeTrue();
+      checkbox(x,'cache').click();expect(x.c.mode()).toBe(mode);
+      await x.c.process();x.h.expectNone(r=>r.method==='POST');
+      spark.flush({...located,mode});await tick();
+      const exact=x.h.expectOne(pathIs(adaptive+'/preflight'));
+      expect(query(exact.request,'mode')).toBe(mode);expect(query(exact.request,'sceneRunId')).toBe(runId);
+      expect(query(exact.request,'targetCoreFrames')).toBeNull();exact.flush({...exactQuote,mode});await tick();
+      const request=x.h.expectOne(pathIs(adaptive+'/manual-batch'));
+      expect(request.request.body.mode).toBe(mode);expect(request.request.body.sceneRunId).toBe(runId);
+      expect(request.request.body.sceneKey).toBe(scene);expect(request.request.body.clientBatchId).toBe(batch);
+      expect(request.request.body.maxInFlight).toBe(1);expect(request.request.body.targetCoreFrames).toBeUndefined();
+      expect(request.request.body.confirmOneContinuousRetry).toBeFalse();
+      expect(request.request.body.maximumSamCostUsd).toBe(.024);
+      expect(request.request.body.maximumCombinedSamCostUsd).toBe(.024);
+      request.flush(done);await tick();
+      x.h.expectOne(pathIs(adaptive+'/batches/'+batch+'/progress')).flush({
+        batchId:batch,parts:1,started:1,completed:1,failed:0,phase:'COMPLETED',
+        preparationElapsedMs:200,validationElapsedMs:30,totalElapsedMs:1430,
+        perPart:[{part:0,state:'COMPLETED',elapsedMs:1200,events:2,deltas:1,outputChars:40}]
+      });await p;
+      expect(emit).toHaveBeenCalledOnceWith(jasmine.objectContaining({sourceSha256:sha,analysisId:batch,adaptiveBatchId:batch}));
+      x.f.componentRef.setInput('validationState','ready');x.f.detectChanges();
+      expect(x.c.processing()).toBeFalse();expect(x.con.busy()).toBeFalse();
+      const rows=x.c.stageRows();
+      expect(rows.filter(r=>/^sam-\d+$/.test(r.key)).length).toBe(1);
+      expect(rows.find(r=>r.key==='sam-0')).toEqual(jasmine.objectContaining({state:'COMPLETED',ms:1200,label:'SAM · video completo'}));
+      expect(rows.find(r=>r.key==='validation')).toEqual(jasmine.objectContaining({state:'COMPLETED',ms:30}));
+      expect(rows.some(r=>r.key==='join'||r.key.startsWith('retry-'))).toBeFalse();
+      x.h.expectNone(pathIs(sam+'/reusable'));x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+    }
   });
 });

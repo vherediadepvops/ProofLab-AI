@@ -7,7 +7,7 @@ using System.Text.Json;
 namespace ProofLab.Api;
 
 /// <summary>
-/// New plans copy original compressed packets into at most three keyframe-aligned clips.
+/// New plans copy the complete original video stream into one MP4.
 /// No re-encoding, provider uploads or original-file edits.
 /// Every decoded frame is compared byte-for-byte (SHA256) to the original.
 /// A failed/incomplete clip disqualifies the entire batch from paid transport.
@@ -154,10 +154,10 @@ public sealed partial class SamAdaptiveClipBuilder(
             throw new InvalidOperationException(
                 "Adaptive output is not a fresh directory. No overwrites or paid retry.");
         Directory.CreateDirectory(folder);
-        if(!plan.OriginalPacketCopy) {
-            if(plan.PartCount==1)return await PrepareContinuousAsync(source,originalPts,plan,folder,originalSha,originalDisplay,ptsSha,timer,ct);
-            throw new InvalidDataException("New segmented runs must use original keyframes, never a lossless transcode.");
-        }
+        if(plan.PartCount==1)
+            return await PrepareContinuousAsync(source,originalPts,plan,folder,originalSha,originalDisplay,ptsSha,timer,ct);
+        if(!plan.OriginalPacketCopy)
+            throw new InvalidDataException("Segmented legacy preparation requires original keyframes.");
         return await PrepareNativeAsync(source,originalPts,plan,folder,originalSha,originalDisplay,ptsSha,timer,ct);
     }
 

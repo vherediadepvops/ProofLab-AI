@@ -25,12 +25,15 @@ public sealed partial class SamAdaptiveClipBuilder {
         if(keys.Length==0 || keys[0]!=0)throw new InvalidDataException("Original has no initial random-access frame.");
         known=new(keys,safe.ToArray(),sorted[0].Time);nativeTimelines[source.Sha256]=known;return known;
     }
-    public async Task<SamAdaptiveSegmentPlan> PlanAsync(SamVideoSource source,IReadOnlyList<double> pts,
+    public Task<SamAdaptiveSegmentPlan> PlanAsync(SamVideoSource source,IReadOnlyList<double> pts,
         SamSceneDefinition? scene,int target,int concurrency,CancellationToken ct) {
-        var timeline=await Timeline(source,pts,ct);
-        return SamAdaptiveSegmentPlan.Native(pts.Count,timeline.Keys,timeline.SafeEnds,
-            scene?.Seeds.Where(s=>s.Role=="object").Select(s=>s.Frame).ToArray(),target,Math.Min(concurrency,SamAdaptiveSegmentPlan.MaximumNewNativeParts),
-            maximumParts:SamAdaptiveSegmentPlan.MaximumNewNativeParts);
+        SamAdaptiveSegmentPlan.RequireSingleSourceFrames(pts.Count);
+        if(concurrency<1)throw new ArgumentOutOfRangeException(nameof(concurrency));
+        ct.ThrowIfCancellationRequested();
+        // The whole original has no cut boundaries to discover. Preparation still
+        // verifies the original hash, displayed geometry, every PTS and decoded pixel.
+        return Task.FromResult(SamAdaptiveSegmentPlan.RestoreNative(pts.Count,target,1,
+            [new SamAdaptiveWindow(0,0,pts.Count,0,pts.Count)]));
     }
     private async Task<SamAdaptiveClipManifest> PrepareNativeAsync(SamVideoSource source,IReadOnlyList<double> pts,
         SamAdaptiveSegmentPlan plan,string folder,string sourceSha,SamOrientedFrameGeometry display,string ptsSha,

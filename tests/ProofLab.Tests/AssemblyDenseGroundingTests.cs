@@ -30,23 +30,24 @@ public sealed class AssemblyDenseGroundingTests {
         Assert.Equal(49,p.Observations.Last().Frame);
     }
     [Theory][InlineData(0)][InlineData(25)][InlineData(49)]public void WrongReferenceOrdinalIsRejected(int bad)=>Assert.Throws<FormatException>(()=>AssemblyPolicy.ParseGrounding(Payload(bad),Frames));
-    [Fact]public void NativePlanUsesAtMostThreeKeyframeStartsAndCoversEverySourceFrame(){
+    [Fact]public void NativePlanDefaultsToOneWholeVideoWithoutOverlap(){
         var keys=Enumerable.Range(0,34).Select(i=>i*56).Where(i=>i<1845).ToArray();
         var plan=SamAdaptiveSegmentPlan.Native(1845,keys,Enumerable.Range(1,1845).ToArray(),Enumerable.Range(0,50).Select(i=>(int)Math.Round(1844*i/49d)).ToArray(),53,8);
-        Assert.Equal(3,plan.PartCount);Assert.Equal(3,plan.MaxInFlight);Assert.True(plan.OriginalPacketCopy);
-        Assert.Equal(1845,plan.Windows.Sum(w=>w.CoreFrames));
-        foreach(var w in plan.Windows)Assert.Contains(w.InputStart,keys);
-        for(int i=1;i<plan.PartCount;i++)Assert.Equal(plan.Windows[i-1].CoreEndExclusive,plan.Windows[i].CoreStart);
-        Assert.True(plan.BilledFrames<1900);
+        Assert.Equal(1,plan.PartCount);Assert.Equal(1,plan.MaxInFlight);Assert.True(plan.OriginalPacketCopy);
+        var window=Assert.Single(plan.Windows);
+        Assert.Equal(0,window.InputStart);Assert.Equal(0,window.CoreStart);
+        Assert.Equal(1845,window.InputEndExclusive);Assert.Equal(1845,window.CoreEndExclusive);
+        Assert.Equal(1845,plan.SubmittedFrames);Assert.Equal(1845,plan.BilledFrames);
+        Assert.Equal(0,plan.OverlapExtraFrames);Assert.Equal(.369,plan.EstimatedSamCostUsd,6);
     }
     [Fact]public void FiftyReferencesCoverEveryOverlapAndBothVideoEnds(){
-        var plan=SamAdaptiveSegmentPlan.Native(1800,Enumerable.Range(0,18).Select(i=>i*100).ToArray(),Enumerable.Range(1,1800).ToArray(),null,53,8);
+        var plan=SamAdaptiveSegmentPlan.Native(1800,Enumerable.Range(0,18).Select(i=>i*100).ToArray(),Enumerable.Range(1,1800).ToArray(),null,53,8,maximumParts:3);
         var refs=AssemblyPolicy.ReferenceIndices(1800,plan);
         Assert.Equal(50,refs.Length);Assert.Equal(50,refs.Distinct().Count());Assert.Equal(0,refs[0]);Assert.Equal(1799,refs[^1]);
         foreach(var pair in plan.Windows.Zip(plan.Windows.Skip(1)))foreach(var frame in Enumerable.Range(pair.Second.InputStart,pair.First.InputEndExclusive-pair.Second.InputStart))Assert.Contains(frame,refs);
     }
     [Fact]public void SparseKeyframesReducePartsWithoutTranscoding(){
-        var plan=SamAdaptiveSegmentPlan.Native(223,new[]{0,100},Enumerable.Range(1,223).ToArray(),new[]{0,50,110,200},53,8);
+        var plan=SamAdaptiveSegmentPlan.Native(223,new[]{0,100},Enumerable.Range(1,223).ToArray(),new[]{0,50,110,200},53,8,maximumParts:3);
         Assert.Equal(2,plan.PartCount);Assert.Equal(223,plan.Windows.Sum(w=>w.CoreFrames));
     }
     [Fact]public void ProgressFreezesFinishedElapsedTimeAndMarksInterruptedStageFailed(){

@@ -12,7 +12,7 @@ public sealed class SamAdaptiveLiveRunRequest
     public string ClientBatchId { get; init; }="";
     public double MaximumSamCostUsd { get; init; }
     public int TargetCoreFrames { get; init; }=53;
-    public int MaxInFlight { get; init; }=4;
+    public int MaxInFlight { get; init; }=1;
     public string? RecoveryFromBatchId { get; init; }
     public bool ConfirmPrivateVideoTransfer { get; init; }
     public bool ConfirmUpToManyBillableSamCalls { get; init; }

@@ -12,7 +12,8 @@ public sealed record SamAdaptiveClipManifest(
 
 public interface ISamAdaptiveClipBuilder {
     Task<SamAdaptiveSegmentPlan> PlanAsync(SamVideoSource source,IReadOnlyList<double> pts,SamSceneDefinition? scene,int target,int concurrency,CancellationToken ct)=>
-        Task.FromResult(scene is null?SamAdaptiveSegmentPlan.Create(pts.Count,target,concurrency,alignToTwoFrameIntraKeyframes:true,maximumPartCount:8):SamAdaptiveGroundedPlan.Select(pts.Count,scene,target,concurrency).Plan);
+        Task.FromResult(SamAdaptiveSegmentPlan.RestoreNative(pts.Count,target,1,
+            [new SamAdaptiveWindow(0,0,pts.Count,0,pts.Count)]));
     Task<SamAdaptiveClipManifest> PrepareAsync(SamVideoSource source,IReadOnlyList<double> pts,
         SamAdaptiveSegmentPlan plan,string outputDirectory,CancellationToken ct);
 }

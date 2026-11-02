@@ -9,12 +9,10 @@ using Microsoft.Extensions.Configuration;
 namespace ProofLab.Api;
 
 /// <summary>
-/// Owner-approved, bounded real SAM 3.1 batch experiment.
-/// Spark's existing authenticated scene is reused ONCE across the source;
-/// every SAM fragment has independent HTTPS evidence, billable attempt,
-/// provider response, digest and immutable receipt. An explicitly preauthorized
-/// workflow may make one separate whole-video fallback; individual requests never retry.
-/// No synthetic composite is indexed as a native single Meta response.
+/// One owner-approved SAM 3.1 request over the complete original video.
+/// Spark supplies the authenticated target; receipts retain source PTS and hashes.
+/// Historical segmented and recovery archives remain readable without new calls.
+/// Derived playback is never relabeled as an untouched native provider response.
 /// </summary>
 public sealed partial class SamAdaptiveLiveService(
     ISamVideoRuntime runtime,IAssemblyScenes scenes,ISamVideoTransport transport,
@@ -23,6 +21,7 @@ public sealed partial class SamAdaptiveLiveService(
 {
     public const string Protocol="PROOFLAB_SAM_ADAPTIVE_SSE_SOURCE_PTS_V1";
     public const int MaximumLiveConcurrentRequests=12;
+    private const int MaximumHistoricalManualRecoveryParts=3;
     private readonly SemaphoreSlim gate=new(1,1);
     private static readonly JsonSerializerOptions JsonOptions=new(JsonSerializerDefaults.Web)
         {WriteIndented=true};
@@ -105,9 +104,9 @@ public sealed partial class SamAdaptiveLiveService(
             var id=Path.GetFileName(folder);
             if(!ValidBatchId(id))continue;
             var report=await ReadReportAsync(id,ct);
-            // Older, more fragmented failures first receive the current three-part plan.
-            // Only a failure with the current limit offers a separately authorized continuous recovery.
-            if(report is not null && report.Parts<=SamAdaptiveSegmentPlan.MaximumNewNativeParts &&
+            // Preserve explicitly requested recovery of old two/three-part failures.
+            // The new-request limit must not reinterpret these immutable reports.
+            if(report is not null && report.Parts<=MaximumHistoricalManualRecoveryParts &&
                report.BatchId==id && Recoverable(report,sourceSha,sceneKey) &&
                (newest is null || report.RecordedAtUtc>newest.RecordedAtUtc))
                 newest=report;
@@ -120,8 +119,21 @@ public sealed partial class SamAdaptiveLiveService(
         if(report is null || !Recoverable(report,sourceSha,sceneKey))
             throw new InvalidOperationException("Continuous recovery requires a completed inconclusive batch for this exact source and Spark scene.");
     }
+    // Legacy identity: used only when rehydrating recovery archives without native windows.
     private static SamAdaptiveSegmentPlan ContinuousPlan(int frames,int target)=>
         SamAdaptiveSegmentPlan.Create(frames,target,1,alignToTwoFrameIntraKeyframes:true,maximumPartCount:1);
+    private static SamAdaptiveSegmentPlan FullOriginalPlan(int frames,int target)=>
+        SamAdaptiveSegmentPlan.RestoreNative(frames,target,1,[new(0,0,frames,0,frames)]);
+    private static void RequireSingleOriginal(SamAdaptiveSegmentPlan plan,int frames)
+    {
+        SamAdaptiveSegmentPlan.RequireSingleSourceFrames(frames);
+        if(!plan.OriginalPacketCopy || plan.SourceFrames!=frames || plan.PartCount!=1 ||
+           plan.MaxInFlight!=1 || plan.SubmittedFrames!=frames ||
+           plan.BilledFrames!=Math.Max(SamAdaptiveSegmentPlan.MinimumBilledFrames,frames) ||
+           plan.Windows[0].Part!=0 || plan.Windows[0].CoreStart!=0 || plan.Windows[0].InputStart!=0 ||
+           plan.Windows[0].CoreEndExclusive!=frames || plan.Windows[0].InputEndExclusive!=frames)
+            throw new InvalidDataException("New SAM requests must contain the complete original in one window.");
+    }
 
     private async Task<(SamVideoSource Source,SamSceneDefinition Scene,
         double[] Pts,SamAdaptiveSegmentPlan Plan,string Key)> Context(
@@ -141,6 +153,7 @@ public sealed partial class SamAdaptiveLiveService(
             throw new InvalidOperationException(
                 "One completed Spark scene must exist BEFORE adaptive SAM.");
         var pts=await runtime.ReadSourceFramePtsAsync(source,ct);
+        SamAdaptiveSegmentPlan.RequireSingleSourceFrames(pts.Length);
         AssemblyPolicy.Validate(scene,source.Sha256,pts.Length);
         if(scene.Roles.Length!=1 || scene.Roles[0].Role!="object" ||
            scene.Roles[0].Id!="1")
@@ -149,12 +162,13 @@ public sealed partial class SamAdaptiveLiveService(
         var plan=await clipBuilder.PlanAsync(source,pts,scene,target,inFlight,ct);
         if(recoveryFromBatchId is not null) {
             await ValidateRecovery(recoveryFromBatchId,source.Sha256,scene.Key,ct);
-            plan=ContinuousPlan(pts.Length,target);
+            plan=FullOriginalPlan(pts.Length,target);
         }
         if(automaticParent is not null) {
             await ValidateAutomaticParent(automaticParent,source.Sha256,scene.Key,ct);
             plan=AutomaticContinuousPlan(pts.Length,target);
         }
+        RequireSingleOriginal(plan,pts.Length);
         var ptsSha=plan.VerifySourcePts(pts);
         return (source,scene,pts,plan,
             PlanKey(source.Sha256.ToLowerInvariant(),scene.Key,ptsSha,plan,recoveryFromBatchId,automaticParent));
@@ -172,14 +186,17 @@ public sealed partial class SamAdaptiveLiveService(
            maxInFlight is <0 or >MaximumLiveConcurrentRequests)
             throw new ArgumentException("Unsupported video or concurrency.");
         var pts=await runtime.ReadSourceFramePtsAsync(source,ct);
+        SamAdaptiveSegmentPlan.RequireSingleSourceFrames(pts.Length);
         var scene=sceneRunId is not null?await scenes.TrackingRunAsync(studyId,role,sceneRunId,ct):
             selectedMode==PendulumSamCache.FreshMode?null:await scenes.TrackingForQuoteAsync(studyId,role,ct);
         if(sceneRunId is not null && scene is null)throw new InvalidOperationException("The selected Spark run is not verified.");
-        if(maxInFlight==0)maxInFlight=Math.Clamp(config.GetValue<int?>("SamAdaptive:Concurrency")??8,1,MaximumLiveConcurrentRequests);
+        if(maxInFlight==0)maxInFlight=1;
         var ideal=await clipBuilder.PlanAsync(source,pts,null,targetCoreFrames,maxInFlight,ct);
         if(scene is not null)AssemblyPolicy.Validate(scene,source.Sha256,pts.Length);
         var recovery=scene is null || selectedMode==PendulumSamCache.FreshMode?null:await RecoveryForQuote(source.Sha256,scene.Key,ct);
-        var plan=recovery is null?await clipBuilder.PlanAsync(source,pts,scene,targetCoreFrames,maxInFlight,ct):ContinuousPlan(pts.Length,targetCoreFrames);
+        var plan=recovery is null?await clipBuilder.PlanAsync(source,pts,scene,targetCoreFrames,maxInFlight,ct):FullOriginalPlan(pts.Length,targetCoreFrames);
+        RequireSingleOriginal(ideal,pts.Length);
+        RequireSingleOriginal(plan,pts.Length);
         var ptsSha=plan.VerifySourcePts(pts);
         return new(Protocol,source.Sha256.ToLowerInvariant(),scene?.Key??"",
             ptsSha,PlanKey(source.Sha256,scene?.Key??"PENDING_SPARK",ptsSha,plan,recovery),
@@ -187,12 +204,10 @@ public sealed partial class SamAdaptiveLiveService(
             plan.MaxInFlight,plan.SubmittedFrames,plan.BilledFrames,
             plan.EstimatedSamCostUsd,0.50,null,access.ManualTokenCallsPermitted,
             scene is not null,scene is null,
-            scene is null?"SAM_UPPER_BOUND_PENDING_SPARK_NO_INFERENCE_SENT":
-                "VERIFIED_SPARK_SEEDS; SOURCE_FRAMES; OPTIONAL_ONE_CONTINUOUS_RETRY",
+            scene is null?"SINGLE_FULL_VIDEO_PENDING_SPARK_NO_INFERENCE_SENT":
+                "VERIFIED_SPARK_SEEDS; FULL_ORIGINAL_VIDEO; ONE_SAM_REQUEST; NO_AUTOMATIC_RETRY",
             ideal.PartCount,scene?.Seeds.Count(x=>x.Role=="object")??0,
-            recovery is null && scene is not null && plan.PartCount<ideal.PartCount,recovery,
-            recovery is null && plan.PartCount is >1 and <=3?plan.UnsplitSamCostUsd:0,
-            plan.EstimatedSamCostUsd+(recovery is null && plan.PartCount is >1 and <=3?plan.UnsplitSamCostUsd:0),selectedMode,sceneRunId);
+            false,recovery,0,plan.EstimatedSamCostUsd,selectedMode,sceneRunId);
     }
 
     private static string Prompt(SamSceneDefinition scene,SamAdaptiveWindow window) =>
@@ -225,6 +240,10 @@ public sealed partial class SamAdaptiveLiveService(
         string studyId,string role,SamAdaptiveLiveRunRequest request,CancellationToken ct,string? automaticParent=null)
     {
         var mode=PendulumSamCache.NormalizeMode(request.Mode); // Reject cache-only before any provider preparation/reservation.
+        if(request.ConfirmOneContinuousRetry)
+            throw new ArgumentException("New processing permits one complete SAM request and no automatic retry.");
+        if(request.MaxInFlight!=1)
+            throw new ArgumentException("A new SAM request must send one complete video with concurrency one.");
         if(!request.ConfirmPrivateVideoTransfer ||
            !request.ConfirmUpToManyBillableSamCalls ||
            !request.ConfirmNoAutomaticRetry ||
@@ -289,7 +308,7 @@ public sealed partial class SamAdaptiveLiveService(
                 new[]{SamAdaptiveGroundedPlan.BuildPrompt(scene,plan.Windows.Single())};
             ct.ThrowIfCancellationRequested();
             await WriteJson(Path.Combine(folder,"batch-context.json"),
-                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,request.MaxInFlight,request.RecoveryFromBatchId,plan.OriginalPacketCopy?plan.Windows.ToArray():null,automaticParent,mode,request.SceneRunId),
+                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,plan.MaxInFlight,request.RecoveryFromBatchId,plan.OriginalPacketCopy?plan.Windows.ToArray():null,automaticParent,mode,request.SceneRunId),
                 CancellationToken.None);
             await WriteJson(Path.Combine(folder,"batch-started.json"),new{
                 batchId,createdAtUtc=created,sourceSha256=source.Sha256,
@@ -494,7 +513,8 @@ public sealed partial class SamAdaptiveLiveService(
             context.TargetCoreFrames,context.MaxInFlight).Plan;
         if(context.RecoveryFromBatchId is not null) {
             await ValidateRecovery(context.RecoveryFromBatchId,source.Sha256,scene.Key,ct);
-            plan=ContinuousPlan(pts.Length,context.TargetCoreFrames);
+            if(context.NativeWindows is null)
+                plan=ContinuousPlan(pts.Length,context.TargetCoreFrames);
         }
         var ptsSha=plan.VerifySourcePts(pts);
         if(scene.Key!=report.SparkSceneKey || plan.PartCount!=report.Parts ||

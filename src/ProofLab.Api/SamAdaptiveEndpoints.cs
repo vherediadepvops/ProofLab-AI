@@ -33,8 +33,15 @@ public static class SamAdaptiveEndpoints
                 return Results.Ok(await service.PreflightAsync(
                     id,role,targetCoreFrames??53,maxInFlight??0,ct,mode,sceneRunId));
             }
+            catch(ArgumentException ex) when(ex is SamSingleVideoFrameLimitException ||
+                ex.Message=="SAM video requires at least 50 source frames.")
+            {return Results.BadRequest(new{
+                error="SAM_SINGLE_VIDEO_FRAME_LIMIT",
+                minimumFrames=SamAdaptiveSegmentPlan.MinimumBilledFrames,
+                maximumFrames=SamAdaptiveSegmentPlan.MaximumSourceFrames,
+                automaticSplitting=false});}
             catch(ArgumentException){return Results.BadRequest(new{
-                error="Unsafe adaptive plan parameters."});}
+                error="Unsafe single-video plan parameters."});}
             catch(FileNotFoundException){return Results.NotFound(new{
                 error="Original recording not found."});}
             catch(InvalidDataException){return Results.Conflict(new{
@@ -116,8 +123,15 @@ public static class SamAdaptiveEndpoints
                 var result=await service.RunWithOneRetryAsync(id,role,request,ct);
                 return Results.Ok(result);
             }
+            catch(ArgumentException ex) when(ex is SamSingleVideoFrameLimitException ||
+                ex.Message=="SAM video requires at least 50 source frames.")
+            {return Results.BadRequest(new{
+                error="SAM_SINGLE_VIDEO_FRAME_LIMIT",
+                minimumFrames=SamAdaptiveSegmentPlan.MinimumBilledFrames,
+                maximumFrames=SamAdaptiveSegmentPlan.MaximumSourceFrames,
+                automaticSplitting=false});}
             catch(ArgumentException){return Results.BadRequest(new{
-                error="Invalid or unapproved frame splitting parameters."});}
+                error="Invalid or unapproved single-video parameters."});}
             catch(FileNotFoundException){return Results.NotFound(new{
                 error="Original recording not found."});}
             catch(InvalidDataException){return Results.Conflict(new{

@@ -22,10 +22,11 @@ describe('Inline session token dialog',()=>{
     c.mode.set('api-meta-cache');
     const field=document.createElement('input');field.type='password';con.register(field);
     c.preflight.set({sourceSha256:sha,sourceFrames:1938,durationSeconds:32.33,
-      estimatedCostUsd:.39,supportsSingleCall:true,codec:'hevc',timingSource:'test',framePtsSha256:''});
+      estimatedCostUsd:.3876,supportsSingleCall:true,codec:'hevc',timingSource:'test',framePtsSha256:''});
     c.adaptiveQuote.set({mode:'api-meta-cache',planSha256:'c'.repeat(64),suggestedBatchId:'d'.repeat(32),sourceSha256:sha,existingSparkSceneVerified:true,
-      requiresNewSparkCall:false,canRunWithManualToken:true,parts:3,simultaneousRequests:3,
-      totalSamEstimatedUsd:.39} as any);
+      requiresNewSparkCall:false,canRunWithManualToken:true,parts:1,simultaneousRequests:1,
+      sourceFrames:1938,submittedFrames:1938,billableFrames:1938,totalSamEstimatedUsd:.3876,
+      continuousRetryEstimatedUsd:0,maximumSamWithRetryEstimatedUsd:.3876} as any);
     c.readiness.set({manualTokenCallsPermitted:true,paidRequestsSwitchEnabled:true,
       creditsConfirmedByOwner:true,ownerApprovedPaidRequests:true,manualRequestsUnlimited:true} as any);
     f.detectChanges();

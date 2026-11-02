@@ -111,27 +111,10 @@ interface SamAdaptiveReport {
                   <small class="sam-meta-estimate">SAM {{es?'estimado':'estimate'}} US$ {{costLabel(pf.estimatedCostUsd)}} + Spark {{es?'hasta':'up to'}} US$ {{groundingQuote()!.maximumEstimatedCostUsd.toFixed(2)}}</small>
                 }
                 @if(segmentedMode() && adaptiveQuote(); as aq) {
-                  <small class="sam-meta-estimate">{{aq.parts}} {{es?'solicitudes SAM':'SAM requests'}} ·
-                    {{aq.simultaneousRequests}} {{es?'simultáneas':'concurrent'}} ·
+                  <small class="sam-meta-estimate">{{es?'1 solicitud SAM · video completo':'1 SAM request · complete video'}} ·
                     {{es?'cuadros facturables':'billable frames'}}: {{aq.billableFrames}}</small>
-                  @if((aq.continuousRetryEstimatedUsd??0)>0) {
-                    <small class="sam-meta-estimate">{{es?'Incluye un posible reintento con el video completo':'Includes one possible whole-video retry'}}:
-                      SAM {{costLabel(aq.totalSamEstimatedUsd)}} + {{costLabel(aq.continuousRetryEstimatedUsd!)}} US$.
-                      {{es?'Solo se usa si falla el lote; Spark no se repite.':'Only used if the batch fails; Spark is not repeated.'}}</small>
-                  }
                   @if(aq.requiresNewSparkCall) {
-                    <small class="sam-meta-estimate">{{es?'Incluye Spark estimado US$ ':'Includes Spark estimated US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{es?'segmentos máximos; se ajustan tras localizar el objeto':'maximum segments; adjusted after locating the object'}}</small>
-                  }
-                  @if(aq.recoveryFromBatchId) {
-                    <small class="sam-meta-estimate">{{es?
-                      'Recuperación de continuidad: 1 solicitud SAM sobre el video completo, sin cortes. Spark guardado; requiere pulsar Procesar.':
-                      'Continuity recovery: 1 SAM request for the complete video, without cuts. Saved Spark; press Process to submit.'}}</small>
-                  } @else if(aq.reducedForSparseSparkSeeds) {
-                    <small class="sam-meta-estimate">{{es?
-                      'Spark verificó '+aq.verifiedSparkSeedCount+' posiciones. El plan de '+aq.idealPartsWithoutSparkCoverage+
-                        ' segmentos se redujo a '+aq.parts+' para evitar inferencias sin referencia.':
-                      'Spark verified '+aq.verifiedSparkSeedCount+' positions. The '+aq.idealPartsWithoutSparkCoverage+
-                        '-segment proposal was reduced to '+aq.parts+' to prevent ungrounded inference.'}}</small>
+                    <small class="sam-meta-estimate">{{es?'Incluye Spark estimado US$ ':'Includes Spark estimated US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{es?'para localizar y verificar el objeto':'to locate and verify the object'}}</small>
                   }
                 }
                 @if(!freeCacheAvailable() && !reviewOnlyRequired() && reviewBudget()>0) {
@@ -178,7 +161,7 @@ interface SamAdaptiveReport {
                   </div>
                 </div>
               }
-              <small class="sam-stage-help">{{freeCacheAvailable()?(es?'Recuperando las mediciones guardadas, sin llamadas a Meta.':'Loading saved measurements without Meta calls.'):segmentedMode()?(es?'Los segmentos SAM se ejecutan en paralelo. Las barras animadas indican actividad; Meta no informa un porcentaje exacto.':'SAM segments run in parallel. Animated bars indicate activity; Meta does not report an exact percentage.'):(es?'Este modo envía el video completo en una solicitud SAM cuando no reutiliza un resultado. La revisión de suspensión con Spark se mide por separado.':'This mode sends the complete video in one SAM request unless reusing a result. Spark suspension review is timed separately.')}}</small>
+              <small class="sam-stage-help">{{freeCacheAvailable()?(es?'Recuperando las mediciones guardadas, sin llamadas a Meta.':'Loading saved measurements without Meta calls.'):(es?'El video completo se envía a SAM en una solicitud, sin cortes ni reintentos automáticos. Las barras indican actividad; Meta no informa un porcentaje exacto.':'The complete video is sent to SAM in one request, without cuts or automatic retries. Bars indicate activity; Meta does not report an exact percentage.')}}</small>
             </div>
           }
           @if(!checking() && !processing() && !connection.busy()) {
@@ -194,10 +177,10 @@ interface SamAdaptiveReport {
               <span>{{error()}}</span>
 
             } @else if(adaptiveResult(); as batch) {
-              <span>{{es?'Lote SAM dinámico registrado':'Adaptive SAM batch recorded'}}:
+              <span>{{batch.parts===1?(es?'SAM · video completo registrado':'SAM · complete video recorded'):(es?'Resultado segmentado anterior':'Previous segmented result')}}:
                 {{batch.completedParts}}/{{batch.parts}} {{es?'solicitudes completas':'requests completed'}} ·
                 {{batch.derivedFramesWithMasks??0}} {{es?'máscaras':'masks'}} ·
-                {{batch.derivedSeamsVerified===true?(es?'empalmes coherentes':'seams consistent'):(es?'revisión de empalmes pendiente':'seam review pending')}}.
+                {{batch.parts===1?(batch.derivedSeamsVerified===true?(es?'continuidad verificada':'continuity verified'):(es?'verificación pendiente':'verification pending')):(batch.derivedSeamsVerified===true?(es?'empalmes coherentes':'seams consistent'):(es?'revisión de empalmes pendiente':'seam review pending'))}}.
                 {{es?'No se declara validación científica automática.':'No automatic scientific validation is claimed.'}}</span>
             } @else if(validationState()==='ready') {
               <span>{{es?'Procesado · resultados disponibles.':'Processed · results available.'}}</span>
@@ -527,8 +510,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.finishProcessing();this.processingFailed.emit();
   }
   readonly mode=signal<SamMode>('api-meta');
-  // Source selection is independent of segmentation. Legacy single-call
-  // methods remain available for old embedded clients and their contracts.
+  // Keep the verified archive transport and historical batch recovery.
+  // Every new quote and submission must contain one complete-video SAM call.
+  // Legacy single-call methods remain available for old embedded clients.
   segmentedMode():boolean {return true;}
   apiEnabled():boolean {return this.mode()==='api-meta' || this.mode()==='api-meta-cache' || this.mode()==='api-meta-adaptive';}
   cacheEnabled():boolean {return this.mode()==='cache-only' || this.mode()==='api-meta-cache' || this.mode()==='api-meta-adaptive';}
@@ -638,11 +622,11 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     }
     for(let i=0;i<(this.adaptiveQuote()?.parts??0);i++){
       const part=p?.perPart.find(x=>x.part===i);
-      rows.push({key:'sam-'+i,label:this.adaptiveQuote()?.recoveryFromBatchId?
+      rows.push({key:'sam-'+i,label:this.adaptiveQuote()?.parts===1?
         (this.es?'SAM · video completo':'SAM · full video'):'SAM · '+(this.es?'segmento ':'segment ')+(i+1),
         state:part?.state??'NOT_STARTED',ms:part?.elapsedMs??0});
     }
-    rows.push({key:'join',label:this.adaptiveQuote()?.recoveryFromBatchId?
+    rows.push({key:this.adaptiveQuote()?.parts===1?'validation':'join',label:this.adaptiveQuote()?.parts===1?
       (this.es?'Verificación':'Verification'):(this.es?'Unión y verificación':'Join and verification'),
       state:phase==='COMPLETED'?'COMPLETED':phase==='FAILED'?'FAILED':
         phase==='VALIDATING'?'IN_PROGRESS':'NOT_STARTED',ms:p?.validationElapsedMs??0});
@@ -756,7 +740,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           !spark.priorAttempt && spark.status==='NEEDS_LOCALIZATION' &&
           spark.maximumEstimatedCostUsd>0 && Number.isFinite(spark.maximumEstimatedCostUsd))) &&
         quote.canRunWithManualToken &&
-        quote.parts>0 && quote.parts<=50 && quote.simultaneousRequests<=12 &&
+        quote.parts===1 && quote.simultaneousRequests===1 &&
         quote.totalSamEstimatedUsd>0 && quote.totalSamEstimatedUsd<=0.50 &&
         ready.creditsConfirmedByOwner && ready.ownerApprovedPaidRequests &&
         ready.paidRequestsSwitchEnabled===true && ready.manualTokenCallsPermitted===true &&
@@ -840,11 +824,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.segmentedMode()){
       const result=this.adaptiveResult();
       if(result)return result.completedParts===result.parts ?
-        (this.es?'Lote terminado':'Batch completed') :
-        (this.es?'Lote incompleto':'Incomplete batch');
-      if(this.adaptiveQuote()?.recoveryFromBatchId)return this.es?'Recuperación lista':'Recovery ready';
-      if(this.adaptiveQuote())return this.es?'Plan dinámico listo':'Adaptive plan ready';
-      return this.es?'Sin plan dinámico':'No adaptive plan';
+        (this.es?'Solicitud SAM finalizada':'SAM request finished') :
+        (this.es?'Solicitud SAM incompleta':'SAM request incomplete');
+      if(this.adaptiveQuote())return this.es?'Video completo listo':'Complete video ready';
+      return this.es?'Sin cotización':'No quote';
     }
     if(this.validationState()==='ready')return this.es?'Procesado':'Processed';
     if(this.checking())return this.es?'Comprobando':'Checking';
@@ -908,11 +891,14 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       if(progress?.continuousRetry)return this.es?
         'El lote no se validó. Se está realizando el único reintento autorizado, sin cortes ni otra consulta Spark.':
         'The batch was not validated. Running the single authorized retry, without cuts or another Spark call.';
+      if(q?.parts===1)return this.es?
+        'SAM procesa el video completo en una solicitud. Las barras muestran actividad, no un porcentaje de tiempo.':
+        'SAM processes the complete video in one request. Bars show activity, not a time percentage.';
       return this.es?
-        'SAM en segmentos con streaming: '+(progress?.completed??0)+'/'+
-        (q?.parts??0)+' solicitudes con recibo. No es un porcentaje de tiempo.':
-        'Segmented SAM streaming: '+(progress?.completed??0)+'/'+
-        (q?.parts??0)+' requests with receipts. Not a time percentage.';
+        'Resultado segmentado anterior: '+(progress?.completed??0)+'/'+
+        (q?.parts??0)+' solicitudes con recibo.':
+        'Previous segmented result: '+(progress?.completed??0)+'/'+
+        (q?.parts??0)+' requests with receipts.';
     }
     if(this.processingPhase()==='review')return this.es?
       'Contrastando el anclaje visible con las posiciones de SAM. Una revisión, sin repetir el seguimiento.':
@@ -977,11 +963,11 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.segmentedMode()){
       const q=this.adaptiveQuote();
       return q?(this.es?
-        'Procesar autoriza '+(q.requiresNewSparkCall?'localizar y verificar el objeto con Spark y después hasta ':'reutilizar Spark y enviar ')+
-        q.parts+' solicitudes SAM, hasta '+q.simultaneousRequests+' simultáneas. '+((q.continuousRetryEstimatedUsd??0)>0?'Si el lote falla, autoriza UN reintento con el video completo, incluido en el costo total mostrado.':'Sin reintentos automáticos.'):
-        'Process authorizes '+(q.requiresNewSparkCall?'Spark localization and visual verification followed by up to ':'reusing Spark and sending ')+
-        q.parts+' SAM requests, up to '+q.simultaneousRequests+' concurrent. '+((q.continuousRetryEstimatedUsd??0)>0?'If the batch fails, authorizes ONE full-video retry, included in the displayed total.':'No automatic retries.')):
-        (this.es?'Esperando el presupuesto de segmentos.':'Waiting for the segment quote.');
+        'Procesar autoriza '+(q.requiresNewSparkCall?'localizar y verificar el objeto con Spark y enviar ':'usar la localización verificada y enviar ')+
+        'el video completo en UNA solicitud SAM. Sin cortes ni reintentos automáticos.':
+        'Process authorizes '+(q.requiresNewSparkCall?'Spark localization and visual verification, then sending ':'using verified localization and sending ')+
+        'the complete video in ONE SAM request. No cuts or automatic retries.'):
+        (this.es?'Esperando el presupuesto del video completo.':'Waiting for the complete-video quote.');
     }
     if(this.reviewOnlyRequired())return this.es?
       'SAM está guardado. Procesar autoriza una revisión de Spark del video y la suspensión, hasta el máximo mostrado; no repite SAM.':
@@ -1002,7 +988,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       'Resume the saved result with the recovery code before starting another analysis.';
     if(this.segmentedMode()){
       const q=this.adaptiveQuote(),r=this.readiness();
-      if(!q)return this.es?'Actualiza el costo del procesamiento por segmentos.':'Refresh the segment processing cost.';
+      if(!q)return this.es?'Actualiza el costo del video completo.':'Refresh the complete-video cost.';
       if(q.requiresNewSparkCall && !this.groundingQuote()?.canRun)return this.es?
         (this.groundingQuote()?.priorAttempt?
           'Un intento anterior de Spark quedó sin resolver. No se ha iniciado otra consulta; revisa los detalles del intento.':
@@ -1017,8 +1003,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       if(!this.tokenEntered())return this.es?
         'Registra tu token Meta para continuar.':
         'Enter your Meta key to continue.';
-      return this.es?'El plan dinámico no cumple los límites.':
-        'The adaptive plan does not meet current limits.';
+      return this.es?'El video no cumple los límites de una solicitud completa.':
+        'The video does not meet the limits for one complete-video request.';
     }
     if(this.reviewOnlyRequired())return this.es?
       'La suspensión requiere revisión de Spark. Confirma tu token para usar el costo mostrado.':
@@ -1052,23 +1038,29 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(!this.canOfferPaidRun())return this.es?'El servidor no permite esta solicitud. Actualiza el costo o revisa el estado.':'The server does not allow this request. Refresh the cost or inspect status.';
     return this.es?'Confirma la revisión del intento anterior antes de procesar.':'Confirm review of the previous attempt before processing.';
   }
+  private singleVideoLimitError(error:unknown):string|null {
+    if(!(error instanceof HttpErrorResponse) || error.error?.error!=='SAM_SINGLE_VIDEO_FRAME_LIMIT')return null;
+    return this.es?
+      'El video completo debe tener entre 50 y 2500 fotogramas para una solicitud SAM. Carga una grabación dentro de ese límite; no se dividirá automáticamente.':
+      'The complete video must contain 50 to 2500 frames for one SAM request. Upload a recording within that limit; it will not be split automatically.';
+  }
+
   private validAdaptiveQuote(q:SamAdaptiveQuote,sha:string):boolean {
     const retry=q.continuousRetryEstimatedUsd??0,combined=this.combinedSamCost(q);
-    const validRetry=Number.isFinite(retry) && retry>=0 && retry<=.50 &&
-      Number.isFinite(combined) && Math.abs(combined-q.totalSamEstimatedUsd-retry)<1e-8 &&
-      (retry===0 || (q.parts>=2 && q.parts<=3 && !q.recoveryFromBatchId &&
-        Number.isSafeInteger(q.sourceFrames) && q.sourceFrames>0 &&
-        Math.abs(retry-Math.max(50,q.sourceFrames)*.0002)<1e-8));
     return q.mode===this.paidMode() && (this.cacheEnabled() || (!q.recoveryFromBatchId &&
-      (q.requiresNewSparkCall || /^[a-f0-9]{32}$/.test(q.sceneRunId??'')))) && validRetry && q.sourceSha256===sha && /^[a-f0-9]{32}$/.test(q.suggestedBatchId) &&
-      /^[a-f0-9]{64}$/.test(q.planSha256) && q.parts>=1 && q.parts<=50 &&
-      q.simultaneousRequests>=1 && q.simultaneousRequests<=12 &&
+      (q.requiresNewSparkCall || /^[a-f0-9]{32}$/.test(q.sceneRunId??'')))) &&
+      retry===0 && Number.isFinite(combined) && Math.abs(combined-q.totalSamEstimatedUsd)<1e-8 &&
+      q.sourceSha256===sha && /^[a-f0-9]{32}$/.test(q.suggestedBatchId) &&
+      /^[a-f0-9]{64}$/.test(q.planSha256) && q.parts===1 && q.simultaneousRequests===1 &&
+      Number.isSafeInteger(q.sourceFrames) && q.sourceFrames>0 &&
+      q.submittedFrames===q.sourceFrames && q.billableFrames===Math.max(50,q.sourceFrames) &&
       Number.isFinite(q.totalSamEstimatedUsd) && q.totalSamEstimatedUsd>0 &&
       q.totalSamEstimatedUsd<=.50 &&
       (q.requiresNewSparkCall!==q.existingSparkSceneVerified) &&
       (!q.recoveryFromBatchId || (/^[a-f0-9]{32}$/.test(q.recoveryFromBatchId) &&
-        q.parts===1 && q.simultaneousRequests===1 && q.existingSparkSceneVerified && !q.requiresNewSparkCall));
+        q.existingSparkSceneVerified && !q.requiresNewSparkCall));
   }
+
   private async checkAdaptive():Promise<void> {
     if(!this.hasSource() || !this.http || !this.studyId() || !this.videoSha256() ||
        this.processing() || this.checking() || this.sending())return;
@@ -1089,7 +1081,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       if(!useApi)return;
       const [quote,access,spark]=await Promise.all([
         firstValueFrom(this.http.get<SamAdaptiveQuote>(
-          this.adaptiveUrl()+'/preflight?targetCoreFrames=53&mode='+mode).pipe(timeout(90000))),
+          this.adaptiveUrl()+'/preflight?mode='+mode).pipe(timeout(90000))),
         firstValueFrom(this.http.get<SamReadiness>(root+'/api/meta/readiness').pipe(timeout(10000))),
         firstValueFrom(this.http.get<GroundingQuote>(this.adaptiveUrl()+'/spark-quote?mode='+mode).pipe(timeout(90000)))
       ]);
@@ -1103,13 +1095,13 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     }catch(e) {
       if(serial===this.serial){
         const status=(e as {status?:number})?.status;
-        this.error.set(status===404?(this.es?
+        this.error.set(this.singleVideoLimitError(e) ?? (status===404?(this.es?
           'Este video no está disponible en el servidor seleccionado. Vuelve al servidor donde lo cargaste.':
           'This video is not available on the selected server. Use the server where it was uploaded.'):
           status===0?(this.es?'No se pudo conectar con la API local. Comprueba la conexión en Configuración.':
           'Cannot reach the local API. Check the connection in Settings.'):
-          (this.es?'No se pudo preparar el presupuesto de segmentos. Revisa el video y la evidencia de Spark; no se envió nada a Meta.':
-          'Could not prepare the segment quote. Review the video and Spark evidence; nothing was sent to Meta.'));
+          (this.es?'No se pudo preparar el presupuesto del video completo. Revisa el video y la evidencia de Spark; no se envió nada a Meta.':
+          'Could not prepare the complete-video quote. Review the video and Spark evidence; nothing was sent to Meta.')));
       }
     }finally{if(serial===this.serial)this.checking.set(false);}
   }
@@ -1196,7 +1188,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         const sceneRunId=located.evidence?.runId;
         if(mode==='api-meta' && !/^[a-f0-9]{32}$/.test(sceneRunId??''))throw Error('SPARK_RUN_MISSING');
         const exact=await firstValueFrom(this.http.get<SamAdaptiveQuote>(
-          url+'/preflight?targetCoreFrames=53&mode='+mode+(sceneRunId?'&sceneRunId='+encodeURIComponent(sceneRunId):'')).pipe(timeout(90000)));
+          url+'/preflight?mode='+mode+(sceneRunId?'&sceneRunId='+encodeURIComponent(sceneRunId):'')).pipe(timeout(90000)));
         if(!current())return;
         if(!this.validAdaptiveQuote(exact,sha) || exact.requiresNewSparkCall ||
           exact.sparkSceneKey!==located.scene.key || (sceneRunId && exact.sceneRunId!==sceneRunId) ||
@@ -1223,8 +1215,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         modelApiToken:token,videoSha256:sha,sceneKey:quote.sparkSceneKey,mode,sceneRunId:quote.sceneRunId??null,
         planSha256:quote.planSha256,clientBatchId:quote.suggestedBatchId,
         maximumSamCostUsd:quote.totalSamEstimatedUsd,
-        confirmOneContinuousRetry:(quote.continuousRetryEstimatedUsd??0)>0,maximumCombinedSamCostUsd:this.combinedSamCost(quote),
-        targetCoreFrames:53,maxInFlight:quote.simultaneousRequests,recoveryFromBatchId:quote.recoveryFromBatchId??null,
+        confirmOneContinuousRetry:false,maximumCombinedSamCostUsd:quote.totalSamEstimatedUsd,
+        maxInFlight:1,recoveryFromBatchId:quote.recoveryFromBatchId??null,
         confirmPrivateVideoTransfer:true,confirmUpToManyBillableSamCalls:true,confirmNoAutomaticRetry:true
       },{headers:{'X-ProofLab-Manual-Action':'sam-adaptive-batch'}}).pipe(timeout(70*60*1000))).catch(async failure=>{
         if(!current() || !this.recoverableAdaptiveReply(failure))throw failure;
@@ -1260,7 +1252,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     }catch(e){
       if(current()){
         const code=e instanceof Error?e.message:'';
-        this.error.set(code==='BATCH_ID_MISMATCH'?(this.es?
+        this.error.set(this.singleVideoLimitError(e) ?? (code==='BATCH_ID_MISMATCH'?(this.es?
           'El resultado guardado no coincide con este video y su solicitud. No se abrirán gráficos ni se enviará otro análisis; revisa el código de recuperación.':
           'The saved result does not match this video and request. No overlays will open and no new analysis will be sent; review the recovery code.'):
           code==='SEGMENT_QUOTE_CHANGED'?(this.es?
@@ -1272,8 +1264,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           (this.adaptiveResult()?.automaticRetryOfBatchId || this.adaptiveResult()?.automaticRetryBatchId)?(this.es?
           'El reintento con el video completo también quedó inconcluso. No se harán más envíos automáticos. Puedes reproducir el original; los gráficos quedan pendientes.':
           'The whole-video retry was also inconclusive. No further automatic requests will be made. Original playback is available; overlays remain pending.'):
-          (this.es?'No se pudieron validar todos los segmentos. Puedes reproducir el original; los gráficos quedan pendientes. Consulta las etapas y actualiza el costo para un nuevo intento manual.':
-          'Not all segments could be validated. Original playback is available; overlays remain pending. Review the stages and refresh the cost for a new manual attempt.'));
+          (this.es?'No se pudo validar el resultado del video completo. Puedes reproducir el original; los gráficos quedan pendientes. No se enviará otra solicitud automáticamente.':
+          'The complete-video result could not be validated. Original playback is available; overlays remain pending. No further request will be sent automatically.')));
         this.failProcessing();
       }
     }finally{
