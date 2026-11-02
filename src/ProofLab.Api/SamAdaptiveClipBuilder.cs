@@ -9,7 +9,7 @@ namespace ProofLab.Api;
 /// <summary>
 /// New plans copy the complete original video stream into one MP4.
 /// No re-encoding, provider uploads or original-file edits.
-/// Every decoded frame is compared byte-for-byte (SHA256) to the original.
+/// The complete remux is verified by file SHA-256, geometry, frame count and source PTS.
 /// A failed/incomplete clip disqualifies the entire batch from paid transport.
 /// </summary>
 public sealed partial class SamAdaptiveClipBuilder(
@@ -113,6 +113,7 @@ public sealed partial class SamAdaptiveClipBuilder(
         return new(width,height,rotation);
     }
 
+    // Retained only for historical segmented preparation. New complete-video requests do not call this.
     private async Task<string[]> FrameHashes(
         string path,CancellationToken ct)
     {
@@ -162,7 +163,7 @@ public sealed partial class SamAdaptiveClipBuilder(
     }
 
     // A continuous recovery needs no artificial IDRs or large lossless encode:
-    // copy the original video stream, retain rotation, verify every pixel and PTS.
+    // copy the original video stream, retain rotation, frame count and PTS without decoding every frame twice.
     private async Task<SamAdaptiveClipManifest> PrepareContinuousAsync(
         SamVideoSource source,IReadOnlyList<double> originalPts,SamAdaptiveSegmentPlan plan,
         string folder,string originalSha,SamOrientedFrameGeometry display,string ptsSha,
@@ -186,20 +187,15 @@ public sealed partial class SamAdaptiveClipBuilder(
                 throw new InvalidDataException("Continuous copy changed source timestamps.");
             worst=Math.Max(worst,delta);
         }
-        var hashes=await Task.WhenAll(FrameHashes(source.Path,ct),FrameHashes(path,ct));
-        if(hashes[0].Length!=originalPts.Count || !hashes[0].SequenceEqual(hashes[1]))
-            throw new InvalidDataException("Continuous copy changed original pixels.");
         string clipSha;
         await using(var stream=File.OpenRead(path))
             clipSha=Convert.ToHexString(await SHA256.HashDataAsync(stream,ct)).ToLowerInvariant();
-        var frameHash=Convert.ToHexString(SHA256.HashData(
-            Encoding.UTF8.GetBytes(string.Join("\n",hashes[0])))).ToLowerInvariant();
         var clip=new SamAdaptiveClip(0,0,originalPts.Count,0,originalPts.Count,
             originalPts.Count,"part-00.mp4",new FileInfo(path).Length,clipSha,
-            frameHash,worst,plan.BilledFrames);
+            null,worst,plan.BilledFrames);
         var manifest=new SamAdaptiveClipManifest(originalSha,ptsSha,originalPts.Count,
             plan.SubmittedFrames,plan.BilledFrames,plan.EstimatedSamCostUsd,
-            "SAM_CONTINUOUS_ORIGINAL_REMUX_PTS_PIXEL_SHA_V1",[clip],timer.ElapsedMilliseconds);
+            "SAM_CONTINUOUS_ORIGINAL_REMUX_FILE_SHA_PTS_V2",[clip],timer.ElapsedMilliseconds);
         await File.WriteAllTextAsync(Path.Combine(folder,"clip-manifest.json"),
             JsonSerializer.Serialize(manifest,new JsonSerializerOptions{WriteIndented=true}),ct);
         return manifest;

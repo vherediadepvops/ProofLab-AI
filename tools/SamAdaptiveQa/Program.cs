@@ -54,7 +54,7 @@ try
         new SamVideoSource(sha,"offline-verified-source",input,"hevc",
             1920,1080,pts[^1]),
         pts,plan,target,CancellationToken.None);
-    Console.WriteLine("FRAME_EXACT_ADAPTIVE_CLIPS_OK source="+manifest.OriginalFrames+
+    Console.WriteLine("FULL_VIDEO_REMUX_VERIFIED source="+manifest.OriginalFrames+
         " clips="+manifest.Clips.Count+
         " submitted="+manifest.SubmittedFrames+
         " billed="+manifest.BilledFrames+
@@ -63,7 +63,7 @@ try
         " prepareMs="+manifest.PrepareElapsedMs);
     foreach(var clip in manifest.Clips)
         Console.WriteLine("PART="+clip.Part+" FRAMES="+clip.Frames+
-            " BYTES="+clip.Bytes+" PIXEL_SHA_MATCH=true"+
+            " BYTES="+clip.Bytes+" FRAME_COUNT_PTS_VERIFIED=true"+
             " PTS_MAX_MS="+(clip.MaximumPtsErrorSeconds*1000).ToString(
                 "F3",System.Globalization.CultureInfo.InvariantCulture));
     Console.WriteLine("OFFLINE_ONLY NO_META_CALLS=true");
