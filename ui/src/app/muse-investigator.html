@@ -6,12 +6,28 @@
   @if(interpretationView()) {
     <p class="intro">{{es?'Muse Spark interpreta las mediciones de SAM y puede preparar una propuesta que revisarás en Predecir.':
       'Muse Spark interprets SAM measurements and may prepare a proposal for review in Predict.'}}</p>
+    @if(!state()?.evaluation) {
+      <div class="consult-cost" aria-label="Muse Spark">
+        <div><span>{{es?'Máximo estimado de una nueva consulta':'Estimated maximum for a new request'}}</span>
+          <strong>US$ {{es?'0,05':'0.05'}}</strong></div>
+        <p>{{es?'No es una factura. Si hay una respuesta guardada, se recupera sin otra llamada de pago.':
+          'Not an invoice. If a saved response exists, it is recovered without another paid call.'}}</p>
+      </div>
+    }
     @if(!interpretationOpened()) {
-      <p class="fine">{{es?'Abre la interpretación para consultar una respuesta guardada o preparar una consulta. Un envío nuevo se autoriza aparte, con su costo visible.':
-        'Open the interpretation to view a saved response or prepare a consultation. A new request is authorized separately with its cost shown.'}}</p>
-      <button class="open-interpretation" type="button" (click)="openInterpretation()" [disabled]="!!busy()||connection.busy()">
-        {{es?'Ver interpretación de Muse Spark':'View Muse Spark interpretation'}}
-      </button>
+      <p class="fine">{{es?'Consultar recupera primero la respuesta guardada; si falta, prepara las mediciones y realiza una sola llamada autorizada. No vuelve a enviar el video.':
+        'Consult first checks for a saved response; if missing, it prepares measurements and makes one authorized request. It does not resend the video.'}}</p>
+      <div class="actions">
+        <button class="primary" type="button" (click)="consultMuse()" [disabled]="!canConsultMuse()">
+          {{es?'Consultar Muse · máx. US$ 0,05':'Ask Muse · max. US$ 0.05'}}
+        </button>
+        <button class="open-interpretation" type="button" (click)="openInterpretation()" [disabled]="!!busy()||connection.busy()">
+          {{es?'Ver respuesta guardada':'View saved response'}}
+        </button>
+      </div>
+      @if(!connection.hasToken()) {
+        <button class="link" type="button" (click)="connection.openSettings()">{{es?'Configurar token para consultar':'Configure token to ask Muse'}}</button>
+      }
     }
   } @else {
     <p class="intro">{{es?'Muse Spark interpreta las mediciones de SAM, la geometría y la incertidumbre para clasificar el movimiento y decidir si conviene otra prueba.':
@@ -50,24 +66,18 @@
         <p class="fine">{{es?'La interpretación está pendiente de una respuesta registrada de Muse Spark.':
           'Interpretation is awaiting a recorded response from Muse Spark.'}}</p>
         <div class="actions">
-          <button type="button" (click)="prepare()" [disabled]="!!busy()||connection.busy()">
-            {{s.observation?(es?'Actualizar evidencia':'Refresh evidence'):(es?'Preparar evidencia':'Prepare evidence')}}
+          <button class="primary" type="button" (click)="consultMuse()" [disabled]="!canConsultMuse()">
+            {{es?'Consultar Muse · máx. US$ 0,05':'Ask Muse · max. US$ 0.05'}}
           </button>
-          @if(s.observation) {
-            <button class="primary" type="button" (click)="evaluate()" [disabled]="!canEvaluate()">
-              {{es?'Consultar Muse · máx. US$ 0,05':'Ask Muse · max. US$ 0.05'}}
-            </button>
-          }
         </div>
-        @if(s.observation) {
-          <p class="fine">{{es?'Se enviarán mediciones y limitaciones, sin volver a subir el video. Al consultar confirmas ese envío y el costo máximo estimado. La propuesta se revisa en Predecir, después de confirmar el seguimiento.':
-            'Measurements and limitations will be sent without uploading the video again. Asking Muse confirms this transfer and estimated cost ceiling. Review the proposal in Predict after confirming the tracking.'}}</p>
-          @if(!interpretationObservationMatchesSource()){<p class="warning">{{es?'La evidencia preparada no coincide con este análisis. Actualízala antes de consultar.':'Prepared evidence does not match this analysis. Refresh it before asking Muse.'}}</p>}
-          @if(!connection.hasToken()){<button class="link" type="button" (click)="connection.openSettings()">{{es?'Configurar token':'Configure token'}}</button>}
-          @if(!s.manualCallsPermitted){<p class="warning">{{es?'El servidor no tiene cupo de envío disponible.':'The server has no available request allowance.'}}</p>}
-          @if(s.attemptStatus){<p class="warning">{{es?'Existe un intento registrado que requiere revisión. No se harán reintentos automáticos.':
-            'A recorded attempt requires review. There will be no automatic retries.'}}</p>}
-        }
+        <p class="fine">{{es?'Un clic verifica la respuesta guardada, prepara la evidencia si falta y autoriza como máximo una llamada de pago. Se envían solo mediciones y limitaciones, no el video. La propuesta se revisa en Predecir.':
+          'One click checks the saved response, prepares evidence if needed and authorizes at most one paid call. Only measurements and limits are sent, not the video. Review the proposal in Predict.'}}</p>
+        @if(s.observation && !interpretationObservationMatchesSource()){<p class="warning">{{es?'La evidencia anterior no corresponde a este análisis. Consultar comprobará una nueva evidencia antes de enviar.':
+          'Earlier evidence does not match this analysis. Ask Muse will verify new evidence before sending.'}}</p>}
+        @if(!connection.hasToken()){<button class="link" type="button" (click)="connection.openSettings()">{{es?'Configurar token':'Configure token'}}</button>}
+        @if(!s.manualCallsPermitted){<p class="warning">{{es?'El servidor no permite nuevas consultas de pago.':'The server does not permit new paid requests.'}}</p>}
+        @if(s.attemptStatus){<p class="warning">{{es?'Existe un intento registrado que requiere revisión. No se harán reintentos automáticos.':
+          'A recorded attempt requires review. There will be no automatic retries.'}}</p>}
       }
     }
     <details class="evidence-input"><summary>{{es?'Ver qué recibe Muse Spark':'What Muse Spark receives'}}</summary>

@@ -278,13 +278,75 @@ describe('Muse interpretation in Understand',()=>{
     fixture.componentRef.setInput('language','en');fixture.detectChanges();
     connection.changed.next();fixture.detectChanges();
     http.expectNone(r=>r.url.includes('/muse'));
+    expect(fixture.nativeElement.textContent).toContain('Estimated maximum for a new request');
+    expect(fixture.nativeElement.textContent).toContain('US$ 0.05');
+    const primary=fixture.nativeElement.querySelector('.interpretation-card button.primary') as HTMLButtonElement;
+    expect(primary.disabled).toBeTrue();
     const button=Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
-      .find(b=>b.textContent?.includes('View Muse Spark interpretation'));
+      .find(b=>b.textContent?.includes('View saved response'));
     expect(button).toBeDefined();button!.click();
     const request=http.expectOne(base);expect(request.request.method).toBe('GET');
     request.flush(empty);await fixture.whenStable();fixture.detectChanges();
     expect(fixture.componentInstance.canEvaluate()).toBeFalse();
     http.expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+  it('shows the price before any request and completes a new consultation in one explicit click',async()=>{
+    token();const fixture=init(),component=fixture.componentInstance;
+    expect(fixture.nativeElement.textContent).toContain('Máximo estimado de una nueva consulta');
+    expect(fixture.nativeElement.textContent).toContain('US$ 0,05');
+    http.expectNone(r=>r.url.includes('/muse'));
+    const run=component.consultMuse();
+    void component.consultMuse(); // A second click during loading cannot duplicate an attempt.
+    const get=http.expectOne(base);expect(get.request.method).toBe('GET');get.flush(empty);
+    for(let i=0;i<5;i++)await Promise.resolve();
+    const prepare=http.expectOne(base+'/prepare');expect(prepare.request.method).toBe('POST');
+    expect(prepare.request.body).toEqual({videoSha256:source.originalVideoSha256,analysisId:source.analysisId,
+      pivotRevisionId:source.pivotRevisionId,adaptiveBatchId:source.adaptiveBatchId});
+    prepare.flush(prepared());
+    for(let i=0;i<5;i++)await Promise.resolve();
+    const paid=http.expectOne(base+'/evaluate');expect(paid.request.method).toBe('POST');
+    expect(paid.request.body.observationId).toBe(prepared().observation.id);
+    expect(paid.request.body.confirmPaidCall).toBeTrue();
+    expect(paid.request.body.confirmMeasuredDataTransfer).toBeTrue();
+    expect(paid.request.body.maximumEstimatedCostUsd).toBe(.05);
+    paid.flush(saved());await run;fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain(words.justification.es);
+    expect(component.state()?.evaluation?.responseId).toBe(saved().evaluation.responseId);
+    expect(component.canConsultMuse()).toBeFalse();http.expectNone(r=>r.url.includes('/muse'));
+    fixture.destroy();
+  });
+  it('recovers a saved answer with one click and no extra paid request',async()=>{
+    token();const fixture=init(),run=fixture.componentInstance.consultMuse();
+    http.expectOne(base).flush(saved());await run;fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain(words.justification.es);
+    expect(fixture.nativeElement.querySelector('.consult-cost')).toBeNull();
+    http.expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+  it('does not automatically retry an already recorded Muse attempt',async()=>{
+    token();const fixture=init(),run=fixture.componentInstance.consultMuse();
+    http.expectOne(base).flush({...empty,attemptStatus:'FAILED_REQUIRES_RECONCILIATION'});
+    await run;fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('requiere revisión');
+    expect(fixture.componentInstance.canConsultMuse()).toBeFalse();
+    http.expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+  it('stops the one-click consultation if the source changes during recovery',async()=>{
+    token();const fixture=init(),run=fixture.componentInstance.consultMuse();
+    const old=http.expectOne(base),next={...source,analysisId:'4'.repeat(32),
+      adaptiveBatchId:'4'.repeat(32),providerResponseSha256:'5'.repeat(64)};
+    fixture.componentRef.setInput('source',next);fixture.detectChanges();
+    old.flush(empty);await run;fixture.detectChanges();
+    expect(fixture.componentInstance.state()).toBeNull();
+    http.expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+  it('does not pay if fresh evidence preparation fails',async()=>{
+    token();const fixture=init(),run=fixture.componentInstance.consultMuse();
+    http.expectOne(base).flush(empty);
+    for(let i=0;i<5;i++)await Promise.resolve();
+    http.expectOne(base+'/prepare').flush({}, {status:409,statusText:'Evidence conflict'});
+    await run;fixture.detectChanges();
+    expect(fixture.componentInstance.error()).toContain('No se pudo preparar la evidencia');
+    http.expectNone(r=>r.url.endsWith('/evaluate'));fixture.destroy();
   });
   it('shows the recorded answer, limits and inputs in ES and EN without future-trial cards or another read',async()=>{
     const fixture=init(),state=saved(),received:unknown[]=[];

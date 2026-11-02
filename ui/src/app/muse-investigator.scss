@@ -1,7 +1,12 @@
 :host{display:block;margin-top:16px;color:#edf3fb}
 :host([period-interpretation]){margin:16px 0}
 .muse-card.interpretation-card{padding:16px}
-.open-interpretation{margin-top:12px;max-width:100%}
+.open-interpretation{max-width:100%}
+.consult-cost{margin:12px 0;padding:12px 13px;border:1px solid #628578;border-radius:9px;background:#112823}
+.consult-cost>div{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.consult-cost span{font-size:11px;color:#bcdfd2}
+.consult-cost strong{font-size:20px;font-weight:650;color:#a2f1d7;font-variant-numeric:tabular-nums}
+.consult-cost p{font-size:10px;margin:4px 0 0;color:#a5c6ba}
 .evidence-input ul{margin:10px 0;padding-left:18px;color:#bacbe2;font-size:11px;line-height:1.65}
 .evidence-input li+li{margin-top:6px}
 .interpretation-card .decision{gap:8px}

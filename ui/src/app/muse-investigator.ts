@@ -173,6 +173,25 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     this.resetInterpretationContext();this.interpretationOpened.set(true);
     await this.load();
   }
+  canConsultMuse():boolean {
+    if(!this.interpretationView() || !!this.busy() || this.connection.busy() || !this.connection.hasToken())return false;
+    const state=this.state();
+    return !state?.evaluation && !state?.prediction && !state?.attemptStatus &&
+      state?.manualCallsPermitted!==false;
+  }
+  async consultMuse():Promise<void> {
+    // This explicit user action is the only entry to a paid call; merely mounting Understand remains read-free.
+    if(!this.canConsultMuse())return;
+    const context=JSON.stringify([this.connection.port(),this.source()]);
+    if(!this.interpretationOpened())await this.openInterpretation();
+    else if(!this.state())await this.load();
+    // No auto-retry of previous attempts, no calls for an older video/analysis or frozen proposal.
+    if(!this.canConsultMuse() || !this.interpretationOpened() || !this.state() ||
+      JSON.stringify([this.connection.port(),this.source()])!==context)return;
+    if(!this.interpretationObservationMatchesSource())await this.prepare();
+    if(JSON.stringify([this.connection.port(),this.source()])!==context || !this.canEvaluate())return;
+    await this.evaluate();
+  }
   ngOnDestroy():void{this.serial++;this.subscription.unsubscribe();}
   private accept(state:MuseState):void {
     this.state.set(state);
