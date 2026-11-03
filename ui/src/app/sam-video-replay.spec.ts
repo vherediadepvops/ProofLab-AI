@@ -18,16 +18,16 @@ describe('Stage 3: SAM video offline review UI',()=>{
     await TestBed.configureTestingModule({imports:[SamVideoReplay]}).compileComponents();
   });
 
-  it('imports a valid mask without any HTTP request, preserving its warning',async()=>{
+  it('decodes a valid mask without HTTP while keeping the importer out of the laboratory',async()=>{
     const f=TestBed.createComponent(SamVideoReplay);
     f.detectChanges();
-    const input=f.nativeElement.querySelector('input[type=file]') as HTMLInputElement;
+    const input=document.createElement('input'); input.type='file';
     Object.defineProperty(input,'files',{configurable:true,value:[fileFrom(SYNTHETIC_WIRE)]});
     await f.componentInstance.onFile({target:input} as unknown as Event);
     f.detectChanges();
     expect(f.componentInstance.result()?.detectionCount).toBe(1);
-    expect(f.nativeElement.textContent).toContain('AUTENTICIDAD NO VERIFICADA');
-    expect(f.nativeElement.querySelectorAll('svg path').length).toBe(1);
+    expect(f.nativeElement.querySelector('input[type=file]')).toBeNull();
+    expect(f.nativeElement.querySelectorAll('svg path').length).toBe(0);
     expect(f.componentInstance.selectedFrame()?.frameIndex).toBe(0);
   });
 
@@ -35,7 +35,7 @@ describe('Stage 3: SAM video offline review UI',()=>{
     const f=TestBed.createComponent(SamVideoReplay);
     f.componentRef.setInput('videoSha256','aaaa');
     f.detectChanges();
-    const input=f.nativeElement.querySelector('input[type=file]') as HTMLInputElement;
+    const input=document.createElement('input'); input.type='file';
     Object.defineProperty(input,'files',{configurable:true,value:[fileFrom(SYNTHETIC_WIRE)]});
     await f.componentInstance.onFile({target:input} as unknown as Event);
     expect(f.componentInstance.result()).not.toBeNull();
@@ -50,7 +50,7 @@ describe('Stage 3: SAM video offline review UI',()=>{
   it('never displays invented masks for a bad response',async()=>{
     const f=TestBed.createComponent(SamVideoReplay);
     f.detectChanges();
-    const input=f.nativeElement.querySelector('input[type=file]') as HTMLInputElement;
+    const input=document.createElement('input'); input.type='file';
     Object.defineProperty(input,'files',{configurable:true,value:[fileFrom('<0f>')]});
     await f.componentInstance.onFile({target:input} as unknown as Event);
     f.detectChanges();

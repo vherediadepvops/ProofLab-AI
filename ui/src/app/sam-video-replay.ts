@@ -258,44 +258,6 @@ interface SamAdaptiveReport {
           }
 
         </div>
-        <details class="sam-technical">
-          <summary>{{es?'Detalles técnicos':'Technical details'}}</summary>
-          <div class="sam-detail-body">
-            <p>{{sourceDescription()}}</p>
-            @if(preflight(); as pf) {
-              <p>{{(!apiEnabled() || freeCacheAvailable())?(es?'Costo de recuperar las mediciones':'Cost of loading measurements'):(es?'Estimación completa para enviar a Meta':'Full estimate for sending to Meta')}}: US$ {{displayedCost().toFixed(4)}} · {{pf.codec}}</p>
-            }
-            @if(adaptiveResult(); as batch) {
-              <p>{{es?'Lote':'Batch'}}: {{batch.batchId}} · {{batch.status}} ·
-                {{es?'iniciadas':'started'}} {{batch.startedParts}}/{{batch.parts}} ·
-                {{es?'fallidas':'failed'}} {{batch.failedParts}}</p>
-            }
-            @if(cacheStatus(); as s) {
-              <p>{{es?'Estado':'Status'}}: <strong>{{s.status}}</strong></p>
-              <p class="sam-cache-origin">{{s.storage || '—'}} · {{s.cacheHit===true?'HIT':s.cacheHit===false?'MISS':'—'}}
-                @if(s.analysisId) { · {{es?'Análisis':'Analysis'}}: {{s.analysisId}} }
-              </p>
-              @if(s.status.startsWith('CACHED_META_') && !freeCacheAvailable()) {
-                <p>{{es?'Nuevo análisis SAM guardado.':'New SAM analysis saved.'}}</p>
-              }
-              @if(s.status.includes('RECONCILIATION')) {
-                <p class="sam-caution">{{es
-                  ? 'Existe un intento previo posiblemente facturado. Se requiere revisión manual antes de otra ejecución; nunca habrá reintento automático.'
-                  : 'A prior attempt may have been billed. Manual review is required before another execution; no automatic retry.'}}</p>
-              }
-            }
-            @if(suspensionReviewQuote()?.evidence?.answer; as review) {
-              <p class="sam-review-explanation"><strong>{{es?'Revisión de suspensión por Spark':'Suspension review by Spark'}}:</strong>
-                {{es?review.justification.es:review.justification.en}}</p>
-            }
-            <p>{{tokenEntered()?(es?'Token registrado para esta sesión':'Key registered for this session'):(es?'Token en Configuración':'API key in Settings')}} · {{apiAddress()}}
-              <button type="button" class="sam-settings-link" (click)="connection.openSettings()">{{es?'Abrir configuración':'Open settings'}}</button>
-            </p>
-            <p class="sam-disclaimer">{{es
-              ? 'Spark localiza el objeto y SAM lo sigue; ProofLab calcula los vectores y el rastro. Pendientes revisión del objeto, calibración e incertidumbre. Esta pantalla no certifica una conclusión científica.'
-              : 'Spark locates the object and SAM tracks it; ProofLab computes vectors and trails. Object review, calibration and uncertainty remain pending. This screen does not certify a scientific conclusion.'}}</p>
-          </div>
-        </details>
       } @else {
         <div class="sam-actions sam-empty">
           @if(sourcePending()) {
@@ -327,69 +289,6 @@ interface SamAdaptiveReport {
           </div>
         </form>
       </dialog>
-      <details class="sam-offline">
-        <summary>{{es?'Inspector JSON · sin evidencia autenticada':
-          'JSON inspector · unauthenticated evidence'}}</summary>
-        <p>{{es
-          ? 'Un JSON aportado manualmente sirve para ensayar el parser, pero JAMÁS activa el seguimiento científico del péndulo.'
-          : 'Manually supplied JSON can test the parser but NEVER drives the pendulum scientific tracking.'}}</p>
-        <label class="sam-file">
-          {{es ? 'Archivo JSON de respuesta' : 'Response JSON file'}}
-          <input type="file" accept=".json,application/json" (change)="onFile($event)" />
-        </label>
-        @if(loading()) {
-          <p role="status">{{es?'Decodificando máscaras…':'Decoding masks…'}}</p>
-        }
-        @if(result(); as r) {
-          <p class="sam-caution">{{es
-            ? 'REPRODUCCIÓN DE JSON APORTADO · AUTENTICIDAD NO VERIFICADA · NO VINCULADO AL SHA DEL VIDEO · SIN TIMESTAMPS PTS.'
-            : 'USER-SUPPLIED JSON REPLAY · AUTHENTICITY NOT VERIFIED · NOT LINKED TO VIDEO SHA · NO FRAME PTS.'}}</p>
-          <p>{{es?'Frames con máscaras':'Frames with masks'}}: {{r.frames.length}} ·
-             {{es?'Detecciones':'Detections'}}: {{r.detectionCount}} ·
-             {{es?'IDs':'IDs'}}: {{r.objectIds.join(', ') || '—'}} ·
-             {{r.frameWidth}} × {{r.frameHeight}} px</p>
-          @if(r.frames.length) {
-            <label>{{es?'Fotograma de SAM':'SAM frame'}}
-              <select [value]="selectedIndex()" (change)="selectFrame($event)">
-                @for(frame of r.frames; track frame.frameIndex; let i=$index) {
-                  <option [value]="i">{{frame.frameIndex}}</option>
-                }
-              </select>
-            </label>
-            @if(selectedFrame(); as frame) {
-              <svg class="sam-masks" [attr.viewBox]="'0 0 '+r.frameWidth+' '+r.frameHeight"
-                role="img" [attr.aria-label]="es?'Máscaras decodificadas, NO fotograma del video':'Decoded masks, NOT a source video frame'">
-                <rect x="0" y="0" [attr.width]="r.frameWidth" [attr.height]="r.frameHeight" fill="#101b2a"/>
-                @for(d of frame.detections; track d.objectId) {
-                  <path [attr.d]="d.maskPath"
-                    [attr.transform]="'translate('+d.left+' '+d.top+') scale('+(d.maskScaleX??1)+' '+(d.maskScaleY??1)+')'"
-                    fill="rgba(15,225,180,.48)" stroke="#42ffe0" stroke-width=".6"/>
-                  <rect [attr.x]="d.left" [attr.y]="d.top"
-                    [attr.width]="d.right-d.left" [attr.height]="d.bottom-d.top"
-                    fill="none" stroke="#f7dc6f" stroke-width=".7"/>
-                  @if(d.centroidXpx!==null && d.centroidYpx!==null) {
-                    <circle [attr.cx]="d.centroidXpx" [attr.cy]="d.centroidYpx"
-                      r="2.2" fill="#fff"/>
-                  }
-                }
-              </svg>
-              <div class="sam-frame-caption">{{es?'Solo máscara sobre fondo neutro, NO el video original.':
-                'Mask on neutral background only, NOT the original footage.'}}</div>
-              <div class="sam-objects">
-                @for(d of frame.detections; track d.objectId) {
-                  <p>ID {{d.objectId}} ·
-                    {{es?'Centroide':'Centroid'}}:
-                    ({{numberOrDash(d.centroidXpx)}}, {{numberOrDash(d.centroidYpx)}}) px ·
-                    {{es?'Píxeles de máscara':'Mask pixels'}}: {{d.foregroundPixels}} ·
-                    {{es?'Confianza':'Confidence'}}: {{numberOrDash(d.boxConfidence)}}</p>
-                }
-              </div>
-            }
-          } @else {
-            <p>{{es?'SAM no encontró objetos. No se inventan máscaras.':'SAM returned no objects. No masks are fabricated.'}}</p>
-          }
-        }
-      </details>
 
       @if(!studyId() && error()) {<p role="alert">{{error()}}</p>}
     </section>
@@ -448,16 +347,10 @@ interface SamAdaptiveReport {
     .sam-token-buttons{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}.sam-token-buttons button{min-height:42px;padding:10px 18px;border:1px solid #476078;border-radius:8px;background:transparent;color:#deedff;cursor:pointer;font:inherit;font-weight:650}
     .sam-token-buttons .sam-token-accept{background:#6ee5c1;color:#08251f;border-color:#6ee5c1}.sam-token-buttons button:focus-visible{outline:2px solid #6ee5c1;outline-offset:3px}.sam-token-buttons button:disabled{opacity:.5;cursor:not-allowed}
     @media(prefers-reduced-motion:reduce){.sam-actions .sam-token-needed{animation:none}}
-    .sam-technical,.sam-offline{margin-top:10px;border:1px solid #343e4a;border-radius:8px;background:#171b22;padding:11px 13px}
-    summary{cursor:pointer;font-size:12px;font-weight:650}p{font-size:12px;line-height:1.5}
-    .sam-detail-body{padding-top:5px;overflow-wrap:anywhere;color:#b6c8db}
-    .sam-disclaimer{font-size:11px;color:#96abc2}
+    p{font-size:12px;line-height:1.5}
     .sam-consent{display:grid;gap:9px;margin-top:14px;padding-top:14px;border-top:1px solid #343e4a;font-size:12px}
     .sam-consent label{display:flex;align-items:flex-start;gap:7px;line-height:1.5}
     .sam-consent input{margin:3px 0 0}.sam-consent .sam-approve{justify-self:start}
-    .sam-file{display:block;margin:12px 0}.sam-file input{display:block;margin-top:8px;max-width:100%}
-    .sam-masks{display:block;background:#101b2a;width:100%;max-width:560px;max-height:320px;margin-top:12px;border:1px solid #426277}
-    .sam-objects p{margin:4px 0}.sam-frame-caption{font-size:11px;color:#9cb2ca}
     .sam-stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:16px}
     .sam-stage-row>div:first-child{display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:7px}
     .sam-stage-row small,.sam-stage-help{color:#9cb2ca;font-size:11px}.sam-stage-help{grid-column:1/-1}
