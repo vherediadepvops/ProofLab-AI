@@ -180,6 +180,7 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
         var metadata=await ProbeAsync(originalFile,timeout.Token);
         if(metadata.Codec is not ("h264" or "hevc" or "mpeg4"))
             throw new ArgumentException("Source codec is not compatible with SAM MP4.");
+        var timeline=Mp4PresentationTimeline.TryRead(originalFile);
         var args=new List<string>{
             "-hide_banner","-loglevel","error","-nostdin",
             "-protocol_whitelist","file,pipe","-threads","2",
@@ -191,6 +192,9 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
             args.Add("-tag:v");
             args.Add("hvc1");
         }
+        if(timeline is not null)
+            args.AddRange(new[]{"-movie_timescale",timeline.MovieTimescale.ToString(CultureInfo.InvariantCulture),
+                "-video_track_timescale",timeline.MediaTimescale.ToString(CultureInfo.InvariantCulture)});
         args.AddRange(new[]{"-movflags","+faststart",
             "-n","-f","mp4",mp4File});
         var proc=NewProcess(ffmpeg,args.ToArray());
@@ -198,6 +202,9 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
         var file=new FileInfo(mp4File);
         if(!file.Exists || file.Length is < 10_000 or > 240_000_000)
             throw new InvalidDataException("Invalid private SAM MP4 copy.");
+        // Retain original edit/CTS semantics only when every sample size and table
+        // shape matches. Callers still verify decoded PTS and geometry before Meta.
+        timeline?.Restore(mp4File);
     }
 
     public async Task<LocalMotionTrack> TrackAsync(string localFile, CancellationToken ct)

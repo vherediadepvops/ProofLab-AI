@@ -92,10 +92,11 @@ public sealed class AssemblyTests
         public bool LiveCallsPermitted {get;set;}=true;
         public int Reservations;
         public bool ShiftRemuxPts;
+        public bool ExtraRemuxFrame;
         public Task<SamVideoSource> GetVerifiedSourceAsync(string s,string r,CancellationToken ct)=>
             Task.FromResult(new SamVideoSource(Sha,"video","synthetic.mp4","h264",1920,1080,10));
         public Task<double[]> ReadFramePtsAsync(string p,CancellationToken ct)=>
-            Task.FromResult(Enumerable.Range(0,600).Select(i=>i/60d+(ShiftRemuxPts&&p.EndsWith("full-video.mp4")?.01:0)).ToArray());
+            Task.FromResult(Enumerable.Range(0,ExtraRemuxFrame&&p.EndsWith("full-video.mp4")?601:600).Select(i=>i/60d+(ShiftRemuxPts&&p.EndsWith("full-video.mp4")?.01:0)).ToArray());
         public Task CreateMp4Async(string a,string b,CancellationToken ct)=>File.WriteAllTextAsync(b,"SYNTHETIC_REMUX_NOT_VIDEO",ct);
         public void ReserveOrThrow(){if(!LiveCallsPermitted)throw new InvalidOperationException();Reservations++;}
     }
@@ -526,6 +527,11 @@ public sealed class AssemblyTests
             f.GroundRequest() with {ConfirmVideoTransfer=false},Ct));
         Assert.Equal(0,f.Runtime.Reservations);Assert.Equal(0,f.Transport.VideoCalls);
         f.Runtime.ShiftRemuxPts=true;
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
+        Assert.Equal(0,f.Runtime.Reservations);Assert.Equal(0,f.Transport.VideoCalls);
+    }
+    [Fact] public async Task ExtraRemuxFrameIsRejectedBeforeAnyProviderReservation() {
+        using var f=new Fixture();f.Runtime.ExtraRemuxFrame=true;
         await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
         Assert.Equal(0,f.Runtime.Reservations);Assert.Equal(0,f.Transport.VideoCalls);
     }
