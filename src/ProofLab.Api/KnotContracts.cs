@@ -20,6 +20,8 @@ public sealed record KnotProviderResult(string Raw, string ProviderResponseId, i
 
 public interface IKnotFrames
 {
+    Task<byte[]> CropZoomSuspensionAsync(string path,KnotFrame frame,SuspensionCrop crop,string destination,CancellationToken ct)=>
+        CropSuspensionAsync(path,frame,crop,destination,ct);
     Task<byte[]> CropSuspensionAsync(string path,KnotFrame frame,SuspensionCrop crop,string destination,CancellationToken ct)=>
         throw new NotSupportedException("Suspension crop unavailable.");
     Task<byte[]> MarkObjectAsync(string path,KnotFrame frame,AssemblyObservation candidate,string destination,CancellationToken ct)=>

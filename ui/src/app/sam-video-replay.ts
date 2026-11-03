@@ -38,7 +38,7 @@ interface GroundingQuote {
   cacheHit:boolean;priorAttempt:boolean;canRun:boolean;
   mode:SamMode;freshRequired:boolean;protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2';
   status:'NEEDS_LOCALIZATION'|'READY'|'AMBIGUOUS'|'NOT_VISIBLE'|'PRIOR_ATTEMPT';
-  scene:GroundingScene|null;requiredSparkCalls?:number;visualReviewEstimatedCostUsd?:number;
+  scene:GroundingScene|null;requiredSparkCalls?:number;visualReviewEstimatedCostUsd?:number;localizationPlan?:string;
   evidence?:{runId?:string|null}|null;
 }
 interface SuspensionReviewQuote {
@@ -119,7 +119,7 @@ interface SamAdaptiveReport {
                   <small class="sam-meta-estimate">{{es?'1 solicitud SAM · video completo':'1 SAM request · complete video'}} ·
                     {{es?'cuadros facturables':'billable frames'}}: {{aq.billableFrames}}</small>
                   @if(aq.requiresNewSparkCall) {
-                    <small class="sam-meta-estimate">{{es?'Incluye Spark estimado US$ ':'Includes Spark estimated US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{es?'para localizar y verificar el objeto':'to locate and verify the object'}}</small>
+                    <small class="sam-meta-estimate">{{es?'Incluye Spark estimado US$ ':'Includes Spark estimated US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{groundingQuote()?.localizationPlan==='SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1'?(es?'50 originales + 50 ×1,5 + 50 ×3 y revisión del objeto':'50 originals + 50 ×1.5 + 50 ×3 and object review'):(es?'para localizar y verificar el objeto':'to locate and verify the object')}}</small>
                   }
                 }
                 @if(!freeCacheAvailable() && !reviewOnlyRequired() && reviewBudget()>0) {
@@ -566,7 +566,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         (key!=='target-review'||stages.some(s=>s.key===key)));
       const extra=stages.filter(s=>/^round-[23]-/.test(s.key)).map(s=>{
         const match=/^round-([23])-(.+)$/.exec(s.key)!;
-        const name=names.find(n=>n[0]===match[2]);
+        const zoom=match[1]==='2'?'1.5':'3';
+        const zoomNames=[['zoom-references',`Preparar 50 imágenes ×${zoom}`,`Prepare 50 images ×${zoom}`],
+          ['zoom-inference',`Revisar nudo ×${zoom}`,`Review cord exit ×${zoom}`],['zoom-verify','Validar acercamiento','Validate zoom review']];
+        const name=[...names,...zoomNames].find(n=>n[0]===match[2]);
         return [s.key,`Ronda ${match[1]} · ${name?.[1]??match[2]}`,`Round ${match[1]} · ${name?.[2]??match[2]}`];
       });
       rows.splice(0,1,...[...initial,...extra].map(([key,es,en])=>{const s=stages.find(x=>x.key===key);return {key:'spark-'+key,label:this.es?es:en,state:s?.state??'NOT_STARTED',ms:s?.elapsedMs??0,percent:s?.percent};}));
@@ -1155,8 +1158,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const previous=this.mode()==='api-meta' && this.cacheStatus()?.previousAttemptStatus
       ? (this.es?'Hay un intento anterior registrado. Este clic inicia un análisis nuevo y puede generar otro cobro. ':'A previous attempt is recorded. This click starts a new analysis and may incur another charge. '):'';
     if(this.groundingRequired())return previous+(this.es?
-      'Procesar autoriza el video completo y 50 imágenes a Spark para localizar objeto y suspensión. Si la evidencia es insuficiente, se consultan hasta dos rondas adicionales de 50 imágenes distintas, reutilizando el video. Se detiene al obtener evidencia suficiente. El costo mostrado incluye las tres rondas y SAM. Si Spark no localiza el objeto, SAM no se envía.':
-      'Process authorizes the complete video and 50 images to Spark to locate the object and suspension. Insufficient evidence can trigger up to two further rounds of 50 distinct images, reusing the uploaded video. It stops when evidence is sufficient. The displayed cost includes all three rounds and SAM. If Spark cannot locate the object, SAM is not sent.');
+      'Procesar autoriza el video y 50 imágenes originales, seguidas de 50 acercamientos ×1,5 y 50 ×3 de esos mismos fotogramas, más la revisión del objeto. El costo mostrado incluye estas revisiones y SAM. Si los acercamientos discrepan, la suspensión queda inconclusa. Si no se localiza el objeto, SAM no se envía.':
+      'Process authorizes the video and 50 original images, followed by 50 crops at ×1.5 and 50 at ×3 of those same frames, plus object review. The displayed cost includes these reviews and SAM. Disagreeing zoom reviews leave suspension inconclusive. If the object is not located, SAM is not sent.');
     return previous+(this.es?'Al pulsar Procesar autorizas enviar este video a Meta y usar los créditos del costo mostrado.':
       'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.');
   }

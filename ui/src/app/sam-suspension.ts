@@ -41,7 +41,7 @@ export function resolveSamSuspension(
     e.model!=='muse-spark-1.3'||e.width!==track.frameWidth||e.height!==track.frameHeight||
     e.width!==s.width||e.height!==s.height)return none('SUSPENSION_PROVENANCE_MISMATCH');
   let anchors=e.points;
-  const dense=e.refinement==='SPARK_DENSE_OBJECT_AND_EXIT_50_V1';
+  const dense=['SPARK_DENSE_OBJECT_AND_EXIT_50_V1','SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1'].includes(e.refinement??'');
   const visuallyRefined=dense || ['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3'].includes(e.refinement??'');
   const anchorLimit=Math.max(3,Math.min(e.width,e.height)*(visuallyRefined?.005:.04));
   const rejectedAnchorFrames:number[]=[];

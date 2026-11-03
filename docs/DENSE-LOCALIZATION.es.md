@@ -1,5 +1,10 @@
 # Localización de objeto y suspensión en 50 imágenes
 
+> Actualización 03/11/2026: las localizaciones nuevas usan siempre 50 vistas originales, 50 recortes ×1,5 y 50 recortes ×3 de los mismos 50 fotogramas. Ambos acercamientos se extraen del original, sin marcas; sus coordenadas vuelven al espacio original. La primera respuesta no puede omitir las revisiones. Solo se acepta una estimación de suspensión cuando ambos acercamientos dan un consenso estable y coincidente; de lo contrario queda inconclusa. Hay cuatro solicitudes Spark: localización inicial, dos revisiones de suspensión y revisión del cuerpo. El presupuesto conservador existente ya cubre las cuatro. Sin reintentos automáticos. Los resultados anteriores siguen siendo legibles y no se recalculan. Validación nueva: pruebas locales con respuestas simuladas; sin nuevas llamadas reales a Meta.
+
+El resto de este documento registra el protocolo anterior y sus verificaciones históricas.
+
+
 Protocolo `SPARK_DENSE_OBJECT_AND_EXIT_50_V1`. Esta implementación se verificó localmente con proveedor simulado; su precisión y latencia con Meta real aún no se han medido. Publicar el código no despliega producción.
 
 ## Flujo nuevo

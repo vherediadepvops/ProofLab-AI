@@ -407,7 +407,11 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
         return marked;
     }
 
-    public async Task<byte[]> CropSuspensionAsync(string path,KnotFrame frame,SuspensionCrop crop,string destination,CancellationToken ct)
+    public Task<byte[]> CropSuspensionAsync(string path,KnotFrame frame,SuspensionCrop crop,string destination,CancellationToken ct)=>
+        CropSuspensionCore(path,frame,crop,destination,true,ct);
+    public Task<byte[]> CropZoomSuspensionAsync(string path,KnotFrame frame,SuspensionCrop crop,string destination,CancellationToken ct)=>
+        CropSuspensionCore(path,frame,crop,destination,false,ct);
+    private async Task<byte[]> CropSuspensionCore(string path,KnotFrame frame,SuspensionCrop crop,string destination,bool annotated,CancellationToken ct)
     {
         if(ffmpeg is null)throw new InvalidOperationException("FFmpeg unavailable.");
         var original=await File.ReadAllBytesAsync(path,ct);
@@ -419,9 +423,10 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
         int w=(int)Math.Round(960d*crop.Width/Math.Max(crop.Width,crop.Height));
         int h=(int)Math.Round(960d*crop.Height/Math.Max(crop.Width,crop.Height));
         var filters=new List<string>{FormattableString.Invariant($"crop={crop.Width}:{crop.Height}:{crop.Left}:{crop.Top}:exact=1"),
-            FormattableString.Invariant($"scale={w}:{h}:flags=lanczos"),"drawgrid=w=iw/10:h=ih/10:t=1:c=white@0.12"};
+            FormattableString.Invariant($"scale={w}:{h}:flags=lanczos")};
+        if(annotated)filters.Add("drawgrid=w=iw/10:h=ih/10:t=1:c=white@0.12");
         var font=OperatingSystem.IsWindows()?"fontfile='C\\:/Windows/Fonts/arial.ttf':":"";
-        for(int n=1;n<10;n++) {
+        for(int n=1;annotated && n<10;n++) {
             filters.Add(FormattableString.Invariant($"drawtext={font}text='{n*100}':fontsize=14:fontcolor=white:box=1:boxcolor=black@0.6:x=2:y=h*{n}/10"));
             filters.Add(FormattableString.Invariant($"drawtext={font}text='{n*100}':fontsize=14:fontcolor=white:box=1:boxcolor=black@0.6:x=w*{n}/10:y=2"));
         }

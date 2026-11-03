@@ -23,7 +23,7 @@ public sealed record AssemblyQuote(string CacheKey,string VideoSha256,double Max
 public sealed record AssemblyGroundingQuote(string CacheKey,string VideoSha256,double MaximumEstimatedCostUsd,
     bool CacheHit,bool PriorAttempt,bool CanRun,string Status,SamSceneDefinition? Scene,AssemblyEvidence? Evidence,
     string Mode="api-meta-cache",bool FreshRequired=false,string Protocol=AssemblyPolicy.VideoGroundingProtocol,
-    string? EvidenceProtocol=null,int RequiredSparkCalls=1,double VisualReviewEstimatedCostUsd=0);
+    string? EvidenceProtocol=null,int RequiredSparkCalls=1,double VisualReviewEstimatedCostUsd=0,string? LocalizationPlan=null);
 public sealed record AssemblyGroundingRunRequest(string VideoSha256,string CacheKey,string ModelApiToken,
     bool ConfirmImageTransfer,bool ConfirmPaidCall,double MaximumEstimatedCostUsd,
     string? Mode=null,bool ConfirmVideoTransfer=false);
@@ -66,6 +66,9 @@ public interface IAssemblyScenes {
     Task<SamSceneDefinition?> ApprovedForQuoteAsync(string studyId,string role,CancellationToken ct)=>ApprovedAsync(studyId,role,ct);
 }
 public interface IAssemblyTransport {
+    Task<KnotProviderResult> ReviewZoomSuspensionAsync(SuspensionZoomImage[] references,byte[][] images,
+        double zoom,string token,double maximumCostUsd,CancellationToken ct)=>
+        throw new NotSupportedException("Progressive suspension review is unavailable.");
     Task<KnotProviderResult> ReviewObjectAsync(ObjectReviewImage[] references,byte[][] images,string token,CancellationToken ct)=>
         throw new NotSupportedException("Visual target review is unavailable.");
     Task<AssemblyVideoProviderResult> ReviewSuspensionAsync(string path,AssemblyVideoInput video,
@@ -199,7 +202,7 @@ public static partial class AssemblyPolicy
     {
         var target=evidence.Proposal.Target ?? throw new InvalidDataException("Missing object grounding decision.");
         if(target.Status=="NOT_VISIBLE")return "NOT_VISIBLE";
-        if(evidence.Proposal.Camera is not null && evidence.Derivation!=ObjectReviewPolicy.DenseBodyProtocol)return DenseLocalizationPolicy.ObjectReady(evidence)?"READY":"AMBIGUOUS";
+        if(evidence.Proposal.Camera is not null && evidence.Derivation is not (ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol))return DenseLocalizationPolicy.ObjectReady(evidence)?"READY":"AMBIGUOUS";
         return target.Status=="CLEAR_SINGLE_OBJECT" &&
             evidence.Proposal.Observations.Count(o=>o.Role=="object" && o.Visible && o.Confidence>=0.8)>=2
             ? "READY" : "AMBIGUOUS";

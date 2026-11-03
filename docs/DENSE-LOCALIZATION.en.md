@@ -1,5 +1,10 @@
 # Object and suspension localization across 50 images
 
+> Update 2026-11-03: new localization always uses 50 original views, 50 ×1.5 crops and 50 ×3 crops of the same 50 frames. Both enlargements come from the original, without overlays, and map back to original coordinates. The first answer cannot skip the enlarged reviews. Suspension is estimated only when both zoom reviews have stable, agreeing consensus; otherwise it remains inconclusive. Four Spark requests cover initial localization, two suspension reviews and body review. The existing conservative budget already covers all four. No automatic retries. Historical results remain readable and are not recomputed. New validation uses local mocked responses, with no new live Meta calls.
+
+The remainder records the previous protocol and its historical checks.
+
+
 Protocol `SPARK_DENSE_OBJECT_AND_EXIT_50_V1`. The implementation was verified locally with a simulated provider; accuracy and latency against live Meta remain unmeasured. Publishing source does not deploy production.
 
 ## New workflow
