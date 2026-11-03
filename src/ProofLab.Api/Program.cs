@@ -56,6 +56,7 @@ builder.Services.AddSingleton<IKnotFrames>(sp => sp.GetRequiredService<VideoMedi
 builder.Services.AddSingleton<IKnotTransport, KnotMetaTransport>();
 builder.Services.AddSingleton<PendulumKnotLocator>();
 builder.Services.AddSingleton<IAssemblyTransport, AssemblyMetaTransport>();
+builder.Services.AddSingleton<ILocalVideoPreparation,LocalVideoPreparation>();
 builder.Services.AddSingleton<AssemblyLocator>();
 builder.Services.AddSingleton<IAssemblyScenes>(sp => sp.GetRequiredService<AssemblyLocator>());
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -443,12 +444,24 @@ app.MapGet("/api/science/director/pendulum/sessions/{id}", async (
 });
 app.MapPost("/api/science/director/pendulum/sessions/{id}/video/{role}",
     async (string id,string role,string? filename,string? uploadId,HttpRequest request,
-        PendulumDirectorWorkflow director,CancellationToken ct) =>
+        PendulumDirectorWorkflow director,ILocalVideoPreparation preparation,CancellationToken ct) =>
 {
     if(request.ContentLength is null)
         return Results.BadRequest(new {error="Content-Length required."});
-    try { return Results.Ok(await director.UploadAsync(id,role,filename ?? "",
-        request.Body,request.ContentLength.Value,ct,uploadId)); }
+    try {
+        var saved=await director.UploadAsync(id,role,filename ?? "",
+            request.Body,request.ContentLength.Value,ct,uploadId);
+        // The upload is already committed. Local warmup neither confirms research
+        // parameters nor uploads anything to Meta, and cannot invalidate this upload.
+        try {
+            var (record,path)=await director.GetOriginalForQuoteAsync(id,role,ct);
+            preparation.Queue(new SamVideoSource(record.Sha256,record.VideoId,path,record.Media.Codec,
+                record.Media.Width,record.Media.Height,record.Media.DurationSeconds));
+        } catch(Exception error) {
+            app.Logger.LogWarning("Local video preparation could not be queued ({ErrorType}).",error.GetType().Name);
+        }
+        return Results.Ok(saved);
+    }
     catch(DirectorUploadConflictException ex){return Results.Conflict(new {error=ex.Message});}
     catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
@@ -456,6 +469,23 @@ app.MapPost("/api/science/director/pendulum/sessions/{id}/video/{role}",
     catch(InvalidOperationException ex){return Results.Problem(ex.Message,statusCode:503);}
 })
 .WithMetadata(new RequestSizeLimitAttribute(250_000_000));
+app.MapGet("/api/science/director/pendulum/sessions/{id}/video/{role}/preparation",
+    async (string id,string role,PendulumDirectorWorkflow director,
+        ILocalVideoPreparation preparation,HttpResponse response,CancellationToken ct) =>
+{
+    response.Headers.CacheControl="no-store";
+    try {
+        // Status must also be available before the owner has entered parameters.
+        // A read only inspects preparation; it never queues work or calls Meta.
+        var (record,path)=await director.GetOriginalForQuoteAsync(id,role,ct);
+        var source=new SamVideoSource(record.Sha256,record.VideoId,path,record.Media.Codec,
+            record.Media.Width,record.Media.Height,record.Media.DurationSeconds);
+        return Results.Ok(await preparation.StatusAsync(source,ct));
+    }
+    catch(ArgumentException){return Results.BadRequest(new {error="Invalid video identity."});}
+    catch(FileNotFoundException){return Results.NotFound(new {error="Original video not found."});}
+    catch(InvalidDataException){return Results.Conflict(new {error="Original video integrity mismatch."});}
+});
 app.MapPost("/api/science/director/pendulum/sessions/{id}/review-baseline",
     async (string id,DirectorHumanReviewRequest request,
         PendulumDirectorWorkflow director,CancellationToken ct) =>

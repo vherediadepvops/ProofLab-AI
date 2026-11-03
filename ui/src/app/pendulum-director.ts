@@ -76,6 +76,10 @@ export interface DirectorUploadProgress {
   phase:string;receivedBytes:number;totalBytes:number;startedAtUtc:string;updatedAtUtc:string;elapsedMs:number;
   phases:{key:string;status:DirectorUploadState|'PENDING';elapsedMs:number}[];
 }
+export interface LocalVideoPreparationStatus {
+  sourceSha256:string;state:'QUEUED'|'RUNNING'|'READY'|'FAILED';phase:string;
+  elapsedMs:number;referenceFrames:number;
+}
 export interface DirectorSession {
   preparationPending?:boolean;
   id: string; baselineLengthMeters: number | null; createdAtUtc: string;
@@ -123,6 +127,52 @@ export class PendulumDirector implements OnInit {
   readonly uploadActiveId=signal('');
   readonly uploadProgressUnavailable=signal(false);
   readonly uploadServerComplete=signal(false);
+  private readonly localPreparationSnapshot=signal<(LocalVideoPreparationStatus & {studyId:string;role:Stage})|null>(null);
+  readonly localVideoPreparation=computed(()=>{
+    const snapshot=this.localPreparationSnapshot(),session=this.session();
+    return snapshot && session?.id===snapshot.studyId && session[snapshot.role]?.sha256===snapshot.sourceSha256
+      ? snapshot : null;
+  });
+  private localPreparationSerial=0;
+  private localPreparationPoll:ReturnType<typeof setTimeout>|null=null;
+  private stopLocalPreparationPolling():void {
+    this.localPreparationSerial++;
+    if(this.localPreparationPoll!==null)clearTimeout(this.localPreparationPoll);
+    this.localPreparationPoll=null;
+  }
+  private startLocalPreparationPolling(session:DirectorSession,role:Stage):void {
+    this.stopLocalPreparationPolling();this.localPreparationSnapshot.set(null);
+    const sha=session[role]?.sha256;if(!sha)return;
+    const serial=this.localPreparationSerial,base=this.api,started=Date.now();
+    let unavailable=0;
+    const current=()=>serial===this.localPreparationSerial && this.api===base &&
+      this.session()?.id===session.id && this.session()?.[role]?.sha256===sha;
+    const poll=async():Promise<void>=>{
+      this.localPreparationPoll=null;if(!current())return;
+      try {
+        const value=await firstValueFrom(this.http.get<LocalVideoPreparationStatus|null>(
+          base+'/'+session.id+'/video/'+role+'/preparation').pipe(timeout(5000)));
+        if(!current())return;
+        if(value===null){unavailable++;}
+        else {
+          if(value.sourceSha256!==sha || !['QUEUED','RUNNING','READY','FAILED'].includes(value.state) ||
+            !Number.isFinite(value.elapsedMs) || value.elapsedMs<0 ||
+            !Number.isInteger(value.referenceFrames) || value.referenceFrames<0 || value.referenceFrames>50 ||
+            value.state==='READY' && value.referenceFrames!==50)throw Error('LOCAL_PREPARATION_MISMATCH');
+          unavailable=0;this.localPreparationSnapshot.set({...value,studyId:session.id,role});
+          if(value.state==='READY' || value.state==='FAILED')return;
+        }
+      } catch {
+        if(!current())return;
+        unavailable++;
+      }
+      // Informational polling must never block Next/costs/Process or run forever.
+      if(!current())return;
+      if(unavailable>=3 || Date.now()-started>=10*60*1000){this.localPreparationSnapshot.set(null);return;}
+      this.localPreparationPoll=setTimeout(()=>void poll(),2000);
+    };
+    void poll();
+  }
   readonly uploadPercent=computed(()=>{
     const transfer=this.uploadTransfer(),progress=this.uploadProgress(),id=this.uploadActiveId();
     const sent=transfer?.uploadId===id?transfer:null;
@@ -135,7 +185,7 @@ export class PendulumDirector implements OnInit {
   private uploadSerial=0;
   private uploadPollHandle:ReturnType<typeof setTimeout>|null=null;
   constructor() {
-    inject(DestroyRef).onDestroy(()=>{this.uploadSerial++;this.stopUploadPolling();});
+    inject(DestroyRef).onDestroy(()=>{this.uploadSerial++;this.stopUploadPolling();this.stopLocalPreparationPolling();});
   }
   private stopUploadPolling():void {
     if(this.uploadPollHandle!==null)clearTimeout(this.uploadPollHandle);
@@ -143,6 +193,7 @@ export class PendulumDirector implements OnInit {
   }
   clearUploadProgress():void {
     this.uploadSerial++;this.stopUploadPolling();this.uploadActiveId.set('');
+    this.stopLocalPreparationPolling();this.localPreparationSnapshot.set(null);
     this.uploadProgress.set(null);this.uploadTransfer.set(null);
     this.uploadProgressUnavailable.set(false);this.uploadServerComplete.set(false);
   }
@@ -488,6 +539,7 @@ export class PendulumDirector implements OnInit {
         throw Error('UPLOAD_RESULT_MISMATCH');
       this.uploadServerComplete.set(true);
       this.session.set(next);this.checkedVideo.set(false);
+      this.startLocalPreparationPolling(next,role);
     } catch {
       if(current())this.error.set(this.es?
         'No se pudo preparar el video. Revisa las etapas y el archivo antes de volver a cargarlo.':

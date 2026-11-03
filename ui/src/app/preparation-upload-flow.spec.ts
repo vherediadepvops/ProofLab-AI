@@ -5,10 +5,11 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { PendulumZoneOne } from './pendulum-zone-one';
 import { PendulumMasterPlayer } from './pendulum-master-player';
 import { SamVideoReplay } from './sam-video-replay';
-import type { DirectorSession } from './pendulum-director';
+import type { DirectorSession, LocalVideoPreparationStatus } from './pendulum-director';
 
 const id='d'.repeat(32),api='http://127.0.0.1:5391/api/science/director/pendulum/sessions';
 const study=api+'/'+id,prepareUrl=study+'/prepare-analysis',draftUrl=study+'/draft';
+const mediaPreparationUrl=study+'/video/baseline/preparation';
 const video={
   role:'baseline',videoId:'e'.repeat(32),originalFilename:'first.mp4',bytes:15000,sha256:'b'.repeat(64),
   uploadedAtUtc:'2026-11-01T15:00:00Z',posterAvailable:true,previewAvailable:false,
@@ -30,6 +31,10 @@ function progress(uploadId:string,phase='probe',receivedBytes=15000) {
   const now=new Date().toISOString();
   return {uploadId,studyId:id,role:'baseline',state:'RUNNING',phase,receivedBytes,totalBytes:15000,
     startedAtUtc:now,updatedAtUtc:now,elapsedMs:1000,phases:[]};
+}
+
+function mediaPreparation(state:LocalVideoPreparationStatus['state']='READY',phase='references'):LocalVideoPreparationStatus {
+  return {sourceSha256:video.sha256,state,phase,elapsedMs:1250,referenceFrames:state==='READY'?50:0};
 }
 
 describe('Preparation, native upload and explicit analysis admission',()=>{
@@ -70,13 +75,17 @@ describe('Preparation, native upload and explicit analysis admission',()=>{
     expect(request.request.body).toBe(file);expect(request.request.reportProgress).toBeTrue();
     return {pending,request,control,uploadId:uploadId!,progressUrl:study+'/video/baseline/uploads/'+uploadId};
   }
-  function flushUploadFinal(x:Context,upload:ReturnType<typeof startUpload>,state:'COMPLETED'|'FAILED'):void {
+  function flushUploadFinal(x:Context,upload:ReturnType<typeof startUpload>,state:'COMPLETED'|'FAILED',local=mediaPreparation()):void {
     flushMicrotasks();
     const reads=x.h.match(r=>r.method==='GET'&&r.url===upload.progressUrl);
     expect(reads.length).withContext('The upload requests its final server progress').toBeGreaterThan(0);
     const snapshot={...progress(upload.uploadId,state==='COMPLETED'?'complete':'receive_and_hash',
       state==='COMPLETED'?15000:0),state};
     for(const read of reads)if(!read.cancelled)read.flush(snapshot);
+    if(state==='COMPLETED'){
+      const preparation=x.h.expectOne(mediaPreparationUrl);
+      expect(preparation.request.method).toBe('GET');preparation.flush(local);
+    }
     flushMicrotasks();
   }
 
@@ -103,6 +112,67 @@ describe('Preparation, native upload and explicit analysis admission',()=>{
       expect(input).not.toBeNull();expect(input.disabled).toBeFalse();
     }
     x.h.expectNone(api);x.h.expectNone(prepareUrl);finish(x);
+  }));
+
+  it('prepares locally while inputs remain editable and stops polling when all images are ready',fakeAsync(()=>{
+    const x=setup(),u=startUpload(x);
+    u.request.flush({...blank,baseline:video});flushUploadFinal(x,u,'COMPLETED',mediaPreparation('RUNNING','video'));
+    expect(x.c.uploadServerComplete()).toBeTrue();expect(x.c.stageBusy()).toBe('');
+    expect(x.c.session()?.preparationPending).toBeTrue();expect(x.c.localVideoPreparation()?.state).toBe('RUNNING');
+    expect(x.c.uploadStatusLabel()).toContain('Preparando el video');
+    x.f.detectChanges();
+    expect((x.f.nativeElement.querySelector('#focus-length') as HTMLInputElement).disabled).toBeFalse();
+    expect((x.f.nativeElement.querySelector('.stage-next') as HTMLButtonElement).disabled).toBeFalse();
+    expect(x.c.uploadPhaseRows().find(r=>r.key==='local-video')?.status).toBe('RUNNING');
+    x.h.expectNone(prepareUrl);x.h.expectNone(r=>r.method!=='GET');
+    tick(2000);x.h.expectOne(mediaPreparationUrl).flush(mediaPreparation('RUNNING','references'));flushMicrotasks();
+    expect(x.c.uploadPhaseRows().find(r=>r.key==='local-video')?.status).toBe('COMPLETED');
+    expect(x.c.uploadPhaseRows().find(r=>r.key==='local-references')?.status).toBe('RUNNING');
+    tick(2000);x.h.expectOne(mediaPreparationUrl).flush(mediaPreparation());flushMicrotasks();
+    expect(x.c.localVideoPreparation()?.referenceFrames).toBe(50);expect(x.c.uploadStatusLabel()).toBe('Video y 50 imágenes listos');
+    x.f.componentRef.setInput('language','en');x.f.detectChanges();
+    expect(x.c.uploadStatusLabel()).toBe('Video and 50 images ready');
+    expect(x.c.uploadPhaseRows().find(r=>r.key==='local-references')?.label).toBe('Extract 50 images');
+    tick(10000);x.h.expectNone(mediaPreparationUrl);finish(x);
+  }));
+
+  it('does not turn a background preparation failure into a failed upload or research admission',fakeAsync(()=>{
+    const x=setup(),u=startUpload(x);
+    u.request.flush({...blank,baseline:video});flushUploadFinal(x,u,'COMPLETED',mediaPreparation('FAILED','references'));
+    expect(x.c.uploadServerComplete()).toBeTrue();expect(x.c.originalRegistered()).toBeTrue();
+    expect(x.c.error()).toBe('');expect(x.c.session()?.preparationPending).toBeTrue();
+    expect(x.c.uploadStatusLabel()).toBe('Video guardado · preparación pendiente');
+    expect(x.c.uploadPhaseRows().find(r=>r.key==='local-references')?.status).toBe('FAILED');
+    tick(10000);x.h.expectNone(mediaPreparationUrl);x.h.expectNone(prepareUrl);finish(x);
+  }));
+
+  it('ignores a late preparation result after selecting a different study and video',fakeAsync(()=>{
+    const x=setup(),u=startUpload(x);
+    u.request.flush({...blank,baseline:video});flushUploadFinal(x,u,'COMPLETED',mediaPreparation('RUNNING','video'));
+    tick(2000);const old=x.h.expectOne(mediaPreparationUrl);
+    x.c.clearUploadProgress();x.c.session.set({...saved(),id:'a'.repeat(32),baseline:{...video,sha256:'c'.repeat(64)}});
+    old.flush(mediaPreparation());flushMicrotasks();
+    expect(x.c.localVideoPreparation()).toBeNull();expect(x.c.session()?.id).toBe('a'.repeat(32));
+    tick(10000);x.h.expectNone(mediaPreparationUrl);finish(x);
+  }));
+
+  it('bounds unavailable status polling without blocking the saved recording',fakeAsync(()=>{
+    const x=setup(),u=startUpload(x);
+    u.request.flush({...blank,baseline:video});flushUploadFinal(x,u,'COMPLETED',mediaPreparation('RUNNING','video'));
+    for(let n=0;n<3;n++){
+      tick(2000);x.h.expectOne(mediaPreparationUrl).flush({},{status:503,statusText:'Temporarily unavailable'});flushMicrotasks();
+    }
+    expect(x.c.localVideoPreparation()).toBeNull();expect(x.c.uploadServerComplete()).toBeTrue();expect(x.c.error()).toBe('');
+    tick(10000);x.h.expectNone(mediaPreparationUrl);finish(x);
+  }));
+
+  it('rejects a mismatched video preparation and stops polling after disposal',fakeAsync(()=>{
+    const x=setup(),u=startUpload(x);
+    u.request.flush({...blank,baseline:video});flushUploadFinal(x,u,'COMPLETED',{...mediaPreparation(),sourceSha256:'c'.repeat(64)});
+    expect(x.c.localVideoPreparation()).toBeNull();
+    tick(2000);const pending=x.h.expectOne(mediaPreparationUrl);
+    finish(x);pending.flush(mediaPreparation());flushMicrotasks();
+    expect(x.c.localVideoPreparation()).toBeNull();tick(10000);x.h.expectNone(mediaPreparationUrl);
   }));
 
   it('does not register the original at 100 percent until the server completes',fakeAsync(()=>{

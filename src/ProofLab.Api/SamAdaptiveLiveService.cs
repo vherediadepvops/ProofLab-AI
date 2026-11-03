@@ -17,7 +17,8 @@ namespace ProofLab.Api;
 public sealed partial class SamAdaptiveLiveService(
     ISamVideoRuntime runtime,IAssemblyScenes scenes,ISamVideoTransport transport,
     ISamAdaptiveClipBuilder clipBuilder,MetaLiveAccess access,
-    IWebHostEnvironment environment,IConfiguration config, SuspensionReviewStore? reviews=null)
+    IWebHostEnvironment environment,IConfiguration config, SuspensionReviewStore? reviews=null,
+    ILocalVideoPreparation? localPreparation=null)
 {
     public const string Protocol="PROOFLAB_SAM_ADAPTIVE_SSE_SOURCE_PTS_V1";
     public const int MaximumLiveConcurrentRequests=12;
@@ -325,9 +326,14 @@ public sealed partial class SamAdaptiveLiveService(
             var clipDir=Path.Combine(folder,"clips");
             SamAdaptiveClipManifest manifests;
             try {
-                manifests=manualPreparedParent is null?
-                    await clipBuilder.PrepareAsync(source,pts,plan,clipDir,ct):
-                    await ReusePreparedClipAsync(source,pts,plan,clipDir,manualPreparedParent,ct);
+                // A manual retry stays pinned to its original verified submission.
+                // A fresh continuous run can reuse local media without reusing any
+                // provider response, reservation or Spark scene from an earlier run.
+                manifests=manualPreparedParent is not null?
+                    await ReusePreparedClipAsync(source,pts,plan,clipDir,manualPreparedParent,ct):
+                    localPreparation is not null && plan.PartCount==1?
+                    await localPreparation.PrepareSamAsync(source,pts,plan,clipDir,ct):
+                    await clipBuilder.PrepareAsync(source,pts,plan,clipDir,ct);
             } catch {
                 await WriteJson(Path.Combine(folder,"preparation-failed.json"),
                     new{finishedAtUtc=DateTimeOffset.UtcNow},CancellationToken.None);

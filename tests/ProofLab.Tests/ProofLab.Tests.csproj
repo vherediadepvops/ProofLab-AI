@@ -56,6 +56,8 @@
     <Compile Include="../../src/ProofLab.Api/DirectorUploadProgress.cs" Link="DirectorUploadProgress.cs" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <Compile Include="../../src/ProofLab.Api/Mp4PresentationTimeline.cs" Link="Mp4PresentationTimeline.cs" />
+    <Compile Include="../../src/ProofLab.Api/LocalVideoPreparationContracts.cs" Link="LocalVideoPreparationContracts.cs" />
+    <Compile Include="../../src/ProofLab.Api/LocalVideoPreparation.cs" Link="LocalVideoPreparation.cs" />
     <Compile Include="../../src/ProofLab.Api/ApiRequestAccess.cs" Link="ApiRequestAccess.cs" />
     <Compile Include="..\..\src\ProofLab.Api\ResearchOperationJournal.cs" Link="ResearchOperationJournal.cs" />
     <Compile Include="../../src/ProofLab.Api/ResearchFrozenSource.cs" Link="ResearchFrozenSource.cs" />

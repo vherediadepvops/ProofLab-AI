@@ -228,6 +228,13 @@ public sealed partial class AssemblyLocator
     private sealed record PreparedManifest(string RelativeDirectory,string SourceSha256,string PtsSha256,string Mp4Sha256,long Bytes,KnotFrame[] Frames);
     private sealed record PreparedInput(string Path,string Directory,string Sha256,long Bytes,KnotFrame[] Frames,bool Reused);
     private async Task<PreparedInput> PreparedVideo(string root,SamVideoSource video,double[] pts,CancellationToken ct) {
+        if(localPreparation is not null) {
+            var ready=await localPreparation.PrepareAsync(video,ct);
+            if(!pts.SequenceEqual(ready.SourcePts))throw new InvalidDataException("Prepared source timeline changed.");
+            AssemblyProgress.Done("prepare");AssemblyProgress.Start("references");
+            await ValidateFrames(ready.Directory,ready.Frames,ct);AssemblyProgress.Done("references");
+            return new(ready.Path,ready.Directory,ready.Sha256,ready.Bytes,ready.Frames,ready.Reused);
+        }
         var index=Path.Combine(root,"prepared-fifty-boundaries-v2.json");
         if(File.Exists(index)) {
             var saved=await Read<PreparedManifest>(index,ct);

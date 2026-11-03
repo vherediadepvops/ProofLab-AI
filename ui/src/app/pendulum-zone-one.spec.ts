@@ -96,6 +96,10 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       request.flush({uploadId:match[3],studyId:match[1],role:match[2],state:'COMPLETED',phase:'complete',
         receivedBytes:15000,totalBytes:15000,startedAtUtc:now,updatedAtUtc:now,elapsedMs:1000,phases:[]});
     }
+    const preparations=http.match(req=>req.method==='GET' &&
+      /\/video\/(baseline|followup)\/preparation$/.test(req.url));
+    for(const request of preparations)if(!request.cancelled)request.flush({
+      sourceSha256:video.sha256,state:'READY',phase:'references',elapsedMs:1000,referenceFrames:50});
     const pending=http.match(req=>req.method==='GET' &&
       (req.url.includes('/kinematics/') || req.url.includes('/sam/') || req.url.includes('/grounding/') || req.url.endsWith('/readiness')));
     for(const request of pending)request.flush({error:'Synthetic unavailable result'},{status:404,statusText:'Not Found'});

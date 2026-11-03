@@ -666,19 +666,58 @@ public sealed class SamAdaptiveLiveIntegrationTests
         await Assert.ThrowsAsync<InvalidDataException>(()=>f.Service.ReadPlaybackAsync("study","baseline",result.BatchId,default));
     }
 
+    [Fact]
+    public async Task FreshSamUsesPreparedLocalMediaBeforeItsOnlyProviderCall()
+    {
+        using var f=new Fixture(useLocalPreparation:true);
+        var q=await f.Quote();
+        var result=await f.Service.RunWithOneRetryAsync("study","baseline",Request(q),default);
+        Assert.Equal(1,f.LocalPreparation!.SamCopies);
+        Assert.Equal(1,f.Clips.Preparations);
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reserved);
+        Assert.True(result.DerivedSeamsVerified);
+    }
+    [Fact]
+    public async Task FailedLocalPreparationDoesNotFallbackOrReserveProviderRequest()
+    {
+        using var f=new Fixture(useLocalPreparation:true);f.LocalPreparation!.Fail=true;
+        var q=await f.Quote();
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Service.RunWithOneRetryAsync(
+            "study","baseline",Request(q),default));
+        Assert.Equal(1,f.LocalPreparation.SamCopies);Assert.Equal(0,f.Clips.Preparations);
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
+    }
+    private sealed class LocalPreparation(Clips clips):ILocalVideoPreparation
+    {
+        public int SamCopies;public bool Fail;
+        public void Queue(SamVideoSource source)=>throw new NotSupportedException();
+        public Task<LocalPreparedMedia> PrepareAsync(SamVideoSource source,CancellationToken ct)=>throw new NotSupportedException();
+        public Task<LocalPreparationStatus?> StatusAsync(SamVideoSource source,CancellationToken ct)=>throw new NotSupportedException();
+        public Task<SamAdaptiveClipManifest> PrepareSamAsync(SamVideoSource source,IReadOnlyList<double> pts,
+            SamAdaptiveSegmentPlan plan,string folder,CancellationToken ct)
+        {
+            SamCopies++;
+            Assert.Equal(Sha,source.Sha256);Assert.Equal(667,pts.Count);Assert.Equal(1,plan.PartCount);
+            if(Fail)throw new InvalidDataException("Synthetic prepared media integrity failure.");
+            return clips.PrepareAsync(source,pts,plan,folder,ct);
+        }
+    }
+
     private sealed class Fixture:IDisposable{
         private readonly string root=Path.Combine(Path.GetTempPath(),"prooflab-segments-"+Guid.NewGuid().ToString("N"));
         public string Store=>Path.Combine(root,".private","segments");
         public Runtime Runtime {get;}=new();public Scenes Scenes {get;}=new();public Transport Transport {get;}=new();
         public Clips Clips {get;}=new();
         public SamAdaptiveLiveService Service {get;}
-        public Fixture(){
+        public LocalPreparation? LocalPreparation {get;}
+        public Fixture(bool useLocalPreparation=false){
             Directory.CreateDirectory(root);
             var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{
                 ["SamAdaptive:PrivateRoot"]=Store,["Meta:AllowPaidRequests"]="true",
                 ["Meta:CreditsConfirmedByOwner"]="true",["Meta:OwnerApprovedPaidRequests"]="true",
                 ["Meta:UnlimitedManualRequests"]="true"}).Build();
-            Service=new(Runtime,Scenes,Transport,Clips,new MetaLiveAccess(config,new MetaCallSafetyBudget(43)),new Env(root),config);
+            LocalPreparation=useLocalPreparation?new(Clips):null;
+            Service=new(Runtime,Scenes,Transport,Clips,new MetaLiveAccess(config,new MetaCallSafetyBudget(43)),new Env(root),config,localPreparation:LocalPreparation);
         }
         public Task<SamAdaptiveLiveQuote> Quote(string? mode=null,string? sceneRunId=null)=>Service.PreflightAsync("study","baseline",53,4,default,mode,sceneRunId);
         public void Dispose()=>Directory.Delete(root,true);
@@ -716,13 +755,14 @@ public sealed class SamAdaptiveLiveIntegrationTests
         public Task CreateMp4Async(string source,string dest,CancellationToken ct)=>throw new NotSupportedException();
     }
     private sealed class Clips:ISamAdaptiveClipBuilder{
+        public int Preparations;
         public int MaximumParts=SamAdaptiveSegmentPlan.MaximumNewNativeParts;
         public Task<SamAdaptiveSegmentPlan> PlanAsync(SamVideoSource source,IReadOnlyList<double> pts,SamSceneDefinition? scene,int target,int concurrency,CancellationToken ct)=>
             Task.FromResult(SamAdaptiveSegmentPlan.Native(pts.Count,Enumerable.Range(0,(pts.Count+1)/2).Select(i=>i*2).ToArray(),
                 Enumerable.Range(1,pts.Count).ToArray(),scene?.Seeds.Select(s=>s.Frame).ToArray(),target,Math.Min(concurrency,8),MaximumParts));
         public async Task<SamAdaptiveClipManifest> PrepareAsync(SamVideoSource source,IReadOnlyList<double> pts,
             SamAdaptiveSegmentPlan plan,string folder,CancellationToken ct){
-            Directory.CreateDirectory(folder);var clips=new List<SamAdaptiveClip>();
+            Preparations++;Directory.CreateDirectory(folder);var clips=new List<SamAdaptiveClip>();
             foreach(var w in plan.Windows){
                 var name=plan.PartCount==1?"part-00.mp4":w.Part+".json";
                 var text=JsonSerializer.Serialize(w);

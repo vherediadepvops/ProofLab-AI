@@ -180,7 +180,7 @@ public sealed class AssemblyTests
         public readonly string Root=Path.Combine(AppContext.BaseDirectory,"assembly-test-data",Guid.NewGuid().ToString("N"));
         public readonly Runtime Runtime=new();public readonly FramesStub Frames=new();public readonly Transport Transport=new();
         public string Folder=>Path.Combine(Root,".private","physics","assembly",AssemblyPolicy.Key(Sha));
-        public AssemblyLocator Open()=>new(new Env(Root),Runtime,Frames,Transport);
+        public AssemblyLocator Open(ILocalVideoPreparation? local=null)=>new(new Env(Root),Runtime,Frames,Transport,localPreparation:local);
         public KnotRunRequest Request()=>new(Sha,AssemblyPolicy.Key(Sha),Token,true,true,.05);
         public AssemblyGroundingRunRequest GroundRequest()=>new(Sha,AssemblyPolicy.VideoGroundingKey(Sha),Token,true,true,.85,ConfirmVideoTransfer:true);
         public string GroundFolder=>Directory.GetDirectories(Path.Combine(Root,".private","physics","assembly",
@@ -939,6 +939,49 @@ public sealed class AssemblyTests
         var result=await new AssemblyMetaTransport(http).ReviewZoomSuspensionAsync(refs,images,1.5,Token,.25,Ct);
         Assert.Equal(50,ProgressiveSuspensionPolicy.Parse(AssemblyMetaTransport.OutputText(result.Raw),refs).Points.Length);
         Assert.Equal(1,http.Calls);
+    }
+
+    private sealed class SharedLocalMedia(Fixture fixture):ILocalVideoPreparation
+    {
+        private LocalPreparedMedia? ready;
+        public void Queue(SamVideoSource source)=>throw new NotSupportedException();
+        public Task<LocalPreparationStatus?> StatusAsync(SamVideoSource source,CancellationToken ct)=>throw new NotSupportedException();
+        public Task<SamAdaptiveClipManifest> PrepareSamAsync(SamVideoSource source,IReadOnlyList<double> pts,SamAdaptiveSegmentPlan plan,string directory,CancellationToken ct)=>throw new NotSupportedException();
+        public async Task<LocalPreparedMedia> PrepareAsync(SamVideoSource source,CancellationToken ct)
+        {
+            if(ready is not null)return ready with {Reused=true};
+            var root=Path.Combine(fixture.Root,".private","shared-local-media");Directory.CreateDirectory(root);
+            var path=Path.Combine(root,"full-video.mp4");await fixture.Runtime.CreateMp4Async(source.Path,path,ct);
+            var pts=await ((ISamVideoRuntime)fixture.Runtime).ReadSourceFramePtsAsync(source,ct);
+            var plan=SamAdaptiveSegmentPlan.RestoreNative(pts.Length,53,1,[new(0,0,pts.Length,0,pts.Length)]);
+            var indices=AssemblyPolicy.ReferenceIndices(pts.Length,plan);
+            var refs=await fixture.Frames.ExtractBatchAsync(source.Path,root,indices.Select(i=>(i,pts[i])).ToArray(),ct);
+            var bytes=await File.ReadAllBytesAsync(path,ct);var sha=Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            var clip=new SamAdaptiveClip(0,0,pts.Length,0,pts.Length,pts.Length,"part-00.mp4",bytes.Length,sha,null,0,plan.BilledFrames);
+            var manifest=new SamAdaptiveClipManifest(source.Sha256,plan.VerifySourcePts(pts),pts.Length,pts.Length,plan.BilledFrames,
+                plan.EstimatedSamCostUsd,"SAM_CONTINUOUS_ORIGINAL_REMUX_FILE_SHA_PTS_V2",[clip],1);
+            return ready=new(path,root,sha,bytes.Length,refs,pts,false,manifest);
+        }
+    }
+    [Fact] public async Task FreshMetaRunsReuseOnlyLocalMediaAndPreserveHistoricalEvidence()
+    {
+        using var f=new Fixture();var locator=f.Open(new SharedLocalMedia(f));
+        var request=f.GroundRequest() with {Mode="api-meta"};
+        var first=await locator.GroundAsync("s","baseline",request,Ct);
+        var root=Path.Combine(f.Root,".private","physics","assembly",AssemblyPolicy.VideoGroundingKey(Sha));
+        var oldResponse=Path.Combine(root,"runs",first.Evidence!.RunId!,"response.json");
+        await File.AppendAllTextAsync(oldResponse," ");var oldBytes=await File.ReadAllBytesAsync(oldResponse);
+        var legacyCache=Path.Combine(root,"prepared-fifty-boundaries-v2.json");
+        await File.WriteAllTextAsync(legacyCache,"preserved legacy data");
+        var second=await locator.GroundAsync("s","baseline",request,Ct);
+        Assert.NotEqual(first.Evidence.RunId,second.Evidence!.RunId);
+        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(8,f.Runtime.Reservations);
+        Assert.Equal(50,f.Frames.Calls);Assert.Equal(1,f.Frames.BatchCalls);
+        Assert.Equal(oldBytes,await File.ReadAllBytesAsync(oldResponse));
+        Assert.Equal("preserved legacy data",await File.ReadAllTextAsync(legacyCache));
+        Assert.Equal(first.Evidence.Frames,second.Evidence.Frames);
+        var runRoot=Path.Combine(root,"runs",second.Evidence.RunId!);
+        Assert.All(Enumerable.Range(0,50),i=>Assert.True(File.Exists(Path.Combine(runRoot,$"frame-{i}.jpg"))));
     }
 
 }

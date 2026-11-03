@@ -456,10 +456,27 @@ export class PendulumZoneOne extends PendulumDirector {
         return {key,label:this.uploadPhaseLabel(key),status:phase?.status??'PENDING',
           elapsedMs:phase && phase.status!=='PENDING'?phase.elapsedMs:null};
       });
+    const preparation=this.localVideoPreparation();
+    if(preparation){
+      const references=preparation.phase==='references',ready=preparation.state==='READY',failed=preparation.state==='FAILED';
+      rows.push({key:'local-video',label:this.es?'Preparar video para el análisis':'Prepare video for analysis',
+        status:ready||references?'COMPLETED':failed?'FAILED':preparation.state==='QUEUED'?'PENDING':'RUNNING',elapsedMs:null});
+      rows.push({key:'local-references',label:this.es?'Extraer 50 imágenes':'Extract 50 images',
+        status:ready?'COMPLETED':references?(failed?'FAILED':'RUNNING'):'PENDING',elapsedMs:null});
+    }
     return rows;
   }
   uploadStatusLabel():string {
-    if(this.uploadServerComplete())return this.es?'Video original guardado':'Original video saved';
+    if(this.uploadServerComplete()){
+      const preparation=this.localVideoPreparation();
+      if(preparation?.state==='READY')return this.es?'Video y 50 imágenes listos':'Video and 50 images ready';
+      if(preparation?.state==='QUEUED')return this.es?'Video guardado · preparación en espera':'Video saved · preparation queued';
+      if(preparation?.state==='RUNNING')return preparation.phase==='references'
+        ? (this.es?'Extrayendo 50 imágenes en segundo plano':'Extracting 50 images in the background')
+        : (this.es?'Preparando el video y las 50 imágenes…':'Preparing the video and 50 images…');
+      if(preparation?.state==='FAILED')return this.es?'Video guardado · preparación pendiente':'Video saved · preparation pending';
+      return this.es?'Video original guardado':'Original video saved';
+    }
     const progress=this.uploadProgress();
     if(progress?.state==='FAILED')return this.es?'La preparación del video falló':'Video preparation failed';
     if(progress?.state==='CANCELLED')return this.es?'Carga cancelada':'Upload cancelled';
