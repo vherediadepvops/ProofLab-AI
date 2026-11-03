@@ -172,6 +172,13 @@ describe('One complete-video SAM request and archived-result recovery',()=>{
   x.h.expectOne(url+'/spark-once').flush({...spark,status:'AMBIGUOUS'});await p;
   expect(emit).not.toHaveBeenCalled();expect(x.c.processing()).toBeFalse();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
  });
+ it('explains a failed Spark validation without claiming the object was absent',async()=>{
+  const x=setup();await check(x);const p=x.c.process();
+  x.h.expectOne(url+'/spark-once').flush({detail:'Spark provider output could not be validated.'},{status:502,statusText:'Bad Gateway'});await p;
+  expect(x.c.error()).toContain('completar o validar la revisión de Spark');
+  expect(x.c.error()).not.toContain('confirmar el objeto');
+  x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
  it('stops before SAM if the exact quote exceeds the approved estimate',async()=>{
   const x=setup();await check(x);const p=x.c.process();x.h.expectOne(url+'/spark-once').flush(located);await tick();
   x.h.expectOne(url+'/preflight?mode=api-meta-cache').flush({...exact,totalSamEstimatedUsd:.14,maximumSamWithRetryEstimatedUsd:.14});

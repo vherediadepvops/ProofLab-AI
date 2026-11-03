@@ -866,6 +866,19 @@ public sealed class AssemblyTests
             case "reason":points[0]!["visual_reason"]="";break;default:points.RemoveAt(49);break;}
         Assert.Throws<FormatException>(()=>ProgressiveSuspensionPolicy.Parse(json.ToJsonString(),refs));
     }
+    [Fact] public void ExactNativeIndicesAreMappedWithoutChangingCropCoordinates() {
+        var refs=ZoomReferences().Select((r,i)=>r with {Frame=r.Frame with {Index=i*29}}).ToArray();
+        var ordinal=ProgressiveSuspensionPolicy.Parse(ZoomAnswer(refs),refs);
+        var json=System.Text.Json.Nodes.JsonNode.Parse(ZoomAnswer(refs))!;
+        foreach(var (point,i) in json["points"]!.AsArray().Select((p,i)=>(p,i)))point!["frame"]=refs[i].Frame.Index;
+        var native=ProgressiveSuspensionPolicy.Parse(json.ToJsonString(),refs);
+        Assert.Equal(ordinal.Points,native.Points);
+        Assert.Equal(Enumerable.Range(0,50),native.Points.Select(p=>p.Frame));
+        json["points"]![1]!["frame"]=1;
+        Assert.Throws<FormatException>(()=>ProgressiveSuspensionPolicy.Parse(json.ToJsonString(),refs));
+        json["points"]![1]!["frame"]=99999;
+        Assert.Throws<FormatException>(()=>ProgressiveSuspensionPolicy.Parse(json.ToJsonString(),refs));
+    }
     [Fact] public void ZoomBoundaryIsNotMistakenForAVisibleCordExit() {
         var refs=ZoomReferences();var json=System.Text.Json.Nodes.JsonNode.Parse(ZoomAnswer(refs))!;
         foreach(var point in json["points"]!.AsArray())point!["x"]=1;

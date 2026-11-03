@@ -1454,8 +1454,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           'Spark terminó, pero cambió el presupuesto o la evidencia. SAM no se envió; actualiza el costo.':
           'Spark finished, but the quote or evidence changed. SAM was not sent; refresh the cost.'):
           this.processingPhase()==='grounding'?(this.es?
-          'Spark no pudo confirmar el objeto. SAM no se envió; revisa el estado antes de otro intento.':
-          'Spark could not confirm the object. SAM was not sent; review the status before another attempt.'):
+          'No se pudo completar o validar la revisión de Spark. SAM no se envió; revisa la etapa que falló antes de otro intento.':
+          'Spark review could not be completed or validated. SAM was not sent; review the failed stage before another attempt.'):
           (this.adaptiveResult()?.automaticRetryOfBatchId || this.adaptiveResult()?.automaticRetryBatchId)?(this.es?
           'El reintento con el video completo también quedó inconcluso. No se harán más envíos automáticos. Puedes reproducir el original; los gráficos quedan pendientes.':
           'The whole-video retry was also inconclusive. No further automatic requests will be made. Original playback is available; overlays remain pending.'):
