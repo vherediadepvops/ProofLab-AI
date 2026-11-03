@@ -1,5 +1,5 @@
 import type {AuthenticatedSamVideoArchive,SamPlaybackTrack} from './sam-playback';
-import {contactAuditProtocol,resolveContactAudit} from './sam-suspension-audit';
+import {isContactAuditProtocol,resolveContactAudit} from './sam-suspension-audit';
 import type {ImagePivot} from './pendulum-kinematics';
 
 export const automaticPivotProvenance='SPARK_SAM_ESTIMATE_REVIEW_PENDING';
@@ -24,7 +24,7 @@ export function resolveSamSuspension(
   archive:AuthenticatedSamVideoArchive,track:SamPlaybackTrack|null
 ):AutomaticSuspension {
   let e=archive.suspension;const s=archive.receipt.scene;
-  const originContactAudit=e?.refinement===contactAuditProtocol;
+  const originContactAudit=isContactAuditProtocol(e?.refinement);
   const review=archive.suspensionReview;
   // Authenticated, immutable review is bound to this exact SAM result.
   if(e && review && review.protocol==='SPARK_SAM_SUSPENSION_REVIEW_V1' &&
@@ -55,7 +55,7 @@ export function resolveSamSuspension(
   const anchorLimit=Math.max(3,Math.min(e.width,e.height)*(visuallyRefined?.005:.04));
   const rejectedAnchorFrames:number[]=[];
   let x:number,y:number,spread:number;
-  if(e.refinement===contactAuditProtocol){
+  if(isContactAuditProtocol(e.refinement)){
     const audit=resolveContactAudit(e,archive.receipt);
     if(!audit.ok)return none(audit.reason);
     x=audit.x;y=audit.y;spread=audit.spread;

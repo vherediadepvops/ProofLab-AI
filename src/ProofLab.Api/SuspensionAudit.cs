@@ -1,10 +1,12 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace ProofLab.Api;
 
 public sealed record SuspensionAuditPoint(int Frame,string Decision,string ReferenceKind,bool Visible,
     double X,double Y,double Confidence,string VisualReason,double TimeSeconds);
-public sealed record SuspensionAuditEvidence(string Camera,SuspensionAuditPoint[] Points,SuspensionConsensus Consensus);
+public sealed record SuspensionAuditEvidence(string Camera,SuspensionAuditPoint[] Points,SuspensionConsensus Consensus,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? Protocol=null);
 
 /// <summary>
 /// Nine independently reviewed full-image contact positions. Original fifty-point
@@ -13,13 +15,15 @@ public sealed record SuspensionAuditEvidence(string Camera,SuspensionAuditPoint[
 /// </summary>
 public static class SuspensionAuditPolicy
 {
-    public const string Protocol="SPARK_ORIGINAL_50_CONTACT_AUDIT_V2";
+    public const string LegacyProtocol="SPARK_ORIGINAL_50_CONTACT_AUDIT_V2";
+    public const string Protocol="SPARK_ORIGINAL_50_CONTACT_AUDIT_V3";
     public const int ReferenceCount=9;
     private static readonly int[] Ordinals=[0,6,12,18,24,31,37,43,49];
     public static int[] RepresentativeOrdinals()=>Ordinals.ToArray();
 
-    public static SuspensionAuditEvidence Parse(JsonElement audit,AssemblyEvidence draft,int[] reviewedOrdinals)
+    public static SuspensionAuditEvidence Parse(JsonElement audit,AssemblyEvidence draft,int[] reviewedOrdinals,string protocol=LegacyProtocol)
     {
+        ValidateProtocol(protocol);
         ValidateSource(draft,reviewedOrdinals);
         try
         {
@@ -31,15 +35,20 @@ public static class SuspensionAuditPolicy
             for(var i=0;i<rows.Length;i++)
             {
                 var row=rows[i];
-                RequireProperties(row,["frame","decision","reference_kind","visible","x","y","confidence","visual_reason"]);
+                RequireProperties(row,protocol==Protocol
+                    ?["frame","reference_kind","visible","x","y","confidence","visual_reason"]
+                    :["frame","decision","reference_kind","visible","x","y","confidence","visual_reason"]);
                 var ordinal=row.GetProperty("frame").GetInt32();
                 if(ordinal!=reviewedOrdinals[i])throw new FormatException("Audit decisions must preserve original reviewed ordinals and order.");
-                points[i]=new(ordinal,row.GetProperty("decision").GetString()!,row.GetProperty("reference_kind").GetString()!,
+                var visible=row.GetProperty("visible").GetBoolean();
+                var x=row.GetProperty("x").GetDouble();var y=row.GetProperty("y").GetDouble();
+                var decision=protocol==Protocol?DecisionForLocation(ordinal,visible,x,y,draft):row.GetProperty("decision").GetString()!;
+                points[i]=new(ordinal,decision,row.GetProperty("reference_kind").GetString()!,
                     row.GetProperty("visible").GetBoolean(),row.GetProperty("x").GetDouble(),row.GetProperty("y").GetDouble(),
                     row.GetProperty("confidence").GetDouble(),row.GetProperty("visual_reason").GetString()!,
                     draft.Frames[ordinal].TimeSeconds);
             }
-            return ValidateAndResolve(camera,points,draft,reviewedOrdinals);
+            return ValidateAndResolve(camera,points,draft,reviewedOrdinals,protocol);
         }
         catch(Exception error) when(error is InvalidOperationException or KeyNotFoundException or OverflowException or JsonException)
         {
@@ -48,8 +57,9 @@ public static class SuspensionAuditPolicy
     }
 
     public static SuspensionAuditEvidence ValidateAndResolve(string camera,SuspensionAuditPoint[] points,
-        AssemblyEvidence draft,int[] reviewedOrdinals)
+        AssemblyEvidence draft,int[] reviewedOrdinals,string protocol=LegacyProtocol)
     {
+        ValidateProtocol(protocol);
         ValidateSource(draft,reviewedOrdinals);
         if(camera is not ("STATIC" or "MOVING" or "UNCLEAR") || points is null || points.Length!=ReferenceCount)
             throw new FormatException("Invalid suspension audit camera or point count.");
@@ -66,6 +76,8 @@ public static class SuspensionAuditPolicy
                 !double.IsFinite(point.X) || !double.IsFinite(point.Y) || !double.IsFinite(point.Confidence) ||
                 point.X is <0 or >=1000 || point.Y is <0 or >=1000 || point.Confidence is <0 or >1)
                 throw new FormatException("Invalid suspension audit coordinate, source correspondence or explanation.");
+            if(protocol==Protocol && point.Decision!=DecisionForLocation(point.Frame,point.Visible,point.X,point.Y,draft))
+                throw new FormatException("A V3 audit decision must be derived from its independent contact location.");
             if(point.Decision=="UNCERTAIN")
             {
                 if(point.Visible || point.X!=0 || point.Y!=0 || point.Confidence!=0 || point.ReferenceKind=="FIXED_CORD_CONTACT")
@@ -81,7 +93,8 @@ public static class SuspensionAuditPolicy
             }
         }
         var verified=points.ToArray();
-        return new(camera,verified,Resolve(camera,verified,draft.Frames,width,height,limit,contradictoryConfirmation));
+        return new(camera,verified,Resolve(camera,verified,draft.Frames,width,height,limit,contradictoryConfirmation),
+            protocol==Protocol?Protocol:null);
     }
 
     // Called when an audited automatic scene is reloaded. Stored consensus is
@@ -89,9 +102,25 @@ public static class SuspensionAuditPolicy
     public static void Validate(SuspensionAuditEvidence audit,AssemblyEvidence draft)
     {
         if(audit is null || audit.Consensus is null)throw new InvalidDataException("Suspension audit is required.");
-        var rebuilt=ValidateAndResolve(audit.Camera,audit.Points,draft,RepresentativeOrdinals());
+        var rebuilt=ValidateAndResolve(audit.Camera,audit.Points,draft,RepresentativeOrdinals(),audit.Protocol??LegacyProtocol);
         if(JsonSerializer.Serialize(audit)!=JsonSerializer.Serialize(rebuilt))
             throw new InvalidDataException("Suspension audit consensus differs from its preserved observations.");
+    }
+
+    private static void ValidateProtocol(string protocol)
+    {
+        if(protocol is not (Protocol or LegacyProtocol))throw new FormatException("Unknown suspension audit protocol.");
+    }
+
+    // The provider reports a location, never whether it confirms our marker.
+    // Comparison uses oriented source pixels and exactly the legacy tolerance.
+    private static string DecisionForLocation(int ordinal,bool visible,double x,double y,AssemblyEvidence draft)
+    {
+        if(!visible)return "UNCERTAIN";
+        var candidate=draft.Proposal.Suspension.Points[ordinal];
+        var width=draft.Frames[0].Width;var height=draft.Frames[0].Height;
+        var limit=Math.Max(3,Math.Min(width,height)*.005);
+        return candidate.Visible && Distance(x,y,candidate.X,candidate.Y,width,height)<=limit?"CONFIRMED":"CORRECTED";
     }
 
     private static void ValidateSource(AssemblyEvidence draft,int[] reviewedOrdinals)

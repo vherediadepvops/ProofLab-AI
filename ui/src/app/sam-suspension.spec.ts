@@ -224,6 +224,40 @@ describe('Independent contact audit over nine original references',()=>{
         submitted:9,usable:9,timeCoverage:1,x:seed.x,y:seed.y,spreadPixels:0}};
     return {...data,e,audit:e.audit};
   }
+  function independentAudited() {
+    const data=audited();data.e.refinement='SPARK_ORIGINAL_50_CONTACT_AUDIT_V3';
+    data.audit.protocol='SPARK_ORIGINAL_50_CONTACT_AUDIT_V3';return data;
+  }
+  it('accepts V3 independent corrected locations without changing the fifty original observations',()=>{
+    const {archive,track,e,audit,cx,cy}=independentAudited();
+    e.points.forEach(p=>p.y-=14);audit.points.forEach(p=>p.decision='CORRECTED');
+    const before=JSON.stringify(archive),result=resolveSamSuspension(archive,track);
+    expect(result.method).toBe('SPARK');expect(result.pivot!.pivotYpx/270*1920).toBeCloseTo(cy,8);
+    expect(result.pivot!.pivotXpx/480*1080).toBeCloseTo(cx,8);expect(JSON.stringify(archive)).toBe(before);
+  });
+  it('recomputes V3 decision instead of trusting a persisted correction or confirmation',()=>{
+    const {archive,track,e,audit}=independentAudited();
+    expect(resolveSamSuspension(archive,track).pivot).not.toBeNull();
+    audit.points[0].decision='CORRECTED';expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    audit.points[0].decision='CONFIRMED';e.points.forEach(p=>p.y-=14);
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
+  it('requires matching V3 protocol and never upgrades historical V2 audit implicitly',()=>{
+    for(const protocol of [undefined,null,'SPARK_ORIGINAL_50_CONTACT_AUDIT_V2','UNKNOWN']) {
+      const {archive,track,audit}=independentAudited();audit.protocol=protocol;
+      expect(resolveSamSuspension(archive,track).pivot).withContext(String(protocol)).toBeNull();
+    }
+    const {archive,track,e,audit}=independentAudited();e.refinement='SPARK_ORIGINAL_50_CONTACT_AUDIT_V2';
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    audit.protocol=undefined;expect(resolveSamSuspension(archive,track).pivot).not.toBeNull();
+    e.points.forEach(p=>p.y-=14);expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
+  it('V3 still refuses moving contacts and unstable coordinates',()=>{
+    const {archive,track,audit}=independentAudited();
+    audit.points[3].referenceKind='MOVING_CONTACT';expect(resolveSamSuspension(archive,track).reason).toBe('MOVING_CORD_CONTACT');
+    audit.points[3].referenceKind='FIXED_CORD_CONTACT';audit.points.forEach((p,i)=>{p.x=400+i*20;p.decision='CORRECTED';});
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
   function selectInliers(data:ReturnType<typeof audited>,selected:number[]) {
     const {audit,archive}=data;
     const chosen=audit.points.filter(p=>selected.includes(p.frame));

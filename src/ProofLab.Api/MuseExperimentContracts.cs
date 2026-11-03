@@ -213,12 +213,12 @@ public static class MuseExperimentPolicy
         // Preserve historical input serialization. Only new audited evidence adds this compact context.
         if(root.GetProperty("identity").TryGetProperty("automaticSuspension",out var auditedSuspension) &&
             auditedSuspension.ValueKind==JsonValueKind.Object &&
-            auditedSuspension.TryGetProperty("refinement",out var refinement) && refinement.GetString()==SuspensionAuditPolicy.Protocol &&
+            auditedSuspension.TryGetProperty("refinement",out var refinement) && refinement.GetString() is SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol &&
             auditedSuspension.TryGetProperty("audit",out var auditData) && auditData.ValueKind==JsonValueKind.Object) {
             var audit=auditData.Deserialize<SuspensionAuditEvidence>(Json) ?? throw new ArgumentException("Missing contact audit.");
             var node=System.Text.Json.Nodes.JsonNode.Parse(json)!;
             node["suspensionAudit"]=JsonSerializer.SerializeToNode(new {
-                protocol=SuspensionAuditPolicy.Protocol,audit.Camera,audit.Consensus.Status,
+                protocol=refinement.GetString(),audit.Camera,audit.Consensus.Status,
                 audit.Consensus.Submitted,audit.Consensus.Usable,audit.Consensus.TimeCoverage,
                 confirmed=audit.Points.Count(p=>p.Decision=="CONFIRMED"),
                 corrected=audit.Points.Count(p=>p.Decision=="CORRECTED"),

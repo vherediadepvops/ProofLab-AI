@@ -6,6 +6,7 @@ import { originalImageOffset, type ImagePivot, type ImageSize, type KinematicFra
 export interface SamSuspensionEvidence {
   refinement?:string|null;
   audit?:{
+    protocol?:string|null;
     camera:'STATIC'|'MOVING'|'UNCLEAR';
     points:{frame:number;decision:'CONFIRMED'|'CORRECTED'|'UNCERTAIN';
       referenceKind:'FIXED_CORD_CONTACT'|'MOVING_CONTACT'|'UNCLEAR';visible:boolean;

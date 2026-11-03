@@ -65,17 +65,22 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly trackingAssessment=computed(()=>assessSamTracking(
     this.samTrack(),this.periodReceipt()?.framePtsSeconds??[],this.scene()?.seeds??[]));
   samEvidenceNote():string {
-    const tracking=this.trackingAssessment();
+    const tracking=this.trackingAssessment(),notes:string[]=[];
     if(tracking.firstSuspiciousTimeSeconds!==null) {
       const time=formatMediaTime(tracking.firstSuspiciousTimeSeconds);
-      return this.es
-        ? 'Seguimiento por revisar desde '+time+': cambió el contorno o faltan detecciones del objeto. Los datos originales se conservan.'
-        : 'Review tracking from '+time+': the object outline changed or detections are missing. Original data are retained.';
+      notes.push(this.es
+        ? 'Seguimiento por revisar desde '+time+': cambió el contorno o faltan detecciones del objeto.'
+        : 'Review tracking from '+time+': the object outline changed or detections are missing.');
     }
-    if(tracking.missingFrames>0)return this.es
+    if(tracking.missingFrames>0)notes.push(this.es
       ? 'Seguimiento incompleto: '+tracking.missingFrames+' fotogramas sin detección. Los huecos quedan sin valores.'
-      : 'Incomplete tracking: '+tracking.missingFrames+' frames without detection. Gaps have no values.';
-    return this.automaticSuspension()&&!this.pivotRevision()?this.automaticGeometryNote():this.es
+      : 'Incomplete tracking: '+tracking.missingFrames+' frames without detection. Gaps have no values.');
+    const automatic=this.automaticSuspension();
+    // Tracking gaps and an unresolved pivot are independent problems; show both.
+    if(automatic&&!this.pivotRevision()&&(!automatic.pivot||notes.length===0))
+      notes.push(this.automaticGeometryNote());
+    if(notes.length)return notes.join(' ');
+    return this.es
       ? 'SAM 3.1 · máscaras y centros guardados · pendiente revisión humana'
       : 'SAM 3.1 · cached masks and centroids · human review pending';
   }
@@ -85,8 +90,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       ? 'El contacto de la cuerda con el soporte se desplaza. No se puede usar como pivote fijo.'
       : 'The cord contact with the support moves. It cannot be used as a fixed pivot.';
     if(estimate?.reason==='CORD_CONTACT_UNRESOLVED')return this.es
-      ? 'No se distingue un contacto fijo de la cuerda con el soporte. El lazo móvil no basta para ubicarlo.'
-      : 'A fixed cord contact with the support is unclear. The moving loop alone does not locate it.';
+      ? 'Suspensión sin resolver: la revisión no permite ubicar un contacto fijo de la cuerda con el soporte. Sin esa posición no se calculan ángulos ni vectores.'
+      : 'Unresolved suspension: the review cannot locate a fixed cord contact with the support. Angles and vectors require that position.';
     if(!estimate?.pivot)return this.es
       ? 'Suspensión automática inconclusa: revisa el punto de salida de la cuerda y la estabilidad de la cámara.'
       : 'Automatic suspension is inconclusive: check the cord exit and camera stability.';

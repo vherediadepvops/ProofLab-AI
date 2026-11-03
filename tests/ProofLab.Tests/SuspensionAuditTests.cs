@@ -138,12 +138,77 @@ public sealed class SuspensionAuditTests
         var draft=Draft();Assert.DoesNotContain("suspensionAudit",JsonSerializer.Serialize(draft.Proposal,Json));
         var historical=new SamSuspensionEvidence(Sha,"scene","evidence",Sha,AssemblyPolicy.Model,1080,1920,draft.Proposal.Suspension.Points);
         Assert.DoesNotContain("audit",JsonSerializer.Serialize(historical,Json));
-        Assert.Throws<InvalidDataException>(()=>AssemblyPolicy.Ground(draft with {Derivation=SuspensionAuditPolicy.Protocol}));
-        var audit=Resolve(draft,Points(draft));var reviewed=draft with {Derivation=SuspensionAuditPolicy.Protocol,
+        Assert.Throws<InvalidDataException>(()=>AssemblyPolicy.Ground(draft with {Derivation=SuspensionAuditPolicy.LegacyProtocol}));
+        var audit=Resolve(draft,Points(draft));var reviewed=draft with {Derivation=SuspensionAuditPolicy.LegacyProtocol,
             Proposal=draft.Proposal with {SuspensionAudit=audit,Target=new("AMBIGUOUS",new("Objeto ambiguo","Ambiguous object"))}};
         Assert.Null(AssemblyPolicy.Ground(reviewed));
         Assert.Throws<InvalidDataException>(()=>AssemblyPolicy.Ground(reviewed with {Derivation=DenseLocalizationPolicy.OriginalBodyProtocol}));
-        var saved=historical with {Audit=audit,Refinement=SuspensionAuditPolicy.Protocol};
+        var saved=historical with {Audit=audit,Refinement=SuspensionAuditPolicy.LegacyProtocol};
         Assert.Equal(JsonSerializer.Serialize(saved,Json),JsonSerializer.Serialize(JsonSerializer.Deserialize<SamSuspensionEvidence>(JsonSerializer.Serialize(saved,Json),Json),Json));
     }
+    private static JsonElement IndependentPayload(SuspensionAuditPoint[] points,string camera="STATIC")=>JsonSerializer.SerializeToElement(new {
+        camera,points=points.Select(p=>new {frame=p.Frame,reference_kind=p.ReferenceKind,visible=p.Visible,
+            x=p.X,y=p.Y,confidence=p.Confidence,visual_reason=p.VisualReason})});
+    private static SuspensionAuditEvidence Independent(AssemblyEvidence draft,SuspensionAuditPoint[] points,string camera="STATIC")=>
+        SuspensionAuditPolicy.Parse(IndependentPayload(points,camera),draft,SuspensionAuditPolicy.RepresentativeOrdinals(),SuspensionAuditPolicy.Protocol);
+
+    [Fact] public void V3DerivesCorrectionForIndependentContactTwentySevenPixelsFromTheCandidate()
+    {
+        var draft=Draft();var original=JsonSerializer.Serialize(draft,Json);
+        // Provider only supplies independently located positions; it cannot contradict
+        // those coordinates by incorrectly calling a moved marker CONFIRMED.
+        var result=Independent(draft,Points(draft,"CONFIRMED",500,164));
+        Assert.Equal(SuspensionAuditPolicy.Protocol,result.Protocol);
+        Assert.All(result.Points,p=>Assert.Equal("CORRECTED",p.Decision));
+        Assert.Equal("CONSENSUS_ESTIMATE",result.Consensus.Status);Assert.Equal(164,result.Consensus.Y);
+        Assert.Equal(original,JsonSerializer.Serialize(draft,Json));
+        SuspensionAuditPolicy.Validate(result,draft);
+        var legacy=Resolve(draft,Points(draft,"CONFIRMED",500,164));
+        Assert.Equal("CONTRADICTORY_CONFIRMATION",legacy.Consensus.Status);Assert.Null(legacy.Protocol);
+    }
+    [Fact] public void V3DerivesConfirmationOnlyWithinTheSameNativePixelTolerance()
+    {
+        var draft=Draft();var points=Points(draft,"CORRECTED",500,150);
+        points[0]=points[0] with {X=505}; // 5.4px, exactly the inclusive limit.
+        points[1]=points[1] with {X=505.001};
+        var result=Independent(draft,points);
+        Assert.Equal("CONFIRMED",result.Points[0].Decision);Assert.Equal("CORRECTED",result.Points[1].Decision);
+        Assert.All(result.Points.Skip(2),p=>Assert.Equal("CONFIRMED",p.Decision));
+        draft=draft with {Proposal=draft.Proposal with {Suspension=draft.Proposal.Suspension with {
+            Points=draft.Proposal.Suspension.Points.Select(p=>p with {Visible=false,X=0,Y=0,Confidence=0}).ToArray()}}};
+        Assert.All(Independent(draft,points).Points,p=>Assert.Equal("CORRECTED",p.Decision));
+    }
+    [Fact] public void V3RejectsProviderDecisionAndUnknownProtocolInsteadOfReinterpretingThem()
+    {
+        var draft=Draft();var points=Points(draft);
+        Assert.Throws<FormatException>(()=>SuspensionAuditPolicy.Parse(Payload(points),draft,
+            SuspensionAuditPolicy.RepresentativeOrdinals(),SuspensionAuditPolicy.Protocol));
+        Assert.Throws<FormatException>(()=>SuspensionAuditPolicy.Parse(IndependentPayload(points),draft,
+            SuspensionAuditPolicy.RepresentativeOrdinals(),"UNKNOWN"));
+        Assert.Throws<FormatException>(()=>SuspensionAuditPolicy.Parse(IndependentPayload(points),draft,
+            SuspensionAuditPolicy.RepresentativeOrdinals(),SuspensionAuditPolicy.LegacyProtocol));
+    }
+    [Fact] public void V3StillRejectsMovingUnresolvedAndSpatiallyUnstableContactEvidence()
+    {
+        var draft=Draft();var moving=Points(draft);moving[3]=Uncertain(moving[3]) with {ReferenceKind="MOVING_CONTACT"};
+        Assert.Equal("MOVING_CORD_CONTACT",Independent(draft,moving).Consensus.Status);
+        Assert.Equal("INSUFFICIENT_OBSERVATIONS",Independent(draft,Points(draft).Select(Uncertain).ToArray()).Consensus.Status);
+        var unstable=Points(draft).Select((p,i)=>p with {X=400+i*20}).ToArray();
+        Assert.Equal("NO_DOMINANT_CLUSTER",Independent(draft,unstable).Consensus.Status);
+        Assert.Equal("CAMERA_UNRESOLVED",Independent(draft,Points(draft),"MOVING").Consensus.Status);
+    }
+    [Fact] public void V3StoredDecisionsCannotBeChangedOrRemovedWithoutInvalidatingTheAudit()
+    {
+        var draft=Draft();var audit=Independent(draft,Points(draft,"CONFIRMED",500,150));
+        var changed=audit.Points.ToArray();changed[0]=changed[0] with {Decision="CORRECTED"};
+        Assert.Throws<FormatException>(()=>SuspensionAuditPolicy.Validate(audit with {Points=changed},draft));
+        Assert.Throws<FormatException>(()=>SuspensionAuditPolicy.Validate(audit with {Protocol="UNKNOWN"},draft));
+        var serialized=JsonSerializer.Serialize(audit,Json);
+        Assert.Contains("\"protocol\":\""+SuspensionAuditPolicy.Protocol+"\"",serialized);
+        var restored=JsonSerializer.Deserialize<SuspensionAuditEvidence>(serialized,Json)!;
+        SuspensionAuditPolicy.Validate(restored,draft);Assert.Equal(serialized,JsonSerializer.Serialize(restored,Json));
+        var legacy=Resolve(draft,Points(draft));var old=JsonSerializer.Serialize(new {camera=legacy.Camera,points=legacy.Points,consensus=legacy.Consensus},Json);
+        Assert.Equal(old,JsonSerializer.Serialize(legacy,Json));
+    }
+
 }

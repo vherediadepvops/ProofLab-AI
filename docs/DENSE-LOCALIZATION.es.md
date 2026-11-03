@@ -1,13 +1,13 @@
 # Localización y revisión de la suspensión
 
-Protocolo vigente: `SPARK_ORIGINAL_50_CONTACT_AUDIT_V2` (03/11/2026).
+Protocolo vigente: `SPARK_ORIGINAL_50_CONTACT_AUDIT_V3` (03/11/2026).
 
 ## Flujo
 
 1. La preparación local produce el video compatible y 50 imágenes originales distribuidas en el tiempo. No consume Meta.
 2. La primera llamada Spark recibe el video completo y esas 50 imágenes identificadas. Propone cajas del objeto y posiciones de suspensión; son estimaciones de imagen.
-3. La segunda llamada revisa el cuerpo y el contacto de suspensión en nueve referencias originales (ordinales 0, 6, 12, 18, 24, 31, 37, 43 y 49). Recibe nueve escenas completas con cuadrícula y candidato de suspensión marcado, más los nueve recortes de cuerpo ya existentes. No hay recortes de suspensión ni rondas ×1,5/×3.
-4. La revisión sigue la cuerda cargada hasta su contacto efectivo con el soporte y compara distintos momentos. Distingue ese contacto del centro del nudo, transportador, sombras y lazo móvil. Cada respuesta confirma, corrige o deja incierto el punto y aporta una explicación visual breve. Las coordenadas del contacto corresponden siempre a la escena completa; las cajas del cuerpo, a su recorte.
+3. La segunda llamada revisa el cuerpo y el contacto de suspensión en nueve referencias originales (ordinales 0, 6, 12, 18, 24, 31, 37, 43 y 49). Recibe nueve escenas completas con cuadrícula y candidato de suspensión marcado, cada una seguida inmediatamente de su recorte de cuerpo correspondiente. No hay recortes de suspensión ni rondas ×1,5/×3.
+4. La revisión sigue la cuerda cargada hasta su contacto efectivo con el soporte y compara distintos momentos. Distingue ese contacto del centro del nudo, transportador, sombras y lazo móvil. Spark devuelve la ubicación observada, su visibilidad y una explicación visual breve. ProofLab calcula si coincide con el candidato (CONFIRMED), cambia de posición (CORRECTED) o no es utilizable (UNCERTAIN); no delega esa comparación al modelo. Las coordenadas del contacto corresponden siempre a la escena completa; las cajas del cuerpo, a su recorte.
 5. SAM conserva su única solicitud de video completo cuando el objeto está resuelto. La suspensión debe superar la revisión y las comprobaciones geométricas antes de aportar valores angulares. Una suspensión inconclusa puede resolverse con el marcado manual existente; no activa otra inferencia automática.
 
 ## Evidencia y aceptación
@@ -20,13 +20,13 @@ Coincidencia, confianza declarada y verificación por el mismo modelo no prueban
 
 ## Una referencia principal para SAM
 
-Las nuevas solicitudes de video completo usan `SAM_SINGLE_PRINCIPAL_REFERENCE_V1`. Entre las cajas ya revisadas se elige la primera referencia temporal con geometría válida y tamaño/proporción compatibles con las demás. Se conservan sus coordenadas y fotograma exactos: no se inventan ni interpolan cajas. La selección es una heurística de imagen, no una garantía de identidad o precisión física.
+Las nuevas revisiones usan `SAM_SINGLE_PRINCIPAL_REFERENCE_V2`. Spark declara si el contorno completo está visible, si existe oclusión (por ejemplo, una mano) y si el cuerpo está recortado. Se requieren dos referencias completas y sin oclusión ni recorte, con geometría y tamaño/proporción coherentes. Entre ellas se elige la primera referencia temporal, aunque sea posterior al inicio del video. Las referencias parciales siguen conservadas, pero no pueden iniciar SAM. Se conservan sus coordenadas y fotograma exactos: no se inventan ni interpolan cajas. La selección es una heurística de imagen, no una garantía de identidad o precisión física.
 
 Solo esa caja entra en el prompt SAM. Las demás observaciones permanecen en la escena y sirven para corroborar la selección y comparar las máscaras del fotograma correspondiente; no vuelven a indicar a SAM otro punto de inicio. La política y referencia exacta quedan vinculadas al presupuesto y al recibo. Los recibos históricos reconstruyen el prompt que realmente enviaron.
 
 ## Revisión de continuidad del seguimiento
 
-Una comprobación local busca cambios bruscos de área que coincidan con un desplazamiento inesperado del centro y persistan en varios fotogramas. Usa los tiempos nativos y registra por separado las detecciones ausentes. La línea de estado existente indica el primer instante que necesita revisión. Las comparaciones con otras cajas Spark son auxiliares: también pueden contener errores y no equivalen a etiquetas humanas.
+Una comprobación local busca cambios bruscos de área que coincidan con un desplazamiento inesperado del centro y persistan en varios fotogramas. Usa los tiempos nativos y registra por separado las detecciones ausentes. La línea de estado existente indica el primer instante que necesita revisión y muestra por separado las detecciones faltantes y una suspensión sin resolver. Las comparaciones con otras cajas Spark son auxiliares: también pueden contener errores y no equivalen a etiquetas humanas.
 
 Este aviso no demuestra que SAM haya seleccionado otro objeto, ni cambia las máscaras originales, los filtros de medición o los informes guardados. Los huecos siguen sin valores y las derivadas requieren vecinos válidos. No consume Meta, no activa reintentos y no rellena posiciones faltantes. La eficacia de la referencia única debe comprobarse con una prueba real autorizada; las pruebas locales verifican selección, integridad y detección de discontinuidades.
 
@@ -35,3 +35,9 @@ Este aviso no demuestra que SAM haya seleccionado otro objeto, ni cambia las má
 Se conservan dos llamadas Spark: estimación inicial US$0,25 y revisión US$0,10 (total estimado US$0,35), además de SAM y Muse según la cotización. La revisión conserva 18 imágenes y un máximo de salida de 8192 tokens; las explicaciones adicionales pueden cambiar el consumo efectivo. No son una factura ni un límite de cobro impuesto al proveedor. No hay reintentos automáticos.
 
 Los resultados de tres puntos, rondas densas, zoom progresivo y `SPARK_ORIGINAL_50_OBJECT_REVIEW_V1` siguen usando sus lectores históricos. No se modifican análisis guardados ni se atribuye la auditoría nueva a resultados anteriores. La revisión explícita adicional de suspensión conserva su vinculación al resultado SAM exacto; no es un fallback automático.
+
+### Punto visible del primer fotograma
+
+La revisión `SPARK_ORIGINAL_50_BODY_POINT_REVIEW_V4` añade un punto interior observado en el cuerpo del fotograma original 0. Usa el mismo par escena/recorte y la misma llamada de revisión. Puede existir un punto visible aunque la mano oculte parte del contorno: no convierte esa caja en cuerpo completo ni rellena la parte tapada. Si el punto es ambiguo, Spark debe declararlo no visible. No se calcula el centro de una caja como sustituto.
+
+El punto se transforma desde el recorte a píxeles originales y queda ligado a la respuesta, imágenes y escena verificadas. Con al menos dos referencias claras del mismo cuerpo, `SAM_INITIAL_BODY_POINT_WITH_CLEAR_REFERENCES_V3` envía ese punto inicial como única referencia de seguimiento; las cajas posteriores permanecen para auditoría. Así SAM recibe el video completo desde el primer fotograma, sin reiniciar la trayectoria con otras cajas. Sin punto utilizable, V4 solo permite una caja completa y clara del primer fotograma. Si tampoco existe, pide una referencia inicial visible y no envía SAM; no activa silenciosamente el recorrido hacia atrás que falló en este caso. Las respuestas históricas V2/V3 mantienen sus protocolos y hashes. La auditoría de suspensión conserva V3.

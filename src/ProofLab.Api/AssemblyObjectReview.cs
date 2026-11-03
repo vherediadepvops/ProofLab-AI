@@ -17,17 +17,20 @@ public sealed partial class AssemblyLocator
         var evidencePath=Path.Combine(root,dense?"body-reviewed-evidence.json":"reviewed-evidence.json");
         if(!File.Exists(evidencePath))return null;
         var attempt=await Read<ObjectReviewAttempt>(Path.Combine(root,"object-review-attempt.json"),ct);
-        if(attempt.Protocol is not (ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or ObjectReviewPolicy.LegacyProtocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or SuspensionAuditPolicy.Protocol) || attempt.SourceSha256!=draft.VideoSha256 ||
+        if(attempt.Protocol is not (ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or ObjectReviewPolicy.LegacyProtocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or ObjectReviewPolicy.InitialBodyPointProtocol or SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol) || attempt.SourceSha256!=draft.VideoSha256 ||
             attempt.DraftResponseSha256!=draft.ResponseSha256 || attempt.EvidenceKey!=draft.CacheKey ||
-            dense!=(attempt.Protocol is ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or SuspensionAuditPolicy.Protocol) ||
+            dense!=(attempt.Protocol is ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or ObjectReviewPolicy.InitialBodyPointProtocol or SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol) ||
             attempt.References.Length is <2 or >16 || attempt.References.Select(x=>x.Ordinal).Distinct().Count()!=attempt.References.Length)
             throw new InvalidDataException("Visual review provenance changed.");
-        if((draft.Derivation==DenseLocalizationPolicy.OriginalProtocol)!=(attempt.Protocol is DenseLocalizationPolicy.OriginalBodyProtocol or SuspensionAuditPolicy.Protocol))
+        if((draft.Derivation==DenseLocalizationPolicy.OriginalProtocol)!=(attempt.Protocol is DenseLocalizationPolicy.OriginalBodyProtocol or ObjectReviewPolicy.InitialBodyPointProtocol or SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol))
             throw new InvalidDataException("Original-only body review protocol changed.");
-        var audited=attempt.Protocol==SuspensionAuditPolicy.Protocol;
+        var audited=attempt.Protocol is ObjectReviewPolicy.InitialBodyPointProtocol or SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol;
         if(audited && (attempt.References.Length!=9 ||
             !attempt.References.Select(r=>r.Ordinal).SequenceEqual(new[]{0,6,12,18,24,31,37,43,49})))
             throw new InvalidDataException("Full-scene audit references changed.");
+        if(attempt.Protocol==ObjectReviewPolicy.InitialBodyPointProtocol &&
+            attempt.References.Count(r=>r.Ordinal==0 && r.Frame.Index==0 && r.BodyCrop is not null)!=1)
+            throw new InvalidDataException("First-frame body point source correspondence changed.");
         foreach(var r in attempt.References) {
             if(audited ? r.SuspensionCandidate is null || r.SuspensionCandidate!=draft.Proposal.Suspension.Points.Single(p=>p.Frame==r.Ordinal)
                 : r.SuspensionCandidate is not null)
@@ -40,7 +43,7 @@ public sealed partial class AssemblyLocator
         }
         var cropped=attempt.References.Where(r=>r.SuspensionCrop is not null).ToArray();
         if((attempt.Protocol is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol && cropped.Length!=3) ||
-            (attempt.Protocol is ObjectReviewPolicy.LegacyProtocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or SuspensionAuditPolicy.Protocol && cropped.Length!=0))throw new InvalidDataException("Crop protocol mismatch.");
+            (attempt.Protocol is ObjectReviewPolicy.LegacyProtocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or ObjectReviewPolicy.InitialBodyPointProtocol or SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol && cropped.Length!=0))throw new InvalidDataException("Crop protocol mismatch.");
         foreach(var r in cropped) {
             var expected=ObjectReviewPolicy.Crop(r.Frame,ObjectReviewPolicy.CoarseSuspension(draft,r.Ordinal));
             if(r.SuspensionCrop! with {Sha256=""}!=expected ||
@@ -48,8 +51,8 @@ public sealed partial class AssemblyLocator
                 throw new InvalidDataException("Suspension crop geometry or pixels changed.");
         }
         var bodies=attempt.References.Where(r=>r.BodyCrop is not null).ToArray();
-        if((attempt.Protocol is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or SuspensionAuditPolicy.Protocol && bodies.Length!=attempt.References.Length) ||
-            (attempt.Protocol is not (ObjectReviewPolicy.Protocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or SuspensionAuditPolicy.Protocol) && bodies.Length!=0))throw new InvalidDataException("Body crop protocol mismatch.");
+        if((attempt.Protocol is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or ObjectReviewPolicy.InitialBodyPointProtocol or SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol && bodies.Length!=attempt.References.Length) ||
+            (attempt.Protocol is not (ObjectReviewPolicy.Protocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or ObjectReviewPolicy.InitialBodyPointProtocol or SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol) && bodies.Length!=0))throw new InvalidDataException("Body crop protocol mismatch.");
         foreach(var r in bodies) {
             var expected=ObjectReviewPolicy.BodyRegion(r.Frame,r.Candidate);
             if(r.BodyCrop! with {Sha256=""}!=expected || await FileHash(Path.Combine(root,$"body-{r.Ordinal}.jpg"),ct)!=r.BodyCrop.Sha256)
@@ -61,7 +64,7 @@ public sealed partial class AssemblyLocator
         var result=new KnotProviderResult(raw,json.RootElement.GetProperty("id").GetString()!,
             json.RootElement.GetProperty("usage").GetProperty("input_tokens").GetInt32(),
             json.RootElement.GetProperty("usage").GetProperty("output_tokens").GetInt32());
-        var derived=ObjectReviewPolicy.Derive(draft,result,attempt.References);
+        var derived=ObjectReviewPolicy.Derive(draft,result,attempt.References,attempt.Protocol);
         var saved=await Read<AssemblyEvidence>(evidencePath,ct);
         if(JsonSerializer.Serialize(derived,Json)!=JsonSerializer.Serialize(saved,Json))throw new InvalidDataException("Reviewed evidence differs from preserved responses.");
         return derived;
@@ -137,13 +140,13 @@ public sealed partial class AssemblyLocator
         }
         images.AddRange(cropBytes);
         ct.ThrowIfCancellationRequested();runtime.ReserveOrThrow(token);
-        await Save(Path.Combine(root,"object-review-attempt.json"),new ObjectReviewAttempt(auditSuspension?SuspensionAuditPolicy.Protocol:dense?(draft.Derivation==DenseLocalizationPolicy.OriginalProtocol?DenseLocalizationPolicy.OriginalBodyProtocol:draft.Derivation==ProgressiveSuspensionPolicy.Protocol?ProgressiveSuspensionPolicy.BodyProtocol:draft.Derivation==ProgressiveSuspensionPolicy.LegacyProtocol?ProgressiveSuspensionPolicy.LegacyBodyProtocol:ObjectReviewPolicy.DenseBodyProtocol):ObjectReviewPolicy.Protocol,video.Sha256,
+        await Save(Path.Combine(root,"object-review-attempt.json"),new ObjectReviewAttempt(auditSuspension?ObjectReviewPolicy.InitialBodyPointProtocol:dense?(draft.Derivation==DenseLocalizationPolicy.OriginalProtocol?DenseLocalizationPolicy.OriginalBodyProtocol:draft.Derivation==ProgressiveSuspensionPolicy.Protocol?ProgressiveSuspensionPolicy.BodyProtocol:draft.Derivation==ProgressiveSuspensionPolicy.LegacyProtocol?ProgressiveSuspensionPolicy.LegacyBodyProtocol:ObjectReviewPolicy.DenseBodyProtocol):ObjectReviewPolicy.Protocol,video.Sha256,
             draft.ResponseSha256,draft.CacheKey,references.ToArray(),DateTimeOffset.UtcNow,ObjectReviewPolicy.EstimatedCostUsd),CancellationToken.None);
         // No retries. Preserve any completed raw response before validation or SAM submission.
         using var deadline=new CancellationTokenSource(TimeSpan.FromMinutes(4));
         var result=await transport.ReviewObjectAsync(references.ToArray(),images.ToArray(),token,deadline.Token);
         await File.WriteAllTextAsync(Path.Combine(root,"object-review-response.json"),result.Raw,CancellationToken.None);
-        var reviewed=ObjectReviewPolicy.Derive(draft,result,references.ToArray());
+        var reviewed=ObjectReviewPolicy.Derive(draft,result,references.ToArray(),auditSuspension?ObjectReviewPolicy.InitialBodyPointProtocol:null);
         await Save(Path.Combine(root,dense?"body-reviewed-evidence.json":"reviewed-evidence.json"),reviewed,CancellationToken.None);
         AssemblyProgress.Done("target-review");
         return reviewed;

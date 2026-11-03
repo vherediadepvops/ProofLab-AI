@@ -80,6 +80,29 @@ describe('One-clock three-view pendulum laboratory',()=>{
     fixture.destroy();TestBed.inject(HttpTestingController).verify();
   });
 
+  it('reports missing object detections and unresolved suspension together without inventing values',()=>{
+    const fixture=TestBed.createComponent(PendulumMasterPlayer),component=fixture.componentInstance;
+    fixture.componentRef.setInput('language','es');
+    const original=component.trackingAssessment();
+    const assessment=spyOn(component,'trackingAssessment').and.returnValue({...original,
+      missingFrames:570,status:'REVIEW_REQUIRED',firstSuspiciousTimeSeconds:0,firstSuspiciousFrame:0});
+    component.automaticSuspension.set({pivot:null,reason:'CORD_CONTACT_UNRESOLVED',method:null,
+      spreadPixels:0,radialRmsPixels:null,radiusPixels:null,samples:0,excludedFrameIndices:[]});
+    expect(component.samEvidenceNote()).toContain('570 fotogramas sin detección');
+    expect(component.samEvidenceNote()).toContain('Suspensión sin resolver');
+    expect(component.samEvidenceNote()).toContain('no se calculan ángulos ni vectores');
+    fixture.componentRef.setInput('language','en');
+    expect(component.samEvidenceNote()).toContain('570 frames without detection');
+    expect(component.samEvidenceNote()).toContain('Unresolved suspension');
+    component.pivotRevision.set(revision);
+    expect(component.samEvidenceNote()).toContain('570 frames without detection');
+    expect(component.samEvidenceNote()).not.toContain('Unresolved suspension');
+    component.pivotRevision.set(null);assessment.and.returnValue(original);
+    expect(component.samEvidenceNote()).toContain('Unresolved suspension');
+    expect(component.samEvidenceNote()).not.toContain('Incomplete tracking');
+    fixture.destroy();TestBed.inject(HttpTestingController).verify();
+  });
+
   it('keeps a lazy original inactive through poster failure and activates only on playback',()=>{
     const fixture=TestBed.createComponent(PendulumMasterPlayer);
     const component=fixture.componentInstance,http=TestBed.inject(HttpTestingController);
@@ -993,7 +1016,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     component.automaticSuspension.set({...component.automaticSuspension()!,pivot:null,reason:'MOVING_CORD_CONTACT'});
     expect(component.automaticGeometryNote()).toContain('se desplaza');
     component.automaticSuspension.set({...component.automaticSuspension()!,reason:'CORD_CONTACT_UNRESOLVED'});
-    expect(component.automaticGeometryNote()).toContain('lazo móvil');
+    expect(component.automaticGeometryNote()).toContain('Suspensión sin resolver');
     component.automaticSuspension.set(null);
     component.scene.set(null);component.pivotRevision.set(revision);
     component.pivotRevision.set({...revision,revisionId:'new-pivot',

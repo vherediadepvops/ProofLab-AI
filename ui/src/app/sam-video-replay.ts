@@ -37,7 +37,7 @@ interface GroundingQuote {
   cacheKey:string;videoSha256:string;maximumEstimatedCostUsd:number;
   cacheHit:boolean;priorAttempt:boolean;canRun:boolean;
   mode:SamMode;freshRequired:boolean;protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2';
-  status:'NEEDS_LOCALIZATION'|'READY'|'AMBIGUOUS'|'NOT_VISIBLE'|'PRIOR_ATTEMPT';
+  status:'NEEDS_LOCALIZATION'|'READY'|'AMBIGUOUS'|'NOT_VISIBLE'|'PRIOR_ATTEMPT'|'INITIAL_REFERENCE_UNRESOLVED';
   scene:GroundingScene|null;requiredSparkCalls?:number;visualReviewEstimatedCostUsd?:number;localizationPlan?:string;
   evidence?:{runId?:string|null}|null;
 }
@@ -579,7 +579,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
          phase==='FAILED'&&!p.started?'FAILED':'COMPLETED',
        ms:p?.preparationElapsedMs??(sparkDone?Math.max(0,now-this.sparkFinishedAt):0)}];
     if(this.sparkWasNeeded){
-      const names=[['prepare','Preparar video','Prepare video'],['references','Extraer 50 imágenes','Extract 50 images'],['upload','Subir video a Spark','Upload video to Spark'],['inference','Respuesta de Spark','Spark response'],['verify','Validar respuesta','Validate response'],['target-review',this.groundingQuote()?.localizationPlan==='SPARK_ORIGINAL_50_CONTACT_AUDIT_V2'?'Verificar objeto y suspensión':'Verificar objeto con Spark',this.groundingQuote()?.localizationPlan==='SPARK_ORIGINAL_50_CONTACT_AUDIT_V2'?'Verify object and suspension':'Verify object with Spark']];
+      const names=[['prepare','Preparar video','Prepare video'],['references','Extraer 50 imágenes','Extract 50 images'],['upload','Subir video a Spark','Upload video to Spark'],['inference','Respuesta de Spark','Spark response'],['verify','Validar respuesta','Validate response'],['target-review',this.hasContactAuditPlan()?'Verificar objeto y suspensión':'Verificar objeto con Spark',this.hasContactAuditPlan()?'Verify object and suspension':'Verify object with Spark']];
       const reviewOnly=this.sparkStages().some(s=>s.key==='target-review') && !this.sparkStages().some(s=>s.key==='inference');
       const stages=this.sparkStages();
       const initial=names.filter(([key])=>(!reviewOnly||key==='prepare'||key==='target-review') &&
@@ -1062,7 +1062,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       (quote.maximumEstimatedCostUsd>=.025 || quote.cacheHit) && quote.maximumEstimatedCostUsd<=1.1 &&
       quote.mode===this.mode() && quote.protocol==='ASSEMBLY_FULL_VIDEO_GROUNDING_V2' &&
       typeof quote.freshRequired==='boolean' &&
-      ['NEEDS_LOCALIZATION','READY','AMBIGUOUS','NOT_VISIBLE','PRIOR_ATTEMPT'].includes(quote.status) &&
+      ['NEEDS_LOCALIZATION','READY','AMBIGUOUS','NOT_VISIBLE','PRIOR_ATTEMPT','INITIAL_REFERENCE_UNRESOLVED'].includes(quote.status) &&
       (quote.status!=='READY' || (!quote.freshRequired && !!quote.scene &&
         /^[a-f0-9]{64}$/i.test(quote.scene.key) && quote.scene.videoSha256===this.videoSha256()));
   }
@@ -1159,9 +1159,13 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       (this.groundingRequired()?this.groundingQuote()!.maximumEstimatedCostUsd:0);
   }
   costLabel(value:number):string {return (Math.ceil(value*100-1e-8)/100).toFixed(2);}
+  private hasContactAuditPlan():boolean {
+    return ['SPARK_ORIGINAL_50_CONTACT_AUDIT_V2','SPARK_ORIGINAL_50_CONTACT_AUDIT_V3','SPARK_ORIGINAL_50_BODY_POINT_REVIEW_V4'].includes(
+      this.groundingQuote()?.localizationPlan??'');
+  }
   localizationPlanDescription():string {
     const plan=this.groundingQuote()?.localizationPlan;
-    if(plan==='SPARK_ORIGINAL_50_CONTACT_AUDIT_V2')return this.es?
+    if(this.hasContactAuditPlan())return this.es?
       '50 imágenes originales y revisión del objeto y la suspensión':'50 original images and object and suspension review';
     if(plan==='SPARK_ORIGINAL_50_OBJECT_REVIEW_V1')return this.es?
       '50 imágenes originales y revisión del objeto':'50 original images and object review';
@@ -1237,6 +1241,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const g=this.groundingQuote();
     if(!this.validGrounding(g))return this.es?'No se pudo comprobar el costo de localización. Pulsa Actualizar costo.':
       'Could not check localization cost. Press Refresh cost.';
+    if(g.status==='INITIAL_REFERENCE_UNRESOLVED')return this.es?
+      'No se distinguió una parte del objeto en el primer fotograma. Empieza la grabación con el cuerpo visible y separado de la mano. SAM no se envió.':
+      'No part of the object was clearly identified in the first frame. Start recording with the body visible and away from the hand. SAM was not sent.';
     if(g.status==='AMBIGUOUS' || g.status==='NOT_VISIBLE')return this.es?
       'Spark no pudo localizar un único objeto visible. Repite la grabación con el objeto y su suspensión claramente visibles; no se enviará a SAM.':
       'Spark could not locate one visible object. Record again with the object and suspension clearly visible; SAM will not be sent.';
@@ -1408,6 +1415,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           confirmImageTransfer:true,confirmVideoTransfer:true,confirmPaidCall:true
         },{headers:{'X-ProofLab-Manual-Action':'sam-adaptive-spark'}}).pipe(timeout(12*60*1000)));
         if(!current())return;
+        if(located.videoSha256===sha && located.mode===mode && located.status==='INITIAL_REFERENCE_UNRESOLVED')
+          throw Error('INITIAL_REFERENCE_UNRESOLVED');
         if(located.videoSha256!==sha || located.status!=='READY' || !located.scene ||
           located.scene.videoSha256!==sha || located.mode!==mode)throw Error('SPARK_TARGET_INCONCLUSIVE');
         const sceneRunId=located.evidence?.runId;
@@ -1490,6 +1499,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           code==='SEGMENT_QUOTE_CHANGED'?(this.es?
           'Spark terminó, pero cambió el presupuesto o la evidencia. SAM no se envió; actualiza el costo.':
           'Spark finished, but the quote or evidence changed. SAM was not sent; refresh the cost.'):
+          code==='INITIAL_REFERENCE_UNRESOLVED'?(this.es?
+          'No se distinguió una parte del objeto en el primer fotograma. Empieza la grabación con el cuerpo visible y separado de la mano. SAM no se envió.':
+          'No part of the object was clearly identified in the first frame. Start recording with the body visible and away from the hand. SAM was not sent.'):
           this.processingPhase()==='grounding'?this.groundingFailureMessage():
           (this.adaptiveResult()?.automaticRetryOfBatchId || this.adaptiveResult()?.automaticRetryBatchId)?(this.es?
           'El reintento con el video completo también quedó inconcluso. No se harán más envíos automáticos. Puedes reproducir el original; los gráficos quedan pendientes.':
@@ -1587,8 +1599,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         this.groundingQuote.set(located);
         if(located.status!=='READY' || !located.scene) {
           this.error.set(this.es?
-            'Spark no pudo localizar el objeto con suficiente claridad. SAM no se envió. Revisa la grabación antes de otra prueba.':
-            'Spark could not locate the object clearly enough. SAM was not sent. Review the recording before another test.');
+            (located.status==='INITIAL_REFERENCE_UNRESOLVED'?'No se distinguió una parte del objeto en el primer fotograma. Empieza la grabación con el cuerpo visible. SAM no se envió.':'Spark no pudo localizar el objeto con suficiente claridad. SAM no se envió. Revisa la grabación antes de otra prueba.'):
+            (located.status==='INITIAL_REFERENCE_UNRESOLVED'?
+            'No part of the object was clearly identified in the first frame. Start recording with the body visible. SAM was not sent.':
+            'Spark could not locate the object clearly enough. SAM was not sent. Review the recording before another test.'));
           this.failProcessing();return;
         }
         scene=located.scene;

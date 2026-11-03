@@ -1,6 +1,9 @@
 import type {AuthenticatedSamVideoArchive,SamSuspensionEvidence} from './sam-playback';
 
-export const contactAuditProtocol='SPARK_ORIGINAL_50_CONTACT_AUDIT_V2';
+export const legacyContactAuditProtocol='SPARK_ORIGINAL_50_CONTACT_AUDIT_V2';
+export const contactAuditProtocol='SPARK_ORIGINAL_50_CONTACT_AUDIT_V3';
+export const isContactAuditProtocol=(protocol:string|null|undefined):boolean=>
+  protocol===contactAuditProtocol||protocol===legacyContactAuditProtocol;
 // C# Math.Round uses ties-to-even: the middle original ordinal is 24, not 25.
 const auditOrdinals=[0,6,12,18,24,31,37,43,49];
 type AuditPoint=NonNullable<SamSuspensionEvidence['audit']>['points'][number];
@@ -20,7 +23,9 @@ export function resolveContactAudit(
   evidence:SamSuspensionEvidence,receipt:AuthenticatedSamVideoArchive['receipt']
 ):AuditResolution {
   const audit=evidence.audit,original=evidence.points,pts=receipt.framePtsSeconds;
-  if(!audit || !Array.isArray(audit.points) || audit.points.some(p=>!p || typeof p!=='object'))return unresolved();
+  const independent=evidence.refinement===contactAuditProtocol;
+  if(!isContactAuditProtocol(evidence.refinement) || !audit ||
+    (independent?audit.protocol!==contactAuditProtocol:audit.protocol!=null) || !Array.isArray(audit.points) || audit.points.some(p=>!p || typeof p!=='object'))return unresolved();
   if(audit.points.some(p=>p?.referenceKind==='MOVING_CONTACT'))
     return {ok:false,reason:'MOVING_CORD_CONTACT'};
   if(audit.camera!=='STATIC' || !Number.isFinite(evidence.width) || !Number.isFinite(evidence.height) ||
@@ -43,6 +48,10 @@ export function resolveContactAudit(
       typeof p.visualReason!=='string' || !p.visualReason.trim() || p.visualReason.length>1000 ||
       !Number.isFinite(p.timeSeconds) || !pts.some(t=>Math.abs(t-p.timeSeconds)<=1e-6) ||
       i>0&&p.timeSeconds<=points[i-1].timeSeconds)return unresolved();
+    if(independent) {
+      const expected=!p.visible?'UNCERTAIN':original[p.frame].visible&&distance(p,original[p.frame])<=limit?'CONFIRMED':'CORRECTED';
+      if(p.decision!==expected)return unresolved();
+    }
     if(p.decision==='UNCERTAIN') {
       if(p.visible || p.x!==0 || p.y!==0 || p.confidence!==0 || p.referenceKind!=='UNCLEAR')return unresolved();
     }else {

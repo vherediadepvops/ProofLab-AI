@@ -89,8 +89,9 @@ describe('Processing source checkboxes',()=>{
     x.h.expectNone(r=>r.method==='POST');x.f.destroy();
   });
   it('describes the combined object and contact audit in ES and EN without adding a Spark request or zoom budget',async()=>{
+    for(const protocol of ['SPARK_ORIGINAL_50_CONTACT_AUDIT_V2','SPARK_ORIGINAL_50_CONTACT_AUDIT_V3','SPARK_ORIGINAL_50_BODY_POINT_REVIEW_V4']){
     const x=setup(true);
-    await checkFresh(x,freshQuote,{...sparkQuote,localizationPlan:'SPARK_ORIGINAL_50_CONTACT_AUDIT_V2'});
+    await checkFresh(x,freshQuote,{...sparkQuote,localizationPlan:protocol});
     for(const language of ['es','en']){
       x.f.componentRef.setInput('language',language);x.f.detectChanges();
       const text=x.host.textContent??'';
@@ -100,7 +101,23 @@ describe('Processing source checkboxes',()=>{
       expect(x.c.groundingQuote()?.requiredSparkCalls).toBe(2);
       expect(text).not.toMatch(/×1[.,]5|×3|0\.85/);
     }
+    (x.c as any).sparkWasNeeded=true;
+    x.c.sparkStages.set([{key:'target-review',state:'COMPLETED',elapsedMs:100,percent:100}]);
+    expect(x.c.stageRows().find(row=>row.key==='spark-target-review')?.label).toBe('Verify object and suspension');
     x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+    }
+  });
+  it('stops before SAM and explains an unresolved initial body reference in ES and EN',async()=>{
+    for(const language of ['es','en']){
+      const x=setup(true);x.f.componentRef.setInput('language',language);
+      await checkFresh(x);
+      const processing=x.c.process(),spark=x.h.expectOne(pathIs(adaptive+'/spark-once'));
+      spark.flush({...sparkQuote,status:'INITIAL_REFERENCE_UNRESOLVED',canRun:false,scene:null});
+      await processing;
+      expect(x.c.error()).toContain(language==='es'?'primer fotograma':'first frame');
+      expect(x.c.error()).toContain(language==='es'?'SAM no se envió':'SAM was not sent');
+      x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+    }
   });
   it('keeps recorded historical zoom stages and their durations readable',async()=>{
     const x=setup(true);await checkFresh(x);
