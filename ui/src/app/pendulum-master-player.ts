@@ -1,3 +1,4 @@
+import {exportAnnotatedVideo, videoExportSupported} from './pendulum-video-export';
 import { apiOrigin } from './api-origin';
 import {assessSamTracking} from './sam-tracking-quality';
 import {resolveSamSuspension,suspensionPlaybackTrack,automaticPivotProvenance,type AutomaticSuspension} from './sam-suspension';
@@ -255,6 +256,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   showGuidedSource():boolean{return this.guided() && (!this.analysisVisible() || this.pivotMode());}
   pausePlayback():void{this.masterVideo?.nativeElement.pause();this.playing.set(false);}
   toggleLayer(layer:'tracking'|'vectors'|'trail'):void{
+    if(this.exportingVideo())return;
     this.visibleLayers.update(value=>({...value,[layer]:!value[layer]}));
     this.paintFrame(this.frameTime());
   }
@@ -332,6 +334,68 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     return peak;
   });
 
+  readonly exportingVideo=signal(false);
+  readonly exportProgress=signal(0);
+  readonly exportMessage=signal('');
+  readonly exportFailed=signal(false);
+  private exportController:AbortController|null=null;
+  private exportedVideoUrl:string|null=null;
+  exportSupported():boolean {return videoExportSupported();}
+  canExportVideo():boolean {
+    const video=this.masterVideo?.nativeElement;
+    return this.analysisVisible() && !!this.samTrack()?.masks.length &&
+      this.mediaActivated() && !this.previewLoading() && !this.pivotMode() && !this.pivotSaving() &&
+      !this.exportingVideo() && !!video && video.readyState>=2 &&
+      video.videoWidth>0 && video.videoHeight>0 && Number.isFinite(video.duration) && video.duration>0 && this.exportSupported();
+  }
+  cancelVideoExport():void {this.exportController?.abort();}
+  async downloadAnnotatedVideo():Promise<void> {
+    if(!this.canExportVideo())return;
+    const video=this.masterVideo!.nativeElement,canvas=this.combinedCanvas?.nativeElement;
+    if(!canvas)return;
+    const controller=new AbortController();this.exportController=controller;
+    const language=this.language();
+    this.exportingVideo.set(true);this.exportProgress.set(0);this.exportMessage.set('');this.exportFailed.set(false);
+    this.stopFrameLoop();
+    try {
+      const result=await exportAnnotatedVideo({video,canvas,signal:controller.signal,
+        renderFrame:time=>{
+          this.decodedMediaTime=time;this.paintFrame(time);
+          if(this.error())throw new Error('EXPORT_RENDER_FAILED');
+        },onProgress:fraction=>this.exportProgress.set(Math.min(99,Math.floor(fraction*100)))});
+      if(this.disposed || controller.signal.aborted)return;
+      if(this.exportedVideoUrl)URL.revokeObjectURL(this.exportedVideoUrl);
+      this.exportedVideoUrl=URL.createObjectURL(result.blob);
+      const link=document.createElement('a');link.href=this.exportedVideoUrl;
+      const stem=this.name().replace(/\.[^.]+$/,'').replace(/[<>:"/\\|?*\x00-\x1f]/g,'-')||'video';
+      link.download=stem+'-prooflab.'+result.extension;
+      document.body.appendChild(link);link.click();link.remove();
+      this.exportProgress.set(100);
+      this.exportMessage.set(language==='es'?'Video listo. Descarga iniciada.':'Video ready. Download started.');
+    } catch(error) {
+      if(this.disposed)return;
+      const code=error instanceof Error?error.message:String(error);
+      if(controller.signal.aborted) {
+        this.exportMessage.set(language==='es'?'Exportación cancelada.':'Export cancelled.');
+      } else {
+        this.exportFailed.set(true);
+        this.exportMessage.set(code==='EXPORT_HIDDEN'
+          ? (language==='es'?'La exportación se detuvo al cambiar de pestaña. Mantén esta pestaña visible y vuelve a intentarlo.':'Export stopped when the tab was hidden. Keep this tab visible and try again.')
+          : (language==='es'?'No se pudo exportar el video completo. Mantén esta pestaña visible y vuelve a intentarlo en Chrome o Edge.':'Could not export the complete video. Keep this tab visible and try again in Chrome or Edge.'));
+      }
+    } finally {
+      if(this.exportController===controller)this.exportController=null;
+      this.exportingVideo.set(false);
+      if(!this.disposed){
+        for(const canvas of [this.vectorCanvas?.nativeElement,this.combinedCanvas?.nativeElement]) {
+          if(canvas){const bounds=canvas.getBoundingClientRect();this.readoutBounds.set(canvas,{width:bounds.width,height:bounds.height});}
+        }
+        this.playbackRate.set(video.playbackRate);this.playing.set(!video.paused);
+        this.startFrameLoop();
+      }
+    }
+  }
+
   readonly playing = signal(false);
   readonly currentTime = signal(0);
   readonly duration = signal(0);
@@ -368,6 +432,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   selectView(view:'combined'|'original'|'vectors'|'ghost'):void {
+    if(this.exportingVideo())return;
     const existing=this.viewSlots(),slot=existing.indexOf(view);
     if(slot<=0)return;
     const next=[...existing];
@@ -379,6 +444,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   toggleZoom():void {
+    if(this.exportingVideo())return;
     this.zoomed.update(value=>!value);
     this.panOffset.set({x:0,y:0});
     this.activeDrag=null;
@@ -402,6 +468,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   onPanStart(event:PointerEvent):void {
+    if(this.exportingVideo())return;
     this.suppressSurfaceClick=false;
     if(!this.zoomed() || event.button!==0)return;
     const surface=event.currentTarget as HTMLElement;
@@ -456,6 +523,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   ngOnChanges(changes:SimpleChanges):void{
+    if(this.exportingVideo() && Object.keys(changes).length)
+      this.exportController?.abort(changes['videoUrl']?'source-changed':undefined);
     if(changes['presentation'] && this.presentation()==='source')this.pivotMode.set(false);
     if(changes['videoUrl'] || changes['lazyPreview']) {
       this.masterVideo?.nativeElement.pause();this.stopFrameLoop();this.playing.set(false);
@@ -539,6 +608,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
         this.paintFrame(this.frameTime());
         return;
       }
+      this.cancelVideoExport();
       const tracks=verifiedSamSceneTracks(archive,result,this.videoSha256());
       const track=tracks['object']??null;
       this.scene.set(archive.receipt.scene??null);this.sceneTracks.set(tracks);
@@ -571,6 +641,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
           : 'Stored pivot revision does not match this video.');
         return;
       }
+      this.cancelVideoExport();
       this.pivotRevision.set(result);
       this.paintFrame(this.frameTime());
     }catch(error:unknown){
@@ -584,6 +655,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   acceptMetaPivot(revision:KinematicRevision):void {
     if(!this.matchingRevision(revision))return;
+    this.cancelVideoExport();
     ++this.revisionSerial; // a prior GET cannot overwrite the confirmed point
     this.masterVideo?.nativeElement.pause();
     this.manualPivotOverride.set(true);this.pivotRevision.set(revision);this.pivotMode.set(false);this.pivotError.set('');
@@ -591,6 +663,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   beginPivotSelection():void{
+    if(this.exportingVideo())return;
     if(!this.mediaActivated() || (this.lazyPreview() && this.previewLoading()) ||
        this.playbackLocked() || (this.guided() && !this.analysisVisible()) || !this.http || !/^[a-f0-9]{32}$/i.test(this.studyId()) ||
        !/^[a-f0-9]{64}$/i.test(this.videoSha256()) ||
@@ -648,6 +721,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   ngAfterViewInit():void{
     this.readoutResize=new ResizeObserver(entries=>{
+      if(this.exportingVideo())return;
       for(const entry of entries)this.readoutBounds.set(entry.target as HTMLCanvasElement,
         {width:entry.contentRect.width,height:entry.contentRect.height});
       if(!this.disposed && !this.playing())this.paintFrame(this.frameTime());
@@ -666,6 +740,8 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   ngOnDestroy():void{
     this.disposed=true;
+    this.exportController?.abort('destroyed');
+    if(this.exportedVideoUrl)URL.revokeObjectURL(this.exportedVideoUrl);
     this.readoutResize?.disconnect();
     this.stopFrameLoop();
     ++this.revisionSerial;
@@ -685,6 +761,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   onDecodedFrame():void{
+    if(this.exportingVideo())return;
     const video=this.masterVideo?.nativeElement;
     if(!video || !this.mediaActivated())return;
     // Some browsers accept the audio track of HEVC while reporting a 0x0 video.
@@ -708,14 +785,14 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   onPlay():void{
     if(!this.mediaActivated() || this.playbackLocked()){this.masterVideo?.nativeElement.pause();return;}
     this.playing.set(true);
-    this.startFrameLoop();
+    if(!this.exportingVideo())this.startFrameLoop();
   }
 
   onPause():void{
     this.playing.set(false);
     const video=this.masterVideo?.nativeElement;
     // Keep rVFC armed while paused: a seek presents a new decoded frame.
-    if(video && typeof video.requestVideoFrameCallback!=='function') {
+    if(!this.exportingVideo() && video && typeof video.requestVideoFrameCallback!=='function') {
       this.stopFrameLoop();this.onDecodedFrame();
     }
   }
@@ -725,6 +802,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   togglePlayback():void{
+    if(this.exportingVideo())return;
     if(this.playbackLocked())return;
     if(!this.mediaActivated()){this.activatePlayback(true);return;}
     const video=this.masterVideo?.nativeElement;
@@ -739,6 +817,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   setSpeed(speed:number):void{
+    if(this.exportingVideo())return;
     if(!Number.isFinite(speed) || speed<.25 || speed>2)return;
     const video=this.masterVideo?.nativeElement;
     if(video)video.playbackRate=speed;
@@ -746,6 +825,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   stepFrame(step:-1|1):void{
+    if(this.exportingVideo())return;
     if(!this.mediaActivated() || (this.lazyPreview() && this.previewLoading()) || this.playbackLocked())return;
     const video=this.masterVideo?.nativeElement;
     if(!video)return;
@@ -758,6 +838,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   }
 
   scrub(event:Event):void{
+    if(this.exportingVideo())return;
     if(!this.mediaActivated() || (this.lazyPreview() && this.previewLoading()) || this.playbackLocked())return;
     const video=this.masterVideo?.nativeElement;
     if(!video)return;

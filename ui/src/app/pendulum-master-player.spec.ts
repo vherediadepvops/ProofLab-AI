@@ -175,6 +175,100 @@ describe('One-clock three-view pendulum laboratory',()=>{
     return {fixture,component,source,root:fixture.nativeElement as HTMLElement};
   }
 
+  function readyExportFixture(){
+    const state=init(),{component,fixture}=state;
+    fixture.componentRef.setInput('presentation','understand');fixture.detectChanges();
+    spyOn(component,'exportSupported').and.returnValue(true);
+    component.samTrack.set({frameWidth:640,frameHeight:360,
+      source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'bob',points:[],
+      masks:[{frameIndex:0,timeSeconds:0,left:240,top:200,right:260,bottom:220,
+        maskPath:'M240 200L260 200L260 220Z',centroidXpx:250,centroidYpx:210,foregroundPixels:200}]});
+    component.previewLoading.set(false);component.samVerified.set(true);fixture.detectChanges();
+    return state;
+  }
+
+  it('offers a translated download only for verified analysis and a decodable source',()=>{
+    const {fixture,component,source,root}=readyExportFixture();
+    const button=()=>root.querySelector<HTMLButtonElement>('.export-video');
+    expect(button()).not.toBeNull();expect(button()!.disabled).toBeFalse();
+    expect(button()!.textContent).toContain('Descargar video');
+    expect(root.querySelector('.export-status')?.textContent).toContain('sin audio');
+    Object.defineProperty(source,'videoWidth',{configurable:true,value:0});fixture.detectChanges();
+    expect(button()!.disabled).toBeTrue();
+    Object.defineProperty(source,'videoWidth',{configurable:true,value:640});fixture.detectChanges();
+    expect(button()!.disabled).toBeFalse();
+    component.samVerified.set(false);fixture.detectChanges();expect(button()).toBeNull();
+    component.samVerified.set(true);fixture.componentRef.setInput('presentation','source');fixture.detectChanges();
+    expect(button()).toBeNull();
+    fixture.componentRef.setInput('presentation','understand');fixture.componentRef.setInput('language','en');fixture.detectChanges();
+    expect(button()!.textContent).toContain('Download video');
+    expect(root.querySelector('.export-status')?.textContent).toContain('without audio');
+    TestBed.inject(HttpTestingController).expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+
+  it('keeps the exported view and clock fixed while exposing an enabled cancel control',()=>{
+    const {fixture,component,source,root}=readyExportFixture();
+    source.currentTime=4.5;source.playbackRate=.5;
+    const layers={...component.visibleLayers()},controller=new AbortController();
+    (component as unknown as {exportController:AbortController}).exportController=controller;
+    component.exportingVideo.set(true);component.exportProgress.set(42);fixture.detectChanges();
+    for(const selector of ['.export-video','.play-main','.frame-button','.rate-label select','.timeline-range','.zoom-action','.guided-layers button'])
+      for(const control of Array.from(root.querySelectorAll<HTMLInputElement>(selector)))expect(control.disabled).withContext(selector).toBeTrue();
+    const range=root.querySelector<HTMLInputElement>('.timeline-range')!;range.value='17';
+    component.scrub({target:range} as unknown as Event);component.stepFrame(1);component.setSpeed(2);
+    component.toggleLayer('vectors');component.toggleLayer('trail');component.toggleZoom();component.beginPivotSelection();
+    expect(source.currentTime).toBe(4.5);expect(source.playbackRate).toBe(.5);
+    expect(component.visibleLayers()).toEqual(layers);expect(component.zoomed()).toBeFalse();expect(component.pivotMode()).toBeFalse();
+    expect(root.querySelector<HTMLProgressElement>('progress')!.value).toBe(42);
+    const cancel=root.querySelector<HTMLButtonElement>('.export-cancel')!;
+    expect(cancel.disabled).toBeFalse();cancel.click();expect(controller.signal.aborted).toBeTrue();
+    TestBed.inject(HttpTestingController).expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+
+  it('cancels an active export when the source is replaced or the player is destroyed',()=>{
+    const {fixture,component}=readyExportFixture();
+    const replaced=new AbortController();
+    (component as unknown as {exportController:AbortController}).exportController=replaced;
+    component.exportingVideo.set(true);
+    fixture.componentRef.setInput('videoUrl','http://127.0.0.1:5391/replacement.mp4');fixture.detectChanges();
+    expect(replaced.signal.aborted).toBeTrue();expect(replaced.signal.reason).toBe('source-changed');
+    const destroyed=new AbortController();
+    (component as unknown as {exportController:AbortController}).exportController=destroyed;
+    fixture.destroy();expect(destroyed.signal.aborted).toBeTrue();expect(destroyed.signal.reason).toBe('destroyed');
+    TestBed.inject(HttpTestingController).expectNone(r=>r.method==='POST');
+  });
+
+  it('uses restorable cancellation when the language changes without replacing the source',()=>{
+    const {fixture,component,source}=readyExportFixture(),controller=new AbortController();
+    const originalSource=source.src;
+    (component as unknown as {exportController:AbortController}).exportController=controller;
+    component.exportingVideo.set(true);
+    fixture.componentRef.setInput('language','en');fixture.detectChanges();
+    expect(source.src).toBe(originalSource);expect(controller.signal.aborted).toBeTrue();
+    expect(controller.signal.reason).toEqual(jasmine.any(DOMException));
+    expect(controller.signal.reason.name).toBe('AbortError');
+    expect(controller.signal.reason).not.toBe('source-changed');
+    TestBed.inject(HttpTestingController).expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+
+  it('cancels before a delayed saved pivot changes the geometry of an active export',async()=>{
+    const {fixture,component}=init(),http=TestBed.inject(HttpTestingController);
+    fixture.componentRef.setInput('studyId',study);fixture.componentRef.setInput('videoSha256',sha);
+    fixture.detectChanges();
+    const pendingPivot=http.expectOne(r=>r.url.endsWith('/kinematics/baseline'));
+    flushNoSamCache(http);await fixture.whenStable();
+    const controller=new AbortController();
+    (component as unknown as {exportController:AbortController}).exportController=controller;
+    component.exportingVideo.set(true);
+    let pivotAtCancellation:KinematicRevision|null|undefined;
+    controller.signal.addEventListener('abort',()=>pivotAtCancellation=component.pivotRevision());
+    pendingPivot.flush(revision);await fixture.whenStable();
+    expect(controller.signal.aborted).toBeTrue();expect(pivotAtCancellation).toBeNull();
+    expect(component.pivotRevision()).toEqual(revision);
+    expect(controller.signal.reason).not.toBe('source-changed');
+    http.expectNone(r=>r.method==='POST');http.verify();fixture.destroy();
+  });
+
   it('unlocks only the original after failure, leaving SAM evidence unavailable',()=>{
     const {fixture,component,root}=init();
     fixture.componentRef.setInput('processingRequired',true);

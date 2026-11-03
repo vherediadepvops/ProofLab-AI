@@ -108,3 +108,8 @@
 @media(max-width:1050px){.guided-studio.guided-result{grid-template-columns:minmax(0,1fr)}.guided-studio .views-grid{height:clamp(330px,55vw,540px)}}
 @media(max-width:590px){.guided-layers{gap:5px;padding:9px}.guided-layers button{font-size:10px}.guided-studio .views-grid{height:360px}.guided-studio .header-readings{flex-basis:100%;justify-content:flex-end}.guided-derivation{font-size:9px}.guided-studio .player-evidence{padding:10px}.guided-studio .timeline{padding:10px}.guided-studio .timecode{margin-left:auto;width:auto}}
 .observed-charts{padding:14px;border-top:1px solid #293d54}.observed-chart-title{display:flex;justify-content:space-between;gap:10px;font-size:11px}.observed-chart-title span{color:#8da8c5;font-size:10px}.observed-charts svg{display:block;width:100%;margin-top:8px}.observed-charts text{fill:#90a8c3;font:10px sans-serif}.observed-charts p{font-size:10px;line-height:1.6;color:#9ab0c8;margin:5px 0}.chart-grid{fill:none;stroke:#2d4057;stroke-width:1}.theta-line,.omega-line,.phase-line,.phase-trail{fill:none;stroke-width:1.5}.theta-line{stroke:#70e4c8}.omega-line{stroke:#94baff;stroke-dasharray:4 3}.theta-dot{fill:#70e4c8}.omega-dot{fill:#a6c7ff}.chart-playhead{stroke:#7c8fa6;stroke-width:.7}.phase-line{stroke:#6e709e;opacity:.45}.phase-trail{stroke:#a6bcff;stroke-width:2}.phase-chart{border-top:1px solid #293d54;margin-top:10px;padding-top:10px}.phase-chart summary{cursor:pointer;color:#b8cde4;font-size:11px}
+
+.export-video{border-color:#5de0bd;background:#123d35;color:#baffee;}
+.export-status{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px;color:#9bb9d1;font-size:12px;line-height:1.5;}
+.export-status progress{width:120px;max-width:100%;accent-color:#6be3c2;}
+.export-status.export-error{color:#ffbdac;}

@@ -32,9 +32,9 @@
   }
   @if(guided() && analysisVisible()) {
     <div class="guided-layers" role="group" [attr.aria-label]="es?'Capas visibles':'Visible layers'">
-      <button type="button" [class.enabled]="visibleLayers().tracking" [attr.aria-pressed]="visibleLayers().tracking" (click)="toggleLayer('tracking')">{{es?'Seguimiento':'Tracking'}}</button>
-      <button type="button" class="layer-vectors" [class.enabled]="visibleLayers().vectors" [attr.aria-pressed]="visibleLayers().vectors" (click)="toggleLayer('vectors')">{{es?'Vectores':'Vectors'}}</button>
-      <button type="button" class="layer-trail" [class.enabled]="visibleLayers().trail" [attr.aria-pressed]="visibleLayers().trail" (click)="toggleLayer('trail')">{{es?'Rastro fantasma':'Ghost trail'}}</button>
+      <button type="button" [class.enabled]="visibleLayers().tracking" [attr.aria-pressed]="visibleLayers().tracking" [disabled]="exportingVideo()" (click)="toggleLayer('tracking')">{{es?'Seguimiento':'Tracking'}}</button>
+      <button type="button" class="layer-vectors" [class.enabled]="visibleLayers().vectors" [attr.aria-pressed]="visibleLayers().vectors" [disabled]="exportingVideo()" (click)="toggleLayer('vectors')">{{es?'Vectores':'Vectors'}}</button>
+      <button type="button" class="layer-trail" [class.enabled]="visibleLayers().trail" [attr.aria-pressed]="visibleLayers().trail" [disabled]="exportingVideo()" (click)="toggleLayer('trail')">{{es?'Rastro fantasma':'Ghost trail'}}</button>
     </div>
   }
   <div class="viewer-frame" [attr.aria-busy]="previewLoading() || processingPending()">
@@ -189,22 +189,22 @@
   <div class="timeline" role="group" [hidden]="!mediaActivated()"
     [attr.aria-label]="es?'Controles de reproducción sincronizada':'Synchronized playback controls'">
     <div class="playback-buttons">
-      <button class="zoom-action" type="button" (click)="toggleZoom()"
+      <button class="zoom-action" type="button" [disabled]="exportingVideo()" (click)="toggleZoom()"
         [attr.aria-pressed]="zoomed()"
         [attr.aria-label]="es ? 'Alternar zoom de vistas' : 'Toggle view zoom'">
         {{zoomed() ? (es ? 'Ajustar imagen' : 'Fit image') : (es ? 'Ampliar imagen 1,6×' : 'Zoom 1.6×')}}
       </button>
-      <button class="play-main" type="button" (click)="togglePlayback()" [disabled]="playbackLocked()"
+      <button class="play-main" type="button" (click)="togglePlayback()" [disabled]="playbackLocked() || exportingVideo()"
         [attr.aria-label]="playing() ? (es?'Pausar todas las vistas':'Pause all views') : (es?'Reproducir todas las vistas':'Play all views')">
         {{playing() ? 'Ⅱ' : '▶'}}
         <span>{{playing()?(es?'Pausar':'Pause'):(es?'Reproducir':'Play')}}</span>
       </button>
-      <button type="button" class="frame-button" (click)="stepFrame(-1)" [disabled]="!mediaActivated() || (lazyPreview() && previewLoading()) || playbackLocked()"
+      <button type="button" class="frame-button" (click)="stepFrame(-1)" [disabled]="exportingVideo() || !mediaActivated() || (lazyPreview() && previewLoading()) || playbackLocked()"
         [attr.aria-label]="es?'Fotograma anterior':'Previous frame'">|◀</button>
-      <button type="button" class="frame-button" (click)="stepFrame(1)" [disabled]="!mediaActivated() || (lazyPreview() && previewLoading()) || playbackLocked()"
+      <button type="button" class="frame-button" (click)="stepFrame(1)" [disabled]="exportingVideo() || !mediaActivated() || (lazyPreview() && previewLoading()) || playbackLocked()"
         [attr.aria-label]="es?'Fotograma siguiente':'Next frame'">▶|</button>
       <label class="rate-label">{{es?'Velocidad':'Speed'}}
-        <select [disabled]="playbackLocked()" [value]="playbackRate()" (change)="setSpeed(+$any($event.target).value)"
+        <select [disabled]="playbackLocked() || exportingVideo()" [value]="playbackRate()" (change)="setSpeed(+$any($event.target).value)"
           [attr.aria-label]="es?'Velocidad de reproducción':'Playback speed'">
           <option value="0.25">0,25×</option>
           <option value="0.5">0,5×</option>
@@ -215,12 +215,20 @@
       </label>
       @if(studyId() && videoSha256() && !playbackLocked() && (!guided() || analysisVisible())) {
         <button type="button" class="pivot-button" (click)="beginPivotSelection()"
-          [disabled]="pivotSaving() || !mediaActivated() || (lazyPreview() && previewLoading()) || !canRequestLocalPivot()">
+          [disabled]="exportingVideo() || pivotSaving() || !mediaActivated() || (lazyPreview() && previewLoading()) || !canRequestLocalPivot()">
           {{pivotRevision() ? (es?'Corregir suspensión':'Adjust suspension') : (es?'Marcar suspensión':'Select suspension')}}
         </button>
         @if(pivotMode()) {
           <button type="button" class="pivot-cancel" (click)="cancelPivotSelection()"
             [disabled]="pivotSaving()">{{es?'Cancelar':'Cancel'}}</button>
+        }
+      }
+      @if(analysisVisible()) {
+        <button type="button" class="export-video" (click)="downloadAnnotatedVideo()" [disabled]="!canExportVideo()">
+          <span aria-hidden="true">↓</span> {{exportingVideo()?(es?'Exportando…':'Exporting…'):(es?'Descargar video':'Download video')}}
+        </button>
+        @if(exportingVideo()) {
+          <button type="button" class="export-cancel" (click)="cancelVideoExport()">{{es?'Cancelar descarga':'Cancel download'}}</button>
         }
       }
       <span class="timecode">{{timecode}} / {{lengthcode}}</span>
@@ -236,10 +244,24 @@
           : 'Saving pivot revision and calculating local derivatives…'}}</p>
       }
       @if(pivotError()) {<p class="player-error" role="alert">{{pivotError()}}</p>}
-    <input type="range" class="timeline-range" [disabled]="!mediaActivated() || (lazyPreview() && previewLoading()) || playbackLocked()"
+    <input type="range" class="timeline-range" [disabled]="exportingVideo() || !mediaActivated() || (lazyPreview() && previewLoading()) || playbackLocked()"
       min="0" [max]="duration() || 1" [step]="frameStepSeconds"
       [value]="currentTime()" (input)="scrub($event)"
       [attr.aria-label]="es?'Posición del fotograma compartido':'Shared video playhead'"/>
+    @if(analysisVisible()) {
+      <div class="export-status" [class.export-error]="exportFailed()" role="status" aria-live="polite">
+        @if(exportingVideo()) {
+          <progress max="100" [value]="exportProgress()" [attr.aria-label]="es?'Avance de exportación':'Export progress'"></progress>
+          <span>{{exportProgress()}} % · {{es?'Mantén esta pestaña visible hasta terminar.':'Keep this tab visible until finished.'}}</span>
+        } @else if(exportMessage()) {
+          <span>{{exportMessage()}}</span>
+        } @else {
+          <span>{{exportSupported()
+            ? (es?'Descarga el video completo con las capas visibles, sin audio.':'Download the complete video with visible layers, without audio.')
+            : (es?'Para descargar con capas, abre el video en Chrome o Edge.':'To download with overlays, open the video in Chrome or Edge.')}}</span>
+        }
+      </div>
+    }
     <div class="timeline-meta" [hidden]="guided()">
       <span>{{es?'Fotograma de reproducción':'Playback frame'}}:
         {{frameNumber()}} · {{es?'Vistas sincronizadas':'Views synchronized'}}:
