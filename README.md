@@ -9,11 +9,17 @@ ProofLab AI is an experimental **scientific evidence engine** for adult research
 measurements and the models provided by Meta to make testable predictions and
 help explain why data may agree or disagree with a scientific hypothesis.
 
-**Project status: alpha.** The owner obtained a **real SAM 3.1 `status: completed` response** with a bounding box and encoded mask for a synthetic red ball. Local mask decoder/overlay code is tested against **official synthetic sample data**; replay of that specific live response in the updated UI remains to be tested. Successful Muse Spark inference is still unverified; no original discovery is claimed.
+**Status (3 November 2026): functional research prototype, with scientific validation still in progress.** Real Muse Spark 1.3 and SAM 3.1 runs on pendulum recordings are documented. In the 30 October ten-case campaign, **7 results were within their predeclared practical bands, 2 inconclusive and 1 deliberate wrong-length negative control outside**. These were comparisons of six previously filmed recordings plus controls, **not ten independent prospective physical experiments**. No new scientific discovery or universal measurement accuracy is claimed.
+
+**For judges:** [Live application](https://prooflab-ai.com) · **[Results, including failures](docs/RESULTS.md)** · **[Evaluation protocol and reproducibility](docs/EVALUATION.md)** · [Muse/SAM research workflow](docs/MUSE-INVESTIGATOR.en.md). **Español:** [README](README.es.md) · [Resultados](docs/RESULTS.es.md) · [Evaluación](docs/EVALUATION.es.md).
+
+The latest published no-zoom processing change was verified with local software and browser checks **without new Meta inferences**. Pivot/centre calibration and the full physical uncertainty budget remain open. The development milestones further below retain their historical dates and should not be read as the latest validation state.
 
 **Navigation:** Home reserves space for future walkthrough videos; Laboratory keeps the pendulum experiment and its four views; Settings contains the single-use API key and local connection. Switching sections preserves the study. The key stays only in the session password field and is cleared after use, a mode/connection change or reload; it never enables billing by itself.
 
-## Current video preparation flow (November 1, 2026)
+## Video preparation and analysis (updated November 3, 2026)
+
+The new-video pipeline now prepares a full-video MP4 and 50 original frames in the background after upload. The [3 November no-zoom release](https://github.com/vherediadepvops/ProofLab-AI/commit/b6512323e7f72f0d718af30be648c8a59baaf648) sends the original video and those 50 references to Spark, performs **one object review**, and then requests continuous SAM tracking. It quotes **two Spark calls, maximum US$0.35** instead of four calls and US$0.85 for the previous zoom-contact review plan. This is a quotation/engineering change, **not a newly demonstrated accuracy or actual charge**; no fresh Meta inference was run for that release.
 
 The Laboratory accepts the recording before the three physical inputs are complete. Upload waits for receipt and SHA-256, format/duration validation, a still thumbnail and study registration. The initial player shows that thumbnail; **Play original** loads the complete original recording. Next requires the registered original and confirmed length, initial angle (including 0°) and mass, without waiting for browser video decoding.
 
@@ -38,7 +44,9 @@ that development is permitted after the October 26 kickoff.
 The final submission must be public, original, and disclose exactly what was built
 during the event. Do not misrepresent demonstration data as physical evidence.
 
-## What this edition implements
+## Implementation and historical milestones
+
+The items below document successive increments from October. Statements about what was **not yet** implemented during an earlier increment are historical, **not the current project status**. For present-day scientific evidence and limitations, use [Results](docs/RESULTS.md) and [Evaluation](docs/EVALUATION.md).
 
 - **Bilingual ES/EN responses:** Lean explanations, visible results, UI messages and generated reports follow the selected language without changing the underlying proof or triggering new billable requests. See [language policy](docs/LOCALIZATION.md).
 

@@ -9,11 +9,17 @@ desarrollado para la temática *Push the Frontier* del Meta Global AI Developer 
 Combina mediciones físicas con modelos de Meta para formular hipótesis comprobables,
 predecir resultados y explicar diferencias entre la teoría y las observaciones.
 
-**Estado: alfa.** La prueba del propietario obtuvo **respuesta real `status: completed` de SAM 3.1** con caja y máscara codificada para una pelota sintética. El decodificador/overlay local de máscaras se verificó **con muestras sintéticas oficiales**, pero aún falta comprobar ese mismo resultado real en la nueva interfaz. La inferencia exitosa de Muse Spark sigue pendiente; no hay descubrimiento científico original.
+**Estado (3 de noviembre de 2026): prototipo de investigación funcional, con validación científica todavía pendiente.** Tenemos ejecuciones reales de Muse Spark 1.3 y SAM 3.1 sobre grabaciones de péndulos. En la campaña de diez casos del 30 de octubre, **7 quedaron dentro de sus bandas prácticas predeclaradas, 2 inconclusos y 1 control negativo deliberado de longitud incorrecta quedó fuera**. Se reutilizaron seis grabaciones anteriores y controles; **no son diez experimentos físicos prospectivos independientes**. No se afirma descubrimiento científico ni precisión universal.
+
+**Para el jurado:** [Aplicación publicada](https://prooflab-ai.com) · **[Resultados, incluidos los fallos](docs/RESULTS.es.md)** · **[Protocolo de evaluación y reproducción](docs/EVALUATION.es.md)** · [Flujo Muse/SAM](docs/MUSE-INVESTIGATOR.es.md). **English:** [README](README.md) · [Results](docs/RESULTS.md) · [Evaluation](docs/EVALUATION.md).
+
+La última modificación del procesamiento sin zoom se comprobó con pruebas locales de software y navegador, **sin nuevas inferencias de Meta**. Permanecen pendientes la calibración del pivote/centro y la incertidumbre física total. Las etapas históricas descritas más adelante conservan su fecha original y no representan la validación científica más reciente.
 
 **Navegación:** Inicio contiene espacios para futuros videos explicativos; Laboratorio conserva el experimento de péndulo y sus cuatro vistas; Configuración reúne el token de uso único y la conexión local. Cambiar de sección conserva la investigación. El token permanece únicamente en el campo de contraseña durante la sesión y se borra al utilizarlo, cambiar de modo/conexión o recargar; no habilita pagos por sí mismo.
 
-## Preparación actual del video (1 de noviembre de 2026)
+## Preparación y análisis de video (actualizado el 3 de noviembre de 2026)
+
+Para videos nuevos, tras la carga se preparan en segundo plano un MP4 completo y 50 imágenes originales. La [versión sin zoom del 3 de noviembre](https://github.com/vherediadepvops/ProofLab-AI/commit/b6512323e7f72f0d718af30be648c8a59baaf648) envía el original y las 50 referencias a Spark, ejecuta **una revisión del objeto** y solicita a SAM seguimiento continuo. Cotiza **dos llamadas Spark, máximo US$ 0,35**, frente a cuatro llamadas y US$ 0,85 del plan anterior con revisiones ampliadas. Es un cambio de presupuesto estimado e ingeniería, **no precisión nueva demostrada ni gasto facturado**; esa versión no ejecutó nuevas inferencias Meta.
 
 El Laboratorio admite la grabación antes de completar los tres datos físicos. La carga espera la recepción y el SHA-256, la validación de formato/duración, una miniatura y el registro de la investigación. El reproductor inicial muestra esa miniatura; **Reproducir original** carga la grabación original completa. Siguiente exige el original registrado y la confirmación de longitud, ángulo inicial (incluido 0°) y masa, sin esperar a que el navegador decodifique el video.
 
@@ -38,7 +44,9 @@ a desarrollar inmediatamente después de la inauguración.
 La entrega final deberá ser pública, original y distinguir qué funcionalidades
 se desarrollaron durante el evento. No presentaremos simulaciones como datos reales.
 
-## Funcionalidades actuales
+## Implementación e hitos históricos
+
+Los apartados siguientes documentan incrementos sucesivos de octubre. Las indicaciones sobre lo que **todavía no** se había probado en una etapa anterior son históricas y **no describen el estado actual**. Para las evidencias y límites científicos vigentes, consultar [Resultados](docs/RESULTS.es.md) y [Evaluación](docs/EVALUATION.es.md).
 
 - **Respuestas bilingües ES/EN:** explicaciones de Lean, resultados, mensajes e informes generados respetan el idioma seleccionado, sin alterar el resultado formal ni generar nuevas llamadas de pago. Consulta [política de idioma](docs/LOCALIZATION.es.md).
 
