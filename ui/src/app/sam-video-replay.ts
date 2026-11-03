@@ -150,8 +150,6 @@ interface SamAdaptiveReport {
             @if(autoMuseAfterSam() && apiEnabled() && videoRole()==='baseline' && !stageRetryQuote()) {
               <div class="sam-muse-consent" role="note">
                 <strong>✦ Muse Spark 1.3 · {{es?'interpretación automática después de SAM':'automatic interpretation after SAM'}}</strong>
-                <p>{{es?'Al pulsar «Procesar + interpretar con Muse» autorizas, además del análisis de video mostrado, enviar únicamente el resumen de mediciones y limitaciones a Muse Spark. Máximo adicional: US$ 0,05. No se vuelve a subir el video y no se genera otra consulta si ya hay una respuesta válida guardada.':
-                  'Clicking “Process + interpret with Muse” also authorizes transferring only the measured data summary and limitations to Muse Spark. Additional maximum: US$ 0.05. The video is not resent and a valid saved answer is reused.'}}</p>
                 @if(displayedCost()>0){<small>{{es?'Máximo combinado estimado':'Estimated combined maximum'}}: US$ {{(displayedCost()+0.05).toFixed(2)}} · {{es?'no es una factura':'not an invoice'}}</small>}
               </div>
             }
@@ -322,8 +320,8 @@ interface SamAdaptiveReport {
     .sam-actions .sam-submit:focus-visible{outline:2px solid #bbf7d0;outline-offset:3px}
     .sam-actions .sam-submit:disabled{background:#303843;border-color:#48515e;color:#aab6c5;opacity:1;animation:none;box-shadow:none}
     .sam-muse-consent{margin:12px 0;padding:12px 13px;border-radius:9px;border:1px solid #666089;background:#1a2133;color:#e2d7ff}
-    .sam-muse-consent strong{font-size:12px}.sam-muse-consent p{font-size:11px;line-height:1.65;margin:6px 0;color:#d0c7e1}
-    .sam-muse-consent small{font-size:11px;color:#f6dba7}.sam-muse-auto-status{font-size:12px;margin:10px 0;color:#b9ffe1}
+    .sam-muse-consent strong{font-size:12px}
+    .sam-muse-consent small{display:block;margin-top:6px;font-size:11px;color:#f6dba7}.sam-muse-auto-status{font-size:12px;margin:10px 0;color:#b9ffe1}
     .sam-muse-auto-status.stage-error{color:#f6b4ba}
     .sam-stage-retry{flex-basis:100%;margin-top:14px;padding:13px 14px;border:1px solid #d6a453;border-radius:8px;background:#2b271a;color:#ffe8b8}
     .sam-stage-retry>strong{font-size:13px}.sam-stage-retry p{font-size:11px;margin:7px 0;color:#f4d3a2}

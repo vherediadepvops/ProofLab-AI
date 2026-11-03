@@ -102,7 +102,7 @@ describe('One complete-video SAM request and archived-result recovery',()=>{
  it('automatically interprets verified baseline SAM once with the disclosed Muse cost and no second video upload',async()=>{
   const x=setup();x.f.componentRef.setInput('autoMuseAfterSam',true);x.f.detectChanges();
   await check(x,exact,located);
-  expect(x.f.nativeElement.textContent).toContain('Máximo adicional: US$ 0,05');
+  expect(x.f.nativeElement.textContent).toContain('Máximo combinado estimado: US$ 0.18');
   expect(x.f.nativeElement.textContent).toContain('Procesar + interpretar con Muse');
   const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
   x.h.expectOne(url+'/manual-batch').flush(done);await finalProgress(x);await tick();

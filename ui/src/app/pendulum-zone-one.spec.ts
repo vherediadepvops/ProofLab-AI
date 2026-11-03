@@ -177,7 +177,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     fixture.componentRef.setInput('language','en');fixture.detectChanges();
     expect(el.querySelector('#mass-input-state')?.textContent).toContain('Required value');
     fixture.componentRef.setInput('language','es');fixture.detectChanges();
-    expect(el.textContent).toContain('no precisión garantizada');
+    expect(el.textContent).not.toContain('no precisión garantizada');
     const restoring=c.restore(blank.id);http.expectOne(studyUrl+'/'+blank.id).flush(blank);await restoring;
     expect(c.baselineLength()).toBeNull();expect(c.initialAngleDegrees()).toBeNull();expect(c.massGrams()).toBeNull();
     http.expectNone(theoryUrl);await verifyHttp(http);
