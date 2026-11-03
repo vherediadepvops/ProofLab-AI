@@ -4,46 +4,7 @@ namespace ProofLab.Api;
 public sealed partial class AssemblyLocator
 {
     private static readonly double[] SuspensionZooms=[1.5,3];
-    private async Task<AssemblyEvidence> ReviewProgressiveSuspension(string root,AssemblyEvidence first,string token,CancellationToken ct)
-    {
-        var answers=new List<SuspensionZoomAnswer>();var receipts=new List<KnotProviderResult>();
-        var points=first.Proposal.Suspension.Points;string inputHash=first.ResponseSha256;
-        for(int stage=0;stage<2;stage++) {
-            double zoom=SuspensionZooms[stage];
-            using var progressRound=AssemblyProgress.Round(stage+2);
-            string folder=Path.Combine(root,$"zoom-{stage+2}");Directory.CreateDirectory(folder);
-            if(File.Exists(Path.Combine(folder,"attempt.json")))throw new InvalidOperationException("Previous zoom inference requires reconciliation.");
-            AssemblyProgress.Start("zoom-references");
-            var images=new List<byte[]>();var references=new List<SuspensionZoomImage>();
-            for(int i=0;i<50;i++) {
-                var frame=first.Frames[i];var crop=ProgressiveSuspensionPolicy.Crop(frame,points[i],zoom);
-                // Always read the original native frame, never the previous enlargement.
-                var path=Path.Combine(folder,$"crop-{i}.jpg");
-                var bytes=await frames.CropZoomSuspensionAsync(Path.Combine(root,$"frame-{i}.jpg"),frame,crop,path,ct);
-                references.Add(new(i,frame,crop with {Sha256=await FileHash(path,ct)}));images.Add(bytes);
-            }
-            AssemblyProgress.Done("zoom-references");
-            ct.ThrowIfCancellationRequested();runtime.ReserveOrThrow(token);
-            var attempt=new SuspensionZoomAttempt(ProgressiveSuspensionPolicy.Protocol,first.VideoSha256,first.CacheKey,
-                inputHash,zoom,references.ToArray(),AssemblyPolicy.VideoBudget(configuration));
-            await Save(Path.Combine(folder,"attempt.json"),attempt,CancellationToken.None);
-            AssemblyProgress.Start("zoom-inference");
-            var result=await transport.ReviewZoomSuspensionAsync(references.ToArray(),images.ToArray(),zoom,token,attempt.MaximumEstimatedCostUsd,ct);
-            await File.WriteAllTextAsync(Path.Combine(folder,"response.json"),result.Raw,CancellationToken.None);
-            AssemblyProgress.Done("zoom-inference");AssemblyProgress.Start("zoom-verify");
-            AssemblyMetaTransport.ValidateReceipt(result.Raw,result.ProviderResponseId,result.InputTokens,result.OutputTokens);
-            var answer=ProgressiveSuspensionPolicy.Parse(AssemblyMetaTransport.OutputText(result.Raw),references.ToArray());
-            answers.Add(answer);receipts.Add(result);points=answer.Points;
-            inputHash=KnotPolicy.Hash(inputHash+"\n"+KnotPolicy.Hash(result.Raw));
-            AssemblyProgress.Done("zoom-verify");
-        }
-        var combined=ProgressiveSuspensionPolicy.Combine(first,answers[0],answers[1],receipts[0],receipts[1]);
-        await Save(Path.Combine(root,"reviewed-evidence.json"),combined,CancellationToken.None);
-        await Save(Path.Combine(root,"dense-localization.json"),new DenseManifest(ProgressiveSuspensionPolicy.Protocol,3,
-            "ZOOM_REVIEWS_COMPLETE",new[]{first.ResponseSha256}.Concat(receipts.Select(r=>KnotPolicy.Hash(r.Raw))).ToArray()),CancellationToken.None);
-        return combined;
-    }
-
+    // Preserved zoom receipts remain readable; new operations never send zoom reviews.
     private async Task<AssemblyEvidence?> ReadProgressiveSuspension(string root,AssemblyEvidence first,CancellationToken ct)
     {
         if(!File.Exists(Path.Combine(root,"reviewed-evidence.json"))||!File.Exists(Path.Combine(root,"dense-localization.json")))return null;

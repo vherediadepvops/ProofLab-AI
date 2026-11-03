@@ -23,7 +23,7 @@ function experiment(width=1080,height=1920,offset=0) {
   return {archive,track,cx,cy,radius};
 }
 describe('Automatic Spark/SAM suspension estimates',()=>{
-  for(const [protocol,count] of [['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',50],['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',100],['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',150],['SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1',50],['SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2',50]] as const) it('uses '+protocol+' consensus from '+count+' frames without averaging the moving body',()=>{
+  for(const [protocol,count] of [['SPARK_ORIGINAL_50_OBJECT_REVIEW_V1',50],['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',50],['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',100],['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',150],['SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1',50],['SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2',50]] as const) it('uses '+protocol+' consensus from '+count+' frames without averaging the moving body',()=>{
     const {archive,track,cx,cy}=experiment();
     const e=archive.suspension!;
     e.refinement=protocol;
@@ -58,6 +58,24 @@ describe('Automatic Spark/SAM suspension estimates',()=>{
     expect(resolveSamSuspension(archive,track).pivot).toBeNull();
     e.consensus.camera='STATIC';e.consensus.x=510;
     expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
+  it('preserves the original 50-point consensus without requiring zoom contact reviews or replacing it with a circle fit',()=>{
+    const {archive,track,cx,cy}=experiment(1080,1920,3),e=archive.suspension!;
+    e.refinement='SPARK_ORIGINAL_50_OBJECT_REVIEW_V1';e.contactReviews=null;
+    const seed=e.points[0];
+    e.points=Array.from({length:50},(_,frame)=>({...seed,frame}));
+    e.consensus={status:'CONSENSUS_ESTIMATE',camera:'STATIC',inlierOrdinals:e.points.map(p=>p.frame),
+      submitted:50,usable:50,timeCoverage:1,x:seed.x,y:seed.y,spreadPixels:0};
+    const original=JSON.stringify(e),result=resolveSamSuspension(archive,track);
+    expect(result.method).toBe('SPARK');
+    expect(result.pivot!.pivotXpx/480*1080).toBeCloseTo(cx+3,8);
+    expect(result.pivot!.pivotYpx/270*1920).toBeCloseTo(cy+3,8);
+    expect(JSON.stringify(e)).toBe(original);
+    for(const count of [49,100,150]){
+      e.points=Array.from({length:count},(_,frame)=>({...seed,frame}));
+      Object.assign(e.consensus,{submitted:count,usable:count,inlierOrdinals:e.points.map(p=>p.frame)});
+      expect(resolveSamSuspension(archive,track).reason).toBe('SPARK_DENSE_SUSPENSION_INCONCLUSIVE');
+    }
   });
   for(const protocol of ['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3']) it('preserves visually localized exit '+protocol,()=>{
     const {archive,track,cx,cy}=experiment(1080,1920,3);

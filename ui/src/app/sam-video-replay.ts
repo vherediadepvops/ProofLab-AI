@@ -119,7 +119,7 @@ interface SamAdaptiveReport {
                   <small class="sam-meta-estimate">{{es?'1 solicitud SAM · video completo':'1 SAM request · complete video'}} ·
                     {{es?'cuadros facturables':'billable frames'}}: {{aq.billableFrames}}</small>
                   @if(aq.requiresNewSparkCall) {
-                    <small class="sam-meta-estimate">{{es?'Incluye Spark estimado US$ ':'Includes Spark estimated US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{['SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1','SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2'].includes(groundingQuote()?.localizationPlan??'')?(es?'50 originales + 50 ×1,5 + 50 ×3 y revisión del objeto':'50 originals + 50 ×1.5 + 50 ×3 and object review'):(es?'para localizar y verificar el objeto':'to locate and verify the object')}}</small>
+                    <small class="sam-meta-estimate">{{es?'Incluye Spark estimado US$ ':'Includes Spark estimated US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{localizationPlanDescription()}}</small>
                   }
                 }
                 @if(!freeCacheAvailable() && !reviewOnlyRequired() && reviewBudget()>0) {
@@ -584,6 +584,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       const stages=this.sparkStages();
       const initial=names.filter(([key])=>(!reviewOnly||key==='prepare'||key==='target-review') &&
         (key!=='target-review'||stages.some(s=>s.key===key)));
+      // Historical zoom rounds are shown only when recorded; new runs do not prefill them.
       const extra=stages.filter(s=>/^round-[23]-/.test(s.key)).map(s=>{
         const match=/^round-([23])-(.+)$/.exec(s.key)!;
         const zoom=match[1]==='2'?'1.5':'3';
@@ -1158,6 +1159,15 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       (this.groundingRequired()?this.groundingQuote()!.maximumEstimatedCostUsd:0);
   }
   costLabel(value:number):string {return (Math.ceil(value*100-1e-8)/100).toFixed(2);}
+  localizationPlanDescription():string {
+    const plan=this.groundingQuote()?.localizationPlan;
+    if(plan==='SPARK_ORIGINAL_50_OBJECT_REVIEW_V1')return this.es?
+      '50 imágenes originales y revisión del objeto':'50 original images and object review';
+    // Saved quotes and progress must continue to describe what actually ran.
+    if(['SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1','SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2'].includes(plan??''))
+      return this.es?'50 originales + 50 ×1,5 + 50 ×3 y revisión del objeto':'50 originals + 50 ×1.5 + 50 ×3 and object review';
+    return this.es?'para localizar y verificar el objeto':'to locate and verify the object';
+  }
   nextActionDescription():string {
     if(this.freeCacheAvailable())return this.es?'Resultado comprobado en SQLite. Procesar carga las mediciones sin llamadas a Meta.':'Checked SQLite result. Process loads measurements without Meta calls.';
     if(this.mode()==='api-meta' && this.stageRetryQuote())return this.es?
@@ -1178,8 +1188,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const previous=this.mode()==='api-meta' && this.cacheStatus()?.previousAttemptStatus
       ? (this.es?'Hay un intento anterior registrado. Este clic inicia un análisis nuevo y puede generar otro cobro. ':'A previous attempt is recorded. This click starts a new analysis and may incur another charge. '):'';
     if(this.groundingRequired())return previous+(this.es?
-      'Procesar autoriza el video y 50 imágenes originales, seguidas de 50 acercamientos ×1,5 y 50 ×3 de esos mismos fotogramas, más la revisión del objeto. El costo mostrado incluye estas revisiones y SAM. Si los acercamientos discrepan, la suspensión queda inconclusa. Si no se localiza el objeto, SAM no se envía.':
-      'Process authorizes the video and 50 original images, followed by 50 crops at ×1.5 and 50 at ×3 of those same frames, plus object review. The displayed cost includes these reviews and SAM. Disagreeing zoom reviews leave suspension inconclusive. If the object is not located, SAM is not sent.');
+      'Procesar autoriza enviar el video completo y 50 imágenes a Spark, más una revisión del objeto. El costo mostrado incluye estas revisiones y SAM. Si no se localiza el objeto, SAM no se envía.':
+      'Process authorizes sending the complete video and 50 images to Spark, plus object review. The displayed cost includes these reviews and SAM. If the object is not located, SAM is not sent.');
     return previous+(this.es?'Al pulsar Procesar autorizas enviar este video a Meta y usar los créditos del costo mostrado.':
       'Pressing Process authorizes sending this video to Meta and using credits at the displayed cost.');
   }

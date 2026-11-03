@@ -182,7 +182,7 @@ public sealed class AssemblyTests
         public string Folder=>Path.Combine(Root,".private","physics","assembly",AssemblyPolicy.Key(Sha));
         public AssemblyLocator Open(ILocalVideoPreparation? local=null)=>new(new Env(Root),Runtime,Frames,Transport,localPreparation:local);
         public KnotRunRequest Request()=>new(Sha,AssemblyPolicy.Key(Sha),Token,true,true,.05);
-        public AssemblyGroundingRunRequest GroundRequest()=>new(Sha,AssemblyPolicy.VideoGroundingKey(Sha),Token,true,true,.85,ConfirmVideoTransfer:true);
+        public AssemblyGroundingRunRequest GroundRequest()=>new(Sha,AssemblyPolicy.VideoGroundingKey(Sha),Token,true,true,.35,ConfirmVideoTransfer:true);
         public string GroundFolder=>Directory.GetDirectories(Path.Combine(Root,".private","physics","assembly",
             AssemblyPolicy.VideoGroundingKey(Sha),"runs")).OrderBy(Directory.GetCreationTimeUtc).Last();
         public string LegacyGroundFolder=>Path.Combine(Root,".private","physics","assembly",AssemblyPolicy.GroundingKey(Sha));
@@ -191,7 +191,7 @@ public sealed class AssemblyTests
             Transport.ReviewUncertain=false;Transport.WrongReviewOrdinal=false;
             await Open().GroundAsync("s","baseline",GroundRequest(),Ct);
             Transport.ReviewUncertain=uncertain;Transport.WrongReviewOrdinal=wrongOrdinal;
-            Transport.ReviewCalls=0;Transport.ZoomCalls=0;Runtime.Reservations-=3;
+            Transport.ReviewCalls=0;Transport.ZoomCalls=0;Runtime.Reservations-=1;
             var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
             var folder=GroundFolder;var saved=JsonSerializer.Deserialize<AssemblyEvidence>(await File.ReadAllTextAsync(Path.Combine(folder,"evidence.json")),options)!;
             var payload=System.Text.Json.Nodes.JsonNode.Parse(AssemblyMetaTransport.OutputText(await File.ReadAllTextAsync(Path.Combine(folder,"response.json"))))!.AsObject();
@@ -202,6 +202,43 @@ public sealed class AssemblyTests
             await File.WriteAllTextAsync(Path.Combine(folder,"evidence.json"),JsonSerializer.Serialize(saved,options));
             foreach(var name in new[]{"dense-localization-attempt.json","dense-localization.json","reviewed-evidence.json","body-reviewed-evidence.json","object-review-attempt.json","object-review-response.json","object-review-stages.json"})File.Delete(Path.Combine(folder,name));
             return await Open().GroundAsync("s","baseline",GroundRequest() with {MaximumEstimatedCostUsd=.10},Ct);
+        }
+        // Build a synthetic preserved historical receipt, independently of the new
+        // application path. No production writer or provider is called here.
+        public async Task<AssemblyGroundingQuote> ProgressiveGroundAsync() {
+            var initial=await Open().GroundAsync("s","baseline",GroundRequest(),Ct);
+            var root=GroundFolder;var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            async Task Write(string name,object value)=>await File.WriteAllTextAsync(Path.Combine(root,name),JsonSerializer.Serialize(value,options));
+            var first=JsonSerializer.Deserialize<AssemblyEvidence>(await File.ReadAllTextAsync(Path.Combine(root,"evidence.json")),options)!;
+            var points=first.Proposal.Suspension.Points;var inputHash=first.ResponseSha256;
+            var answers=new List<SuspensionZoomAnswer>();var receipts=new List<KnotProviderResult>();
+            for(var stage=0;stage<2;stage++) {
+                var zoom=stage==0?1.5:3d;var folder=Path.Combine(root,$"zoom-{stage+2}");Directory.CreateDirectory(folder);
+                var refs=new List<SuspensionZoomImage>();var images=new List<byte[]>();
+                for(var i=0;i<50;i++) {
+                    var frame=first.Frames[i];var crop=ProgressiveSuspensionPolicy.Crop(frame,points[i],zoom);
+                    var path=Path.Combine(folder,$"crop-{i}.jpg");
+                    var bytes=await ((IKnotFrames)Frames).CropZoomSuspensionAsync(Path.Combine(root,$"frame-{i}.jpg"),frame,crop,path,Ct);
+                    refs.Add(new(i,frame,crop with {Sha256=Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()}));images.Add(bytes);
+                }
+                await Write($"zoom-{stage+2}/attempt.json",new SuspensionZoomAttempt(ProgressiveSuspensionPolicy.Protocol,Sha,first.CacheKey,inputHash,zoom,refs.ToArray(),.25));
+                var receipt=await Transport.ReviewZoomSuspensionAsync(refs.ToArray(),images.ToArray(),zoom,Token,.25,Ct);Runtime.Reservations++;
+                await File.WriteAllTextAsync(Path.Combine(folder,"response.json"),receipt.Raw);
+                var answer=ProgressiveSuspensionPolicy.Parse(AssemblyMetaTransport.OutputText(receipt.Raw),refs.ToArray());
+                answers.Add(answer);receipts.Add(receipt);points=answer.Points;
+                inputHash=KnotPolicy.Hash(inputHash+"\n"+KnotPolicy.Hash(receipt.Raw));
+            }
+            var combined=ProgressiveSuspensionPolicy.Combine(first,answers[0],answers[1],receipts[0],receipts[1]);
+            await Write("dense-localization-attempt.json",new {protocol=ProgressiveSuspensionPolicy.Protocol,maximumAttempts=3});
+            await Write("dense-localization.json",new {protocol=ProgressiveSuspensionPolicy.Protocol,rounds=3,stopReason="ZOOM_REVIEWS_COMPLETE",responseHashes=new[]{first.ResponseSha256}.Concat(receipts.Select(x=>KnotPolicy.Hash(x.Raw))).ToArray()});
+            await Write("reviewed-evidence.json",combined);
+            var attempt=JsonSerializer.Deserialize<ObjectReviewAttempt>(await File.ReadAllTextAsync(Path.Combine(root,"object-review-attempt.json")),options)!;
+            attempt=attempt with {Protocol=ProgressiveSuspensionPolicy.BodyProtocol,DraftResponseSha256=combined.ResponseSha256};
+            await Write("object-review-attempt.json",attempt);
+            var raw=await File.ReadAllTextAsync(Path.Combine(root,"object-review-response.json"));
+            var reviewed=ObjectReviewPolicy.Derive(combined,new(raw,"synthetic-not-provider",1000,100),attempt.References);
+            await Write("body-reviewed-evidence.json",reviewed);
+            return initial with {Evidence=reviewed,Scene=AssemblyPolicy.Ground(reviewed),Status=AssemblyPolicy.GroundingStatus(reviewed)};
         }
         public void Dispose(){if(Directory.Exists(Root))Directory.Delete(Root,true);}
     }
@@ -379,7 +416,7 @@ public sealed class AssemblyTests
         Assert.Equal(result.Scene!.Key,cached.Scene!.Key);
         Assert.Equal(result.Scene.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
         Assert.Null(await f.Open().ApprovedAsync("s","baseline",Ct));
-        Assert.Equal(1,f.Transport.Calls);Assert.Equal(4,f.Runtime.Reservations);Assert.Equal(50,f.Frames.Calls);
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(2,f.Runtime.Reservations);Assert.Equal(50,f.Frames.Calls);
         foreach(var file in Directory.GetFiles(f.GroundFolder,"*.json"))
             Assert.DoesNotContain(Token,await File.ReadAllTextAsync(file));
     }
@@ -389,7 +426,7 @@ public sealed class AssemblyTests
         Assert.Equal("AMBIGUOUS",q.Status);Assert.False(q.CacheHit);Assert.False(q.CanRun);Assert.Null(q.Scene);
         var cached=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
         Assert.Equal("AMBIGUOUS",cached.Status);Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
-        Assert.Equal(1,f.Transport.Calls);Assert.Equal(2,f.Transport.ZoomCalls);Assert.Equal(4,f.Runtime.Reservations);
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(0,f.Transport.ZoomCalls);Assert.Equal(2,f.Runtime.Reservations);
     }
     [Fact] public async Task GroundingCannotBypassUncertainHistoricalAttempt() {
         using var f=new Fixture();f.Transport.Fail=true;
@@ -425,7 +462,7 @@ public sealed class AssemblyTests
         f.Transport.RejectStatus=null;
         var result=await f.Open().GroundAsync("s","baseline",request,Ct);
         Assert.NotNull(result.Scene);Assert.NotEqual(failed,f.GroundFolder);
-        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(5,f.Runtime.Reservations);
+        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(3,f.Runtime.Reservations);
         Assert.Equal(before,await File.ReadAllTextAsync(Path.Combine(failed,"attempt.json")));
         Assert.Equal(outcome,await File.ReadAllTextAsync(Path.Combine(failed,"outcome.json")));
     }
@@ -482,9 +519,9 @@ public sealed class AssemblyTests
         Assert.Equal(q.Scene.Prompt,samTransport.Prompt);Assert.Equal(q.Scene.Key,result.Receipt.Scene!.Key);
         var archive=await sam.ReadArchiveAsync("s","baseline",Ct);
         Assert.NotNull(archive!.Suspension);Assert.Equal(q.Scene.EvidenceKey,archive.Suspension.EvidenceKey);
-        Assert.Equal(ProgressiveSuspensionPolicy.Protocol,archive.Suspension.Refinement);
+        Assert.Equal(DenseLocalizationPolicy.OriginalProtocol,archive.Suspension.Refinement);
         Assert.Equal(AssemblyPolicy.GroundingOrigin,result.Receipt.Scene.Origin);Assert.Null(result.Receipt.Scene.PivotX);
-        Assert.Equal(1,samTransport.Calls);Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Transport.ReviewCalls);Assert.Equal(5,f.Runtime.Reservations);
+        Assert.Equal(1,samTransport.Calls);Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Transport.ReviewCalls);Assert.Equal(3,f.Runtime.Reservations);
     }
     [Fact] public async Task AutomaticTransportRequiresAmbiguityDecisionInStrictSchema() {
         using var http=new HttpStub(r=>{
@@ -528,7 +565,7 @@ public sealed class AssemblyTests
         Assert.Equal(second.Scene.Key,(await locator.TrackingAsync("s","baseline",Ct))!.Key);
         var history=await locator.TrackingHistoryAsync("s","baseline",Ct);
         Assert.Equal(2,history.Length);Assert.Contains(history,s=>s.Key==first.Scene.Key);
-        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(2,f.Transport.ReviewCalls);Assert.Equal(8,f.Runtime.Reservations);
+        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(2,f.Transport.ReviewCalls);Assert.Equal(4,f.Runtime.Reservations);
         var cached=await locator.GroundAsync("s","baseline",f.GroundRequest() with {ModelApiToken="",ConfirmPaidCall=false},Ct);
         Assert.True(cached.CacheHit);Assert.Equal(second.Scene.Key,cached.Scene!.Key);
         Assert.Equal(2,f.Transport.VideoCalls);
@@ -556,7 +593,7 @@ public sealed class AssemblyTests
         Assert.Equal("NEEDS_LOCALIZATION",q.Status);Assert.False(q.PriorAttempt);
         f.Transport.NoInference=false;
         await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
-        Assert.Equal(5,f.Runtime.Reservations);Assert.Equal(2,f.Transport.VideoCalls);
+        Assert.Equal(3,f.Runtime.Reservations);Assert.Equal(2,f.Transport.VideoCalls);
     }
     [Fact] public async Task PreservedHistoricalResponseStaysReadableButCannotSeedANewSamCall() {
         using var f=new Fixture();Directory.CreateDirectory(f.LegacyGroundFolder);
@@ -575,7 +612,7 @@ public sealed class AssemblyTests
         await File.WriteAllTextAsync(Path.Combine(f.LegacyGroundFolder,"response.json"),raw);
         var q=await f.Open().GroundingQuoteAsync("s","baseline",Ct);
         Assert.Equal("NEEDS_LOCALIZATION",q.Status);Assert.False(q.CacheHit);Assert.False(q.PriorAttempt);
-        Assert.Equal(4,q.RequiredSparkCalls);Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
+        Assert.Equal(2,q.RequiredSparkCalls);Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
         var history=await f.Open().TrackingHistoryAsync("s","baseline",Ct);
         Assert.Single(history);Assert.Equal(AssemblyPolicy.GroundingKey(Sha),history[0].EvidenceKey);
         Assert.Equal(raw,await File.ReadAllTextAsync(Path.Combine(f.LegacyGroundFolder,"response.json")));
@@ -683,36 +720,54 @@ public sealed class AssemblyTests
     }
 
 
-    [Fact] public async Task ProgressiveReviewsAlwaysRunAtBothScalesAndPreserveCacheProvenance() {
-        using var f=new Fixture();
-        var q=await f.Open().GroundingQuoteAsync("s","baseline",Ct);
-        Assert.Equal(4,q.RequiredSparkCalls);Assert.Equal(.85,q.MaximumEstimatedCostUsd);Assert.Equal(0,f.Transport.VideoCalls);
-        var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
-        Assert.Equal(50,result.Evidence!.Frames.Length);Assert.Equal(50,result.Evidence.Frames.Select(x=>x.Index).Distinct().Count());
-        Assert.Equal(ProgressiveSuspensionPolicy.Protocol,q.LocalizationPlan);Assert.Equal(new[]{1.5,3d},f.Transport.ZoomScales);
-        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(4,f.Runtime.Reservations);Assert.Equal(2,f.Transport.ZoomCalls);Assert.Single(f.Transport.FileIds.Distinct());
-        Assert.Equal("CONSENSUS_ESTIMATE",result.Evidence.Proposal.Consensus!.Status);
-        Assert.Equal(result.Scene!.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
-        var cached=await f.Open().GroundAsync("s","baseline",f.GroundRequest() with {ModelApiToken="",ConfirmPaidCall=false},Ct);
-        Assert.True(cached.CacheHit);Assert.Equal(1,f.Transport.VideoCalls);
-        await File.WriteAllTextAsync(Path.Combine(f.GroundFolder,"zoom-2","crop-0.jpg"),"changed");
-        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().TrackingAsync("s","baseline",Ct));
-    }
-    [Fact] public async Task HiddenExitRemainsInconclusiveAfterBothZooms() {
-        using var f=new Fixture();f.Transport.ZoomHidden=true;
-        var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
-        Assert.Equal(50,result.Evidence!.Frames.Length);Assert.Equal(2,f.Transport.ZoomCalls);
-        Assert.Null(result.Evidence.Proposal.Suspension.X);Assert.Equal("ZOOM_REVIEW_INCONCLUSIVE",result.Evidence.Proposal.Consensus!.Status);
-        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(4,f.Runtime.Reservations);
-        Assert.Contains("ZOOM_REVIEWS_COMPLETE",await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"dense-localization.json")));
-        Assert.Equal(result.Scene!.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
-    }
-    [Fact] public async Task ZoomTransportFailureDoesNotSpendThirdCallOrUseDraft() {
+    [Theory] [InlineData("api-meta")] [InlineData("api-meta-cache")]
+    public async Task OriginalReferencesAndBodyReviewUseTwoCallsWithoutAnyZoom(string mode) {
         using var f=new Fixture();f.Transport.FailOnZoom=1;
-        await Assert.ThrowsAsync<HttpRequestException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
-        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(1,f.Transport.ZoomCalls);Assert.Equal(0,f.Transport.ReviewCalls);Assert.Equal(2,f.Runtime.Reservations);
+        var q=await f.Open().GroundingQuoteAsync("s","baseline",Ct,mode);
+        Assert.Equal(2,q.RequiredSparkCalls);Assert.Equal(.35,q.MaximumEstimatedCostUsd);Assert.Equal(0,f.Transport.VideoCalls);
+        Assert.Equal(DenseLocalizationPolicy.OriginalProtocol,q.LocalizationPlan);
+        var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest() with {Mode=mode},Ct);
+        Assert.Equal(50,result.Evidence!.Frames.Length);Assert.Equal(50,result.Evidence.Frames.Select(x=>x.Index).Distinct().Count());
+        Assert.Equal(DenseLocalizationPolicy.OriginalBodyProtocol,result.Evidence.Derivation);
+        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(1,f.Transport.ReviewCalls);Assert.Equal(2,f.Runtime.Reservations);
+        Assert.Equal(0,f.Transport.ZoomCalls);Assert.Empty(f.Transport.ZoomScales);Assert.Empty(Directory.GetDirectories(f.GroundFolder,"zoom-*"));
+        Assert.Equal("CONSENSUS_ESTIMATE",result.Evidence.Proposal.Consensus!.Status);Assert.Null(result.Evidence.Proposal.ContactReviews);
+        var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var first=JsonSerializer.Deserialize<AssemblyEvidence>(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"evidence.json")),options)!;
+        Assert.Equal(first.Proposal.Suspension.Points,result.Evidence.Proposal.Suspension.Points);
+        var restored=await f.Open().SuspensionAsync("s","baseline",result.Scene!,Ct);
+        Assert.Equal(DenseLocalizationPolicy.OriginalProtocol,restored!.Refinement);Assert.Null(restored.ContactReviews);
+        var cached=await f.Open().GroundAsync("s","baseline",f.GroundRequest() with {ModelApiToken="",ConfirmPaidCall=false},Ct);
+        Assert.True(cached.CacheHit);Assert.Equal(result.Scene!.Key,cached.Scene!.Key);
+        Assert.Equal(2,f.Runtime.Reservations);Assert.Equal(0,f.Transport.ZoomCalls);
+    }
+
+    [Fact] public async Task MissingOriginalSuspensionDoesNotTriggerZoomOrInventContact() {
+        using var f=new Fixture();f.Transport.InsufficientRounds=1;
+        var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        Assert.Equal(50,result.Evidence!.Frames.Length);Assert.Equal(0,f.Transport.ZoomCalls);
+        Assert.Null(result.Evidence.Proposal.Suspension.X);Assert.Equal("INSUFFICIENT_OBSERVATIONS",result.Evidence.Proposal.Consensus!.Status);
+        Assert.Null(result.Evidence.Proposal.ContactReviews);Assert.All(result.Evidence.Proposal.Suspension.Points,p=>Assert.False(p.Visible));
+        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(1,f.Transport.ReviewCalls);Assert.Equal(2,f.Runtime.Reservations);
+        Assert.Contains("ORIGINAL_REFERENCES_COMPLETE",await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"dense-localization.json")));
+        Assert.Equal(result.Scene!.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
+    }
+
+    [Fact] public async Task HistoricalIncompleteZoomRemainsPendingWithoutFabricatedCompletionOrRetry() {
+        using var f=new Fixture();await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var old=f.GroundFolder;
+        await File.WriteAllTextAsync(Path.Combine(old,"dense-localization-attempt.json"),JsonSerializer.Serialize(new {protocol=ProgressiveSuspensionPolicy.Protocol,maximumAttempts=3}));
+        foreach(var name in new[]{"reviewed-evidence.json","dense-localization.json","body-reviewed-evidence.json","object-review-attempt.json","object-review-response.json"})File.Delete(Path.Combine(old,name));
+        Directory.CreateDirectory(Path.Combine(old,"zoom-2"));await File.WriteAllTextAsync(Path.Combine(old,"zoom-2","attempt.json"),"preserved interrupted zoom request");
+        var oldResponse=await File.ReadAllBytesAsync(Path.Combine(old,"response.json"));
         Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
-        Assert.True((await f.Open().GroundingQuoteAsync("s","baseline",Ct)).PriorAttempt);
+        var pending=await f.Open().GroundingQuoteAsync("s","baseline",Ct);Assert.True(pending.PriorAttempt);Assert.False(pending.CanRun);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct));
+        Assert.Equal(2,f.Runtime.Reservations);Assert.Equal(0,f.Transport.ZoomCalls);
+        var fresh=await f.Open().GroundAsync("s","baseline",f.GroundRequest() with {Mode="api-meta"},Ct);Assert.NotNull(fresh.Scene);
+        Assert.Equal(4,f.Runtime.Reservations);Assert.Equal(0,f.Transport.ZoomCalls);
+        Assert.False(File.Exists(Path.Combine(old,"dense-localization.json")));Assert.Equal(oldResponse,await File.ReadAllBytesAsync(Path.Combine(old,"response.json")));
+        Assert.Equal("preserved interrupted zoom request",await File.ReadAllTextAsync(Path.Combine(old,"zoom-2","attempt.json")));
     }
 
     [Fact] public async Task FreshGroundingBypassesHistoricalResponsesAndPreparedMediaWithoutRewritingThem(){
@@ -726,7 +781,7 @@ public sealed class AssemblyTests
         var quote=await locator.GroundingQuoteAsync("s","baseline",Ct,"api-meta");
         Assert.True(quote.FreshRequired);Assert.False(quote.CacheHit);Assert.False(quote.PriorAttempt);Assert.Equal(1,f.Transport.VideoCalls);
         var fresh=await locator.GroundAsync("s","baseline",f.GroundRequest() with{Mode="api-meta"},Ct);
-        Assert.NotEqual(first.Evidence.RunId,fresh.Evidence!.RunId);Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(8,f.Runtime.Reservations);
+        Assert.NotEqual(first.Evidence.RunId,fresh.Evidence!.RunId);Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(4,f.Runtime.Reservations);
         Assert.Equal(100,f.Frames.Calls);Assert.Equal(2,f.Frames.BatchCalls);
         Assert.Equal(fresh.Scene!.Key,(await locator.TrackingRunAsync("s","baseline",fresh.Evidence.RunId!,Ct))!.Key);
         Assert.Equal(oldBytes,await File.ReadAllTextAsync(oldResponse));Assert.Equal("invalid old prepared cache",await File.ReadAllTextAsync(oldPrepared));
@@ -748,7 +803,7 @@ public sealed class AssemblyTests
         await Assert.ThrowsAsync<InvalidDataException>(()=>locator.TrackingRunAsync("s","baseline",secondId,Ct));
         await Assert.ThrowsAsync<ArgumentException>(()=>locator.TrackingRunAsync("s","baseline","../untrusted",Ct));
         await Assert.ThrowsAsync<FileNotFoundException>(()=>locator.TrackingRunAsync("s","baseline",new string('f',32),Ct));
-        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(8,f.Runtime.Reservations);
+        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(4,f.Runtime.Reservations);
     }
 
     [Theory] [InlineData("cache-only")] [InlineData("none")] [InlineData("unknown")]
@@ -762,7 +817,7 @@ public sealed class AssemblyTests
     [Fact] public async Task DenseCordCandidateIsCorrectedBeforeSamWithoutLosingSuspensionConsensus() {
         using var f=new Fixture();f.Transport.CoarseCord=true;
         var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
-        Assert.Equal("READY",result.Status);Assert.Equal(ProgressiveSuspensionPolicy.BodyProtocol,result.Evidence!.Derivation);
+        Assert.Equal("READY",result.Status);Assert.Equal(DenseLocalizationPolicy.OriginalBodyProtocol,result.Evidence!.Derivation);
         Assert.Equal(50,result.Evidence.Proposal.Suspension.Points.Length);
         Assert.Equal("CONSENSUS_ESTIMATE",result.Evidence.Proposal.Consensus!.Status);
         Assert.All(result.Scene!.Seeds,seed=>Assert.Equal(1344,seed.Y1));
@@ -784,27 +839,21 @@ public sealed class AssemblyTests
         Assert.Empty(await f.Open().TrackingHistoryAsync("s","baseline",Ct));
         Assert.All(result.Evidence!.Proposal.Observations,o=>Assert.False(o.Visible));
     }
-    [Fact] public async Task BodyReviewUsesOriginalJpegsAfterProgressiveSuspensionReviews() {
-        using var f=new Fixture();
-        var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+    [Fact] public async Task BodyReviewUsesOriginalJpegsWithoutSuspensionCrops() {
+        using var f=new Fixture();var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
         Assert.Equal(50,result.Evidence!.Frames.Length);Assert.NotNull(result.Scene);
-        var attempt=JsonSerializer.Deserialize<ObjectReviewAttempt>(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"object-review-attempt.json")),new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
         var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
-        var zoom=JsonSerializer.Deserialize<SuspensionZoomAttempt>(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"zoom-3","attempt.json")),options)!;
+        var attempt=JsonSerializer.Deserialize<ObjectReviewAttempt>(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"object-review-attempt.json")),options)!;
         var first=JsonSerializer.Deserialize<AssemblyVideoAttempt>(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"attempt.json")),options)!;
-        Assert.All(attempt.References,r=> {
-            Assert.Contains(r.Frame,zoom.References.Select(z=>z.Frame));
-            Assert.Contains(r.Frame,first.Frames);
-            Assert.Equal(r.Frame,result.Evidence.Frames[r.Ordinal]);
-        });
+        Assert.Equal(DenseLocalizationPolicy.OriginalBodyProtocol,attempt.Protocol);Assert.Equal(9,attempt.References.Length);
+        Assert.All(attempt.References,r=> {Assert.Contains(r.Frame,first.Frames);Assert.Equal(r.Frame,result.Evidence.Frames[r.Ordinal]);Assert.NotNull(r.BodyCrop);Assert.Null(r.SuspensionCrop);});
         Assert.Equal(result.Scene!.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
-        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(2,f.Transport.ZoomCalls);Assert.Equal(1,f.Transport.ReviewCalls);
+        Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(0,f.Transport.ZoomCalls);Assert.Equal(1,f.Transport.ReviewCalls);
     }
-
 
     [Fact] public async Task DisagreeingZoomsNeverFallBackToTheConfidentOriginalPoint() {
         using var f=new Fixture();f.Transport.ZoomDisagree=true;
-        var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var result=await f.ProgressiveGroundAsync();
         Assert.Equal("ZOOM_REVIEW_INCONCLUSIVE",result.Evidence!.Proposal.Consensus!.Status);
         Assert.Null(result.Evidence.Proposal.Suspension.X);Assert.Empty(result.Evidence.Proposal.Consensus.InlierOrdinals);
         Assert.Equal(2,f.Transport.ZoomCalls);Assert.Equal(4,f.Runtime.Reservations);
@@ -813,7 +862,7 @@ public sealed class AssemblyTests
     }
     [Theory] [InlineData("response.json")] [InlineData("attempt.json")]
     public async Task AlteredZoomResponseOrGeometryCannotBeReused(string filename) {
-        using var f=new Fixture();await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        using var f=new Fixture();await f.ProgressiveGroundAsync();
         var path=Path.Combine(f.GroundFolder,"zoom-3",filename);
         var original=await File.ReadAllTextAsync(path);
         var changed=filename=="response.json"?original+" ":original.Replace("\"zoom\":3","\"zoom\":1.5");
@@ -839,7 +888,7 @@ public sealed class AssemblyTests
         var scene=await f.Open().TrackingAsync("s","baseline",Ct);Assert.NotNull(scene);
         Assert.Equal(AssemblyPolicy.Ground(derived)!.Key,scene.Key);
         Assert.Equal(DenseLocalizationPolicy.Protocol,(await f.Open().SuspensionAsync("s","baseline",scene,Ct))!.Refinement);
-        Assert.Equal(4,f.Runtime.Reservations);
+        Assert.Equal(2,f.Runtime.Reservations);
     }
     [Theory]
     [InlineData("FIXED_CORD_CONTACT","CONSENSUS_ESTIMATE")]
@@ -857,7 +906,7 @@ public sealed class AssemblyTests
         if(kind!="FIXED_CORD_CONTACT")Assert.Null(result.Proposal.Suspension.X);
         else Assert.NotNull(result.Proposal.Suspension.X);
         var saved=(await f.Open().SuspensionAsync("s","baseline",AssemblyPolicy.Ground((await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct)).Evidence!)!,Ct))!;
-        Assert.Equal(2,saved.ContactReviews!.Length);
+        Assert.Null(saved.ContactReviews);
     }
     [Fact] public void LegacyCoordinatesRemainReadableButCannotMasqueradeAsContactReview() {
         var refs=ZoomReferences();var json=System.Text.Json.Nodes.JsonNode.Parse(ZoomAnswer(refs))!.AsObject();
@@ -975,13 +1024,35 @@ public sealed class AssemblyTests
         await File.WriteAllTextAsync(legacyCache,"preserved legacy data");
         var second=await locator.GroundAsync("s","baseline",request,Ct);
         Assert.NotEqual(first.Evidence.RunId,second.Evidence!.RunId);
-        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(8,f.Runtime.Reservations);
+        Assert.Equal(2,f.Transport.VideoCalls);Assert.Equal(4,f.Runtime.Reservations);
         Assert.Equal(50,f.Frames.Calls);Assert.Equal(1,f.Frames.BatchCalls);
         Assert.Equal(oldBytes,await File.ReadAllBytesAsync(oldResponse));
         Assert.Equal("preserved legacy data",await File.ReadAllTextAsync(legacyCache));
         Assert.Equal(first.Evidence.Frames,second.Evidence.Frames);
         var runRoot=Path.Combine(root,"runs",second.Evidence.RunId!);
         Assert.All(Enumerable.Range(0,50),i=>Assert.True(File.Exists(Path.Combine(runRoot,$"frame-{i}.jpg"))));
+    }
+
+    [Fact] public async Task HistoricalProgressiveReceiptsRetainTheirSceneContactReviewsAndCacheIdentity() {
+        using var f=new Fixture();var old=await f.ProgressiveGroundAsync();var root=f.GroundFolder;
+        var preserved=Directory.GetFiles(root,"*.json",SearchOption.AllDirectories).ToDictionary(p=>p,File.ReadAllBytes);
+        var cached=await f.Open().GroundAsync("s","baseline",f.GroundRequest() with {ModelApiToken="",ConfirmPaidCall=false},Ct);
+        Assert.True(cached.CacheHit);Assert.Equal(old.Evidence!.ResponseSha256,cached.Evidence!.ResponseSha256);Assert.Equal(old.Scene!.Key,cached.Scene!.Key);
+        var suspension=await f.Open().SuspensionRunAsync("s","baseline",old.Evidence.RunId!,old.Scene,Ct);
+        Assert.Equal(ProgressiveSuspensionPolicy.Protocol,suspension!.Refinement);Assert.Equal(2,suspension.ContactReviews!.Length);
+        Assert.Equal(4,f.Runtime.Reservations);Assert.Equal(2,f.Transport.ZoomCalls);Assert.Equal(1,f.Transport.ReviewCalls);
+        foreach(var pair in preserved)Assert.Equal(pair.Value,await File.ReadAllBytesAsync(pair.Key));
+    }
+    [Theory] [InlineData("dense-localization-attempt.json")] [InlineData("dense-localization.json")] [InlineData("reviewed-evidence.json")] [InlineData("object-review-attempt.json")]
+    public async Task OriginalOnlyProtocolRejectsAlteredDerivationMarkers(string name) {
+        using var f=new Fixture();await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var path=Path.Combine(f.GroundFolder,name);var text=await File.ReadAllTextAsync(path);
+        var changed=name=="dense-localization-attempt.json"?text.Replace("\"maximumAttempts\":1","\"maximumAttempts\":3"):
+            name=="dense-localization.json"?text.Replace("ORIGINAL_REFERENCES_COMPLETE","ZOOM_REVIEWS_COMPLETE"):
+            name=="object-review-attempt.json"?text.Replace(DenseLocalizationPolicy.OriginalBodyProtocol,ProgressiveSuspensionPolicy.BodyProtocol):text.Replace(DenseLocalizationPolicy.OriginalProtocol,ProgressiveSuspensionPolicy.Protocol);
+        Assert.NotEqual(text,changed);await File.WriteAllTextAsync(path,changed);
+        await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().TrackingAsync("s","baseline",Ct));
+        Assert.Equal(2,f.Runtime.Reservations);Assert.Equal(0,f.Transport.ZoomCalls);
     }
 
 }

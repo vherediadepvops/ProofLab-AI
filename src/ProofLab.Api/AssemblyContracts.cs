@@ -203,7 +203,7 @@ public static partial class AssemblyPolicy
     {
         var target=evidence.Proposal.Target ?? throw new InvalidDataException("Missing object grounding decision.");
         if(target.Status=="NOT_VISIBLE")return "NOT_VISIBLE";
-        if(evidence.Proposal.Camera is not null && evidence.Derivation is not (ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol))return DenseLocalizationPolicy.ObjectReady(evidence)?"READY":"AMBIGUOUS";
+        if(evidence.Proposal.Camera is not null && evidence.Derivation is not (ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol))return DenseLocalizationPolicy.ObjectReady(evidence)?"READY":"AMBIGUOUS";
         return target.Status=="CLEAR_SINGLE_OBJECT" &&
             evidence.Proposal.Observations.Count(o=>o.Role=="object" && o.Visible && o.Confidence>=0.8)>=2
             ? "READY" : "AMBIGUOUS";

@@ -18,7 +18,8 @@ const freshQuote={mode:'api-meta',sourceSha256:sha,sparkSceneKey:'',sourcePtsSha
   continuousRetryEstimatedUsd:0,maximumSamWithRetryEstimatedUsd:.024,
   remainingTrialSlots:null,canRunWithManualToken:true,existingSparkSceneVerified:false,requiresNewSparkCall:true,
   idealPartsWithoutSparkCoverage:1,verifiedSparkSeedCount:0,reducedForSparseSparkSeeds:false,sceneRunId:null};
-const sparkQuote={cacheKey:'3'.repeat(64),videoSha256:sha,maximumEstimatedCostUsd:.25,mode:'api-meta',
+const sparkQuote={cacheKey:'3'.repeat(64),videoSha256:sha,maximumEstimatedCostUsd:.35,requiredSparkCalls:2,visualReviewEstimatedCostUsd:.10,
+  localizationPlan:'SPARK_ORIGINAL_50_OBJECT_REVIEW_V1',mode:'api-meta',
   freshRequired:true,protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2',cacheHit:false,priorAttempt:false,
   canRun:true,status:'NEEDS_LOCALIZATION',scene:null};
 const located={...sparkQuote,freshRequired:false,canRun:false,status:'READY',scene:{key:scene,videoSha256:sha},evidence:{runId}};
@@ -74,6 +75,36 @@ describe('Processing source checkboxes',()=>{
     expect(x.c.mode()).toBe('api-meta');expect(x.c.segmentedMode()).toBeTrue();expect(button.disabled).toBeTrue();
     x.h.expectNone(()=>true);x.f.destroy();
   });
+  it('shows the original 50-image plan and reduced quote in ES and EN without zoom rounds or paid requests',async()=>{
+    const x=setup(true);await checkFresh(x);
+    for(const language of ['es','en']){
+      x.f.componentRef.setInput('language',language);x.f.detectChanges();
+      const text=x.host.textContent??'';
+      expect(text).toContain(language==='es'?'50 imágenes originales y revisión del objeto':'50 original images and object review');
+      expect(text).toContain('US$ 0.35');expect(x.c.displayedCost()).toBeCloseTo(.374);
+      expect(text).not.toMatch(/×1[.,]5|×3|0\.85/);
+      expect(x.c.nextActionDescription()).not.toMatch(/zoom|acercamiento|×/i);
+      expect(x.c.groundingQuote()?.requiredSparkCalls).toBe(2);
+    }
+    x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+  });
+  it('keeps recorded historical zoom stages and their durations readable',async()=>{
+    const x=setup(true);await checkFresh(x);
+    const processing=x.c.process(),spark=x.h.expectOne(pathIs(adaptive+'/spark-once'));
+    x.c.sparkStages.set([
+      {key:'prepare',state:'COMPLETED',elapsedMs:100,percent:100},
+      {key:'inference',state:'COMPLETED',elapsedMs:200,percent:100},
+      {key:'round-2-zoom-inference',state:'COMPLETED',elapsedMs:26000,percent:100},
+      {key:'round-3-zoom-verify',state:'FAILED',elapsedMs:30,percent:null}]);
+    spark.flush({...sparkQuote,status:'AMBIGUOUS',canRun:false});await processing;
+    const spanish=x.c.stageRows();
+    expect(spanish.find(r=>r.key==='spark-round-2-zoom-inference')).toEqual(jasmine.objectContaining({label:'Ronda 2 · Revisar contacto ×1.5',state:'COMPLETED',ms:26000}));
+    x.f.componentRef.setInput('language','en');x.f.detectChanges();
+    expect(x.c.stageRows().find(r=>r.key==='spark-round-3-zoom-verify')).toEqual(jasmine.objectContaining({label:'Round 3 · Validate zoom review',state:'FAILED',ms:30}));
+    x.c.groundingQuote.set({...x.c.groundingQuote()!,localizationPlan:'SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2'});
+    expect(x.c.localizationPlanDescription()).toContain('50 ×1.5 + 50 ×3');
+    x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+  });
   it('blocks processing and all reads when both sources are off',async()=>{
     const x=setup(true);select(x,'api',false);expect(x.c.mode()).toBe('none');await x.c.check();await x.c.process();x.f.detectChanges();
     expect(x.c.canProcess()).toBeFalse();expect(x.c.preflight()).toBeNull();expect(x.host.querySelector('.sam-token-needed')).toBeNull();
@@ -104,7 +135,7 @@ describe('Processing source checkboxes',()=>{
   it('keeps the mixed flow after a miss and propagates its mode',async()=>{
     const x=setup(true);select(x,'cache',true);const p=x.c.check();
     x.h.expectOne(pathIs(sam+'/reusable')).flush(miss);metadata(x);await tick();paidQuotes(x,'api-meta-cache');await p;
-    expect(x.c.canProcess()).toBeTrue();expect(x.c.displayedCost()).toBeCloseTo(.274);x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+    expect(x.c.canProcess()).toBeTrue();expect(x.c.displayedCost()).toBeCloseTo(.374);x.h.expectNone(r=>r.method==='POST');x.f.destroy();
   });
   it('explains the complete-video frame limit in both languages without submitting',async()=>{
     for(const language of ['es','en'] as const){
@@ -143,7 +174,7 @@ describe('Processing source checkboxes',()=>{
   });
   it('quotes one fresh complete-video request without consulting reusable evidence',async()=>{
     const x=setup(true);await checkFresh(x);expect(x.c.cachedResultAvailable()).toBeFalse();expect(x.c.canProcess()).toBeTrue();
-    expect(x.c.displayedCost()).toBeCloseTo(.274);
+    expect(x.c.displayedCost()).toBeCloseTo(.374);
     expect(x.c.adaptiveQuote()).toEqual(jasmine.objectContaining({parts:1,simultaneousRequests:1,
       submittedFrames:120,billableFrames:120,continuousRetryEstimatedUsd:0,maximumSamWithRetryEstimatedUsd:.024}));
     x.h.expectNone(pathIs(sam+'/reusable'));x.h.expectNone(r=>r.method==='POST');x.f.destroy();
@@ -168,7 +199,7 @@ describe('Processing source checkboxes',()=>{
       metadata(x);await tick();paidQuotes(x,mode,{...freshQuote,mode},{...sparkQuote,mode});await checking;
       const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
       const spark=x.h.expectOne(pathIs(adaptive+'/spark-once'));expect(spark.request.body.mode).toBe(mode);
-      expect(spark.request.body.maximumEstimatedCostUsd).toBe(.25);x.f.detectChanges();
+      expect(spark.request.body.maximumEstimatedCostUsd).toBe(.35);x.f.detectChanges();
       expect(checkbox(x,'api').disabled).toBeTrue();expect(checkbox(x,'cache').disabled).toBeTrue();
       checkbox(x,'cache').click();expect(x.c.mode()).toBe(mode);
       await x.c.process();x.h.expectNone(r=>r.method==='POST');
@@ -193,6 +224,7 @@ describe('Processing source checkboxes',()=>{
       x.f.componentRef.setInput('validationState','ready');x.f.detectChanges();
       expect(x.c.processing()).toBeFalse();expect(x.con.busy()).toBeFalse();
       const rows=x.c.stageRows();
+      expect(rows.some(r=>r.key.startsWith('spark-round-')||/×1[.,]5|×3/.test(r.label))).toBeFalse();
       expect(rows.filter(r=>/^sam-\d+$/.test(r.key)).length).toBe(1);
       expect(rows.find(r=>r.key==='sam-0')).toEqual(jasmine.objectContaining({state:'COMPLETED',ms:1200,label:'SAM · video completo'}));
       expect(rows.find(r=>r.key==='validation')).toEqual(jasmine.objectContaining({state:'COMPLETED',ms:30}));

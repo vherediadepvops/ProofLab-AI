@@ -7,6 +7,16 @@ public sealed record SuspensionConsensus(string Status,string Camera,int[] Inlie
 
 public static class DenseLocalizationPolicy {
     public const string Protocol="SPARK_DENSE_OBJECT_AND_EXIT_50_V1";
+    public const string OriginalProtocol="SPARK_ORIGINAL_50_OBJECT_REVIEW_V1";
+    public const string OriginalBodyProtocol="SPARK_ORIGINAL_50_BODY_CROPS_V1";
+    // Only the original response contributes suspension observations. No extra
+    // contact review, provider receipt or inferred physical contact is invented.
+    public static AssemblyEvidence FromOriginal(AssemblyEvidence first) {
+        if(first.Derivation is not null || first.Proposal.ContactReviews is not null)
+            throw new InvalidDataException("Original localization must come from its preserved provider response.");
+        return Combine([first]) with {Derivation=OriginalProtocol,
+            ResponseSha256=KnotPolicy.Hash(OriginalProtocol+"\n"+first.ResponseSha256)};
+    }
     public const int MaximumAttempts=3;
     public static bool IsDense(AssemblyEvidence e)=>e.Proposal.Camera is not null && e.Frames.Length==50;
     private static double Median(IEnumerable<double> values) {

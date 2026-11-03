@@ -56,9 +56,34 @@ public sealed partial class AssemblyLocator
         return combined;
     }
 
+    private async Task<AssemblyEvidence> SaveOriginalLocalization(string root,AssemblyEvidence first,CancellationToken ct)
+    {
+        var combined=DenseLocalizationPolicy.FromOriginal(first);
+        await Save(Path.Combine(root,"reviewed-evidence.json"),combined,ct);
+        await Save(Path.Combine(root,"dense-localization.json"),new DenseManifest(DenseLocalizationPolicy.OriginalProtocol,
+            1,"ORIGINAL_REFERENCES_COMPLETE",[first.ResponseSha256]),ct);
+        return combined;
+    }
+    private async Task<AssemblyEvidence?> ReadOriginalLocalization(string root,AssemblyEvidence first,DenseAttempt start,CancellationToken ct)
+    {
+        if(start.MaximumAttempts!=1)throw new InvalidDataException("Invalid original-only localization attempt.");
+        var finalPath=Path.Combine(root,"reviewed-evidence.json");var manifestPath=Path.Combine(root,"dense-localization.json");
+        if(!File.Exists(finalPath)||!File.Exists(manifestPath))return null;
+        var manifest=await Read<DenseManifest>(manifestPath,ct);
+        if(manifest.Protocol!=DenseLocalizationPolicy.OriginalProtocol||manifest.Rounds!=1||
+            manifest.StopReason!="ORIGINAL_REFERENCES_COMPLETE"||manifest.ResponseHashes is not {Length:1}||manifest.ResponseHashes[0]!=first.ResponseSha256)
+            throw new InvalidDataException("Invalid original-only localization manifest.");
+        var rebuilt=DenseLocalizationPolicy.FromOriginal(first);
+        var saved=await Read<AssemblyEvidence>(finalPath,ct);
+        if(JsonSerializer.Serialize(saved,Json)!=JsonSerializer.Serialize(rebuilt,Json))
+            throw new InvalidDataException("Original localization differs from the preserved response.");
+        return rebuilt;
+    }
+
     private async Task<AssemblyEvidence?> ReadDenseLocalization(string root,AssemblyEvidence first,CancellationToken ct)
     {
         var kind=await Read<DenseAttempt>(Path.Combine(root,"dense-localization-attempt.json"),ct);
+        if(kind.Protocol==DenseLocalizationPolicy.OriginalProtocol)return await ReadOriginalLocalization(root,first,kind,ct);
         if(ProgressiveSuspensionPolicy.Supports(kind.Protocol))return await ReadProgressiveSuspension(root,first,ct);
         var finalPath=Path.Combine(root,"reviewed-evidence.json");var manifestPath=Path.Combine(root,"dense-localization.json");
         if(!File.Exists(finalPath)||!File.Exists(manifestPath))return null;

@@ -47,7 +47,8 @@ export function resolveSamSuspension(
       return none('CORD_CONTACT_UNRESOLVED');
   }
   let anchors=e.points;
-  const dense=['SPARK_DENSE_OBJECT_AND_EXIT_50_V1','SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1','SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2'].includes(e.refinement??'');
+  const originalOnly=e.refinement==='SPARK_ORIGINAL_50_OBJECT_REVIEW_V1';
+  const dense=originalOnly || ['SPARK_DENSE_OBJECT_AND_EXIT_50_V1','SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1','SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2'].includes(e.refinement??'');
   const visuallyRefined=dense || ['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3'].includes(e.refinement??'');
   const anchorLimit=Math.max(3,Math.min(e.width,e.height)*(visuallyRefined?.005:.04));
   const rejectedAnchorFrames:number[]=[];
@@ -55,7 +56,7 @@ export function resolveSamSuspension(
   if(dense){
     const c=e.consensus;
     if(!c || c.status!=='CONSENSUS_ESTIMATE' || c.camera!=='STATIC' ||
-      !Array.isArray(anchors) || ![50,100,150].includes(anchors.length) || c.submitted!==anchors.length ||
+      !Array.isArray(anchors) || !(originalOnly?[50]:[50,100,150]).includes(anchors.length) || c.submitted!==anchors.length ||
       anchors.some((p,i)=>p.frame!==i || !Number.isFinite(p.x)||!Number.isFinite(p.y)||
         !Number.isFinite(p.confidence)||p.confidence<0||p.confidence>1||p.x<0||p.x>=1000||p.y<0||p.y>=1000) ||
       !Array.isArray(c.inlierOrdinals) || new Set(c.inlierOrdinals).size!==c.inlierOrdinals.length ||

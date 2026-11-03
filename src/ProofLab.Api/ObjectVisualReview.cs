@@ -220,7 +220,7 @@ public static class ObjectReviewPolicy
     {
         AssemblyMetaTransport.ValidateReceipt(review.Raw,review.ProviderResponseId,review.InputTokens,review.OutputTokens);
         var proposal=Parse(AssemblyMetaTransport.OutputText(review.Raw),draft,images);
-        var protocol=images.Any(i=>i.BodyCrop is not null)?(draft.Derivation==ProgressiveSuspensionPolicy.Protocol?ProgressiveSuspensionPolicy.BodyProtocol:draft.Derivation==ProgressiveSuspensionPolicy.LegacyProtocol?ProgressiveSuspensionPolicy.LegacyBodyProtocol:draft.Derivation==DenseLocalizationPolicy.Protocol?DenseBodyProtocol:Protocol):images.Any(i=>i.SuspensionCrop is not null)?SuspensionProtocol:LegacyProtocol;
+        var protocol=images.Any(i=>i.BodyCrop is not null)?(draft.Derivation==DenseLocalizationPolicy.OriginalProtocol?DenseLocalizationPolicy.OriginalBodyProtocol:draft.Derivation==ProgressiveSuspensionPolicy.Protocol?ProgressiveSuspensionPolicy.BodyProtocol:draft.Derivation==ProgressiveSuspensionPolicy.LegacyProtocol?ProgressiveSuspensionPolicy.LegacyBodyProtocol:draft.Derivation==DenseLocalizationPolicy.Protocol?DenseBodyProtocol:Protocol):images.Any(i=>i.SuspensionCrop is not null)?SuspensionProtocol:LegacyProtocol;
         return draft with {Proposal=proposal,ResponseSha256=KnotPolicy.Hash(protocol+"\n"+draft.ResponseSha256+"\n"+KnotPolicy.Hash(review.Raw)),
             ProviderResponseId=review.ProviderResponseId,InputTokens=draft.InputTokens+review.InputTokens,
             OutputTokens=draft.OutputTokens+review.OutputTokens,Derivation=protocol};
