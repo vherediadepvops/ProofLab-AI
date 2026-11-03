@@ -34,25 +34,42 @@
 
     <div class="workspace" [class.lab-workspace]="workspace() === 'pendulum'">
       @if(workspace()==='home') {
-        <section class="home-view">
-          <header class="home-heading">
-            <div><p class="eyebrow">PROOFLAB AI</p><h1>{{language()==='es'?'De un video a evidencia científica.':'From video to scientific evidence.'}}</h1><p>{{language()==='es'?'Observa, mide y contrasta tus ideas en un mismo laboratorio.':'Observe, measure and test your ideas in one laboratory.'}}</p></div>
-            <button type="button" class="studio-primary" (click)="openWorkspace('pendulum')">{{language()==='es'?'Abrir laboratorio':'Open laboratory'}}<span aria-hidden="true">↗</span></button>
-          </header>
-          <div class="home-section-heading"><h2>{{language()==='es'?'Conoce ProofLab':'Meet ProofLab'}}</h2><span>{{language()==='es'?'Guía en video':'Video guide'}}</span></div>
-          <article class="featured-video">
-            <div class="video-cover">
-              <svg class="pendulum-illustration" viewBox="0 0 700 260" aria-hidden="true"><path class="illustration-grid" d="M0 60h700M0 130h700M0 200h700M140 0v260M280 0v260M420 0v260M560 0v260"/><path class="illustration-arc" d="M205 190Q350 290 495 190"/><path class="illustration-rope faint" d="M350 40 230 207M350 40 470 207"/><path class="illustration-rope" d="M350 40 415 234"/><path class="illustration-support" d="M300 40h100"/><circle class="illustration-bob ghost" cx="230" cy="207" r="16"/><circle class="illustration-bob" cx="415" cy="234" r="18"/><circle class="illustration-pivot" cx="350" cy="40" r="5"/></svg>
-              <div class="video-pending"><span class="play-outline" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 5 11 7-11 7Z"/></svg></span><span>{{language()==='es'?'Video de presentación':'Introduction video'}}</span><small>{{language()==='es'?'Próximamente':'Coming soon'}}</small></div>
-              <span class="video-label">{{language()==='es'?'EXPLORA · EXPERIMENTA · COMPRUEBA':'EXPLORE · EXPERIMENT · VERIFY'}}</span>
+        <section class="home-v3" aria-labelledby="home-v3-title">
+          <div class="home-v3-top">
+            <div class="home-v3-lead">
+              <p class="home-v3-kicker">PROOFLAB AI</p>
+              <h1 id="home-v3-title">{{language()==='es'?'De un video a':'From video to'}}<br><em>{{language()==='es'?'evidencia científica.':'scientific evidence.'}}</em></h1>
+              <p class="home-v3-description">{{language()==='es'?'Observa, mide y compara ':'Observe, measure and compare '}}<strong>{{language()==='es'?'experimentos reales':'real experiments'}}</strong>{{language()==='es'?' para transformar tus ideas en evidencia científica.':' to turn ideas into scientific evidence.'}}</p>
+              <button type="button" class="studio-primary" (click)="openWorkspace('pendulum')">{{language()==='es'?'Abrir laboratorio':'Open laboratory'}}<span aria-hidden="true">→</span></button>
+              <div class="home-v3-context"><span>{{language()==='es'?'EXPERIMENTO 001':'EXPERIMENT 001'}}</span><i aria-hidden="true"></i><span>{{language()==='es'?'PÉNDULO SIMPLE':'SIMPLE PENDULUM'}}</span></div>
             </div>
-            <div class="video-caption"><div><h3>{{language()==='es'?'Así funciona nuestro laboratorio':'How our laboratory works'}}</h3><p>{{language()==='es'?'Aquí encontrarás una demostración del recorrido, desde el video hasta la evidencia.':'A walkthrough from your recording to the resulting evidence will be available here.'}}</p></div><span class="coming-badge">{{language()==='es'?'En preparación':'In preparation'}}</span></div>
-          </article>
-          <div class="home-section-heading guide-heading"><h2>{{language()==='es'?'Paso a paso':'Step by step'}}</h2></div>
-          <div class="guide-grid">
-            <article class="guide-card"><div class="guide-cover"><span class="guide-number">01</span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3Z"/></svg></div><div class="guide-copy"><span>{{language()==='es'?'PRÓXIMAMENTE':'COMING SOON'}}</span><h3>{{language()==='es'?'Prepara tu experimento':'Prepare your experiment'}}</h3><p>{{language()==='es'?'Configura el péndulo y carga tu video.':'Set up the pendulum and upload your video.'}}</p></div></article>
-            <article class="guide-card"><div class="guide-cover"><span class="guide-number">02</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3H3v4m14-4h4v4M3 17v4h4m14-4v4h-4"/><circle cx="12" cy="12" r="5"/></svg></div><div class="guide-copy"><span>{{language()==='es'?'PRÓXIMAMENTE':'COMING SOON'}}</span><h3>{{language()==='es'?'Observa el movimiento':'Observe the motion'}}</h3><p>{{language()==='es'?'Explora las máscaras y las vistas sincronizadas.':'Explore the masks and synchronized views.'}}</p></div></article>
-            <article class="guide-card"><div class="guide-cover"><span class="guide-number">03</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18h17M7 15l4-5 4 3 5-7"/></svg></div><div class="guide-copy"><span>{{language()==='es'?'PRÓXIMAMENTE':'COMING SOON'}}</span><h3>{{language()==='es'?'Contrasta la evidencia':'Compare the evidence'}}</h3><p>{{language()==='es'?'Revisa las mediciones y sus límites.':'Review the measurements and their limitations.'}}</p></div></article>
+            <figure class="home-v3-photo">
+              <img src="/home-real-pendulum.webp" width="448" height="840" [alt]="language()==='es'?'Fotografía de un péndulo real suspendido de una estructura de madera azul sobre una mesa.':'Photograph of a real pendulum suspended from a blue wooden frame above a table.'" />
+              <div class="home-v3-photo-top"><span>{{language()==='es'?'Montaje real':'Real apparatus'}}</span><span>PROOFLAB AI / 001</span></div>
+              <figcaption class="home-v3-photo-bottom"><strong>{{language()==='es'?'El movimiento comienza aquí.':'Motion starts here.'}}</strong><small>{{language()==='es'?'Fotografía del montaje; no es una medición automática.':'Apparatus photo; not an automated measurement.'}}</small></figcaption>
+            </figure>
+            <aside class="home-v3-theory" [attr.aria-label]="language()==='es'?'Fundamento físico':'Physical model'">
+              <div class="home-v3-theory-label">{{language()==='es'?'DEL AULA AL LABORATORIO':'FROM CLASSROOM TO LAB'}}</div>
+              <div class="home-v3-board"><img src="/home-pendulum-board.webp" width="390" height="480" loading="lazy" [alt]="language()==='es'?'Diagrama de un péndulo dibujado a mano en una pizarra.':'Hand-drawn pendulum diagram on a classroom board.'" /></div>
+              <h2>{{language()==='es'?'La física detrás del movimiento.':'The physics behind motion.'}}</h2>
+              <p>{{language()==='es'?'Una grabación permite contrastar el movimiento observado con un modelo físico y sus límites.':'A recording helps compare observed motion with a physical model and its limits.'}}</p>
+              <div class="home-v3-equation"><span class="formula" [attr.aria-label]="language()==='es'?'Período aproximado: dos pi por raíz de longitud entre gravedad':'Approximate period: two pi times the square root of length divided by gravity'">T ≈ 2π√(L/g)</span><small>{{language()==='es'?'Modelo ideal · ángulos pequeños':'Ideal model · small angles'}}</small></div>
+            </aside>
+          </div>
+          <div class="home-v3-process-head">
+            <h2>{{language()==='es'?'Proceso del experimento':'Experiment workflow'}}</h2>
+            <p>{{language()==='es'?'De la observación a la evidencia, en cinco etapas.':'From observation to evidence, in five stages.'}}</p>
+          </div>
+          <ol class="home-v3-process">
+            <li class="home-v3-step"><span class="home-v3-step-number" aria-hidden="true">01</span><h3>{{language()==='es'?'Preparar':'Prepare'}}</h3><p>{{language()==='es'?'Configura el péndulo y carga el video real.':'Set up the pendulum and upload your real video.'}}</p><span class="home-v3-step-note">{{language()==='es'?'PUNTO DE PARTIDA':'START HERE'}}</span></li>
+            <li class="home-v3-step"><span class="home-v3-step-number" aria-hidden="true">02</span><h3>{{language()==='es'?'Analizar':'Analyze'}}</h3><p>{{language()==='es'?'Localiza el movimiento y revisa las mediciones.':'Track motion and review the measurements.'}}</p></li>
+            <li class="home-v3-step"><span class="home-v3-step-number" aria-hidden="true">03</span><h3>{{language()==='es'?'Entender':'Understand'}}</h3><p>{{language()==='es'?'Interpreta resultados, evidencia y limitaciones.':'Interpret findings, evidence and limitations.'}}</p></li>
+            <li class="home-v3-step"><span class="home-v3-step-number" aria-hidden="true">04</span><h3>{{language()==='es'?'Predecir':'Predict'}}</h3><p>{{language()==='es'?'Diseña otra prueba y fija una predicción.':'Design a follow-up test and lock a prediction.'}}</p></li>
+            <li class="home-v3-step"><span class="home-v3-step-number" aria-hidden="true">05</span><h3>{{language()==='es'?'Comprobar':'Verify'}}</h3><p>{{language()==='es'?'Contrasta la predicción con otra observación.':'Compare the prediction with another observation.'}}</p></li>
+          </ol>
+          <div class="home-v3-footer">
+            <div class="home-v3-footer-message">{{language()==='es'?'Convierte observaciones reales en':'Turn real observations into'}}<br><strong>{{language()==='es'?'gráficas, mediciones y evidencia.':'graphs, measurements and evidence.'}}</strong></div>
+            <div class="home-v3-benefits" aria-label="Resultados del laboratorio"><span><b aria-hidden="true">∿</b>{{language()==='es'?'Movimiento':'Motion'}}</span><span><b aria-hidden="true">∡</b>{{language()==='es'?'Mediciones':'Measurements'}}</span><span><b aria-hidden="true">≋</b>{{language()==='es'?'Contraste':'Comparison'}}</span></div>
           </div>
         </section>
       }

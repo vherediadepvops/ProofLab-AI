@@ -210,7 +210,7 @@ const COPY = {
   selector: 'app-root',
   imports: [CommonModule, FormsModule, ResearchWorkflow, PendulumZoneOne, WorkspaceSettings],
   templateUrl: './app.html',
-  styleUrls: ['./app.scss', './app-studio.scss']
+  styleUrls: ['./app.scss', './app-studio.scss', './app-home-v3.scss']
 })
 export class App implements OnInit {
   private readonly http = inject(HttpClient);

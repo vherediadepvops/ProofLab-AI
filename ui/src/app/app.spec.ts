@@ -56,7 +56,7 @@ describe('ProofLab Competition Research Lab', () => {
     return { app: fixture.componentInstance, root: fixture.nativeElement as HTMLElement, controller, fixture };
   }
 
-  it('opens Home with exactly three navigation entries and future video slots',()=>{
+  it('opens redesigned Home with exactly three navigation entries and five experiment stages',()=>{
     const fixture=TestBed.createComponent(App);
     fixture.detectChanges();
     const http=TestBed.inject(HttpTestingController);
@@ -65,8 +65,11 @@ describe('ProofLab Competition Research Lab', () => {
     expect(fixture.componentInstance.workspace()).toBe('home');
     expect(Array.from(root.querySelectorAll('aside.sidebar .nav')).map(x=>x.textContent?.trim()))
       .toEqual(['Inicio','Laboratorio','Configuración']);
-    expect(root.querySelectorAll('.guide-card').length).toBe(3);
-    expect(root.textContent).toContain('Próximamente');
+    expect(root.querySelectorAll('.home-v3-step').length).toBe(5);
+    expect(root.textContent).toContain('evidencia científica.');
+    expect(root.textContent).toContain('Preparar');
+    expect(root.textContent).toContain('Comprobar');
+    expect((root.querySelector('.home-v3 .studio-primary') as HTMLButtonElement)?.textContent).toContain('Abrir laboratorio');
     expect(root.querySelector('app-pendulum-zone-one')).toBeNull();
     expect(root.querySelector('input[type="password"]')?.closest('[hidden]')).not.toBeNull();
     http.expectNone(r=>r.url.includes('/api/math'));
