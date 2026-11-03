@@ -11,6 +11,8 @@ help explain why data may agree or disagree with a scientific hypothesis.
 
 **Status (3 November 2026): functional research prototype, with scientific validation still in progress.** Real Muse Spark 1.3 and SAM 3.1 runs on pendulum recordings are documented. In the 30 October ten-case campaign, **7 results were within their predeclared practical bands, 2 inconclusive and 1 deliberate wrong-length negative control outside**. These were comparisons of six previously filmed recordings plus controls, **not ten independent prospective physical experiments**. No new scientific discovery or universal measurement accuracy is claimed.
 
+**Scope of the counts:** the ten-case research campaign is not the total number of Meta requests. A user-shared project usage snapshot for 28 October–3 November displayed **550 requests across all API keys and models**, not yet reconciled request-by-request with the private campaign ledgers. The [results register](docs/RESULTS.md) distinguishes those units and avoids double counting.
+
 **For judges:** [Live application](https://prooflab-ai.com) · **[Results, including failures](docs/RESULTS.md)** · **[Evaluation protocol and reproducibility](docs/EVALUATION.md)** · [Muse/SAM research workflow](docs/MUSE-INVESTIGATOR.en.md). **Español:** [README](README.es.md) · [Resultados](docs/RESULTS.es.md) · [Evaluación](docs/EVALUATION.es.md).
 
 The latest published no-zoom processing change was verified with local software and browser checks **without new Meta inferences**. Pivot/centre calibration and the full physical uncertainty budget remain open. The development milestones further below retain their historical dates and should not be read as the latest validation state.

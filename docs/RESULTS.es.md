@@ -19,6 +19,29 @@
 
 **Desglose:** de ocho comparaciones con videos reales, seis quedaron dentro de sus bandas prácticas y dos fueron inconclusas; el control sintético coincidió y el control de longitud incorrecta quedó fuera. Se reutilizan videos entre pares, por lo que los casos no son estadísticamente independientes.
 
+## Uso de Meta e inventario histórico de campañas (28 de octubre–3 de noviembre)
+
+La captura del titular en **Meta Developer Usage**, correspondiente al **28 de octubre–3 de noviembre de 2026**, con filtros **All API keys** y **All models**, mostró **550 solicitudes**, **11,5 millones de tokens de entrada**, **621,1 mil de salida** y **9 % de aciertos de caché**. La pantalla mostraba **S/ 0,00 de gasto**, pero **no equivale** a una factura verificada, conciliación de cobros ni prueba de costo cero. Es una instantánea del uso del equipo/proyecto, **no** un export detallado de solicitudes. No podemos atribuir de forma única todas las 550 a experimentos de ProofLab ni demostrar que todas terminaron correctamente.
+
+Esta tabla presenta **campañas históricas**, no sujetos experimentales independientes ni totales acumulables. Los valores indican **inferencias de modelo registradas por campaña**, salvo cuando se distingue el conteo HTTP. El 3 de noviembre se resumieron en solo lectura dos bitácoras JSON privadas del proyecto autorizado: `fast-eight` registró **19 Spark + 94 SAM = 113** llamadas y `full-science`, **16 Spark + 66 SAM + 20 Muse = 102**. Se comprobaron sus estados y resultados sin exponer identificadores, medios ni respuestas privadas.
+
+| Período / campaña | Inferencias registradas | Evidencia y resultado | Precaución contra duplicación |
+|---|---:|---|---|
+| 28 oct. — primeras pruebas de Muse | **2 Muse** | Primera respuesta real rechazada por inconsistencia numérica; segunda aceptada y congelada. **4 solicitudes HTTP a Meta** contando 2 consultas de tokens | 4 solicitudes HTTP **no son** 4 inferencias; integración separada |
+| 28 oct. — primer video real del péndulo con SAM | **1 SAM** | 1.781 máscaras de 1.828 cuadros; cobertura 97,43 %; verificación visual/humana parcial | Cobertura no equivale a exactitud física |
+| 29 oct. — valores automáticos en videos nuevos | **12: 6 Spark + 6 SAM** | Seis flujos; algunos mostraron ángulo/velocidad y otros fueron inconclusos | No está resuelta la posible reutilización entre campañas |
+| 29–30 oct. — videos segmentados y revisión del objeto | **113: 19 Spark + 94 SAM** | Bitácora final `fast-eight`: 18 pruebas con API y un registro sin llamadas; seguimientos satisfactorios e inconclusos | Las **83** anteriores (12 Spark + 71 SAM) **ya están incluidas en 113** |
+| 30 oct. — diez contrastes científicos | **102: 16 Spark + 66 SAM + 20 Muse** | Bitácora `full-science`: **7 dentro de banda, 2 inconclusos y 1 control negativo deliberado fuera**; seis videos reales reutilizados | No representa diez experimentos físicos independientes |
+| 30 oct. — refinamiento de suspensión | **5 Spark** | Mejoró control sintético de 80 cm; persistieron casos físicos inciertos | Se reutilizaron máscaras SAM, no hubo cinco SAM nuevos |
+| 30 oct. — validación de recortes del cuerpo | **5: 3 Spark + 2 SAM** | Grabación real de 50 cm y control sintético; sin verdad independiente de precisión angular | Cinco llamadas, **no** cinco experimentos científicos completos |
+| 3 nov. — investigaciones de videos y contacto móvil | **42: 28 Spark + 7 SAM + 7 Muse** | Siete flujos técnicos terminados; **una medición candidata**, seis decisiones inconclusas o de repetir; sin nuevo contraste verificado de dos videos | Las **30** llamadas iniciales de cinco flujos están **incluidas en 42** tras dos flujos adicionales (12) |
+
+Referencias: [valores automáticos](AUTOMATIC-PENDULUM-VALUES.es.md), [videos segmentados](SAM-NATIVE-SEGMENTS.es.md), [contrastes científicos Muse](MUSE-INVESTIGATOR.es.md), [suspensión](SUSPENSION-REFINEMENT.es.md), [validación del cuerpo](BODY-CROP-VALIDATION.es.md) y [corrección del índice de fotogramas del 3 de noviembre](https://github.com/vherediadepvops/ProofLab-AI/commit/8a75fff0615f712ae496bf55919a916c34143b00). Los detalles por solicitud permanecen privados deliberadamente.
+
+**No sumar las filas para afirmar un total único.** Algunas son subtotales acumulados y falta conciliar identificadores entre campañas. En particular, **550** es el conteo de solicitudes del panel de Meta para un rango temporal, **113** y **102** son totales comprobados de dos bitácoras locales y **10** son casos científicos. Miden cosas diferentes. Otras pruebas documentadas no aparecen desglosadas aquí; el registro **no es un inventario exhaustivo** de las 550 solicitudes.
+
+**Las pruebas automatizadas son distintas:** el 3 de noviembre la versión `b651232` aprobó 153 .NET y 101 Angular; otro registro anterior del mismo día documentó 539/539 pruebas .NET. Las suites, versiones y datos de prueba se solapan y **no deben sumarse como tests únicos, experimentos físicos o solicitudes a Meta**.
+
 ## Controles y valores observados
 
 | Evidencia | Resultado | Alcance y límite |

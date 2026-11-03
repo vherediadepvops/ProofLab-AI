@@ -11,6 +11,8 @@ predecir resultados y explicar diferencias entre la teoría y las observaciones.
 
 **Estado (3 de noviembre de 2026): prototipo de investigación funcional, con validación científica todavía pendiente.** Tenemos ejecuciones reales de Muse Spark 1.3 y SAM 3.1 sobre grabaciones de péndulos. En la campaña de diez casos del 30 de octubre, **7 quedaron dentro de sus bandas prácticas predeclaradas, 2 inconclusos y 1 control negativo deliberado de longitud incorrecta quedó fuera**. Se reutilizaron seis grabaciones anteriores y controles; **no son diez experimentos físicos prospectivos independientes**. No se afirma descubrimiento científico ni precisión universal.
 
+**Alcance de las cifras:** la campaña de diez casos no representa todas las solicitudes a Meta. Una captura del titular del 28 de octubre al 3 de noviembre mostró **550 solicitudes del proyecto con todas las claves y modelos seleccionados**, aún sin conciliación individual con las bitácoras de campañas. El [inventario de resultados](docs/RESULTS.es.md) distingue las unidades y evita duplicarlas.
+
 **Para el jurado:** [Aplicación publicada](https://prooflab-ai.com) · **[Resultados, incluidos los fallos](docs/RESULTS.es.md)** · **[Protocolo de evaluación y reproducción](docs/EVALUATION.es.md)** · [Flujo Muse/SAM](docs/MUSE-INVESTIGATOR.es.md). **English:** [README](README.md) · [Results](docs/RESULTS.md) · [Evaluation](docs/EVALUATION.md).
 
 La última modificación del procesamiento sin zoom se comprobó con pruebas locales de software y navegador, **sin nuevas inferencias de Meta**. Permanecen pendientes la calibración del pivote/centro y la incertidumbre física total. Las etapas históricas descritas más adelante conservan su fecha original y no representan la validación científica más reciente.

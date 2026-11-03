@@ -40,6 +40,20 @@ Method contracts: [SAM period estimator](SAM-PERIOD.en.md), [Muse investigator a
 - **Synthetic control:** compares calculations with a known generated trajectory, but camera, suspension and object-identity errors in real videos are not thereby excluded.
 - **Statistical intervals:** reported type-A uncertainties and later exploratory 95% intervals cover only stated sources of variation. Pivot, perspective, length, clock and systematic tracking uncertainties are not fully propagated.
 
+## How Meta usage and campaign counts are reconciled
+
+The [results register](RESULTS.md) now distinguishes the **provider Usage requests** from **recorded model inferences**, **scientific cases** and **software tests**. These are different units:
+
+- **Provider requests:** the owner's screenshot showed **550** in the selected 28 October–3 November 2026 range under **All API keys / All models**. That graph is account/project usage, not a machine-readable, per-request ProofLab audit. A provider request can be a token count or a failed attempt; it is not necessarily a completed experiment.
+- **Model-inference records:** in the private `fast-eight` JSON ledger, grouping `calls[].count` gives **19 Spark + 94 SAM = 113**; in the private `full-science` JSON ledger, **16 Spark + 66 SAM + 20 Muse = 102**. The two tables were inspected read-only on the authorized machine. These counts describe **those two ledgers only**, not a verified union across all campaigns or a billing invoice.
+- **Known nested campaign totals:** **83** earlier segmented-video inferences are included in the later **113** total; the **30** initial 3 November inferences are included in the later **42**. Do not add a subtotal to its parent total. The 102-inference campaign reused six source recordings to create eight comparisons and two controls; samples are not independent.
+- **Other campaigns:** early Muse validation, 12 automatic-video inferences, five pivot-refinement calls, five body-validation calls and 3 November's seven technical pipelines have dated records, but provider request IDs have **not** been reconciled across all campaigns; therefore the reported rows cannot be summed into an authoritative all-time total.
+- **Software tests:** passing assertions in .NET/Angular are run repeatedly on different commits and sometimes use mocks. Neither test cases nor test-run totals should be added to the model-request count.
+
+**Safe deduplication rule for a future complete audit:** gather a permitted provider usage export (time, project/key/model, request ID, response ID, status and request type), correlate it with the private attempt receipts by immutable provider identity and timestamp, account for token-count/failed/cached requests, and retain a separate unmatched bucket. Do **not** deduplicate distinct paid calls simply because their source-video SHA-256 matches. Never publish raw provider receipts, credentials, private user footage or database rows.
+
+**Current audit status:** the screenshot and ledgers support the individual figures above, but a full **550-to-ledger reconciliation remains unverified**. This is an accounting/provenance gap, not evidence that any 550 requests were all successful research experiments.
+
 ## Reproduction and evidence access
 
 **Publicly inspectable:** this protocol, [results](RESULTS.md), implementation/tests in [`tests/ProofLab.Tests`](../tests/ProofLab.Tests), [workflow tests](../tests/ProofLab.Workflow.Tests), and the published period/Muse evaluation methods. They allow review of the logic and offline fixtures. A user can run the relevant .NET and Angular tests locally with the prerequisites in the [README](../README.md); doing so does **not** repeat the live experimental campaign.

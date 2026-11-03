@@ -40,6 +40,20 @@ Documentación pública: [estimador SAM](SAM-PERIOD.es.md), [investigador y cont
 - **Control sintético:** valida cálculos contra trayectorias conocidas; no elimina sesgos de cámara, pivote o identidad en videos reales.
 - **Incertidumbre:** incertidumbres tipo A e intervalos exploratorios del 95 % cubren solo las fuentes declaradas. No incluyen completamente perspectiva, longitud, reloj y errores sistemáticos.
 
+## Cómo se concilian las solicitudes Meta y los conteos por campaña
+
+El [inventario de resultados](RESULTS.es.md) distingue **solicitudes reportadas por Meta**, **inferencias registradas**, **casos científicos** y **tests de software**. Son unidades diferentes:
+
+- **Solicitudes del proveedor:** la captura del titular mostraba **550** del 28 de octubre al 3 de noviembre de 2026 con **All API keys / All models**. Ese gráfico es uso del equipo/proyecto, no una auditoría descargable por solicitud atribuida a ProofLab. Una solicitud puede contar tokens o resultar fallida; no representa necesariamente un experimento completo.
+- **Registros de inferencia:** al agrupar `calls[].count` de la bitácora JSON privada `fast-eight` resultan **19 Spark + 94 SAM = 113**; en la bitácora privada `full-science`, **16 Spark + 66 SAM + 20 Muse = 102**. Ambos registros se resumieron en solo lectura en el equipo autorizado. Son totales de **esas dos bitácoras**, no uniones verificadas de todas las campañas ni facturas.
+- **Subtotales conocidos:** las **83** inferencias iniciales de la campaña de videos segmentados ya están incluidas en las **113** finales; las **30** primeras del 3 de noviembre ya están incluidas en las **42** posteriores. No se suma un subtotal con su acumulado. La campaña de 102 reutilizó seis grabaciones para ocho comparaciones más controles; sus muestras no son independientes.
+- **Otras tandas:** verificaciones tempranas de Muse, 12 inferencias de videos nuevos, cinco llamadas de refinamiento del pivote, cinco de validación del cuerpo y siete flujos técnicos del 3 de noviembre tienen registros fechados, pero aún **no se han conciliado los ID de solicitud entre todas las campañas**; sus filas no pueden sumarse como total histórico autorizado.
+- **Tests de software:** las aserciones .NET/Angular se repiten en distintas versiones y algunas usan mocks. Ni los casos de prueba ni sus ejecuciones se suman como solicitudes a modelos.
+
+**Regla de desduplicación para una auditoría completa futura:** obtener un export permitido del uso de Meta (fecha, equipo/proyecto, clave/modelo, ID de solicitud y respuesta, estado y tipo); cruzarlo con recibos privados por identidad inmutable y tiempo; distinguir consultas de tokens, fallos, caché y solicitudes sin correspondencia. **No** fusionar llamadas pagadas diferentes solo porque tienen el mismo SHA-256 de video. Nunca publicar recibos, credenciales, videos privados ni filas SQLite.
+
+**Estado actual:** la captura y las bitácoras respaldan las cifras individuales, pero la conciliación completa de las **550 solicitudes con los registros locales no está demostrada**. Es un pendiente contable/de procedencia; no prueba que las 550 hayan sido experimentos científicos satisfactorios.
+
 ## Reproducibilidad y acceso a evidencia
 
 **Público:** protocolo, [resultados](RESULTS.es.md), [pruebas .NET](../tests/ProofLab.Tests), [pruebas del flujo](../tests/ProofLab.Workflow.Tests) y documentación de los algoritmos. Permiten inspección de código y pruebas locales sin Meta. Los requisitos y comandos están en [README](../README.es.md). Ejecutarlos **no equivale** a repetir las diez inferencias reales.
