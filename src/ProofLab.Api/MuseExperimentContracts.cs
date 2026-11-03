@@ -210,6 +210,24 @@ public static class MuseExperimentPolicy
             experimentOptions=ExperimentOptions(root),nextVideoSeen=false,
             interpretation="SAM segmentation and its target phrase are not a phenomenon classification. Image centroids are not independently measured centers of mass."
         },Json);
+        // Preserve historical input serialization. Only new audited evidence adds this compact context.
+        if(root.GetProperty("identity").TryGetProperty("automaticSuspension",out var auditedSuspension) &&
+            auditedSuspension.ValueKind==JsonValueKind.Object &&
+            auditedSuspension.TryGetProperty("refinement",out var refinement) && refinement.GetString()==SuspensionAuditPolicy.Protocol &&
+            auditedSuspension.TryGetProperty("audit",out var auditData) && auditData.ValueKind==JsonValueKind.Object) {
+            var audit=auditData.Deserialize<SuspensionAuditEvidence>(Json) ?? throw new ArgumentException("Missing contact audit.");
+            var node=System.Text.Json.Nodes.JsonNode.Parse(json)!;
+            node["suspensionAudit"]=JsonSerializer.SerializeToNode(new {
+                protocol=SuspensionAuditPolicy.Protocol,audit.Camera,audit.Consensus.Status,
+                audit.Consensus.Submitted,audit.Consensus.Usable,audit.Consensus.TimeCoverage,
+                confirmed=audit.Points.Count(p=>p.Decision=="CONFIRMED"),
+                corrected=audit.Points.Count(p=>p.Decision=="CORRECTED"),
+                uncertain=audit.Points.Count(p=>p.Decision=="UNCERTAIN"),
+                movingContact=audit.Points.Any(p=>p.ReferenceKind=="MOVING_CONTACT"),
+                scope="NINE_FULL_SCENE_IMAGE_ESTIMATES; SAME_MODEL_REVIEW_NOT_INDEPENDENT_PHYSICAL_VERIFICATION"
+            },Json);
+            json=node.ToJsonString(Json);
+        }
         if(json.Length>16000)throw new ArgumentException("Evidence summary exceeds the input limit.");
         return json;
     }

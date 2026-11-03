@@ -20,6 +20,8 @@ public sealed record KnotProviderResult(string Raw, string ProviderResponseId, i
 
 public interface IKnotFrames
 {
+    Task<byte[]> MarkSuspensionAsync(string path,KnotFrame frame,KnotPoint candidate,string destination,CancellationToken ct)=>
+        throw new NotSupportedException("Full-scene suspension annotation is unavailable.");
     Task<byte[]> CropZoomSuspensionAsync(string path,KnotFrame frame,SuspensionCrop crop,string destination,CancellationToken ct)=>
         CropSuspensionAsync(path,frame,crop,destination,ct);
     Task<byte[]> CropSuspensionAsync(string path,KnotFrame frame,SuspensionCrop crop,string destination,CancellationToken ct)=>

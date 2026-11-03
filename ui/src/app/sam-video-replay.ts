@@ -579,7 +579,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
          phase==='FAILED'&&!p.started?'FAILED':'COMPLETED',
        ms:p?.preparationElapsedMs??(sparkDone?Math.max(0,now-this.sparkFinishedAt):0)}];
     if(this.sparkWasNeeded){
-      const names=[['prepare','Preparar video','Prepare video'],['references','Extraer 50 imágenes','Extract 50 images'],['upload','Subir video a Spark','Upload video to Spark'],['inference','Respuesta de Spark','Spark response'],['verify','Validar respuesta','Validate response'],['target-review','Verificar objeto con Spark','Verify object with Spark']];
+      const names=[['prepare','Preparar video','Prepare video'],['references','Extraer 50 imágenes','Extract 50 images'],['upload','Subir video a Spark','Upload video to Spark'],['inference','Respuesta de Spark','Spark response'],['verify','Validar respuesta','Validate response'],['target-review',this.groundingQuote()?.localizationPlan==='SPARK_ORIGINAL_50_CONTACT_AUDIT_V2'?'Verificar objeto y suspensión':'Verificar objeto con Spark',this.groundingQuote()?.localizationPlan==='SPARK_ORIGINAL_50_CONTACT_AUDIT_V2'?'Verify object and suspension':'Verify object with Spark']];
       const reviewOnly=this.sparkStages().some(s=>s.key==='target-review') && !this.sparkStages().some(s=>s.key==='inference');
       const stages=this.sparkStages();
       const initial=names.filter(([key])=>(!reviewOnly||key==='prepare'||key==='target-review') &&
@@ -1161,6 +1161,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   costLabel(value:number):string {return (Math.ceil(value*100-1e-8)/100).toFixed(2);}
   localizationPlanDescription():string {
     const plan=this.groundingQuote()?.localizationPlan;
+    if(plan==='SPARK_ORIGINAL_50_CONTACT_AUDIT_V2')return this.es?
+      '50 imágenes originales y revisión del objeto y la suspensión':'50 original images and object and suspension review';
     if(plan==='SPARK_ORIGINAL_50_OBJECT_REVIEW_V1')return this.es?
       '50 imágenes originales y revisión del objeto':'50 original images and object review';
     // Saved quotes and progress must continue to describe what actually ran.

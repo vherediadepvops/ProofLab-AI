@@ -29,7 +29,8 @@ public sealed record SamVideoPreflight(
 public sealed record SamSuspensionEvidence(string SourceSha256,string SceneKey,string EvidenceKey,
     string ResponseSha256,string Model,int Width,int Height,KnotPoint[] Points, string? Refinement=null,
     [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SuspensionConsensus? Consensus=null,
-    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SuspensionContactReview[]? ContactReviews=null);
+    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SuspensionContactReview[]? ContactReviews=null,
+    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SuspensionAuditEvidence? Audit=null);
 public sealed record SamVideoArtifact(
     SamVideoState State, SamVideoReceipt Receipt, string RawResponseJson,
     SamSuspensionEvidence? Suspension = null, SuspensionReviewEvidence? SuspensionReview=null,

@@ -381,7 +381,13 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
         finally {DecoderLimit.Release();}
     }
 
-    public async Task<byte[]> MarkObjectAsync(string path,KnotFrame frame,AssemblyObservation candidate,string destination,CancellationToken ct)
+    public Task<byte[]> MarkObjectAsync(string path,KnotFrame frame,AssemblyObservation candidate,string destination,CancellationToken ct)=>
+        MarkReferenceAsync(path,frame,candidate,null,destination,ct);
+
+    public Task<byte[]> MarkSuspensionAsync(string path,KnotFrame frame,KnotPoint candidate,string destination,CancellationToken ct)=>
+        MarkReferenceAsync(path,frame,null,candidate,destination,ct);
+
+    private async Task<byte[]> MarkReferenceAsync(string path,KnotFrame frame,AssemblyObservation? candidate,KnotPoint? suspension,string destination,CancellationToken ct)
     {
         if(ffmpeg is null)throw new InvalidOperationException("FFmpeg unavailable.");
         var original=await File.ReadAllBytesAsync(path,ct);
@@ -392,7 +398,17 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
         var filters=new List<string>{"drawgrid=w=iw/10:h=ih/10:t=1:c=white@0.22"};
         // Annotation coordinates are derived from normalized ORIGINAL image geometry.
         // No resize, rotation, crop, model-dependent color or object template.
-        if(candidate.Visible)filters.Add(FormattableString.Invariant($"drawbox=x={Px(candidate.X1,frame.Width)}:y={Px(candidate.Y1,frame.Height)}:w={Math.Max(1,Px(candidate.X2-candidate.X1,frame.Width))}:h={Math.Max(1,Px(candidate.Y2-candidate.Y1,frame.Height))}:color=red@0.85:t=2"));
+        if(candidate is {Visible:true})filters.Add(FormattableString.Invariant($"drawbox=x={Px(candidate.X1,frame.Width)}:y={Px(candidate.Y1,frame.Height)}:w={Math.Max(1,Px(candidate.X2-candidate.X1,frame.Width))}:h={Math.Max(1,Px(candidate.Y2-candidate.Y1,frame.Height))}:color=red@0.85:t=2"));
+        if(suspension is not null) {
+            if(!double.IsFinite(suspension.X)||!double.IsFinite(suspension.Y)||suspension.X is <0 or >=1000||suspension.Y is <0 or >=1000)
+                throw new InvalidDataException("Invalid suspension candidate coordinates.");
+            // Hollow marker: its center remains unpainted so the actual cord contact is visible.
+            // A marker is a proposal to audit, never a source of measured coordinates.
+            if(suspension.Visible) {
+                int radius=Math.Max(6,Math.Min(frame.Width,frame.Height)/90);
+                filters.Add(FormattableString.Invariant($"drawbox=x={Px(suspension.X,frame.Width)-radius}:y={Px(suspension.Y,frame.Height)-radius}:w={radius*2+1}:h={radius*2+1}:color=yellow@0.8:t=1"));
+            }
+        }
         var font=OperatingSystem.IsWindows()?"fontfile='C\\:/Windows/Fonts/arial.ttf':":"";
         var size=Math.Max(12,Math.Min(frame.Width,frame.Height)/55);
         for(int n=1;n<10;n++) {

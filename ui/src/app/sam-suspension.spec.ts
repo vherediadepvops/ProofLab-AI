@@ -13,7 +13,8 @@ function experiment(width=1080,height=1920,offset=0) {
     source:'META_SAM_3_1_CACHED_PROVIDER_EVIDENCE',objectId:'1',masks,
     points:masks.map(m=>({timeSeconds:m.timeSeconds,x:m.centroidXpx/width*480,
       y:m.centroidYpx/height*270,approximateRadiusPixels:5,source:'SAM_3_1_CACHED_PROVIDER_CENTROID_NOT_CALIBRATED'}))};
-  const archive={state:{},receipt:{originalVideoSha256:'a'.repeat(64),scene:{
+  const archive={state:{},receipt:{originalVideoSha256:'a'.repeat(64),
+    framePtsSeconds:masks.map(m=>m.timeSeconds),sourceFrameCount:masks.length,scene:{
     key:'b'.repeat(64),evidenceKey:'c'.repeat(64),responseSha256:'d'.repeat(64),
     origin:'SPARK_GROUNDING',arrangement:'simple_pendulum',width,height}},
     suspension:{sourceSha256:'a'.repeat(64),sceneKey:'b'.repeat(64),evidenceKey:'c'.repeat(64),
@@ -204,5 +205,212 @@ describe('Spark review is a measured proposal, never a geometry override',()=>{
     archive.suspensionReview!.answer.decision='CONFIRMED';
     archive.suspensionReview!.answer.points.forEach(p=>p.x=950);
     expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
+});
+
+
+describe('Independent contact audit over nine original references',()=>{
+  const ordinals=[0,6,12,18,24,31,37,43,49];
+  function audited(offset=0) {
+    const data=experiment(1080,1920,offset),e=data.archive.suspension!,seed=e.points[0];
+    e.refinement='SPARK_ORIGINAL_50_CONTACT_AUDIT_V2';
+    e.points=Array.from({length:50},(_,frame)=>({...seed,frame}));
+    e.consensus={status:'CONSENSUS_ESTIMATE',camera:'STATIC',inlierOrdinals:e.points.map(p=>p.frame),
+      submitted:50,usable:50,timeCoverage:1,x:seed.x,y:seed.y,spreadPixels:0};
+    e.audit={camera:'STATIC',points:ordinals.map(frame=>({...seed,frame,
+      decision:'CONFIRMED',referenceKind:'FIXED_CORD_CONTACT',visualReason:'The loaded cord touches the fixed support here.',
+      timeSeconds:data.archive.receipt.framePtsSeconds[Math.round(frame*600/49)]})),
+      consensus:{status:'CONSENSUS_ESTIMATE',camera:'STATIC',inlierOrdinals:[...ordinals],
+        submitted:9,usable:9,timeCoverage:1,x:seed.x,y:seed.y,spreadPixels:0}};
+    return {...data,e,audit:e.audit};
+  }
+  function selectInliers(data:ReturnType<typeof audited>,selected:number[]) {
+    const {audit,archive}=data;
+    const chosen=audit.points.filter(p=>selected.includes(p.frame));
+    Object.assign(audit.consensus,{inlierOrdinals:selected,usable:audit.points.filter(p=>p.visible&&p.confidence>=.8).length,
+      timeCoverage:(chosen[chosen.length-1].timeSeconds-chosen[0].timeSeconds)/archive.receipt.framePtsSeconds.at(-1)!});
+  }
+  function uncertain(p:ReturnType<typeof audited>['audit']['points'][number]) {
+    Object.assign(p,{decision:'UNCERTAIN',referenceKind:'UNCLEAR',visible:false,x:0,y:0,confidence:0,
+      visualReason:'The contact is obscured in this image.'});
+  }
+  it('confirms nine independent images while preserving the original 50 and their consensus',()=>{
+    const {archive,track,e,audit,cx,cy}=audited();
+    e.points.forEach(p=>p.confidence=.3); // A new independent review can confirm an initially uncertain candidate.
+    e.consensus!.status='INSUFFICIENT_OBSERVATIONS';e.consensus!.inlierOrdinals=[];
+    const raw=JSON.stringify({archive,track}),result=resolveSamSuspension(archive,track);
+    expect(result.method).toBe('SPARK');expect(result.samples).toBe(601);
+    expect(result.pivot!.pivotXpx/480*1080).toBeCloseTo(cx,8);
+    expect(result.pivot!.pivotYpx/270*1920).toBeCloseTo(cy,8);
+    expect(audit.consensus.inlierOrdinals).toContain(24);
+    expect(JSON.stringify({archive,track})).toBe(raw);
+  });
+  it('accepts consistent independent corrections instead of inheriting the old 50-point center',()=>{
+    const {archive,track,e,audit,cx,cy}=audited();
+    e.points.forEach(p=>{p.x=800;p.y=300;});Object.assign(e.consensus!,{x:800,y:300});
+    audit.points.forEach(p=>p.decision='CORRECTED');
+    const result=resolveSamSuspension(archive,track);
+    expect(result.method).toBe('SPARK');
+    expect(result.pivot!.pivotXpx/480*1080).toBeCloseTo(cx,8);
+    expect(result.pivot!.pivotYpx/270*1920).toBeCloseTo(cy,8);
+    audit.points[0].decision='CONFIRMED';
+    expect(resolveSamSuspension(archive,track).reason).toBe('CORD_CONTACT_UNRESOLVED');
+  });
+  it('allows mixed confirmations and corrections but never changes their center with a circle fit',()=>{
+    const {archive,track,audit,cx,cy}=audited(3);
+    audit.points.forEach((p,i)=>p.decision=i%2?'CONFIRMED':'CORRECTED');
+    const result=resolveSamSuspension(archive,track);
+    expect(result.method).toBe('SPARK');
+    expect(result.pivot!.pivotXpx/480*1080).toBeCloseTo(cx+3,8);
+    expect(result.pivot!.pivotYpx/270*1920).toBeCloseTo(cy+3,8);
+  });
+  it('uses full oriented-image coordinates for an off-center corrected contact',()=>{
+    const {archive,track,e,audit}=audited();
+    const dx=140,dy=20;
+    track.masks.forEach(m=>{m.centroidXpx+=dx;m.centroidYpx+=dy;});
+    audit.points.forEach(p=>{p.decision='CORRECTED';p.x+=dx/e.width*1000;p.y+=dy/e.height*1000;});
+    Object.assign(audit.consensus,{x:audit.points[0].x,y:audit.points[0].y});
+    const result=resolveSamSuspension(archive,track);
+    expect(result.method).toBe('SPARK');
+    expect(result.pivot!.pivotXpx/480*e.width).toBeCloseTo(680,8);
+    expect(result.pivot!.pivotYpx/270*e.height).toBeCloseTo(308,8);
+  });
+  for(const decision of ['CONFIRMED','CORRECTED','UNCERTAIN'] as const) it('blocks any moving contact even with eight agreeing points: '+decision,()=>{
+    const {archive,track,audit}=audited();
+    if(decision==='UNCERTAIN')uncertain(audit.points[4]);
+    audit.points[4].decision=decision;audit.points[4].referenceKind='MOVING_CONTACT';
+    expect(resolveSamSuspension(archive,track).reason).toBe('MOVING_CORD_CONTACT');
+  });
+  it('requires the independent audit with no automatic fallback to 50 points or three anchors',()=>{
+    const {archive,track,e}=audited();
+    for(const audit of [undefined,null]) {
+      e.audit=audit;
+      expect(resolveSamSuspension(archive,track).reason).toBe('CORD_CONTACT_UNRESOLVED');
+    }
+    e.points=e.points.filter(p=>[0,24,49].includes(p.frame));
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
+  for(const camera of ['MOVING','UNCLEAR'] as const) it('requires a static audit and static consensus: '+camera,()=>{
+    const {archive,track,audit}=audited();
+    audit.camera=camera;expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    audit.camera='STATIC';audit.consensus.camera=camera;
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
+  it('accepts six reliable images spanning the source and excludes uncertain rows with zero coordinates',()=>{
+    const data=audited(),selected=[0,6,18,31,43,49];
+    data.audit.points.filter(p=>!selected.includes(p.frame)).forEach(uncertain);
+    selectInliers(data,selected);
+    const result=resolveSamSuspension(data.archive,data.track);
+    expect(result.pivot).not.toBeNull();expect(result.rejectedAnchorFrames).toEqual([12,24,37]);
+    const p=data.audit.points.find(p=>p.frame===12)!;p.x=1;
+    expect(resolveSamSuspension(data.archive,data.track).pivot).toBeNull();
+  });
+  it('rejects five of nine reliable images even when they agree across the full timeline',()=>{
+    const data=audited(),selected=[0,12,24,37,49];
+    data.audit.points.filter(p=>!selected.includes(p.frame)).forEach(uncertain);selectInliers(data,selected);
+    expect(resolveSamSuspension(data.archive,data.track).reason).toBe('CORD_CONTACT_UNRESOLVED');
+  });
+  it('rejects a strong rival cluster and does not trust a declared majority',()=>{
+    const data=audited(),selected=[0,6,18,31,43,49];
+    data.audit.points.filter(p=>!selected.includes(p.frame)).forEach(p=>{p.decision='CORRECTED';p.x=700;});
+    selectInliers(data,selected);
+    expect(resolveSamSuspension(data.archive,data.track).pivot).toBeNull();
+    // Three separate outliers do not form a competing contact.
+    data.audit.points.filter(p=>!selected.includes(p.frame)).forEach((p,i)=>p.x=650+50*i);
+    expect(resolveSamSuspension(data.archive,data.track).pivot).not.toBeNull();
+  });
+  for(const invalid of ['duplicate','wrong middle','missing','extra'] as const) it('requires exactly the nine original reference ordinals: '+invalid,()=>{
+    const {archive,track,audit}=audited();
+    if(invalid==='duplicate')audit.points[4].frame=18;
+    if(invalid==='wrong middle')audit.points[4].frame=25;
+    if(invalid==='missing')audit.points.pop();
+    if(invalid==='extra')audit.points.push({...audit.points[0],frame:1});
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
+  for(const field of ['x','y','confidence','timeSeconds'] as const) for(const value of [NaN,Infinity])
+    it('rejects nonfinite '+field+' '+value,()=>{
+      const {archive,track,audit}=audited();audit.points[3][field]=value;
+      expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    });
+  it('rejects invalid visibility, reasons, confidence and normalized coordinates',()=>{
+    for(const change of [{x:-1},{x:1000},{y:1000},{confidence:1.1},{confidence:-.1},
+      {visible:false},{visualReason:' '},{referenceKind:'UNCLEAR'}]) {
+      const {archive,track,audit}=audited();Object.assign(audit.points[2],change);
+      expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    }
+  });
+  it('requires source order and refuses malformed rows without throwing',()=>{
+    const {archive,track,audit}=audited();
+    audit.points.reverse();expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    audit.points.reverse();audit.points[3]=null as unknown as typeof audit.points[number];
+    expect(()=>resolveSamSuspension(archive,track)).not.toThrow();
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
+  it('uses the confidence threshold inclusively and retains low-confidence located observations',()=>{
+    const data=audited(),selected=[0,6,18,31,43,49];
+    data.audit.points.forEach(p=>p.confidence=selected.includes(p.frame)?.8:.79);selectInliers(data,selected);
+    expect(resolveSamSuspension(data.archive,data.track).pivot).not.toBeNull();
+    data.audit.points[0].confidence=.799;data.audit.consensus.usable=5;
+    expect(resolveSamSuspension(data.archive,data.track).pivot).toBeNull();
+  });
+  it('binds audit times to original ordered PTS and full source endpoints',()=>{
+    for(const change of ['off PTS','duplicate','reversed','start','end','no source','bad source'] as const) {
+      const {archive,track,audit}=audited();
+      if(change==='off PTS')audit.points[3].timeSeconds+=.001;
+      if(change==='duplicate')audit.points[3].timeSeconds=audit.points[2].timeSeconds;
+      if(change==='reversed')audit.points[3].timeSeconds=audit.points[2].timeSeconds-.1;
+      if(change==='start')audit.points[0].timeSeconds=1/60;
+      if(change==='end')audit.points[8].timeSeconds=599/60;
+      if(change==='no source')archive.receipt.framePtsSeconds=[];
+      if(change==='bad source')archive.receipt.framePtsSeconds[2]=NaN;
+      expect(resolveSamSuspension(archive,track).pivot).withContext(change).toBeNull();
+    }
+  });
+  it('computes temporal coverage over the source instead of trusting the declared value',()=>{
+    const data=audited(),selected=[6,12,18,24,31,37];
+    data.audit.points.filter(p=>!selected.includes(p.frame)).forEach(uncertain);selectInliers(data,selected);
+    data.audit.consensus.timeCoverage=1;
+    expect(resolveSamSuspension(data.archive,data.track).pivot).toBeNull();
+  });
+  it('rejects actual insufficient coverage even when all six useful points agree',()=>{
+    const data=audited(),selected=[0,6,12,18,24,31],times=[0,.5,1,1.5,2,2.5,7,8,10];
+    data.audit.points.forEach((p,i)=>p.timeSeconds=times[i]);
+    data.audit.points.filter(p=>!selected.includes(p.frame)).forEach(uncertain);selectInliers(data,selected);
+    expect(data.audit.consensus.timeCoverage).toBe(.25);
+    expect(resolveSamSuspension(data.archive,data.track).pivot).toBeNull();
+  });
+  it('requires three temporal bins even if a narrow pair of intervals spans the video',()=>{
+    const data=audited(),selected=[0,6,12,37,43,49],times=[0,.1,.2,.3,.4,9.7,9.8,9.9,10];
+    data.audit.points.forEach((p,i)=>p.timeSeconds=times[i]);
+    data.audit.points.filter(p=>!selected.includes(p.frame)).forEach(uncertain);selectInliers(data,selected);
+    expect(resolveSamSuspension(data.archive,data.track).pivot).toBeNull();
+  });
+  it('recomputes and verifies every consensus field using original rather than audit-row ordinals',()=>{
+    for(const change of [{status:'INCONCLUSIVE'},{submitted:50},{usable:50},{timeCoverage:.9},
+      {x:501},{y:151},{spreadPixels:1},{inlierOrdinals:[0,1,2,3,4,5,6,7,8]},
+      {inlierOrdinals:[0,6,12,18,24,31,37,43,43]}]) {
+      const {archive,track,audit}=audited();Object.assign(audit.consensus,change);
+      expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+    }
+  });
+  it('still rejects bad SAM geometry after a valid contact audit',()=>{
+    const {archive,track}=audited();
+    track.masks.forEach((m,i)=>{m.centroidXpx=100+i;m.centroidYpx=400+i;});
+    expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+  });
+  it('preserves an explicitly bound manual review without allowing a circle fit or an invalid binding',()=>{
+    const {archive,track,e,cx,cy}=audited(3);
+    e.audit=null;archive.receipt.analysisId='audit-batch';archive.receipt.responseJsonSha256='e'.repeat(64);
+    archive.suspensionReview={protocol:'SPARK_SAM_SUSPENSION_REVIEW_V1',key:'f'.repeat(64),
+      analysisId:'audit-batch',sourceSha256:'a'.repeat(64),samResponseSha256:'e'.repeat(64),sceneKey:'b'.repeat(64),
+      responseSha256:'f'.repeat(64),model:'muse-spark-1.3',answer:{decision:'CONFIRMED',camera:'STATIC',
+        justification:{es:'Revisión manual solicitada.',en:'Explicitly requested manual review.'},
+        points:[0,25,49].map(frame=>({...e.points[frame],frame}))}};
+    const result=resolveSamSuspension(archive,track);
+    expect(result.method).toBe('SPARK');
+    expect(result.pivot!.pivotXpx/480*1080).toBeCloseTo(cx+3,8);
+    expect(result.pivot!.pivotYpx/270*1920).toBeCloseTo(cy+3,8);
+    archive.suspensionReview.analysisId='different-batch';
+    expect(resolveSamSuspension(archive,track).reason).toBe('CORD_CONTACT_UNRESOLVED');
   });
 });

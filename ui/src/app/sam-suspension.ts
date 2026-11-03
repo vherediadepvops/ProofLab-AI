@@ -1,4 +1,5 @@
 import type {AuthenticatedSamVideoArchive,SamPlaybackTrack} from './sam-playback';
+import {contactAuditProtocol,resolveContactAudit} from './sam-suspension-audit';
 import type {ImagePivot} from './pendulum-kinematics';
 
 export const automaticPivotProvenance='SPARK_SAM_ESTIMATE_REVIEW_PENDING';
@@ -23,6 +24,7 @@ export function resolveSamSuspension(
   archive:AuthenticatedSamVideoArchive,track:SamPlaybackTrack|null
 ):AutomaticSuspension {
   let e=archive.suspension;const s=archive.receipt.scene;
+  const originContactAudit=e?.refinement===contactAuditProtocol;
   const review=archive.suspensionReview;
   // Authenticated, immutable review is bound to this exact SAM result.
   if(e && review && review.protocol==='SPARK_SAM_SUSPENSION_REVIEW_V1' &&
@@ -49,11 +51,17 @@ export function resolveSamSuspension(
   let anchors=e.points;
   const originalOnly=e.refinement==='SPARK_ORIGINAL_50_OBJECT_REVIEW_V1';
   const dense=originalOnly || ['SPARK_DENSE_OBJECT_AND_EXIT_50_V1','SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1','SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2'].includes(e.refinement??'');
-  const visuallyRefined=dense || ['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3'].includes(e.refinement??'');
+  const visuallyRefined=originContactAudit || dense || ['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3'].includes(e.refinement??'');
   const anchorLimit=Math.max(3,Math.min(e.width,e.height)*(visuallyRefined?.005:.04));
   const rejectedAnchorFrames:number[]=[];
   let x:number,y:number,spread:number;
-  if(dense){
+  if(e.refinement===contactAuditProtocol){
+    const audit=resolveContactAudit(e,archive.receipt);
+    if(!audit.ok)return none(audit.reason);
+    x=audit.x;y=audit.y;spread=audit.spread;
+    anchors=audit.inliers;
+    rejectedAnchorFrames.push(...audit.rejectedOrdinals);
+  }else if(dense){
     const c=e.consensus;
     if(!c || c.status!=='CONSENSUS_ESTIMATE' || c.camera!=='STATIC' ||
       !Array.isArray(anchors) || !(originalOnly?[50]:[50,100,150]).includes(anchors.length) || c.submitted!==anchors.length ||

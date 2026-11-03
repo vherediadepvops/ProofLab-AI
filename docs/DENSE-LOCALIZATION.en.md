@@ -1,45 +1,25 @@
-# Object and suspension localization across 50 images
+# Localization and suspension review
 
-> Contact review (2026-11-03): `SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2` distinguishes lower-loop movement from the effective cord/support contact. Each enlarged review classifies the contact as fixed, moving or unresolved and records loop motion separately. A point on the structure, protractor center or attachment above a flexible joint cannot substitute for the effective pivot. Only two fixed-contact reviews with matching geometric consensus permit an estimate; moving or hidden contacts remain inconclusive. The classification is retained in the evidence and passed to Muse, without becoming human verification. V1 and V5 body-review readers reconstruct historical receipts unchanged. Processing still uses 4 Spark + 1 whole-video SAM + 1 Muse, without automatic resubmission.
+Current protocol: `SPARK_ORIGINAL_50_CONTACT_AUDIT_V2` (2026-11-03).
 
-> Update 2026-11-03: new localization always uses 50 original views, 50 ×1.5 crops and 50 ×3 crops of the same 50 frames. Both enlargements come from the original, without overlays, and map back to original coordinates. The first answer cannot skip the enlarged reviews. Suspension is estimated only when both zoom reviews have stable, agreeing consensus; otherwise it remains inconclusive. Four Spark requests cover initial localization, two suspension reviews and body review. The existing conservative budget already covers all four. No automatic retries. Historical results remain readable and are not recomputed. New validation uses local mocked responses, with no new live Meta calls.
+## Workflow
 
-The remainder records the previous protocol and its historical checks.
+1. Local preparation produces a compatible video and 50 original images spread across its timeline. It makes no Meta calls.
+2. The first Spark request receives the full video and those 50 labeled images. It proposes body boxes and suspension positions as image estimates.
+3. The second request reviews the body and suspension contact on nine original references (ordinals 0, 6, 12, 18, 24, 31, 37, 43 and 49). It receives nine full scenes with a grid and proposed suspension marker, plus the existing nine body crops. There are no suspension crops or ×1.5/×3 rounds.
+4. Review follows the loaded cord to its effective support contact across different times. It distinguishes that contact from knot/protractor centers, shadows and a moving lower loop. Each answer confirms, corrects or leaves the position uncertain, with a short visual explanation. Contact coordinates always refer to the full scene; body boxes refer to their paired crop.
+5. SAM retains its single full-video request when the body is resolved. Suspension must pass review and geometric checks before producing angular values. An unresolved suspension can use existing manual marking; it does not trigger another automatic inference.
 
+## Evidence and acceptance
 
-Protocol `SPARK_DENSE_OBJECT_AND_EXIT_50_V1`. The implementation was verified locally with a simulated provider; accuracy and latency against live Meta remain unmeasured. Publishing source does not deploy production.
+The initial 50 observations and consensus remain unchanged. The audit retains its own nine observations, decisions, original references/times and consensus; nine observations are never represented as fifty. Marked-scene pixels, crops and responses are hash-bound, and readers reconstruct derivations from preserved receipts.
 
-## New workflow
+Acceptance requires a static camera, at least six usable observations out of nine, and a dominant cluster covering at least 60% of usable observations. Maximum spread is the greater of 3 px or 0.5% of the smaller original-image dimension; accepted points must span at least three temporal bins and 60% of the video. A moving contact, contradictory confirmation, competing clusters or insufficient evidence leaves suspension unresolved. A stable correction can replace the position used for calculations without deleting the original proposal. A missing audit is never filled with the initial consensus or a circle fit.
 
-1. Prepare the original video and 50 references distributed through time. Spark receives the complete video and references identified by frame and timestamp.
-2. Request an oscillating-body box and a free-string exit point in **each of the 50 images**. Balls, coins, nuts and plumb bobs share the same contract. Cord, support, hand and shadow are excluded from the body.
-3. If either target or suspension remains unresolved, extract another 50 distinct references. There are **at most three rounds total**, including the first, with early stopping when sufficient evidence is available. Fewer than 50 unused frames ends sampling rather than duplicating images.
-4. Reuse the uploaded video file. Do not request token counting or delete the remote file. Preserve every round's responses, references, timestamps, receipts and hashes.
-5. SAM receives time-specific object positions when target identity is sufficiently resolved. Suspension uncertainty can still leave θ/ω inconclusive despite valid object masks.
+Agreement, reported confidence and review by the same model do not establish physical accuracy. Estimates still require human confirmation; mocked responses test software behavior, not Spark accuracy on new videos.
 
-A completed but insufficient answer may trigger another round. Transport, receipt or parsing errors stop the operation and preserve the attempt; they do not automatically trigger another potentially billable request.
+## Cost and compatibility
 
-## Suspension consensus
+Two Spark requests remain: US$0.25 initial estimate and US$0.10 review (US$0.35 total estimate), plus quoted SAM and Muse costs. Review keeps 18 images and an 8192-token output cap; additional explanations can change actual usage. These are not invoices or provider-enforced billing limits. No automatic retries.
 
-- Requires a static-camera classification. `MOVING` and `UNCLEAR` remain inconclusive.
-- Find a dominant spatial cluster and use its median, rather than averaging all points. Distances use oriented original-video pixels.
-- Agreement radius: the greater of 3 px and 0.5% of the smaller dimension. Requires at least 10 observations, 60% of usable observations and 20% of submitted images; a comparable competing cluster prevents acceptance.
-- Require coverage in at least three of five temporal bins and a minimum 60% time span. Outliers remain in preserved evidence but do not move the estimated suspension.
-- These are diagnostic rules, **not a statistical 95% confidence interval**. Spark's reported confidence does not certify geometric accuracy either.
-
-The body moves: **coordinates are never averaged across frames**. The first round that clearly resolves the target with sufficient time-distributed observations is retained. SAM masks and per-frame geometry checks still determine which values can be shown. Repeated answers can share a systematic error; agreement alone does not establish the physically correct point.
-
-## Cost, progress and compatibility
-
-New quotes include up to three Spark requests (currently US$0.25 estimated per round, up to US$0.75), plus SAM operations and the corresponding workflow reserves. These are authorization estimates, not an invoice or a provider-enforced billing cap. Early resolution uses fewer rounds.
-
-Additional rounds appear in existing progress bars. No new laboratory sections are added. Owner manual-request permissions, counters and credentials are unchanged.
-
-Historical three-point results and crop reviews remain readable; their coordinates are neither rewritten nor relabeled as new-protocol results. This workflow applies to new localizations. Recovery validates the derivation against preserved responses and hashes.
-
-## Local verification
-
-- Mocked .NET suite: **466/466** passing tests, covering consensus, ambiguous clusters, uncertain camera, three rounds without duplicate references, early stopping, provider failure, persistence and tamper detection.
-- Angular suspension tests in headless Edge: **17/17** passing assertions. The runner remained open after reporting success and was interrupted; this is not recorded as a clean process exit.
-- Production Angular build and API build to an isolated directory succeeded. Existing Angular size-budget warnings remain.
-- **Zero live Meta requests** in this validation; no CI or deployment. Independent visual accuracy checks, effective cost and live-round timings remain outstanding.
+Three-anchor results, dense rounds, progressive zoom and `SPARK_ORIGINAL_50_OBJECT_REVIEW_V1` retain their historical readers. Saved analyses are not modified or relabeled as audited results. Explicit additional suspension review remains bound to its exact SAM result; it is not an automatic fallback.

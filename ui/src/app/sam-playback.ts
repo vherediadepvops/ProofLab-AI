@@ -5,6 +5,13 @@ import { originalImageOffset, type ImagePivot, type ImageSize, type KinematicFra
 
 export interface SamSuspensionEvidence {
   refinement?:string|null;
+  audit?:{
+    camera:'STATIC'|'MOVING'|'UNCLEAR';
+    points:{frame:number;decision:'CONFIRMED'|'CORRECTED'|'UNCERTAIN';
+      referenceKind:'FIXED_CORD_CONTACT'|'MOVING_CONTACT'|'UNCLEAR';visible:boolean;
+      x:number;y:number;confidence:number;visualReason:string;timeSeconds:number}[];
+    consensus:NonNullable<SamSuspensionEvidence['consensus']>;
+  }|null;
   contactReviews?:{referenceKind:'FIXED_CORD_CONTACT'|'MOVING_CONTACT'|'UNRESOLVED';
     loopMotion:'MOVING'|'NOT_OBSERVED'|'UNCLEAR';reason:string}[]|null;
   consensus?:{status:string;camera:string;inlierOrdinals:number[];submitted:number;usable:number;

@@ -160,8 +160,8 @@ public sealed partial class AssemblyLocator
             throw new InvalidDataException("Suspension scene mismatch.");
         return new(video.Sha256,scene.Key,evidence.CacheKey,evidence.ResponseSha256,evidence.Model,
             scene.Width,scene.Height,evidence.Proposal.Suspension.Points,
-            evidence.Derivation is DenseLocalizationPolicy.OriginalProtocol or DenseLocalizationPolicy.OriginalBodyProtocol?DenseLocalizationPolicy.OriginalProtocol:ProgressiveSuspensionPolicy.Refinement(evidence.Derivation) is {} progressive?progressive:evidence.Derivation==ObjectReviewPolicy.DenseBodyProtocol?DenseLocalizationPolicy.Protocol:evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
-            evidence.Proposal.Consensus,evidence.Proposal.ContactReviews);
+            evidence.Derivation==SuspensionAuditPolicy.Protocol?SuspensionAuditPolicy.Protocol:evidence.Derivation is DenseLocalizationPolicy.OriginalProtocol or DenseLocalizationPolicy.OriginalBodyProtocol?DenseLocalizationPolicy.OriginalProtocol:ProgressiveSuspensionPolicy.Refinement(evidence.Derivation) is {} progressive?progressive:evidence.Derivation==ObjectReviewPolicy.DenseBodyProtocol?DenseLocalizationPolicy.Protocol:evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
+            evidence.Proposal.Consensus,evidence.Proposal.ContactReviews,evidence.Proposal.SuspensionAudit);
     }
     public async Task<SamSceneDefinition?> TrackingRunAsync(string id,string role,string runId,CancellationToken ct)
     {
@@ -184,8 +184,8 @@ public sealed partial class AssemblyLocator
         if(scene.Origin!=AssemblyPolicy.GroundingOrigin || scene.Arrangement!="simple_pendulum")return null;
         return new(video.Sha256,scene.Key,evidence.CacheKey,evidence.ResponseSha256,evidence.Model,
             scene.Width,scene.Height,evidence.Proposal.Suspension.Points,
-            evidence.Derivation is DenseLocalizationPolicy.OriginalProtocol or DenseLocalizationPolicy.OriginalBodyProtocol?DenseLocalizationPolicy.OriginalProtocol:ProgressiveSuspensionPolicy.Refinement(evidence.Derivation) is {} progressive?progressive:evidence.Derivation==ObjectReviewPolicy.DenseBodyProtocol?DenseLocalizationPolicy.Protocol:evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
-            evidence.Proposal.Consensus,evidence.Proposal.ContactReviews);
+            evidence.Derivation==SuspensionAuditPolicy.Protocol?SuspensionAuditPolicy.Protocol:evidence.Derivation is DenseLocalizationPolicy.OriginalProtocol or DenseLocalizationPolicy.OriginalBodyProtocol?DenseLocalizationPolicy.OriginalProtocol:ProgressiveSuspensionPolicy.Refinement(evidence.Derivation) is {} progressive?progressive:evidence.Derivation==ObjectReviewPolicy.DenseBodyProtocol?DenseLocalizationPolicy.Protocol:evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
+            evidence.Proposal.Consensus,evidence.Proposal.ContactReviews,evidence.Proposal.SuspensionAudit);
     }
     public Task<SamSceneDefinition?> TrackingAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,false);
     public Task<SamSceneDefinition?> TrackingForQuoteAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,true);
@@ -208,7 +208,7 @@ public sealed partial class AssemblyLocator
         // A new explicit operation is independent of historical cache entries.
         // GroundAsync still owns the process gate and source file locks.
         if(fresh)return new(key,video.Sha256,budget,false,false,runtime.ManualTokenCallsPermitted,
-            "NEEDS_LOCALIZATION",null,null,mode,true,RequiredSparkCalls:2,VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd,LocalizationPlan:DenseLocalizationPolicy.OriginalProtocol);
+            "NEEDS_LOCALIZATION",null,null,mode,true,RequiredSparkCalls:2,VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd,LocalizationPlan:SuspensionAuditPolicy.Protocol);
         var records=await GroundingRecords(video.Sha256,ct);
         var latest=records.Runs.FirstOrDefault(r=>r.Evidence is not null);
         var reviewPending=latest is not null && File.Exists(Path.Combine(latest.Root,"object-review-attempt.json")) && latest.Reviewed is null;
@@ -222,7 +222,7 @@ public sealed partial class AssemblyLocator
         var draft=latest?.Dense ?? latest?.Evidence;
         return new(key,video.Sha256,draft is null?budget:ObjectReviewPolicy.EstimatedCostUsd,false,false,
             runtime.ManualTokenCallsPermitted,"NEEDS_LOCALIZATION",null,draft,mode,false,
-            RequiredSparkCalls:draft is null?2:1,VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd,LocalizationPlan:draft is null?DenseLocalizationPolicy.OriginalProtocol:null);
+            RequiredSparkCalls:draft is null?2:1,VisualReviewEstimatedCostUsd:ObjectReviewPolicy.EstimatedCostUsd,LocalizationPlan:draft is null?SuspensionAuditPolicy.Protocol:null);
     }
 
     private sealed record PreparedManifest(string RelativeDirectory,string SourceSha256,string PtsSha256,string Mp4Sha256,long Bytes,KnotFrame[] Frames);

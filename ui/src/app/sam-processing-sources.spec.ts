@@ -88,6 +88,20 @@ describe('Processing source checkboxes',()=>{
     }
     x.h.expectNone(r=>r.method==='POST');x.f.destroy();
   });
+  it('describes the combined object and contact audit in ES and EN without adding a Spark request or zoom budget',async()=>{
+    const x=setup(true);
+    await checkFresh(x,freshQuote,{...sparkQuote,localizationPlan:'SPARK_ORIGINAL_50_CONTACT_AUDIT_V2'});
+    for(const language of ['es','en']){
+      x.f.componentRef.setInput('language',language);x.f.detectChanges();
+      const text=x.host.textContent??'';
+      expect(text).toContain(language==='es'?'50 imágenes originales y revisión del objeto y la suspensión':
+        '50 original images and object and suspension review');
+      expect(text).toContain('US$ 0.35');expect(x.c.displayedCost()).toBeCloseTo(.374);
+      expect(x.c.groundingQuote()?.requiredSparkCalls).toBe(2);
+      expect(text).not.toMatch(/×1[.,]5|×3|0\.85/);
+    }
+    x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+  });
   it('keeps recorded historical zoom stages and their durations readable',async()=>{
     const x=setup(true);await checkFresh(x);
     const processing=x.c.process(),spark=x.h.expectOne(pathIs(adaptive+'/spark-once'));

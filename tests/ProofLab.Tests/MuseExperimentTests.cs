@@ -347,6 +347,21 @@ public sealed class MuseExperimentTests
         Assert.True(input.Length<=16000);
     }
 
+    [Fact] public void FullSceneContactAuditReachesMuseWithoutClaimingIndependentVerification() {
+        var o=DetailedObservation();var payload=System.Text.Json.Nodes.JsonNode.Parse(o.PayloadJson)!;
+        var points=SuspensionAuditPolicy.RepresentativeOrdinals().Select(i=>
+            new SuspensionAuditPoint(i,"UNCERTAIN","MOVING_CONTACT",false,0,0,0,"Visible loop moves.",i*.1)).ToArray();
+        var audit=new SuspensionAuditEvidence("STATIC",points,new("MOVING_CORD_CONTACT","STATIC",[],9,0,0,null,null,0));
+        payload["identity"]!["automaticSuspension"]=JsonSerializer.SerializeToNode(new {refinement=SuspensionAuditPolicy.Protocol,audit},Json);
+        using var input=JsonDocument.Parse(MuseExperimentPolicy.BuildInput(o with {PayloadJson=payload.ToJsonString()}));
+        var summary=input.RootElement.GetProperty("suspensionAudit");
+        Assert.True(summary.GetProperty("movingContact").GetBoolean());Assert.Equal(9,summary.GetProperty("submitted").GetInt32());
+        Assert.Equal("MOVING_CORD_CONTACT",summary.GetProperty("status").GetString());
+        Assert.False(input.RootElement.GetProperty("pivotIndependentlyVerified").GetBoolean());
+        using var legacy=JsonDocument.Parse(MuseExperimentPolicy.BuildInput(o));
+        Assert.False(legacy.RootElement.TryGetProperty("suspensionAudit",out _));
+    }
+
     [Fact] public void MovingContactAssessmentReachesMuseWithoutBecomingHumanVerification() {
         var o=DetailedObservation();var payload=System.Text.Json.Nodes.JsonNode.Parse(o.PayloadJson)!;
         payload["identity"]!["automaticSuspension"]=System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new {
