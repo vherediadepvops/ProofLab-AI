@@ -23,10 +23,12 @@ function experiment(width=1080,height=1920,offset=0) {
   return {archive,track,cx,cy,radius};
 }
 describe('Automatic Spark/SAM suspension estimates',()=>{
-  for(const [protocol,count] of [['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',50],['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',100],['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',150],['SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1',50]] as const) it('uses '+protocol+' consensus from '+count+' frames without averaging the moving body',()=>{
+  for(const [protocol,count] of [['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',50],['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',100],['SPARK_DENSE_OBJECT_AND_EXIT_50_V1',150],['SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1',50],['SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2',50]] as const) it('uses '+protocol+' consensus from '+count+' frames without averaging the moving body',()=>{
     const {archive,track,cx,cy}=experiment();
     const e=archive.suspension!;
     e.refinement=protocol;
+    if(protocol==='SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2')e.contactReviews=[0,1].map(()=>({
+      referenceKind:'FIXED_CORD_CONTACT',loopMotion:'MOVING',reason:'Directly visible cord contact; lower loop moves.'}));
     e.points=Array.from({length:count},(_,frame)=>({frame,visible:true,x:500,y:150,confidence:.95}));
     e.consensus={status:'CONSENSUS_ESTIMATE',camera:'STATIC',inlierOrdinals:e.points.map(p=>p.frame),
       submitted:count,usable:count,timeCoverage:1,x:500,y:150,spreadPixels:0};
@@ -40,6 +42,15 @@ describe('Automatic Spark/SAM suspension estimates',()=>{
     e.consensus.inlierOrdinals=e.points.filter(p=>p.frame%5!==0).map(p=>p.frame);
     const robust=resolveSamSuspension(archive,track);
     expect(robust.pivot).not.toBeNull();expect(robust.rejectedAnchorFrames?.length).toBe(count/5);
+    if(e.contactReviews) {
+      e.contactReviews[1].referenceKind='MOVING_CONTACT';
+      expect(resolveSamSuspension(archive,track).reason).toBe('MOVING_CORD_CONTACT');
+      e.contactReviews[1].referenceKind='UNRESOLVED';
+      expect(resolveSamSuspension(archive,track).reason).toBe('CORD_CONTACT_UNRESOLVED');
+      e.contactReviews=[];
+      expect(resolveSamSuspension(archive,track).pivot).toBeNull();
+      e.contactReviews=[0,1].map(()=>({referenceKind:'FIXED_CORD_CONTACT',loopMotion:'MOVING',reason:'Visible contact.'}));
+    }
     e.consensus.status='ZOOM_REVIEW_INCONCLUSIVE';
     expect(resolveSamSuspension(archive,track).pivot).toBeNull();
     e.consensus.status='CONSENSUS_ESTIMATE';

@@ -119,7 +119,7 @@ interface SamAdaptiveReport {
                   <small class="sam-meta-estimate">{{es?'1 solicitud SAM · video completo':'1 SAM request · complete video'}} ·
                     {{es?'cuadros facturables':'billable frames'}}: {{aq.billableFrames}}</small>
                   @if(aq.requiresNewSparkCall) {
-                    <small class="sam-meta-estimate">{{es?'Incluye Spark estimado US$ ':'Includes Spark estimated US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{groundingQuote()?.localizationPlan==='SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1'?(es?'50 originales + 50 ×1,5 + 50 ×3 y revisión del objeto':'50 originals + 50 ×1.5 + 50 ×3 and object review'):(es?'para localizar y verificar el objeto':'to locate and verify the object')}}</small>
+                    <small class="sam-meta-estimate">{{es?'Incluye Spark estimado US$ ':'Includes Spark estimated US$ '}}{{groundingQuote()?.maximumEstimatedCostUsd?.toFixed(2)}} · {{['SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1','SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2'].includes(groundingQuote()?.localizationPlan??'')?(es?'50 originales + 50 ×1,5 + 50 ×3 y revisión del objeto':'50 originals + 50 ×1.5 + 50 ×3 and object review'):(es?'para localizar y verificar el objeto':'to locate and verify the object')}}</small>
                   }
                 }
                 @if(!freeCacheAvailable() && !reviewOnlyRequired() && reviewBudget()>0) {
@@ -568,7 +568,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         const match=/^round-([23])-(.+)$/.exec(s.key)!;
         const zoom=match[1]==='2'?'1.5':'3';
         const zoomNames=[['zoom-references',`Preparar 50 imágenes ×${zoom}`,`Prepare 50 images ×${zoom}`],
-          ['zoom-inference',`Revisar nudo ×${zoom}`,`Review cord exit ×${zoom}`],['zoom-verify','Validar acercamiento','Validate zoom review']];
+          ['zoom-inference',`Revisar contacto ×${zoom}`,`Review cord contact ×${zoom}`],['zoom-verify','Validar acercamiento','Validate zoom review']];
         const name=[...names,...zoomNames].find(n=>n[0]===match[2]);
         return [s.key,`Ronda ${match[1]} · ${name?.[1]??match[2]}`,`Round ${match[1]} · ${name?.[2]??match[2]}`];
       });

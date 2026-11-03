@@ -118,14 +118,11 @@ describe('One-clock three-view pendulum laboratory',()=>{
     fixture.componentRef.setInput('presentation','understand');fixture.detectChanges();
     const root=fixture.nativeElement as HTMLElement;
     const panel=root.querySelector('app-sam-period-panel')!;
-    const interpretation=panel.querySelector('app-muse-investigator')!;
+    const interpretation=root.querySelector('.player-evidence app-muse-investigator')!;
     expect(interpretation).not.toBeNull();
-    expect(panel.querySelector('.metrics')!.compareDocumentPosition(interpretation)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(interpretation.compareDocumentPosition(panel.querySelector('.quality')!.closest('details')!)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    http.expectNone(r=>r.url.includes('/muse'));
-    const button=Array.from(interpretation.querySelectorAll('button'))
-      .find(b=>b.textContent?.includes('Ver interpretación de Muse Spark'))!;
-    expect(button).toBeDefined();button.click();
+    expect(panel.compareDocumentPosition(interpretation)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The interpretation now lives beside the player and restores automatically.
+    // Recovery is a read; it must never silently submit another paid inference.
     const endpoint='http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+study+'/muse';
     const request=http.expectOne(endpoint);expect(request.request.method).toBe('GET');
     const prediction={studyId:study,observationId:'saved-observation',responseId:'saved-receipt',
@@ -881,6 +878,10 @@ describe('One-clock three-view pendulum laboratory',()=>{
     component.pivotRevision.set(revision);
     expect(component.periodSource()?.pivotProvenance).toBe(revision.pivotProvenance);
     expect(component.playbackSamTrack()?.masks.length).toBe(1);
+    component.automaticSuspension.set({...component.automaticSuspension()!,pivot:null,reason:'MOVING_CORD_CONTACT'});
+    expect(component.automaticGeometryNote()).toContain('se desplaza');
+    component.automaticSuspension.set({...component.automaticSuspension()!,reason:'CORD_CONTACT_UNRESOLVED'});
+    expect(component.automaticGeometryNote()).toContain('lazo móvil');
     component.automaticSuspension.set(null);
     component.scene.set(null);component.pivotRevision.set(revision);
     component.pivotRevision.set({...revision,revisionId:'new-pivot',

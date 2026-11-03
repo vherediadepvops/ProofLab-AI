@@ -59,7 +59,7 @@ public sealed partial class AssemblyLocator
     private async Task<AssemblyEvidence?> ReadDenseLocalization(string root,AssemblyEvidence first,CancellationToken ct)
     {
         var kind=await Read<DenseAttempt>(Path.Combine(root,"dense-localization-attempt.json"),ct);
-        if(kind.Protocol==ProgressiveSuspensionPolicy.Protocol)return await ReadProgressiveSuspension(root,first,ct);
+        if(ProgressiveSuspensionPolicy.Supports(kind.Protocol))return await ReadProgressiveSuspension(root,first,ct);
         var finalPath=Path.Combine(root,"reviewed-evidence.json");var manifestPath=Path.Combine(root,"dense-localization.json");
         if(!File.Exists(finalPath)||!File.Exists(manifestPath))return null;
         var start=await Read<DenseAttempt>(Path.Combine(root,"dense-localization-attempt.json"),ct);

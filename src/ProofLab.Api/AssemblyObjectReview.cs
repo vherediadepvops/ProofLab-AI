@@ -17,9 +17,9 @@ public sealed partial class AssemblyLocator
         var evidencePath=Path.Combine(root,dense?"body-reviewed-evidence.json":"reviewed-evidence.json");
         if(!File.Exists(evidencePath))return null;
         var attempt=await Read<ObjectReviewAttempt>(Path.Combine(root,"object-review-attempt.json"),ct);
-        if(attempt.Protocol is not (ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or ObjectReviewPolicy.LegacyProtocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol) || attempt.SourceSha256!=draft.VideoSha256 ||
+        if(attempt.Protocol is not (ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or ObjectReviewPolicy.LegacyProtocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol) || attempt.SourceSha256!=draft.VideoSha256 ||
             attempt.DraftResponseSha256!=draft.ResponseSha256 || attempt.EvidenceKey!=draft.CacheKey ||
-            dense!=(attempt.Protocol is ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol) ||
+            dense!=(attempt.Protocol is ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol) ||
             attempt.References.Length is <2 or >16 || attempt.References.Select(x=>x.Ordinal).Distinct().Count()!=attempt.References.Length)
             throw new InvalidDataException("Visual review provenance changed.");
         foreach(var r in attempt.References) {
@@ -31,7 +31,7 @@ public sealed partial class AssemblyLocator
         }
         var cropped=attempt.References.Where(r=>r.SuspensionCrop is not null).ToArray();
         if((attempt.Protocol is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol && cropped.Length!=3) ||
-            (attempt.Protocol is ObjectReviewPolicy.LegacyProtocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol && cropped.Length!=0))throw new InvalidDataException("Crop protocol mismatch.");
+            (attempt.Protocol is ObjectReviewPolicy.LegacyProtocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol && cropped.Length!=0))throw new InvalidDataException("Crop protocol mismatch.");
         foreach(var r in cropped) {
             var expected=ObjectReviewPolicy.Crop(r.Frame,ObjectReviewPolicy.CoarseSuspension(draft,r.Ordinal));
             if(r.SuspensionCrop! with {Sha256=""}!=expected ||
@@ -39,8 +39,8 @@ public sealed partial class AssemblyLocator
                 throw new InvalidDataException("Suspension crop geometry or pixels changed.");
         }
         var bodies=attempt.References.Where(r=>r.BodyCrop is not null).ToArray();
-        if((attempt.Protocol is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol && bodies.Length!=attempt.References.Length) ||
-            (attempt.Protocol is not (ObjectReviewPolicy.Protocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol) && bodies.Length!=0))throw new InvalidDataException("Body crop protocol mismatch.");
+        if((attempt.Protocol is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol && bodies.Length!=attempt.References.Length) ||
+            (attempt.Protocol is not (ObjectReviewPolicy.Protocol or ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol) && bodies.Length!=0))throw new InvalidDataException("Body crop protocol mismatch.");
         foreach(var r in bodies) {
             var expected=ObjectReviewPolicy.BodyRegion(r.Frame,r.Candidate);
             if(r.BodyCrop! with {Sha256=""}!=expected || await FileHash(Path.Combine(root,$"body-{r.Ordinal}.jpg"),ct)!=r.BodyCrop.Sha256)
@@ -125,7 +125,7 @@ public sealed partial class AssemblyLocator
         }
         images.AddRange(cropBytes);
         ct.ThrowIfCancellationRequested();runtime.ReserveOrThrow(token);
-        await Save(Path.Combine(root,"object-review-attempt.json"),new ObjectReviewAttempt(dense?(draft.Derivation==ProgressiveSuspensionPolicy.Protocol?ProgressiveSuspensionPolicy.BodyProtocol:ObjectReviewPolicy.DenseBodyProtocol):ObjectReviewPolicy.Protocol,video.Sha256,
+        await Save(Path.Combine(root,"object-review-attempt.json"),new ObjectReviewAttempt(dense?(draft.Derivation==ProgressiveSuspensionPolicy.Protocol?ProgressiveSuspensionPolicy.BodyProtocol:draft.Derivation==ProgressiveSuspensionPolicy.LegacyProtocol?ProgressiveSuspensionPolicy.LegacyBodyProtocol:ObjectReviewPolicy.DenseBodyProtocol):ObjectReviewPolicy.Protocol,video.Sha256,
             draft.ResponseSha256,draft.CacheKey,references.ToArray(),DateTimeOffset.UtcNow,ObjectReviewPolicy.EstimatedCostUsd),CancellationToken.None);
         // No retries. Preserve any completed raw response before validation or SAM submission.
         using var deadline=new CancellationTokenSource(TimeSpan.FromMinutes(4));

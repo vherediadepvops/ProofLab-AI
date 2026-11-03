@@ -133,7 +133,7 @@ public sealed class AssemblyTests
             ZoomCalls++;ZoomScales.Add(zoom);Assert.Equal(50,refs.Length);Assert.Equal(50,images.Length);
             if(FailOnZoom==ZoomCalls)throw new HttpRequestException("Synthetic zoom transport failure");
             double y=ZoomDisagree&&zoom==3?200:133.3;
-            var text=JsonSerializer.Serialize(new {camera="STATIC",points=refs.Select(r=>new {frame=r.Ordinal,visible=!ZoomHidden,
+            var text=JsonSerializer.Serialize(new {camera="STATIC",reference_kind="FIXED_CORD_CONTACT",loop_motion="MOVING",contact_reason="Visible stationary cord contact; the lower loop swings independently.",points=refs.Select(r=>new {frame=r.Ordinal,visible=!ZoomHidden,
                 x=ZoomHidden?0:(500*r.Frame.Width/1000-r.Crop.Left)*1000/r.Crop.Width,
                 y=ZoomHidden?0:(y*r.Frame.Height/1000-r.Crop.Top)*1000/r.Crop.Height,
                 confidence=ZoomHidden?0:.95,visual_reason="Visible free cord exit from its fixed upper support."})});
@@ -841,12 +841,37 @@ public sealed class AssemblyTests
         Assert.Equal(DenseLocalizationPolicy.Protocol,(await f.Open().SuspensionAsync("s","baseline",scene,Ct))!.Refinement);
         Assert.Equal(4,f.Runtime.Reservations);
     }
+    [Theory]
+    [InlineData("FIXED_CORD_CONTACT","CONSENSUS_ESTIMATE")]
+    [InlineData("MOVING_CONTACT","MOVING_CORD_CONTACT")]
+    [InlineData("UNRESOLVED","CORD_CONTACT_UNRESOLVED")]
+    public async Task MovingLoopDoesNotProveMovingOrFixedEffectiveContact(string kind,string status) {
+        using var f=new Fixture();await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var first=JsonSerializer.Deserialize<AssemblyEvidence>(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"evidence.json")),new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        var medium=ProgressiveSuspensionPolicy.Parse(ZoomAnswer(ZoomReferences()),ZoomReferences());
+        var close=medium with {Contact=new(kind,"MOVING","Inspect the actual cord/support contact, independently of the moving loop.")};
+        var receipt=new KnotProviderResult("synthetic", "offline",100,50);
+        var result=ProgressiveSuspensionPolicy.Combine(first,medium,close,receipt,receipt);
+        Assert.Equal(status,result.Proposal.Consensus!.Status);
+        Assert.Equal(2,result.Proposal.ContactReviews!.Length);
+        if(kind!="FIXED_CORD_CONTACT")Assert.Null(result.Proposal.Suspension.X);
+        else Assert.NotNull(result.Proposal.Suspension.X);
+        var saved=(await f.Open().SuspensionAsync("s","baseline",AssemblyPolicy.Ground((await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct)).Evidence!)!,Ct))!;
+        Assert.Equal(2,saved.ContactReviews!.Length);
+    }
+    [Fact] public void LegacyCoordinatesRemainReadableButCannotMasqueradeAsContactReview() {
+        var refs=ZoomReferences();var json=System.Text.Json.Nodes.JsonNode.Parse(ZoomAnswer(refs))!.AsObject();
+        json.Remove("reference_kind");json.Remove("loop_motion");json.Remove("contact_reason");
+        var legacy=ProgressiveSuspensionPolicy.Parse(json.ToJsonString(),refs,ProgressiveSuspensionPolicy.LegacyProtocol);
+        Assert.Null(legacy.Contact);Assert.Equal(50,legacy.Points.Length);
+        Assert.Throws<KeyNotFoundException>(()=>ProgressiveSuspensionPolicy.Parse(json.ToJsonString(),refs));
+    }
     private static SuspensionZoomImage[] ZoomReferences(double zoom=1.5) =>Enumerable.Range(0,50).Select(i=> {
         var frame=new KnotFrame(i,i*.2,1080,1920,Sha);
         return new SuspensionZoomImage(i,frame,ProgressiveSuspensionPolicy.Crop(frame,new(i,true,458,134,.95),zoom));
     }).ToArray();
     private static string ZoomAnswer(SuspensionZoomImage[] refs,double x=440,double y=155)=>JsonSerializer.Serialize(new {
-        camera="STATIC",points=refs.Select(r=>new {frame=r.Ordinal,visible=true,
+        camera="STATIC",reference_kind="FIXED_CORD_CONTACT",loop_motion="MOVING",contact_reason="Visible stationary cord contact; the lower loop swings independently.",points=refs.Select(r=>new {frame=r.Ordinal,visible=true,
             x=(x*r.Frame.Width/1000-r.Crop.Left)*1000/r.Crop.Width,
             y=(y*r.Frame.Height/1000-r.Crop.Top)*1000/r.Crop.Height,
             confidence=.95,visual_reason="Free cord leaves the fixed support."})});

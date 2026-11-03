@@ -51,7 +51,11 @@ public static class MuseExperimentPolicy
         PENDULUM_COMPATIBLE is a conditional interpretation, not scientific proof.
         Periodic movement alone is insufficient: consider arc curvature around
         the supplied pivot, radius stability, direction reversals, missing data,
-        camera perspective and uncertainty. A locally computed residual is a
+        camera perspective and uncertainty. Contact reviews are AI observations, not ground truth.
+        Distinguish movement of a lower knot/loop from movement of the effective cord/support contact.
+        A moving or unresolved effective contact does not support a fixed-pivot pendulum calculation.
+        Never substitute the geometric center of a ruler/protractor or infer a pivot to rescue a result.
+        A locally computed residual is a
         diagnostic, not a classifier verdict. OTHER_MOTION needs positive contrary
         evidence; missing detections, an unresolved arc or a missing pivot are
         normally INCONCLUSIVE, not proof of another phenomenon.
@@ -176,7 +180,16 @@ public static class MuseExperimentPolicy
         var cycleCount=Math.Min(12,cycles.Length);
         var cycleSample=Enumerable.Range(0,cycleCount).Select(i=>
             cycles[cycleCount==1?0:(int)Math.Round(i*(cycles.Length-1d)/(cycleCount-1))].Clone()).ToArray();
+        SuspensionContactReview[]? contactReviews=null;
+        if(root.GetProperty("identity").TryGetProperty("automaticSuspension",out var suspension) &&
+            suspension.ValueKind==JsonValueKind.Object && suspension.TryGetProperty("contactReviews",out var contacts) &&
+            contacts.ValueKind==JsonValueKind.Array) {
+            if(contacts.GetArrayLength()!=2)throw new ArgumentException("Two authenticated contact reviews required.");
+            contactReviews=contacts.Deserialize<SuspensionContactReview[]>(Json)!;
+            contactReviews=contactReviews.Select(r=>r with {Reason=r.Reason[..Math.Min(r.Reason.Length,500)]}).ToArray();
+        }
         var json=JsonSerializer.Serialize(new {
+            contactReviews,
             protocol=Version,dataKind=root.TryGetProperty("dataKind",out var kind)?kind.GetString():"UNSPECIFIED",observationId=observation.Id,videoSha256=observation.VideoSha256,samAnalysisId=observation.AnalysisId,
             baselineLengthMeters=root.GetProperty("baselineLengthMeters"),
             lengthProvenance=root.GetProperty("lengthProvenance"),

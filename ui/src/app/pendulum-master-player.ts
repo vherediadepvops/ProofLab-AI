@@ -62,6 +62,12 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   });
   automaticGeometryNote():string {
     const estimate=this.automaticSuspension();
+    if(estimate?.reason==='MOVING_CORD_CONTACT')return this.es
+      ? 'El contacto de la cuerda con el soporte se desplaza. No se puede usar como pivote fijo.'
+      : 'The cord contact with the support moves. It cannot be used as a fixed pivot.';
+    if(estimate?.reason==='CORD_CONTACT_UNRESOLVED')return this.es
+      ? 'No se distingue un contacto fijo de la cuerda con el soporte. El lazo móvil no basta para ubicarlo.'
+      : 'A fixed cord contact with the support is unclear. The moving loop alone does not locate it.';
     if(!estimate?.pivot)return this.es
       ? 'Suspensión automática inconclusa: revisa el punto de salida de la cuerda y la estabilidad de la cámara.'
       : 'Automatic suspension is inconclusive: check the cord exit and camera stability.';

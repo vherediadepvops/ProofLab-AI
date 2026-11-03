@@ -160,8 +160,8 @@ public sealed partial class AssemblyLocator
             throw new InvalidDataException("Suspension scene mismatch.");
         return new(video.Sha256,scene.Key,evidence.CacheKey,evidence.ResponseSha256,evidence.Model,
             scene.Width,scene.Height,evidence.Proposal.Suspension.Points,
-            evidence.Derivation is ProgressiveSuspensionPolicy.Protocol or ProgressiveSuspensionPolicy.BodyProtocol?ProgressiveSuspensionPolicy.Protocol:evidence.Derivation==ObjectReviewPolicy.DenseBodyProtocol?DenseLocalizationPolicy.Protocol:evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
-            evidence.Proposal.Consensus);
+            ProgressiveSuspensionPolicy.Refinement(evidence.Derivation) is {} progressive?progressive:evidence.Derivation==ObjectReviewPolicy.DenseBodyProtocol?DenseLocalizationPolicy.Protocol:evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
+            evidence.Proposal.Consensus,evidence.Proposal.ContactReviews);
     }
     public async Task<SamSceneDefinition?> TrackingRunAsync(string id,string role,string runId,CancellationToken ct)
     {
@@ -184,8 +184,8 @@ public sealed partial class AssemblyLocator
         if(scene.Origin!=AssemblyPolicy.GroundingOrigin || scene.Arrangement!="simple_pendulum")return null;
         return new(video.Sha256,scene.Key,evidence.CacheKey,evidence.ResponseSha256,evidence.Model,
             scene.Width,scene.Height,evidence.Proposal.Suspension.Points,
-            evidence.Derivation is ProgressiveSuspensionPolicy.Protocol or ProgressiveSuspensionPolicy.BodyProtocol?ProgressiveSuspensionPolicy.Protocol:evidence.Derivation==ObjectReviewPolicy.DenseBodyProtocol?DenseLocalizationPolicy.Protocol:evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
-            evidence.Proposal.Consensus);
+            ProgressiveSuspensionPolicy.Refinement(evidence.Derivation) is {} progressive?progressive:evidence.Derivation==ObjectReviewPolicy.DenseBodyProtocol?DenseLocalizationPolicy.Protocol:evidence.Derivation is ObjectReviewPolicy.Protocol or ObjectReviewPolicy.SuspensionProtocol or DenseLocalizationPolicy.Protocol?evidence.Derivation:null,
+            evidence.Proposal.Consensus,evidence.Proposal.ContactReviews);
     }
     public Task<SamSceneDefinition?> TrackingAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,false);
     public Task<SamSceneDefinition?> TrackingForQuoteAsync(string id,string role,CancellationToken ct)=>TrackingCore(id,role,ct,true);

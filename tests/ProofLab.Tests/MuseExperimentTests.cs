@@ -347,6 +347,16 @@ public sealed class MuseExperimentTests
         Assert.True(input.Length<=16000);
     }
 
+    [Fact] public void MovingContactAssessmentReachesMuseWithoutBecomingHumanVerification() {
+        var o=DetailedObservation();var payload=System.Text.Json.Nodes.JsonNode.Parse(o.PayloadJson)!;
+        payload["identity"]!["automaticSuspension"]=System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new {
+            contactReviews=Enumerable.Range(0,2).Select(_=>new SuspensionContactReview("MOVING_CONTACT","MOVING",new string('a',900)))},Json));
+        using var input=JsonDocument.Parse(MuseExperimentPolicy.BuildInput(o with {PayloadJson=payload.ToJsonString()}));
+        var root=input.RootElement;Assert.False(root.GetProperty("pivotIndependentlyVerified").GetBoolean());
+        var rows=root.GetProperty("contactReviews");Assert.Equal(2,rows.GetArrayLength());
+        Assert.Equal("MOVING_CONTACT",rows[0].GetProperty("referenceKind").GetString());
+        Assert.Equal(500,rows[0].GetProperty("reason").GetString()!.Length);
+    }
     [Fact] public void EmptySamEvidenceReachesSparkButCannotCertifyAnotherPhenomenon()
     {
         var o=DetailedObservation(empty:true);

@@ -40,8 +40,14 @@ export function resolveSamSuspension(
     e.evidenceKey!==s.evidenceKey||e.responseSha256!==s.responseSha256||
     e.model!=='muse-spark-1.3'||e.width!==track.frameWidth||e.height!==track.frameHeight||
     e.width!==s.width||e.height!==s.height)return none('SUSPENSION_PROVENANCE_MISMATCH');
+  if(e.refinement==='SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2') {
+    const reviews=e.contactReviews;
+    if(reviews?.some(r=>r.referenceKind==='MOVING_CONTACT'))return none('MOVING_CORD_CONTACT');
+    if(!reviews || reviews.length!==2 || reviews.some(r=>r.referenceKind!=='FIXED_CORD_CONTACT' || !r.reason?.trim()))
+      return none('CORD_CONTACT_UNRESOLVED');
+  }
   let anchors=e.points;
-  const dense=['SPARK_DENSE_OBJECT_AND_EXIT_50_V1','SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1'].includes(e.refinement??'');
+  const dense=['SPARK_DENSE_OBJECT_AND_EXIT_50_V1','SPARK_PROGRESSIVE_EXIT_50_X1_5_X3_V1','SPARK_PROGRESSIVE_CONTACT_50_X1_5_X3_V2'].includes(e.refinement??'');
   const visuallyRefined=dense || ['SPARK_VISUAL_OBJECT_AND_EXIT_CROP_V2','SPARK_VISUAL_BODY_AND_EXIT_CROPS_V3'].includes(e.refinement??'');
   const anchorLimit=Math.max(3,Math.min(e.width,e.height)*(visuallyRefined?.005:.04));
   const rejectedAnchorFrames:number[]=[];

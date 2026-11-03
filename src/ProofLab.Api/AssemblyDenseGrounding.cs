@@ -31,7 +31,10 @@ public static partial class AssemblyPolicy {
         Also inspect the suspension in EVERY reference: exactly 50 points in ordinal order 0..49,
         each [frame,visible(1 or 0),x,y,confidence]. Invisible/unclear: zeros after frame.
         Locate the fixed point where the free moving string exits its upper support. NOT the object's attachment,
-        knot center, protractor center or a point inferred by symmetry. Mark unclear/occluded locations invisible.
+        knot center, protractor center or a point inferred by symmetry. A lower loop/knot may swing while
+        the actual cord/support contact stays fixed. Follow the loaded cord to the contact; never
+        substitute a fixed structure point above a flexible joint. If that effective contact slides,
+        is hidden, or cannot be separated from a deforming loop, mark it invisible.
         Evaluate each image independently; do not copy or average coordinates across images.
         camera: STATIC if the camera/support is stable across the video, MOVING if it moves, UNCLEAR otherwise.
         These are image estimates, not a physical center of mass or scientific approval.
