@@ -64,13 +64,22 @@ public sealed class Mp4PresentationTimeline
             !sampleSizes.SequenceEqual(SampleSizes(movie.Data, layout.Sizes))) return false;
         // Fixed-size replacements keep every chunk offset and media byte intact.
         // Validate the complete plan before modifying even the in-memory movie.
-        if (targetEdit.Length != edit.Length || layout.DecodeTimes.Length != decodeTimes.Length ||
+        if (targetEdit.Length != edit.Length ||
             (compositionTimes is null) != (layout.CompositionTimes is null) ||
             (compositionTimes is not null && layout.CompositionTimes!.Value.Length != compositionTimes.Length)) return false;
-        ValidateRuns(Payload(movie.Data, layout.DecodeTimes), sampleSizes.Length);
+        var targetDecodeTimes = Payload(movie.Data, layout.DecodeTimes);
+        ValidateRuns(targetDecodeTimes, sampleSizes.Length);
         if (layout.CompositionTimes is {} targetCtts) ValidateRuns(Payload(movie.Data, targetCtts), sampleSizes.Length);
+        bool replaceDecodeTimes = layout.DecodeTimes.Length == decodeTimes.Length;
+        // FFmpeg 6 can change the final sample duration and merge its stts run.
+        // That duration does not determine any sample's DTS/PTS. Keep the target
+        // table only if every preceding delta is identical and the original edit
+        // clips any changed final duration. Never accept an interior/visible shift.
+        if (!replaceDecodeTimes &&
+            (!SameDecodeStarts(decodeTimes, targetDecodeTimes, sampleSizes.Length) ||
+             !SameVisibleEnding(targetDecodeTimes))) return false;
         edit.CopyTo(movie.Data, targetEdit.Data);
-        decodeTimes.CopyTo(movie.Data, layout.DecodeTimes.Data);
+        if (replaceDecodeTimes) decodeTimes.CopyTo(movie.Data, layout.DecodeTimes.Data);
         if (compositionTimes is not null) compositionTimes.CopyTo(movie.Data, layout.CompositionTimes!.Value.Data);
         WriteDuration(movie.Data, layout.MovieHeader, false, editDuration);
         WriteDuration(movie.Data, layout.TrackHeader, true, editDuration);
@@ -202,6 +211,42 @@ public sealed class Mp4PresentationTimeline
         ulong total = 0;
         for (int i = 0; i < count; i++) { uint n = U32(raw, 8 + i * 8); if (n == 0) throw Invalid(); total += n; }
         if (total != (uint)samples) throw Invalid();
+    }
+    private static bool SameDecodeStarts(byte[] source, byte[] target, int samples)
+    {
+        int sourceRun = 8, targetRun = 8;
+        uint sourceLeft = U32(source, sourceRun), targetLeft = U32(target, targetRun);
+        int remaining = samples - 1;
+        while (remaining > 0)
+        {
+            if (U32(source, sourceRun + 4) != U32(target, targetRun + 4)) return false;
+            uint take = Math.Min((uint)remaining, Math.Min(sourceLeft, targetLeft));
+            remaining -= (int)take; sourceLeft -= take; targetLeft -= take;
+            if (remaining == 0) break;
+            if (sourceLeft == 0) { sourceRun += 8; sourceLeft = U32(source, sourceRun); }
+            if (targetLeft == 0) { targetRun += 8; targetLeft = U32(target, targetRun); }
+        }
+        return true;
+    }
+    private bool SameVisibleEnding(byte[] targetDecodeTimes)
+    {
+        uint sourceLast = U32(decodeTimes, decodeTimes.Length - 4);
+        uint targetLast = U32(targetDecodeTimes, targetDecodeTimes.Length - 4);
+        // Different run partitions with the same durations need no clipping.
+        if (sourceLast == targetLast) return true;
+        Int128 lastDts = -((Int128)sourceLast);
+        for (int offset = 8; offset < decodeTimes.Length; offset += 8)
+            lastDts += (Int128)U32(decodeTimes, offset) * U32(decodeTimes, offset + 4);
+        // QuickTime also writes signed CTS offsets in version-0 tables. Treating
+        // a large unsigned offset conservatively as negative can only reject it.
+        int lastCts = compositionTimes is null ? 0 :
+            unchecked((int)U32(compositionTimes, compositionTimes.Length - 4));
+        Int128 earlierEnd = lastDts + lastCts + Math.Min(sourceLast, targetLast);
+        int width = edit[0] == 1 ? 8 : 4;
+        Int128 editStart = ReadNumber(edit, 8 + width, width);
+        // Cross-multiply in 128 bits: no rounding at a fractional edit endpoint,
+        // and no overflow for version-1 edit durations or differing timescales.
+        return (earlierEnd - editStart) * MovieTimescale >= (Int128)editDuration * MediaTimescale;
     }
     private static uint U32(byte[] bytes, int offset) => (uint)ReadNumber(bytes, offset, 4);
     private static ulong ReadNumber(byte[] bytes, int offset, int width)

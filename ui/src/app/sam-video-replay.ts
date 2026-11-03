@@ -498,14 +498,34 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private reviewFailed=false;
   readonly sparkStages=signal<{key:string;state:string;elapsedMs:number;percent:number|null}[]>([]);
   private sparkPoll:ReturnType<typeof setInterval>|null=null;
+  private sparkPollRequest=0;
+  private sparkPollApplied=0;
   private async pollSpark():Promise<void> {
     if(!this.http || !this.stageTraceStarted() || !this.sparkWasNeeded)return;
-    const url=this.groundingUrl(),started=this.traceStartedAt;
+    const url=this.groundingUrl(),started=this.traceStartedAt,request=++this.sparkPollRequest;
     try {const p=await firstValueFrom(this.http.get<{startedAtUtc:string;stages:{key:string;state:string;elapsedMs:number;percent:number|null}[]}>(url+'/progress').pipe(timeout(5000)));
-      if(url===this.groundingUrl() && started===this.traceStartedAt && Date.parse(p.startedAtUtc)>=started-1000)this.sparkStages.set(p.stages);
+      if(url===this.groundingUrl() && started===this.traceStartedAt && Date.parse(p.startedAtUtc)>=started-1000 && request>this.sparkPollApplied){
+        this.sparkPollApplied=request;this.sparkStages.set(p.stages);
+      }
     }catch{/* Read-only progress cannot cause another provider call. */}
   }
   private stopSparkPoll():void {if(this.sparkPoll!==null)clearInterval(this.sparkPoll);this.sparkPoll=null;}
+
+  private groundingFailureMessage():string {
+    const stages=this.sparkStages();
+    // Only a terminal local-stage failure proves that this attempt stopped
+    // before transfer. Missing or still-running progress is not such evidence.
+    const transferred=stages.some(s=>!['prepare','references'].includes(s.key) && s.state!=='NOT_STARTED');
+    if(!transferred && stages.some(s=>s.key==='prepare' && s.state==='FAILED'))return this.es?
+      'No se pudo preparar el video para el análisis. No se enviaron datos a Spark ni a SAM en este intento.':
+      'The video could not be prepared for analysis. No data was sent to Spark or SAM in this attempt.';
+    if(!transferred && stages.some(s=>s.key==='references' && s.state==='FAILED'))return this.es?
+      'No se pudieron extraer las imágenes del video. No se enviaron datos a Spark ni a SAM en este intento.':
+      'The video images could not be extracted. No data was sent to Spark or SAM in this attempt.';
+    return this.es?
+      'No se pudo completar o validar la revisión de Spark. SAM no se envió; revisa la etapa que falló antes de otro intento.':
+      'Spark review could not be completed or validated. SAM was not sent; review the failed stage before another attempt.';
+  }
 
   private viewStartedAt=0;
   private viewFinishedAt=0;
@@ -1365,7 +1385,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.processingReset.emit();this.beginProcessing();this.sending.set(true);
     this.error.set('');this.adaptiveProgress.set(null);this.adaptiveResult.set(null);
     this.startStageTrace();
-    let opened=false;
+    let opened=false,sparkFailureProgressRead=false;
     try {
       if(quote.requiresNewSparkCall){
         if(!spark || !spark.canRun)throw Error('SPARK_NOT_READY');
@@ -1445,6 +1465,11 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       await this.interpretAfterSam(selection,token,current);
       if(current())this.cacheUpdated.emit(selection);
     }catch(e){
+      if(current() && this.processingPhase()==='grounding'){
+        sparkFailureProgressRead=true;
+        this.stopSparkPoll();
+        await this.pollSpark(); // Read the terminal stage, never retry the provider.
+      }
       if(current()){
         const code=e instanceof Error?e.message:'';
         this.error.set(this.singleVideoLimitError(e) ?? (code==='BATCH_ID_MISMATCH'?(this.es?
@@ -1453,9 +1478,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           code==='SEGMENT_QUOTE_CHANGED'?(this.es?
           'Spark terminó, pero cambió el presupuesto o la evidencia. SAM no se envió; actualiza el costo.':
           'Spark finished, but the quote or evidence changed. SAM was not sent; refresh the cost.'):
-          this.processingPhase()==='grounding'?(this.es?
-          'No se pudo completar o validar la revisión de Spark. SAM no se envió; revisa la etapa que falló antes de otro intento.':
-          'Spark review could not be completed or validated. SAM was not sent; review the failed stage before another attempt.'):
+          this.processingPhase()==='grounding'?this.groundingFailureMessage():
           (this.adaptiveResult()?.automaticRetryOfBatchId || this.adaptiveResult()?.automaticRetryBatchId)?(this.es?
           'El reintento con el video completo también quedó inconcluso. No se harán más envíos automáticos. Puedes reproducir el original; los gráficos quedan pendientes.':
           'The whole-video retry was also inconclusive. No further automatic requests will be made. Original playback is available; overlays remain pending.'):
@@ -1464,7 +1487,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         this.failProcessing();
       }
     }finally{
-      void this.pollSpark();this.stopSparkPoll();
+      if(!sparkFailureProgressRead)void this.pollSpark();
+      this.stopSparkPoll();
       if(this.adaptivePollHandle!==null)clearInterval(this.adaptivePollHandle);
       this.adaptivePollHandle=null;this.sending.set(false);
       if(!opened || !current())this.finishProcessing();

@@ -99,6 +99,43 @@ describe('One complete-video SAM request and archived-result recovery',()=>{
   x.h.expectOne(root+'/assembly/baseline/grounding/progress').flush({startedAtUtc:'2000-01-01T00:00:00Z',stages:[]});await stale;
   expect(x.c.sparkStages().length).toBe(1);x.h.expectNone(r=>r.method==='POST');x.f.destroy();
  });
+ it('keeps terminal progress when an older poll returns after it',async()=>{
+  const x=setup();await check(x);(x.c as any).startStageTrace();(x.c as any).pollSpark.and.callThrough();
+  const first=(x.c as any).pollSpark(),second=(x.c as any).pollSpark();
+  const reads=x.h.match(root+'/assembly/baseline/grounding/progress');expect(reads.length).toBe(2);
+  const startedAtUtc=new Date().toISOString();
+  reads[1].flush({startedAtUtc,stages:[{key:'prepare',state:'FAILED',elapsedMs:36000,percent:null}]});await second;
+  reads[0].flush({startedAtUtc,stages:[{key:'prepare',state:'IN_PROGRESS',elapsedMs:35000,percent:null}]});await first;
+  expect(x.c.sparkStages()[0].state).toBe('FAILED');x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('reads the final local failure and distinguishes preparation from image extraction in both languages',async()=>{
+  for(const language of ['es','en'])for(const stage of ['prepare','references']){
+   const x=setup();x.f.componentRef.setInput('language',language);x.f.detectChanges();await check(x);
+   (x.c as any).pollSpark.and.callThrough();
+   const p=x.c.process();
+   x.h.expectOne(url+'/spark-once').flush({error:'Spark full-video provenance mismatch.'},{status:409,statusText:'Conflict'});await tick();
+   x.h.expectOne(root+'/assembly/baseline/grounding/progress').flush({startedAtUtc:new Date().toISOString(),
+    stages:[{key:'prepare',state:stage==='prepare'?'FAILED':'COMPLETED',elapsedMs:36000,percent:null},
+     {key:'references',state:stage==='references'?'FAILED':'NOT_STARTED',elapsedMs:0,percent:null}]});
+   await p;
+   expect(x.c.error()).toContain(language==='es'?(stage==='prepare'?'preparar el video':'extraer las imágenes'):
+    (stage==='prepare'?'prepared for analysis':'images could not be extracted'));
+   expect(x.c.error()).toContain(language==='es'?'No se enviaron datos a Spark ni a SAM':'No data was sent to Spark or SAM');
+   expect(x.c.processing()).toBeFalse();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+  }
+ });
+ it('does not infer a local-only failure when final progress is unavailable or a transfer already began',async()=>{
+  for(const progress of [null,{key:'upload',state:'IN_PROGRESS',elapsedMs:100,percent:10}]){
+   const x=setup();await check(x);(x.c as any).pollSpark.and.callThrough();const p=x.c.process();
+   x.h.expectOne(url+'/spark-once').flush({error:'Failed'},{status:409,statusText:'Conflict'});await tick();
+   const read=x.h.expectOne(root+'/assembly/baseline/grounding/progress');
+   if(progress)read.flush({startedAtUtc:new Date().toISOString(),stages:[
+    {key:'prepare',state:'FAILED',elapsedMs:100,percent:null},progress]});
+   else read.flush({},{status:503,statusText:'Unavailable'});
+   await p;expect(x.c.error()).toContain('completar o validar la revisión de Spark');
+   expect(x.c.error()).not.toContain('No se enviaron datos a Spark ni a SAM');x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+  }
+ });
  it('automatically interprets verified baseline SAM once with the disclosed Muse cost and no second video upload',async()=>{
   const x=setup();x.f.componentRef.setInput('autoMuseAfterSam',true);x.f.detectChanges();
   await check(x,exact,located);

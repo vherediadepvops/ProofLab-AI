@@ -202,8 +202,8 @@ public sealed class VideoMediaDecoder : IKnotFrames, IVideoTimingReader
         var file=new FileInfo(mp4File);
         if(!file.Exists || file.Length is < 10_000 or > 240_000_000)
             throw new InvalidDataException("Invalid private SAM MP4 copy.");
-        // Retain original edit/CTS semantics only when every sample size and table
-        // shape matches. Callers still verify decoded PTS and geometry before Meta.
+        // Retain original edit/CTS semantics when samples and decode starts match.
+        // Callers still verify decoded PTS and geometry before Meta.
         timeline?.Restore(mp4File);
     }
 
