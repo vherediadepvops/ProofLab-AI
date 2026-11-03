@@ -1,5 +1,5 @@
 import { apiOrigin } from './api-origin';
-import {Component,OnChanges,OnDestroy,inject,input,output,signal,computed} from '@angular/core';
+import {Component,OnChanges,OnDestroy,SimpleChanges,inject,input,output,signal,computed} from '@angular/core';
 import {HttpClient,HttpHeaders} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
 import {LabConnection} from './lab-connection';
@@ -191,7 +191,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     case 'OUTSIDE_PREDECLARED_BAND':return this.es?'Fuera del margen de la predicción':'Outside the prediction tolerance';
     default:return this.es?'Contraste inconcluso':'Inconclusive comparison';}}
 
-  readonly busy=signal<'loading'|'preparing'|'evaluating'|null>(null);
+  readonly busy=signal<'loading'|'preparing'|'evaluating'|'freezing'|null>(null);
   readonly error=signal('');
   readonly downloading=signal(false);
   readonly downloadError=signal(false);
@@ -218,33 +218,43 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   }
   readonly headers=new HttpHeaders({'X-ProofLab-Manual-Action':'muse-research'});
   private readonly subscription=this.connection.changed.subscribe(()=>{
-    this.resetInterpretationContext();
-    if(!this.interpretationView())void this.load();
+    if(!this.resetInterpretationContext())return;
+    if(!this.interpretationView() || this.autoInterpretation()) {
+      if(this.interpretationView())this.interpretationOpened.set(true);
+      void this.load();
+    }
   });
   get es():boolean{return this.language()==='es';}
   text(value:Bilingual):string{return this.es?value.es:value.en;}
   url():string{return apiOrigin(this.connection.port())+'/api/science/director/pendulum/sessions/'+this.source().studyId+'/muse';}
   interpretationView():boolean{return this.view()==='interpretation';}
-  private resetInterpretationContext():void {
-    const key=JSON.stringify([this.connection.port(),this.source()]);
-    if(key===this.interpretationContext)return;
+  private contextKey():string {
+    const s=this.source();
+    return JSON.stringify([this.connection.port(),s.studyId,s.role,s.originalVideoSha256,
+      s.analysisId,s.providerResponseSha256,s.providerModel,s.objectId,
+      s.pivotRevisionId,s.pivotProvenance,s.adaptiveBatchId??null]);
+  }
+  private resetInterpretationContext():boolean {
+    const key=this.contextKey();
+    if(key===this.interpretationContext)return false;
     this.interpretationContext=key;this.serial++;
-    this.interpretationOpened.set(false);
+    this.interpretationOpened.set(false);this.reviewedPrediction.set(false);
     this.state.set(null);this.contrast.set(null);this.followupLength.set(null);
     this.busy.set(null);this.error.set('');this.downloadError.set(false);
+    return true;
   }
-  ngOnChanges():void {
-    const previous=this.interpretationContext;
-    this.resetInterpretationContext();
+  ngOnChanges(changes:SimpleChanges):void {
+    const changed=this.resetInterpretationContext();
+    // Presentation changes do not change scientific evidence or cancel its pending save.
     if(this.interpretationView()) {
-      // Only the Step 3 experience opts into automatic READ of the saved answer.
-      // This GET is not a provider inference and spends no Meta credits.
-      if(this.autoInterpretation() && (previous!==this.interpretationContext || !this.state())) {
-        this.interpretationOpened.set(true);this.interpretationTab.set('summary');
-        void this.load();
+      if(this.state())this.interpretationOpened.set(true);
+      if(this.autoInterpretation() && (changed || changes['view'] || changes['autoInterpretation'])) {
+        this.interpretationOpened.set(true);
+        if(!this.state())void this.load();
       }
-    } else {
-      this.reviewedPrediction.set(false);void this.load();
+    } else if(changed || changes['view']) {
+      if(this.state())this.frozen.emit(this.state()!.prediction);
+      else void this.load();
     }
   }
   async openInterpretation():Promise<void> {
@@ -259,16 +269,16 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
       state?.manualCallsPermitted!==false;
   }
   async consultMuse():Promise<void> {
-    // This explicit user action is the only entry to a paid call; merely mounting Understand remains read-free.
+    // This explicit user action is the only entry to a paid call; mounting Understand only recovers stored evidence.
     if(!this.canConsultMuse())return;
-    const context=JSON.stringify([this.connection.port(),this.source()]);
+    const context=this.contextKey();
     if(!this.interpretationOpened())await this.openInterpretation();
     else if(!this.state())await this.load();
     // No auto-retry of previous attempts, no calls for an older video/analysis or frozen proposal.
     if(!this.canConsultMuse() || !this.interpretationOpened() || !this.state() ||
-      JSON.stringify([this.connection.port(),this.source()])!==context)return;
+      this.contextKey()!==context)return;
     if(!this.interpretationObservationMatchesSource())await this.prepare();
-    if(JSON.stringify([this.connection.port(),this.source()])!==context || !this.canEvaluate())return;
+    if(this.contextKey()!==context || !this.canEvaluate())return;
     await this.evaluate();
   }
   async freezePrediction():Promise<void> {
@@ -278,19 +288,33 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
        s.prediction || s.evaluation.answer.decision!=='PROPOSE_EXPERIMENT' ||
        s.evaluation.answer.periodSeconds===null ||
        s.evaluation.answer.nextLengthMeters===null)return;
-    const serial=++this.serial;this.busy.set('preparing');this.error.set('');
+    const serial=++this.serial,url=this.url();this.busy.set('freezing');this.connection.busy.set(true);this.error.set('');
     try {
-      const frozen=await firstValueFrom(this.http.post<MuseState>(this.url()+'/freeze',{
+      const frozen=await firstValueFrom(this.http.post<MuseState>(url+'/freeze',{
         observationId:s.evaluation.observationId,responseId:s.evaluation.responseId
       },{headers:this.headers}));
       if(serial===this.serial && this.source().studyId===source.studyId &&
          frozen.prediction?.observationId===s.evaluation.observationId){
         this.accept(frozen);
       }
-    }catch{if(serial===this.serial)this.error.set(this.es?
-      'No se pudo congelar la predicción. Confirma primero la revisión del seguimiento y la evidencia actual.':
-      'Could not freeze the prediction. First confirm tracking review and current evidence.');}
-    finally{if(serial===this.serial)this.busy.set(null);}
+    }catch{
+      // A lost response may still have committed the immutable prediction. Reconcile with
+      // one read, never a second freeze or provider request.
+      if(serial===this.serial) {
+        try {
+          const recovered=await firstValueFrom(this.http.get<MuseState>(url));
+          if(serial===this.serial && recovered.prediction?.studyId===source.studyId &&
+             recovered.prediction.observationId===s.evaluation.observationId &&
+             recovered.prediction.responseId===s.evaluation.responseId) {
+            this.accept(recovered);return;
+          }
+        } catch {}
+        if(serial===this.serial)this.error.set(this.es?
+          'No se pudo confirmar el guardado de la predicción. Tus resultados siguen visibles; revisa el estado antes de continuar.':
+          'Could not confirm that the prediction was saved. Your results remain visible; check the status before continuing.');
+      }
+    }
+    finally{this.connection.busy.set(false);if(serial===this.serial)this.busy.set(null);}
   }
   ngOnDestroy():void{
     if(this.modelTimer!==null)clearInterval(this.modelTimer);
@@ -302,8 +326,11 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     if(!this.interpretationView())this.frozen.emit(state.prediction);
   }
   async load():Promise<void>{
-    if(this.busy()==='evaluating' || (this.interpretationView() && !this.interpretationOpened()))return;
-    const serial=++this.serial,url=this.url(),followup=this.isFollowup;this.busy.set('loading');this.error.set('');this.state.set(null);this.contrast.set(null);this.followupLength.set(null);
+    if(this.busy() || (this.interpretationView() && !this.interpretationOpened()))return;
+    const serial=++this.serial,url=this.url(),followup=this.isFollowup;
+    this.busy.set('loading');this.error.set('');
+    // Keep the current result visible while its server record is refreshed. Only a real
+    // source change clears it; a slow or failed GET must not look like lost evidence.
     try {
       const state=await firstValueFrom(this.http.get<MuseState>(url));
       if(serial===this.serial){this.accept(state);this.followupLength.set(this.prediction()?.nextLengthMeters??null);}

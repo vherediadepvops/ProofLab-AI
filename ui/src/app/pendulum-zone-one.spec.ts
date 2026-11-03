@@ -101,8 +101,11 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     for(const request of preparations)if(!request.cancelled)request.flush({
       sourceSha256:video.sha256,state:'READY',phase:'references',elapsedMs:1000,referenceFrames:50});
     const pending=http.match(req=>req.method==='GET' &&
-      (req.url.includes('/kinematics/') || req.url.includes('/sam/') || req.url.includes('/grounding/') || req.url.endsWith('/readiness')));
-    for(const request of pending)request.flush({error:'Synthetic unavailable result'},{status:404,statusText:'Not Found'});
+      (req.url.includes('/kinematics/') || req.url.includes('/sam/') || req.url.includes('/grounding/') || req.url.includes('/manual-stage-retry/') || req.url.endsWith('/readiness')));
+    for(const request of pending)if(!request.cancelled)request.flush({error:'Synthetic unavailable result'},{status:404,statusText:'Not Found'});
+    for(let i=0;i<6;i++)await Promise.resolve();
+    http.match(req=>req.method==='GET' && req.url.includes('/manual-stage-retry/quote'))
+      .forEach(req=>req.flush({}, {status:404,statusText:'No retry'}));
     for(let i=0;i<6;i++)await Promise.resolve();
     http.verify();
   }
@@ -452,7 +455,7 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     expect(passwordFields.length).toBe(1);expect(passwordFields[0].closest('dialog')).toBe(tokenDialog);
     expect((manual!.compareDocumentPosition(player!) &
       Node.DOCUMENT_POSITION_PRECEDING)).toBeTruthy(); // original video precedes its cost card
-    expect(root.textContent).toContain('Abrir configuración');
+    expect(root.textContent).not.toContain('Detalles técnicos');
     expect(component.presentation()).toBe('source');
     expect(root.querySelectorAll('.view-panel').length).toBe(4);
     expect(root.querySelector('[data-view="combined"]')?.classList.contains('is-primary')).toBeTrue();
@@ -649,7 +652,10 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       const ground={cacheKey:'e'.repeat(64),videoSha256:video.sha256,maximumEstimatedCostUsd:.25,
         mode:'api-meta',freshRequired:true,protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2',
         cacheHit:false,priorAttempt:false,canRun:true,status:'NEEDS_LOCALIZATION',scene:null};
-      http.expectOne(adaptiveUrl+'/spark-quote?mode=api-meta').flush(ground);await fixture.whenStable();
+      http.expectOne(adaptiveUrl+'/spark-quote?mode=api-meta').flush(ground);
+      for(let i=0;i<12;i++)await Promise.resolve();
+      http.match(adaptiveUrl+'/manual-stage-retry/quote').forEach(r=>r.flush({}, {status:404,statusText:'No retry'}));
+      await fixture.whenStable();
       const replay=fixture.debugElement.query(By.directive(SamVideoReplay)).componentInstance as SamVideoReplay;
       const player=fixture.debugElement.query(By.directive(PendulumMasterPlayer)).componentInstance as PendulumMasterPlayer;
       expect(component.originalRegistered()).toBeTrue();
@@ -669,6 +675,9 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
       if(failure==='HTTP_ERROR')request.flush({},{status:502,statusText:'Synthetic failure'});
       else if(failure==='NO_INFERENCE')request.flush({error:'GROUNDING_NO_INFERENCE_SENT_REVIEW_COST'},{status:409,statusText:'Conflict'});
       else request.flush({...ground,status:failure,canRun:false,scene:null});
+      for(let i=0;i<12;i++)await Promise.resolve();
+      http.match(req=>req.method==='GET' && req.url.includes('/grounding/') && req.url.endsWith('/progress'))
+        .forEach(req=>{if(!req.cancelled)req.flush({}, {status:404,statusText:'No progress'});});
       await pending;fixture.detectChanges();
       expect(failureEvents).toHaveBeenCalledTimes(1);expect(component.resultState()).toBe('error');
       expect(component.playbackReady()).toBeFalse();expect(root.querySelector('.viewer-loading')).toBeNull();
@@ -773,6 +782,44 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     http.expectNone(studyUrl+'/'+session.id+'/review-baseline');
     http.expectNone(r=>r.url.includes('/muse/evaluate')||r.url.includes('/sam/baseline/manual'));
     await verifyHttp(http);fixture.destroy();
+  });
+  it('shows review progress, ignores double clicks and keeps failures on Understand',async()=>{
+    const {component,http,fixture,root}=await init(false);
+    component.session.set({...session,baseline:video,humanReview:null});
+    component.flowStep.set(3);component.previewState.set('ready');component.checkedVideo.set(true);
+    spyOn(component,'hasVerifiedResult').and.returnValue(true);
+    component.playbackReady.set(true);
+    const next=component.continueToPrediction();
+    expect(component.advancingToPrediction()).toBeTrue();expect(component.flowBusy()).toBeTrue();
+    fixture.detectChanges();
+    expect(root.querySelector('.journey-advance-activity')?.textContent).toContain('Guardando revisión');
+    const button=root.querySelector('.verification-strip button') as HTMLButtonElement;
+    expect(button.disabled).toBeTrue();expect(button.textContent).toContain('Abriendo Predecir');
+    await component.continueToPrediction();
+    http.expectOne(studyUrl+'/'+session.id+'/review-baseline').flush({}, {status:503,statusText:'Unavailable'});
+    await next;fixture.detectChanges();
+    expect(component.advancingToPrediction()).toBeFalse();expect(component.flowStep()).toBe(3);
+    expect(component.error()).toContain('No se pudo registrar');
+    expect(root.querySelector('.journey-advance-activity')).toBeNull();
+    http.expectNone(r=>r.url.includes('/muse/evaluate'));await verifyHttp(http);fixture.destroy();
+  });
+  it('brings the destination into view and retains a frozen record across child remounts',async()=>{
+    const {component,http,fixture,root}=await init(false);
+    const prediction={studyId:session.id,observationId:'saved',responseId:'response',
+      frozenAtUtc:'2026-11-03T00:00:00Z',payloadJson:'{"prediction":{"nextLengthMeters":0.8}}',sha256:'a'.repeat(64)};
+    component.session.set({...session,baseline:video,humanReview:{bobConfirmed:true,reviewedAtUtc:'2026-11-03T00:00:00Z'}});
+    component.onResearchFrozen(prediction);component.onResearchFrozen(null);
+    component.onResearchFrozen({...prediction,studyId:'other'});
+    expect(component.frozenForStudy()).toEqual(prediction);expect(component.session()?.musePrediction).toEqual(prediction);
+    fixture.detectChanges();
+    const heading=root.querySelector('.journey-stage-heading') as HTMLElement;
+    const scroll=spyOn(heading,'scrollIntoView'),focus=spyOn(heading,'focus');
+    let frame:FrameRequestCallback|undefined;
+    spyOn(window,'requestAnimationFrame').and.callFake(callback=>{frame=callback;return 912;});
+    component.setJourneyStep(4);fixture.detectChanges();frame?.(0);
+    expect(component.flowStep()).toBe(4);expect(scroll).toHaveBeenCalledWith({block:'start',behavior:'auto'});
+    expect(focus).toHaveBeenCalledWith({preventScroll:true});expect(component.frozenForStudy()?.sha256).toBe(prediction.sha256);
+    http.expectNone(r=>r.url.includes('/muse/evaluate'));await verifyHttp(http);fixture.destroy();
   });
   it('does not upload video two before a registered prediction',async()=>{
     const {component,http,fixture}=await init(false);

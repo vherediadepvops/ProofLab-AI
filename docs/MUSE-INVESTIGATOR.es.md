@@ -81,3 +81,13 @@ Los botones de descarga consultan el JSON con GET y generan un Blob descargable 
 Limitación pendiente: la longitud inicial procede del campo del usuario, cuyo valor inicial es 0,50 m; no fue medida por Spark. La propuesta de 0,80 m puede proceder de la opción 1,6×L1 calculada por ProofLab. Esta entrega no añade confirmación explícita de longitud ni calibra las grabaciones.
 
 Validación local: 26 pruebas Angular en Edge 155, compilación de producción correcta (aviso de tamaño de bundle), cero llamadas a Meta, sin CI ni reinicio de API.
+
+## Guardado y navegación entre etapas — 03/11/2026
+
+La confirmación del seguimiento puede ocurrir después de la interpretación automática. Ese cambio de revisión de `false` a `true` no invalida las mismas mediciones: la congelación valida la identidad completa de video, SAM, pivote, trabajador y parámetros antes de escribir. Conserva el contenido, hash y límites originales enviados a Muse; no transforma una revisión posterior en evidencia que el modelo hubiera recibido antes.
+
+Una congelación rechazada no crea una observación vacía. Los registros históricos afectados pueden recuperar una respuesta completada con identidad equivalente, exclusivamente por esa confirmación posterior. Los intentos fallidos o en curso no se sustituyen; un cambio real de fuente sigue exigiendo su propia evidencia. La predicción congelada permanece inmutable e idempotente.
+
+Al pulsar **Congelar predicción**, se muestra **Guardando predicción…** y se bloquea la navegación hasta la confirmación. Una respuesta HTTP perdida se reconcilia con una lectura, sin repetir el guardado ni la consulta a Meta. Cambiar idioma o etapa no elimina el resultado guardado. **Ver la siguiente prueba** muestra el guardado de la revisión y enfoca el encabezado de Predecir al terminar.
+
+Regresión: pruebas offline del servicio real en `tests/ProofLab.Workflow.Tests`, pruebas existentes Muse/contraste y pruebas Angular de Muse/navegación. El recorrido del navegador usa respuestas guardadas con escrituras simuladas; no consume Meta ni congela la investigación del propietario.

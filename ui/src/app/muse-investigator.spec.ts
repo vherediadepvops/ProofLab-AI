@@ -85,15 +85,70 @@ describe('Muse investigator',()=>{
     expect(f.nativeElement.textContent).toContain('Congelar predicción');
     c.reviewedPrediction.set(true);f.detectChanges();
     const run=c.freezePrediction(),post=http.expectOne(base+'/freeze');
+    f.detectChanges();
+    expect(f.nativeElement.querySelector('.v93-freeze').textContent).toContain('Guardando tu predicción');
+    expect(f.nativeElement.querySelector('.v93-freeze button').disabled).toBeTrue();
+    void c.freezePrediction();void c.load();
+    f.componentRef.setInput('language','en');f.componentRef.setInput('source',{...source});f.detectChanges();
+    expect(c.busy()).toBe('freezing');expect(TestBed.inject(LabConnection).busy()).toBeTrue();expect(c.state()?.evaluation?.responseId).toBe('saved-receipt');
+    http.expectNone(base);http.expectNone(base+'/freeze');
+    f.componentRef.setInput('language','es');f.detectChanges();
     expect(post.request.method).toBe('POST');
     expect(post.request.body).toEqual({observationId:'observation',responseId:'saved-receipt'});
     const frozen={studyId:'study',observationId:'observation',responseId:'saved-receipt',
       frozenAtUtc:'2026-11-02',sha256:'hash',payloadJson:JSON.stringify({
         prediction:{nextLengthMeters:.8,periodSeconds:1.79,tolerancePercent:5}})};
     post.flush({...prepared,evaluation,prediction:frozen});await run;f.detectChanges();
-    expect(c.prediction()?.periodSeconds).toBe(1.79);
+    expect(c.prediction()?.periodSeconds).toBe(1.79);expect(TestBed.inject(LabConnection).busy()).toBeFalse();
     expect(f.nativeElement.textContent).toContain('Predicción congelada');
     http.expectNone(r=>r.url.endsWith('/evaluate'));f.destroy();
+  });
+  for(const committed of [true,false])it('reconciles a lost freeze response with one read: committed='+committed,async()=>{
+    const t={es:'Propuesta conservada.',en:'Saved proposal.'};
+    const evaluation={model:'muse-spark-1.3',responseId:'saved-receipt',observationId:'observation',
+      studyId:'study',rawResponseSha256:'hash',tokenCostEstimateUsd:.001,
+      answer:{decision:'PROPOSE_EXPERIMENT',justification:t,limitations:t,protocol:t,hypothesis:t,
+        falsification:t,nextLengthMeters:.8,periodSeconds:1.79,tolerancePercent:5}};
+    const frozen={studyId:'study',observationId:'observation',responseId:'saved-receipt',
+      frozenAtUtc:'2026-11-03',sha256:'frozen-hash',payloadJson:JSON.stringify({
+        prediction:{nextLengthMeters:.8,periodSeconds:1.79,tolerancePercent:5}})};
+    const f=await init({...prepared,evaluation}),c=f.componentInstance;
+    c.reviewedPrediction.set(true);const run=c.freezePrediction();
+    http.expectOne(base+'/freeze').flush({}, {status:502,statusText:'Lost response'});
+    await Promise.resolve();
+    const read=http.expectOne(base);expect(read.request.method).toBe('GET');
+    read.flush(committed?{...prepared,evaluation,prediction:frozen}:empty);
+    await run;f.detectChanges();
+    expect(c.state()?.evaluation?.responseId).toBe('saved-receipt');
+    expect(c.state()?.prediction).toEqual(committed?frozen:null);
+    expect(c.busy()).toBeNull();expect(TestBed.inject(LabConnection).busy()).toBeFalse();
+    if(committed)expect(c.error()).toBe('');
+    else expect(c.error()).toContain('No se pudo confirmar');
+    http.expectNone(r=>r.method==='POST');f.destroy();
+  });
+  it('holds the shared navigation lock until a pending freeze settles after destruction',async()=>{
+    const t={es:'Propuesta conservada.',en:'Saved proposal.'};
+    const evaluation={model:'muse-spark-1.3',responseId:'saved-receipt',observationId:'observation',
+      studyId:'study',rawResponseSha256:'hash',tokenCostEstimateUsd:.001,
+      answer:{decision:'PROPOSE_EXPERIMENT',justification:t,limitations:t,protocol:t,hypothesis:t,
+        falsification:t,nextLengthMeters:.8,periodSeconds:1.79,tolerancePercent:5}};
+    const f=await init({...prepared,evaluation}),connection=TestBed.inject(LabConnection);
+    f.componentInstance.reviewedPrediction.set(true);const run=f.componentInstance.freezePrediction();
+    const request=http.expectOne(base+'/freeze');expect(connection.busy()).toBeTrue();
+    f.destroy();expect(connection.busy()).toBeTrue();
+    expect(connection.setPort(5393)).toBeFalse();
+    request.flush({}, {status:502,statusText:'Lost response'});await run;
+    expect(connection.busy()).toBeFalse();http.expectNone(r=>r.url.includes('/muse'));
+  });
+  it('keeps an existing result visible during a refresh and after a failed read',async()=>{
+    const state=response('PENDULUM_COMPATIBLE'),f=await init(state),c=f.componentInstance;
+    const run=c.load();f.detectChanges();
+    expect(c.state()?.evaluation?.responseId).toBe(state.evaluation.responseId);
+    expect(f.nativeElement.textContent).toContain('compatible con un péndulo');
+    http.expectOne(base).flush({}, {status:503,statusText:'Unavailable'});await run;f.detectChanges();
+    expect(c.state()?.evaluation?.responseId).toBe(state.evaluation.responseId);
+    expect(c.error()).toContain('No se pudo consultar');
+    http.expectNone(r=>r.method==='POST');f.destroy();
   });
   it('reconciles a failed request with a read, never a second paid request',async()=>{
     token();const f=await init(prepared);const p=f.componentInstance.evaluate();
@@ -112,7 +167,7 @@ describe('Muse investigator',()=>{
     const f=await init({...prepared,evaluation:{model:'muse-spark-1.3',responseId:'receipt',tokenCostEstimateUsd:.001,
       answer:{decision:'INCONCLUSIVE',justification:t,limitations:t,protocol:t,hypothesis:t,falsification:t}}});
     expect(f.nativeElement.textContent).toContain('Inconcluso');expect(f.componentInstance.prediction()).toBeNull();
-    f.componentRef.setInput('language','en');f.detectChanges();http.expectOne(base).flush(empty);await f.whenStable();f.detectChanges();
+    f.componentRef.setInput('language','en');f.detectChanges();http.expectNone(base);await f.whenStable();f.detectChanges();
     expect(f.nativeElement.textContent).toContain('Interpretation and next experiment');f.destroy();
   });
   function response(classification?:'PENDULUM_COMPATIBLE'|'OTHER_MOTION'|'INCONCLUSIVE',analysisId='analysis') {
@@ -139,7 +194,7 @@ describe('Muse investigator',()=>{
     expect(f.nativeElement.textContent).toContain('Spark interpreta la trayectoria medida por SAM.');
     expect(f.nativeElement.textContent).toContain('Experimento propuesto');
     expect(f.nativeElement.querySelectorAll('section').length).toBe(1);
-    f.componentRef.setInput('language','en');f.detectChanges();http.expectOne(base).flush(recorded);
+    f.componentRef.setInput('language','en');f.detectChanges();http.expectNone(base);
     await f.whenStable();f.detectChanges();
     expect(f.nativeElement.querySelector('.decision').textContent).toContain('Muse Spark: consistent with a pendulum');
     expect(f.nativeElement.textContent).toContain('Spark interprets the trajectory measured by SAM.');
@@ -439,10 +494,26 @@ describe('Muse interpretation in Understand',()=>{
     expect(component.state()?.prediction?.sha256).toBe(state.prediction.sha256);
     expect(component.canEvaluate()).toBeFalse();
     fixture.componentRef.setInput('view','research');fixture.detectChanges();
-    const recover=http.expectOne(base);expect(recover.request.method).toBe('GET');
-    recover.flush(state);await fixture.whenStable();fixture.detectChanges();
+    http.expectNone(base);await fixture.whenStable();fixture.detectChanges();
     expect(received).toEqual([state.prediction]);
     http.expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+  it('restores the same interpretation and frozen prediction across stage remounts with reads only',async()=>{
+    const state=saved();
+    const understand=init();await open(understand,state);
+    const original=understand.componentInstance.state()?.prediction;
+    understand.destroy();
+    const predict=TestBed.createComponent(MuseInvestigator);
+    predict.componentRef.setInput('source',source);predict.detectChanges();
+    http.expectOne(base).flush(state);await predict.whenStable();predict.detectChanges();
+    expect(predict.componentInstance.state()?.prediction).toEqual(original);
+    expect(predict.nativeElement.textContent).toContain('Predicción congelada');predict.destroy();
+    const back=init();back.componentRef.setInput('autoInterpretation',true);back.detectChanges();
+    http.expectOne(base).flush(state);await back.whenStable();back.detectChanges();
+    expect(back.nativeElement.textContent).toContain(words.justification.es);
+    expect(back.nativeElement.querySelector('.consult-cost')).toBeNull();
+    expect(back.componentInstance.state()?.prediction).toEqual(original);
+    http.expectNone(r=>r.method==='POST');back.destroy();
   });
   it('keeps a failed history read local and retries only after another explicit action',async()=>{
     const fixture=init();void fixture.componentInstance.openInterpretation();

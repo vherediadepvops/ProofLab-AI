@@ -1,4 +1,4 @@
-<section class="muse-card" [class.interpretation-card]="interpretationView()">
+<section class="muse-card" [class.interpretation-card]="interpretationView()" [attr.aria-busy]="!!busy()">
   <header><div><span class="eyebrow">Muse Spark</span>
     <h3>{{interpretationView()?(es?'Interpretación de la evidencia':'Evidence interpretation'):isFollowup?(es?'Contraste de la predicción':'Prediction comparison'):(es?'Interpretación y próxima prueba':'Interpretation and next experiment')}}</h3></div>
     @if(!interpretationView() && state()?.prediction){<span class="lock">🔒 {{es?'Predicción congelada':'Prediction frozen'}}</span>}
@@ -6,7 +6,7 @@
   @if(interpretationView()) {
     <p class="intro">{{es?'Muse Spark interpreta las mediciones de SAM y puede preparar una propuesta que revisarás en Predecir.':
       'Muse Spark interprets SAM measurements and may prepare a proposal for review in Predict.'}}</p>
-    @if(!state()?.evaluation) {
+    @if(!state()?.evaluation && !busy()) {
       <div class="consult-cost" aria-label="Muse Spark">
         <div><span>{{es?'Máximo estimado de una nueva consulta':'Estimated maximum for a new request'}}</span>
           <strong>US$ {{es?'0,05':'0.05'}}</strong></div>
@@ -33,7 +33,7 @@
     <p class="intro">{{es?'Muse Spark interpreta las mediciones de SAM, la geometría y la incertidumbre para clasificar el movimiento y decidir si conviene otra prueba.':
       'Muse Spark interprets SAM measurements, geometry and uncertainty to classify the motion and decide whether another experiment is appropriate.'}}</p>
   }
-  @if(busy(); as phase) {
+  @if(busy()!=='freezing' ? busy() : null; as phase) {
     <app-lab-activity [label]="phase==='evaluating'?(es?'Muse está evaluando la evidencia…':'Muse is evaluating the evidence…'):
       phase==='preparing'?(es?'Verificando mediciones guardadas…':'Verifying saved measurements…'):(es?'Cargando bitácora…':'Loading lab log…')"
       [detail]="phase==='evaluating'?(es?'Una inferencia, sin reintentos automáticos.':'One inference, no automatic retries.'):
@@ -316,17 +316,24 @@
           'Practical band fixed before video 2 is uploaded; not a confidence interval.'}}</p>
       }
       @if(!s.prediction && evaluation.answer.decision==='PROPOSE_EXPERIMENT' && evaluationMatchesSource()) {
-        <div class="v93-freeze">
+        <div class="v93-freeze" [attr.aria-busy]="busy()==='freezing'">
           <h3>{{es?'Antes de subir el segundo video':'Before uploading trial 2'}}</h3>
           <p>{{es?'1. Revisa el objeto y la suspensión. 2. Congela esta predicción. 3. Graba y analiza el video 2. 4. Contrasta los resultados en Comprobar.':
             '1. Review the object and suspension. 2. Freeze this prediction. 3. Record and analyze trial 2. 4. Compare in the final step.'}}</p>
-          <label><input type="checkbox" [checked]="reviewedPrediction()" (change)="reviewedPrediction.set($any($event.target).checked)"/>
+          <label><input type="checkbox" [checked]="reviewedPrediction()" [disabled]="!!busy()" (change)="reviewedPrediction.set($any($event.target).checked)"/>
             <span>{{es?'Confirmo haber revisado las mediciones y la hipótesis antes de ver la segunda prueba.':
               'I confirm that I reviewed the measurements and hypothesis before seeing trial 2.'}}</span></label>
           <button class="primary" type="button" (click)="freezePrediction()"
             [disabled]="!reviewedPrediction() || !!busy() || connection.busy()">
-            {{es?'Congelar predicción':'Freeze prediction'}} →
+            {{busy()==='freezing'?(es?'Guardando predicción…':'Saving prediction…'):(es?'Congelar predicción →':'Freeze prediction →')}}
           </button>
+          @if(busy()==='freezing') {
+            <div class="freeze-status" role="status" aria-live="polite">
+              <app-lab-activity [label]="es?'Guardando tu predicción…':'Saving your prediction…'"
+                [detail]="es?'Esperando la confirmación del servidor para habilitar la siguiente prueba.':
+                  'Waiting for server confirmation to unlock the next trial.'"/>
+            </div>
+          }
           <p class="v93-scope">{{es?'La confirmación del seguimiento también debe estar guardada en el servidor. Un resultado de Spark no es prueba científica.':
             'Tracking review must also be recorded on the server. A Spark answer is not scientific proof.'}}</p>
         </div>

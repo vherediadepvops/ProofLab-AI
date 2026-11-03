@@ -71,3 +71,13 @@ Download buttons GET the JSON and create a local downloadable Blob, avoiding nav
 Remaining limitation: initial length comes from the user field, initially 0.50 m, not a Spark measurement. A 0.80 m proposal may come from ProofLab's 1.6×L1 option. This delivery does not add explicit length confirmation or calibrate recordings.
 
 Local validation: 26 Angular tests in Edge 155 and successful production build (bundle-size warning), zero Meta calls, no CI or API restart.
+
+## Saving and stage navigation — 2026-11-03
+
+Tracking review may be confirmed after automatic interpretation. This `false` to `true` review change does not invalidate otherwise identical measurements: freezing validates the full video, SAM, pivot, worker and parameter identity before writing. The original Muse input, hash and limitations remain immutable; a later human review is not retroactively represented as evidence the model received.
+
+A rejected freeze does not create an empty observation. Affected historical records may recover a completed answer with an equivalent identity, solely for this later review confirmation. Failed or pending attempts are not replaced, and a real source change still requires its own evidence. A frozen prediction remains immutable and idempotent.
+
+**Freeze prediction** displays **Saving prediction…** and locks stage navigation until confirmation. A lost HTTP reply is reconciled with one read, without repeating the save or Meta call. Language or stage changes preserve the saved result. **View the next trial** shows review saving and focuses the Predict heading when complete.
+
+Regression coverage: offline real-service tests in `tests/ProofLab.Workflow.Tests`, existing Muse/comparison tests, and Angular Muse/navigation tests. Browser checks use saved responses with simulated writes; they neither consume Meta nor freeze the owner's research.

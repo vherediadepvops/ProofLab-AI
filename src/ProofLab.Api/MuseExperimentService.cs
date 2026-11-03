@@ -13,11 +13,19 @@ public sealed class MuseExperimentService(
         MuseExperimentStore.StudyId(id);
         var prediction=store.Prediction(id);
         var observation=prediction is null?store.LatestObservation(id):store.Observation(prediction.ObservationId);
+        // A previous freeze validation could append an unevaluated review-only
+        // snapshot. Recover its original completed answer without rewriting history.
+        if(prediction is null && observation is not null && store.AttemptStatus(observation.Id) is null)
+            observation=store.CompletedBeforeHumanReview(observation)??observation;
         return new(observation,observation is null?null:store.Evaluation(observation.Id),prediction,
             observation is null?null:store.AttemptStatus(observation.Id),access.ManualTokenCallsPermitted);
     }
 
-    public async Task<MuseObservation> PrepareAsync(string id,MusePrepareRequest request,CancellationToken ct)
+    public Task<MuseObservation> PrepareAsync(string id,MusePrepareRequest request,CancellationToken ct)
+        =>PrepareAsync(id,request,ct,null);
+
+    private async Task<MuseObservation> PrepareAsync(string id,MusePrepareRequest request,CancellationToken ct,
+        MuseObservation? expected)
     {
         MuseExperimentStore.StudyId(id);
         var study=await director.ReadAsync(id,ct);
@@ -51,7 +59,22 @@ public sealed class MuseExperimentService(
             objectReview=study.HumanReview?.BobConfirmed??false
         },Json);
         var key=KnotPolicy.Hash(identity.GetRawText());
-        var existing=store.Observation(key);if(existing is not null)return existing;
+        // Validate before measuring or persisting anything. Human review happens
+        // after automatic interpretation; it does not change the measured source.
+        // Its original false value stays in the immutable AI input and limitations.
+        if(expected is not null) {
+            if(!MuseObservationIdentity.MatchesCurrent(expected,identity))
+                throw new InvalidOperationException("Source changed; do not reuse an old interpretation.");
+            return expected;
+        }
+        var existing=store.Observation(key);
+        if(existing is not null) {
+            if(store.AttemptStatus(existing.Id) is null)
+                return store.CompletedBeforeHumanReview(existing)??existing;
+            return existing;
+        }
+        var completed=store.CompletedBeforeHumanReview(id,identity);
+        if(completed is not null)return completed;
         var measured=await worker.MeasureAsync(new {
             archive,studyId=id,videoSha256=request.VideoSha256,pivot,
             sourceWidth=study.Baseline.Media.Width,sourceHeight=study.Baseline.Media.Height,
@@ -98,11 +121,9 @@ public sealed class MuseExperimentService(
         }
         using var doc=JsonDocument.Parse(observation.PayloadJson);
         var identity=doc.RootElement.GetProperty("identity");
-        var current=await PrepareAsync(id,new(observation.VideoSha256,observation.AnalysisId,
+        await PrepareAsync(id,new(observation.VideoSha256,observation.AnalysisId,
             identity.GetProperty("pivotRevisionId").GetString(),
-            identity.TryGetProperty("adaptiveBatchId",out var batch)?batch.GetString():null),ct);
-        if(current.Id!=observation.Id)
-            throw new InvalidOperationException("Source changed; do not freeze an old prediction.");
+            identity.TryGetProperty("adaptiveBatchId",out var batch)?batch.GetString():null),ct,observation);
         store.Freeze(observation,evaluation);
         return State(id);
     }
@@ -122,10 +143,9 @@ public sealed class MuseExperimentService(
             throw new InvalidOperationException("Previous attempt requires reconciliation; no automatic retry.");
         using var doc=JsonDocument.Parse(observation.PayloadJson);
         var root=doc.RootElement;var identity=root.GetProperty("identity");
-        var current=await PrepareAsync(id,new(observation.VideoSha256,observation.AnalysisId,
+        await PrepareAsync(id,new(observation.VideoSha256,observation.AnalysisId,
             identity.GetProperty("pivotRevisionId").GetString(),
-                identity.TryGetProperty("adaptiveBatchId",out var batch0)?batch0.GetString():null),ct);
-        if(current.Id!=observation.Id)throw new InvalidOperationException("Measurement changed; prepare again.");
+                identity.TryGetProperty("adaptiveBatchId",out var batch0)?batch0.GetString():null),ct,observation);
         var token=request.ModelApiToken??Environment.GetEnvironmentVariable("MODEL_API_KEY")??"";
         if(!request.ConfirmMeasuredDataTransfer || !request.ConfirmPaidCall ||
            request.MaximumEstimatedCostUsd!=MuseExperimentPolicy.MaximumEstimatedCostUsd ||
@@ -146,11 +166,9 @@ public sealed class MuseExperimentService(
                 KnotPolicy.Hash(response.Raw),answer,receipt.InputTokens,receipt.OutputTokens,DateTimeOffset.UtcNow,
                 receipt.InputTokens*1.25/1_000_000+receipt.OutputTokens*4.25/1_000_000);
             // The study lock is also held by uploads; video two cannot arrive during inference.
-            var finalSource=await PrepareAsync(id,new(observation.VideoSha256,observation.AnalysisId,
+            await PrepareAsync(id,new(observation.VideoSha256,observation.AnalysisId,
                 identity.GetProperty("pivotRevisionId").GetString(),
-                identity.TryGetProperty("adaptiveBatchId",out var batch1)?batch1.GetString():null),CancellationToken.None);
-            if(finalSource.Id!=observation.Id)
-                throw new InvalidOperationException("Source changed during evaluation; prediction not frozen.");
+                identity.TryGetProperty("adaptiveBatchId",out var batch1)?batch1.GetString():null),CancellationToken.None,observation);
             store.Complete(observation,result);
             return State(id);
         } catch {

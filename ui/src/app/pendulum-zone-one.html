@@ -70,7 +70,7 @@
           [sourcePending]="sourcePending()" [unavailable]="uploadProgressUnavailable()"/>
       }
 
-      <div class="journey-stage-heading"><div><h2>{{stageTitle()}}</h2><p>{{stageDescription()}}</p></div><span class="trial-badge"><span aria-hidden="true">●</span> {{activeTrial()==='followup'?(es?'Prueba 2':'Trial 2'):(es?'Prueba 1':'Trial 1')}}</span></div>
+      <div #journeyHeading class="journey-stage-heading" tabindex="-1"><div><h2>{{stageTitle()}}</h2><p>{{stageDescription()}}</p></div><span class="trial-badge"><span aria-hidden="true">●</span> {{activeTrial()==='followup'?(es?'Prueba 2':'Trial 2'):(es?'Prueba 1':'Trial 1')}}</span></div>
       <div class="journey-layout" [class.result-layout]="presentation()!=='source'">
         <section class="focus-config" [hidden]="flowStep()!==1" [attr.aria-label]="es?'Parámetros físicos del péndulo':'Physical pendulum parameters'">
           <span class="card-eyebrow">{{es?'TU EXPERIMENTO':'YOUR EXPERIMENT'}}</span><h2>{{es?'Los datos de tu péndulo.':'Your pendulum’s measurements.'}}</h2>
@@ -260,10 +260,11 @@
         </section>
       </div>
 
-      <div class="verification-strip" [hidden]="flowStep()!==3">
+      @if(flowStep()===3 && advancingToPrediction()) {<app-lab-activity class="journey-advance-activity" [label]="es?'Guardando revisión…':'Saving review…'" [detail]="es?'Al terminar, abrirás Predecir con la interpretación guardada.':'When complete, Predict will open with the saved interpretation.'"/>}
+      <div class="verification-strip" [hidden]="flowStep()!==3" [attr.aria-busy]="advancingToPrediction()">
         @if(!s.humanReview){<label class="check-label"><input type="checkbox" [ngModel]="checkedVideo()" (ngModelChange)="checkedVideo.set($event)" [disabled]="flowBusy() || !playbackReady() || previewState()!=='ready'"/><span>{{es?'Revisé el seguimiento y confirmo que corresponde al objeto.':'I reviewed the tracking and confirm it follows the object.'}}</span></label>}
         @else{<p class="review-confirmed">✓ {{es?'Revisión del seguimiento guardada.':'Tracking review saved.'}}</p>}
-        <button type="button" class="primary-button" (click)="continueToPrediction()" [disabled]="flowBusy() || !hasVerifiedResult('baseline') || (!s.humanReview && (!checkedVideo() || previewState()!=='ready' || (s.baseline?.localEvidenceStatus!=='DEFERRED' && s.baseline?.spectral?.periodSeconds==null)))">{{es?'Ver la siguiente prueba':'View the next trial'}} <span aria-hidden="true">→</span></button>
+        <button type="button" class="primary-button" (click)="continueToPrediction()" [disabled]="flowBusy() || !hasVerifiedResult('baseline') || (!s.humanReview && (!checkedVideo() || previewState()!=='ready' || (s.baseline?.localEvidenceStatus!=='DEFERRED' && s.baseline?.spectral?.periodSeconds==null)))">{{advancingToPrediction()?(es?'Abriendo Predecir…':'Opening Predict…'):(es?'Ver la siguiente prueba':'View the next trial')}} <span aria-hidden="true">→</span></button>
         @if(!s.humanReview && s.baseline?.localEvidenceStatus!=='DEFERRED' && s.baseline?.spectral?.periodSeconds==null){<p class="focus-note">{{es?'La revisión no puede registrarse todavía: falta un período local confiable. Revisa el seguimiento y sus límites.':'Review cannot be registered yet: a reliable local period is missing. Check tracking and its limits.'}}</p>}
       </div>
       @if(flowStep()===4 && !frozenForStudy()){<p class="prediction-guide">{{es?'La consulta a Muse Spark registra una predicción válida antes de habilitar Cargar video 2. Si recomienda repetir la grabación o declara el resultado inconcluso, revisa su explicación.':'A Muse Spark consultation records a valid prediction before enabling Upload video 2. If it recommends another recording or an inconclusive result, review its explanation.'}}</p>}

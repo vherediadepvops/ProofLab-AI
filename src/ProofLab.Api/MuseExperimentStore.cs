@@ -99,6 +99,30 @@ public sealed class MuseExperimentStore
         cmd.Parameters.AddWithValue("$s",study);
         return cmd.ExecuteScalar() is string id?Observation(id):null;
     }
+    public MuseObservation? CompletedBeforeHumanReview(MuseObservation current)
+    {
+        using var payload=JsonDocument.Parse(current.PayloadJson);
+        return CompletedBeforeHumanReview(current.StudyId,payload.RootElement.GetProperty("identity"));
+    }
+    public MuseObservation? CompletedBeforeHumanReview(string study,JsonElement currentIdentity)
+    {
+        StudyId(study);
+        if(!currentIdentity.TryGetProperty("objectReview",out var review) || review.ValueKind!=JsonValueKind.True)
+            return null;
+        using var db=Open();using var cmd=db.CreateCommand();
+        cmd.CommandText="""
+            SELECT o.id FROM muse_observations o JOIN muse_attempts a ON a.observation_id=o.id
+            WHERE o.study_id=$s AND a.evaluation IS NOT NULL ORDER BY o.created DESC
+            """;
+        cmd.Parameters.AddWithValue("$s",study);
+        using var reader=cmd.ExecuteReader();
+        while(reader.Read()) {
+            var previous=Observation(reader.GetString(0))!;
+            if(MuseObservationIdentity.MatchesCurrent(previous,currentIdentity) && Evaluation(previous.Id) is not null)
+                return previous;
+        }
+        return null;
+    }
     public string? AttemptStatus(string observationId)
     {
         using var db=Open();using var cmd=db.CreateCommand();

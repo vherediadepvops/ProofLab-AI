@@ -2,7 +2,7 @@ import { apiOrigin, isLocalWorkspace } from './api-origin';
 import type {FrozenMusePrediction} from './muse-investigator';
 import { ExperimentSimulator } from './experiment-simulator';
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal, input, effect, untracked, DestroyRef, ViewChild } from '@angular/core';
+import { Component, computed, inject, signal, input, effect, untracked, DestroyRef, ViewChild, ElementRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, timeout } from 'rxjs';
@@ -36,6 +36,9 @@ export class PendulumZoneOne extends PendulumDirector {
   readonly localDemoAvailable=isLocalWorkspace();
   private readonly demoHttp=inject(HttpClient);
   @ViewChild(PendulumMasterPlayer) private currentPlayer?:PendulumMasterPlayer;
+  @ViewChild('journeyHeading') private journeyHeading?:ElementRef<HTMLElement>;
+  readonly advancingToPrediction=signal(false);
+  private journeyFocusFrame:number|null=null;
   // Presentation state only. Evidence, costs, recovery and predictions remain server-owned.
   readonly active=input(true);
   readonly experiment=signal<'pendulum'|'ramp'|'rocket'>('pendulum');
@@ -54,7 +57,7 @@ export class PendulumZoneOne extends PendulumDirector {
   ];
   stepLabel(id:number):string {return id<this.flowStep()?'✓':'0'+id;}
   flowBusy():boolean {
-    return this.recoveryControlsBusy() || this.resultState()==='loading';
+    return this.advancingToPrediction() || this.recoveryControlsBusy() || this.resultState()==='loading';
   }
   simulationKind():'ramp'|'rocket' {return this.experiment()==='rocket'?'rocket':'ramp';}
   chooseExperiment(kind:'pendulum'|'ramp'|'rocket'):void {
@@ -84,6 +87,18 @@ export class PendulumZoneOne extends PendulumDirector {
     if(role!==this.activeTrial())this.selectTrial(role);
     if(role!==this.activeTrial())return;
     this.flowStep.set(step);
+    this.focusJourneyHeading(step);
+  }
+  private focusJourneyHeading(step:number):void {
+    if(this.journeyFocusFrame!==null)cancelAnimationFrame(this.journeyFocusFrame);
+    const studyId=this.session()?.id;
+    this.journeyFocusFrame=requestAnimationFrame(()=>{
+      this.journeyFocusFrame=null;
+      if(this.session()?.id!==studyId || this.flowStep()!==step)return;
+      const heading=this.journeyHeading?.nativeElement;
+      heading?.focus({preventScroll:true});
+      heading?.scrollIntoView({block:'start',behavior:'auto'});
+    });
   }
   presentation():'source'|'understand'|'predict'|'compare' {
     if(this.flowStep()<=2 || this.flowStep()===4&&this.activeTrial()==='followup')return 'source';
@@ -107,11 +122,15 @@ export class PendulumZoneOne extends PendulumDirector {
   }
   async continueToPrediction():Promise<void> {
     if(this.flowBusy() || !this.hasVerifiedResult('baseline'))return;
-    if(!this.session()?.humanReview) {
-      if(!this.checkedVideo() || this.previewState()!=='ready')return;
-      await this.confirm();
-    }
-    if(this.session()?.humanReview)this.setJourneyStep(4);
+    const session=this.session();if(!session)return;
+    if(!session.humanReview && (!this.checkedVideo() || this.previewState()!=='ready'))return;
+    const port=this.connection.port(),sha=session.baseline?.sha256;
+    this.advancingToPrediction.set(true);
+    try {
+      if(!session.humanReview)await this.confirm();
+    } finally {this.advancingToPrediction.set(false);}
+    if(this.session()?.id===session.id && this.session()?.baseline?.sha256===sha &&
+       this.connection.port()===port && this.session()?.humanReview)this.setJourneyStep(4);
   }
   toggleRecoveryMenu():void {if(!this.recoveryControlsBusy())this.recoveryMenuOpen.update(v=>!v);}
   closeRecoveryMenu(event?:Event):void {
@@ -264,7 +283,7 @@ export class PendulumZoneOne extends PendulumDirector {
   constructor(){
     super();
     effect(()=>{const request=this.resumeRequest();if(request)untracked(()=>void this.resumeResearch(request.id));});
-    inject(DestroyRef).onDestroy(()=>{this.recoveryGeneration++;if(this.recoveryTimer)clearTimeout(this.recoveryTimer);});
+    inject(DestroyRef).onDestroy(()=>{if(this.journeyFocusFrame!==null)cancelAnimationFrame(this.journeyFocusFrame);this.recoveryGeneration++;if(this.recoveryTimer)clearTimeout(this.recoveryTimer);});
   }
   async copyStudyId():Promise<void> {
     const id=this.session()?.id;if(!id)return;
@@ -382,7 +401,12 @@ export class PendulumZoneOne extends PendulumDirector {
   });
 
   onResearchFrozen(prediction:FrozenMusePrediction|null):void {
-    if(!prediction || prediction.studyId===this.session()?.id)this.musePrediction.set(prediction);
+    // A child loading/remounting is not a server-side deletion of a frozen record.
+    // Recovery/new-study flows explicitly replace the authoritative saved state.
+    if(prediction && prediction.studyId===this.session()?.id){
+      this.musePrediction.set(prediction);
+      this.session.update(s=>s?{...s,musePrediction:prediction}:s);
+    }
   }
   frozenForStudy():FrozenMusePrediction|null {
     const p=this.musePrediction(),s=this.session();
