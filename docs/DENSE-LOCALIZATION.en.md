@@ -18,6 +18,18 @@ Acceptance requires a static camera, at least six usable observations out of nin
 
 Agreement, reported confidence and review by the same model do not establish physical accuracy. Estimates still require human confirmation; mocked responses test software behavior, not Spark accuracy on new videos.
 
+## One principal SAM reference
+
+New full-video requests use `SAM_SINGLE_PRINCIPAL_REFERENCE_V1`. From the already reviewed boxes, selection takes the earliest reference with valid geometry and size/aspect compatible with the other references. Its exact source frame and coordinates are retained; boxes are never invented or interpolated. Selection is an image heuristic, not a guarantee of object identity or physical accuracy.
+
+Only that box enters the SAM prompt. Other observations remain in the scene to corroborate reference selection and compare masks at their exact frames; they do not give SAM another starting reference. The policy and exact reference are bound to the quote and receipt. Historical receipts reconstruct the prompt actually sent.
+
+## Tracking continuity review
+
+A local check looks for abrupt area changes accompanied by an unexpected centroid displacement that persists across several frames. It uses native timestamps and reports missing detections separately. The existing status line shows the first time requiring review. Comparisons with other Spark boxes are advisory: those boxes may themselves be wrong and are not human labels.
+
+This warning does not prove that SAM selected a different object, and does not change original masks, measurement filters or saved reports. Gaps retain missing values and derivatives require valid neighbours. It makes no Meta calls, retries nothing and does not fill missing positions. Single-reference effectiveness requires an authorized live test; local tests verify selection, integrity and discontinuity detection.
+
 ## Cost and compatibility
 
 Two Spark requests remain: US$0.25 initial estimate and US$0.10 review (US$0.35 total estimate), plus quoted SAM and Muse costs. Review keeps 18 images and an 8192-token output cap; additional explanations can change actual usage. These are not invoices or provider-enforced billing limits. No automatic retries.

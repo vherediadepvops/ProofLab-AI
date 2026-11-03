@@ -62,6 +62,24 @@ describe('One-clock three-view pendulum laboratory',()=>{
   });
 
 
+  it('keeps tracking-change warnings visible with a manual pivot and translates their timestamp',()=>{
+    const fixture=TestBed.createComponent(PendulumMasterPlayer),component=fixture.componentInstance;
+    fixture.componentRef.setInput('videoUrl','/synthetic.mp4');
+    fixture.componentRef.setInput('language','es');
+    const original=component.trackingAssessment();
+    const assessment=spyOn(component,'trackingAssessment').and.returnValue({...original,
+      status:'REVIEW_REQUIRED',firstSuspiciousTimeSeconds:16.433333,firstSuspiciousFrame:985});
+    component.pivotRevision.set(revision);
+    expect(component.samEvidenceNote()).toContain('Seguimiento por revisar desde 00:16.433');
+    fixture.componentRef.setInput('language','en');
+    expect(component.samEvidenceNote()).toContain('Review tracking from 00:16.433');
+    assessment.and.returnValue({...original,missingFrames:3});
+    expect(component.samEvidenceNote()).toContain('3 frames without detection');
+    assessment.and.returnValue(original);
+    expect(component.samEvidenceNote()).not.toContain('Review tracking from');
+    fixture.destroy();TestBed.inject(HttpTestingController).verify();
+  });
+
   it('keeps a lazy original inactive through poster failure and activates only on playback',()=>{
     const fixture=TestBed.createComponent(PendulumMasterPlayer);
     const component=fixture.componentInstance,http=TestBed.inject(HttpTestingController);

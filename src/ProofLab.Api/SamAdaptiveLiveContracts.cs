@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ProofLab.Api;
 
 // Never make this a record: an accidental ToString must not expose the token.
@@ -34,10 +36,12 @@ public sealed record SamAdaptiveLiveQuote(
     int VerifiedSparkSeedCount,
     bool ReducedForSparseSparkSeeds,string? RecoveryFromBatchId=null,
     double ContinuousRetryEstimatedUsd=0,double MaximumSamWithRetryEstimatedUsd=0,
-    string Mode="api-meta-cache",string? SceneRunId=null);
+    string Mode="api-meta-cache",string? SceneRunId=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] SamPrincipalReference? PrincipalReference=null);
 
 public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight,string? RecoveryFromBatchId=null,SamAdaptiveWindow[]? NativeWindows=null,string? AutomaticRetryOfBatchId=null,string Mode="api-meta-cache",string? SceneRunId=null,
-    string? StudyId=null,string? VideoRole=null,string? SourceVideoId=null);
+    string? StudyId=null,string? VideoRole=null,string? SourceVideoId=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] SamPrincipalReference? PrincipalReference=null);
 
 public sealed record SamAdaptiveDerivation(string BatchId,bool NativeProviderResult,
     bool SeamsVerified,string SourcePtsSha256,string[] PartResponseSha256);

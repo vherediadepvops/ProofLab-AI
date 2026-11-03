@@ -97,7 +97,8 @@ public sealed partial class SamAdaptiveLiveService(
     private static Task WriteJson(string path,object value,CancellationToken ct)=>
         WriteImmutable(path,JsonSerializer.Serialize(value,JsonOptions),ct);
     private static string PlanKey(string sourceSha,string sceneKey,string ptsSha,
-        SamAdaptiveSegmentPlan plan,string? recoveryFromBatchId=null,string? automaticRetryOfBatchId=null)=>Hash(
+        SamAdaptiveSegmentPlan plan,string? recoveryFromBatchId=null,string? automaticRetryOfBatchId=null,
+        SamPrincipalReference? principalReference=null)=>Hash(
             Protocol+"\n"+sourceSha+"\n"+sceneKey+"\n"+ptsSha+"\n"+
             plan.RequestedTargetCoreFrames.ToString(CultureInfo.InvariantCulture)+"\n"+
             plan.MaxInFlight.ToString(CultureInfo.InvariantCulture)+"\n"+
@@ -106,7 +107,8 @@ public sealed partial class SamAdaptiveLiveService(
             plan.EstimatedSamCostUsd.ToString("R",CultureInfo.InvariantCulture)+
             (recoveryFromBatchId is null?"":"\nCONTINUOUS_RECOVERY_FROM_FRAME_ZERO_V2:"+recoveryFromBatchId)+
             (plan.OriginalPacketCopy?"\nNATIVE_PACKET_COPY_V1:"+JsonSerializer.Serialize(plan.Windows):"")+
-            (automaticRetryOfBatchId is null?"":"\nONE_AUTHORIZED_CONTINUOUS_RETRY_V1:"+automaticRetryOfBatchId));
+            (automaticRetryOfBatchId is null?"":"\nONE_AUTHORIZED_CONTINUOUS_RETRY_V1:"+automaticRetryOfBatchId)+
+            (principalReference is null?"":"\nPRINCIPAL_REFERENCE:"+JsonSerializer.Serialize(principalReference)));
 
     private static bool Recoverable(SamAdaptiveLiveReport report,string sourceSha,string sceneKey)=>
         report.SourceSha256==sourceSha && report.SparkSceneKey==sceneKey &&
@@ -210,7 +212,8 @@ public sealed partial class SamAdaptiveLiveService(
         RequireSingleOriginal(plan,pts.Length);
         var ptsSha=plan.VerifySourcePts(pts);
         return (source,scene,pts,plan,
-            PlanKey(source.Sha256.ToLowerInvariant(),scene.Key,ptsSha,plan,recoveryFromBatchId,automaticParent));
+            PlanKey(source.Sha256.ToLowerInvariant(),scene.Key,ptsSha,plan,recoveryFromBatchId,automaticParent,
+                NewPrincipalReference(scene,plan,recoveryFromBatchId,automaticParent)));
     }
 
     public async Task<SamAdaptiveLiveQuote> PreflightAsync(
@@ -237,17 +240,26 @@ public sealed partial class SamAdaptiveLiveService(
         RequireSingleOriginal(ideal,pts.Length);
         RequireSingleOriginal(plan,pts.Length);
         var ptsSha=plan.VerifySourcePts(pts);
+        var principal=scene is null?null:NewPrincipalReference(scene,plan,recovery);
         return new(Protocol,source.Sha256.ToLowerInvariant(),scene?.Key??"",
-            ptsSha,PlanKey(source.Sha256,scene?.Key??"PENDING_SPARK",ptsSha,plan,recovery),
+            ptsSha,PlanKey(source.Sha256,scene?.Key??"PENDING_SPARK",ptsSha,plan,recovery,principalReference:principal),
             Guid.NewGuid().ToString("N"),pts.Length,plan.PartCount,
             plan.MaxInFlight,plan.SubmittedFrames,plan.BilledFrames,
             plan.EstimatedSamCostUsd,0.50,null,access.ManualTokenCallsPermitted,
             scene is not null,scene is null,
             scene is null?"SINGLE_FULL_VIDEO_PENDING_SPARK_NO_INFERENCE_SENT":
+                principal is not null?"ONE_PRINCIPAL_SPARK_REFERENCE; OTHER_REFERENCES_RETAINED; FULL_ORIGINAL_VIDEO; ONE_SAM_REQUEST; NO_AUTOMATIC_RETRY":
                 "VERIFIED_SPARK_SEEDS; FULL_ORIGINAL_VIDEO; ONE_SAM_REQUEST; NO_AUTOMATIC_RETRY",
             ideal.PartCount,scene?.Seeds.Count(x=>x.Role=="object")??0,
-            false,recovery,0,plan.EstimatedSamCostUsd,selectedMode,sceneRunId);
+            false,recovery,0,plan.EstimatedSamCostUsd,selectedMode,sceneRunId,principal);
     }
+
+    // Historical recovery archives keep their original prompts and hashes.
+    // New single-video requests bind one exact reviewed reference to the quote.
+    private static SamPrincipalReference? NewPrincipalReference(SamSceneDefinition scene,
+        SamAdaptiveSegmentPlan plan,string? recovery=null,string? automaticParent=null)=>
+        recovery is null && automaticParent is null
+            ?SamPrincipalReferencePolicy.Select(scene,plan.Windows.Single()):null;
 
     private static string Prompt(SamSceneDefinition scene,SamAdaptiveWindow window) =>
         SamAdaptiveGroundedPlan.BuildPrompt(scene,window);
@@ -350,11 +362,14 @@ public sealed partial class SamAdaptiveLiveService(
             // Resolve and validate EVERY Spark-grounded prompt BEFORE
             // consuming a trial slot or reserving any potentially billable
             // provider request. A missing source-frame seed aborts the batch.
-            var prompts=automaticParent is null?await Prompts(scene,plan,plan.VerifySourcePts(pts),request.RecoveryFromBatchId,ct):
-                new[]{SamAdaptiveGroundedPlan.BuildPrompt(scene,plan.Windows.Single())};
+            var principal=NewPrincipalReference(scene,plan,request.RecoveryFromBatchId,automaticParent);
+            var prompts=principal is not null
+                ?new[]{SamPrincipalReferencePolicy.BuildPrompt(scene,plan.Windows.Single(),principal)}
+                :automaticParent is null?await Prompts(scene,plan,plan.VerifySourcePts(pts),request.RecoveryFromBatchId,ct):
+                    new[]{SamAdaptiveGroundedPlan.BuildPrompt(scene,plan.Windows.Single())};
             ct.ThrowIfCancellationRequested();
             await WriteJson(Path.Combine(folder,"batch-context.json"),
-                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,plan.MaxInFlight,request.RecoveryFromBatchId,plan.OriginalPacketCopy?plan.Windows.ToArray():null,automaticParent,mode,request.SceneRunId,studyId,role,source.VideoId),
+                new SamAdaptiveBatchContext(scene,request.TargetCoreFrames,plan.MaxInFlight,request.RecoveryFromBatchId,plan.OriginalPacketCopy?plan.Windows.ToArray():null,automaticParent,mode,request.SceneRunId,studyId,role,source.VideoId,principal),
                 CancellationToken.None);
             await WriteJson(Path.Combine(folder,"batch-started.json"),new{
                 batchId,createdAtUtc=created,sourceSha256=source.Sha256,
@@ -597,11 +612,16 @@ public sealed partial class SamAdaptiveLiveService(
         }
         var ptsSha=plan.VerifySourcePts(pts);
         if(scene.Key!=report.SparkSceneKey || plan.PartCount!=report.Parts ||
-           PlanKey(source.Sha256,scene.Key,ptsSha,plan,context.RecoveryFromBatchId,context.AutomaticRetryOfBatchId)!=report.PlanSha256)
+           PlanKey(source.Sha256,scene.Key,ptsSha,plan,context.RecoveryFromBatchId,context.AutomaticRetryOfBatchId,context.PrincipalReference)!=report.PlanSha256)
             throw new InvalidDataException("Batch plan identity mismatch.");
         if(context.AutomaticRetryOfBatchId is not null)await ValidateAutomaticParent(context.AutomaticRetryOfBatchId,source.Sha256,scene.Key,ct);
-        var prompts=context.AutomaticRetryOfBatchId is null?await Prompts(scene,plan,ptsSha,context.RecoveryFromBatchId,ct):
-            new[]{SamAdaptiveGroundedPlan.BuildPrompt(scene,plan.Windows.Single())};
+        if(context.PrincipalReference is not null &&
+           (plan.PartCount!=1 || context.RecoveryFromBatchId is not null || context.AutomaticRetryOfBatchId is not null))
+            throw new InvalidDataException("Principal references require a single original-video batch.");
+        var prompts=context.PrincipalReference is not null
+            ?new[]{SamPrincipalReferencePolicy.BuildPrompt(scene,plan.Windows.Single(),context.PrincipalReference)}
+            :context.AutomaticRetryOfBatchId is null?await Prompts(scene,plan,ptsSha,context.RecoveryFromBatchId,ct):
+                new[]{SamAdaptiveGroundedPlan.BuildPrompt(scene,plan.Windows.Single())};
         var outputs=new List<SamAdaptivePartOutput>();
         foreach(var w in plan.Windows) {
             var part=Path.Combine(folder,"part-"+w.Part.ToString("D2",CultureInfo.InvariantCulture));

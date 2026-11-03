@@ -1,4 +1,5 @@
 import { apiOrigin } from './api-origin';
+import {assessSamTracking} from './sam-tracking-quality';
 import {resolveSamSuspension,suspensionPlaybackTrack,automaticPivotProvenance,type AutomaticSuspension} from './sam-suspension';
 import type {SceneDefinition} from './assembly-review';
 import {historicalSamSilhouettes} from './sam-ghost-trail';
@@ -60,6 +61,23 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     const track=this.samTrack();
     return track&&this.usesAutomaticSuspension()?suspensionPlaybackTrack(track,this.automaticSuspension()):track;
   });
+  readonly trackingAssessment=computed(()=>assessSamTracking(
+    this.samTrack(),this.periodReceipt()?.framePtsSeconds??[],this.scene()?.seeds??[]));
+  samEvidenceNote():string {
+    const tracking=this.trackingAssessment();
+    if(tracking.firstSuspiciousTimeSeconds!==null) {
+      const time=formatMediaTime(tracking.firstSuspiciousTimeSeconds);
+      return this.es
+        ? 'Seguimiento por revisar desde '+time+': cambió el contorno o faltan detecciones del objeto. Los datos originales se conservan.'
+        : 'Review tracking from '+time+': the object outline changed or detections are missing. Original data are retained.';
+    }
+    if(tracking.missingFrames>0)return this.es
+      ? 'Seguimiento incompleto: '+tracking.missingFrames+' fotogramas sin detección. Los huecos quedan sin valores.'
+      : 'Incomplete tracking: '+tracking.missingFrames+' frames without detection. Gaps have no values.';
+    return this.automaticSuspension()&&!this.pivotRevision()?this.automaticGeometryNote():this.es
+      ? 'SAM 3.1 · máscaras y centros guardados · pendiente revisión humana'
+      : 'SAM 3.1 · cached masks and centroids · human review pending';
+  }
   automaticGeometryNote():string {
     const estimate=this.automaticSuspension();
     if(estimate?.reason==='MOVING_CORD_CONTACT')return this.es

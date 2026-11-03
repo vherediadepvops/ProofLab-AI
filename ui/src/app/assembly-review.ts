@@ -10,6 +10,7 @@ export interface SceneDefinition {
   origin?:'SPARK_GROUNDING'|null;
   evidenceKey?:string;responseSha256?:string;
   roles:{id:string;role:string}[];pivotX:number|null;pivotY:number|null;
+  seeds?:{role:string;frame:number;x1:number;y1:number;x2:number;y2:number}[];
 }
 interface Observation {frame:number;role:string;visible:boolean;x1:number;y1:number;x2:number;y2:number;confidence:number}
 export interface AssemblyEvidence {

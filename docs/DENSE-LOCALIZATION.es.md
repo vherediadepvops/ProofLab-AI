@@ -18,6 +18,18 @@ Se exige cámara estática, al menos seis puntos utilizables de nueve y un grupo
 
 Coincidencia, confianza declarada y verificación por el mismo modelo no prueban precisión física. La estimación sigue pendiente de confirmación humana; las pruebas con respuestas simuladas validan el software, no la exactitud de Spark en nuevos videos.
 
+## Una referencia principal para SAM
+
+Las nuevas solicitudes de video completo usan `SAM_SINGLE_PRINCIPAL_REFERENCE_V1`. Entre las cajas ya revisadas se elige la primera referencia temporal con geometría válida y tamaño/proporción compatibles con las demás. Se conservan sus coordenadas y fotograma exactos: no se inventan ni interpolan cajas. La selección es una heurística de imagen, no una garantía de identidad o precisión física.
+
+Solo esa caja entra en el prompt SAM. Las demás observaciones permanecen en la escena y sirven para corroborar la selección y comparar las máscaras del fotograma correspondiente; no vuelven a indicar a SAM otro punto de inicio. La política y referencia exacta quedan vinculadas al presupuesto y al recibo. Los recibos históricos reconstruyen el prompt que realmente enviaron.
+
+## Revisión de continuidad del seguimiento
+
+Una comprobación local busca cambios bruscos de área que coincidan con un desplazamiento inesperado del centro y persistan en varios fotogramas. Usa los tiempos nativos y registra por separado las detecciones ausentes. La línea de estado existente indica el primer instante que necesita revisión. Las comparaciones con otras cajas Spark son auxiliares: también pueden contener errores y no equivalen a etiquetas humanas.
+
+Este aviso no demuestra que SAM haya seleccionado otro objeto, ni cambia las máscaras originales, los filtros de medición o los informes guardados. Los huecos siguen sin valores y las derivadas requieren vecinos válidos. No consume Meta, no activa reintentos y no rellena posiciones faltantes. La eficacia de la referencia única debe comprobarse con una prueba real autorizada; las pruebas locales verifican selección, integridad y detección de discontinuidades.
+
 ## Costos y compatibilidad
 
 Se conservan dos llamadas Spark: estimación inicial US$0,25 y revisión US$0,10 (total estimado US$0,35), además de SAM y Muse según la cotización. La revisión conserva 18 imágenes y un máximo de salida de 8192 tokens; las explicaciones adicionales pueden cambiar el consumo efectivo. No son una factura ni un límite de cobro impuesto al proveedor. No hay reintentos automáticos.

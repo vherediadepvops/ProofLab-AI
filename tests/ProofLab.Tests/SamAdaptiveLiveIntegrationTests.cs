@@ -629,6 +629,121 @@ public sealed class SamAdaptiveLiveIntegrationTests
         Assert.Empty(Directory.Exists(f.Store)?Directory.GetFiles(f.Store,"batch-preparing.json",SearchOption.AllDirectories):[]);
     }
 
+
+    [Fact]
+    public async Task NewRequestsUseOneBoundReferenceWhileHistoricalFullVideoArchivesKeepEveryPrompt()
+    {
+        using var f=new Fixture();
+        var historical=await WriteHistoricalBatch(f,1);
+        var oldPlayback=await f.Service.ReadPlaybackAsync("study","baseline",historical.Report.BatchId,default);
+        Assert.Equal(historical.Report.PlanSha256,oldPlayback.Receipt.CacheKey);
+        var quote=await f.Quote();Assert.NotNull(quote.PrincipalReference);
+        Assert.Equal(67,quote.PrincipalReference.Seed.Frame);
+        Assert.NotEqual(historical.Report.PlanSha256,quote.PlanSha256);
+        var result=await f.Service.RunOnceAsync("study","baseline",Request(quote),default);
+        Assert.Equal(1,f.Transport.LastPrompt.Split("<|box;").Length-1);
+        Assert.Contains("<67f>",f.Transport.LastPrompt);
+        Assert.DoesNotContain("<333f>",f.Transport.LastPrompt);
+        var context=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(
+            Path.Combine(f.Store,"batches",result.BatchId,"batch-context.json"),default);
+        Assert.Equal(3,context.Scene.Seeds.Length);Assert.NotNull(context.PrincipalReference);
+        Assert.Equal(quote.PrincipalReference.Seed,context.PrincipalReference.Seed);
+        Assert.NotNull(await f.Service.ReadPlaybackAsync("study","baseline",result.BatchId,default));
+        // New writes cannot change the interpretation of immutable old receipts.
+        Assert.Equal(oldPlayback.Receipt.ResponseJsonSha256,
+            (await f.Service.ReadPlaybackAsync("study","baseline",historical.Report.BatchId,default)).Receipt.ResponseJsonSha256);
+        Assert.Equal(1,f.Transport.Calls);
+    }
+
+    [Theory]
+    [InlineData("removed")]
+    [InlineData("moved")]
+    [InlineData("policy")]
+    public async Task PrincipalReferenceTamperingCannotReinterpretCompletedEvidence(string tamper)
+    {
+        using var f=new Fixture();
+        var run=await f.Service.RunOnceAsync("study","baseline",Request(await f.Quote()),default);
+        var path=Path.Combine(f.Store,"batches",run.BatchId,"batch-context.json");
+        var context=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(path,default);
+        var principal=context.PrincipalReference!;
+        context=context with{PrincipalReference=tamper=="removed"?null:tamper=="moved"
+            ?principal with{Seed=context.Scene.Seeds[1]}:principal with{Protocol="UNRECOGNIZED"}};
+        await File.WriteAllTextAsync(path,JsonSerializer.Serialize(context));
+        await Assert.ThrowsAsync<InvalidDataException>(()=>
+            f.Service.ReadPlaybackAsync("study","baseline",run.BatchId,default));
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reserved);
+    }
+
+    [Fact]
+    public async Task ManualStageRetryQuotesAndRecordsThePrincipalReferenceWithoutRepeatingSpark()
+    {
+        using var f=new Fixture();f.Transport.Fail=true;
+        var failed=await f.Service.RunOnceAsync("study","baseline",
+            Request(await f.Quote("api-meta",f.Scenes.ExactRunId)),default);
+        var quote=await f.Service.StageRetryQuoteAsync("study","baseline",default);
+        Assert.NotNull(quote);f.Transport.Fail=false;
+        var retried=await f.Service.RunStageRetryAsync("study","baseline",new(){
+            FailedBatchId=quote.FailedBatchId,NewBatchId=quote.NewBatchId,
+            VideoSha256=quote.VideoSha256,PlanSha256=quote.PlanSha256,
+            ModelApiToken=Token,MaximumEstimatedCostUsd=quote.EstimatedSamUsd,
+            ConfirmPotentialSecondCharge=true,ConfirmVideoTransfer=true},default);
+        var context=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(
+            Path.Combine(f.Store,"batches",retried.BatchId,"batch-context.json"),default);
+        Assert.NotNull(context.PrincipalReference);
+        Assert.Equal(1,f.Transport.LastPrompt.Split("<|box;").Length-1);
+        Assert.Equal(3,context.Scene.Seeds.Length);Assert.Equal(2,f.Transport.Calls);
+        Assert.NotNull(await f.Service.ReadPlaybackAsync("study","baseline",retried.BatchId,default));
+        Assert.True((await f.Service.StageRetryQuoteAsync("study","baseline",default))!.AlreadyRequested);
+        Assert.Equal(failed.Status,(await f.Service.ReadReportAsync(failed.BatchId,default))!.Status);
+    }
+
+
+    [Fact]
+    public async Task HistoricalFailedBatchWithoutReferenceCanBeRetriedWithoutRewritingItsEvidence()
+    {
+        using var f=new Fixture();f.Transport.Fail=true;
+        var failed=await f.Service.RunOnceAsync("study","baseline",
+            Request(await f.Quote("api-meta",f.Scenes.ExactRunId)),default);
+        var folder=Path.Combine(f.Store,"batches",failed.BatchId);
+        var contextPath=Path.Combine(folder,"batch-context.json");
+        var context=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(contextPath,default);
+        var scene=context.Scene;var windows=context.NativeWindows!;
+        var plan=SamAdaptiveSegmentPlan.RestoreNative(f.Runtime.Pts.Length,context.TargetCoreFrames,1,windows);
+        var inv=System.Globalization.CultureInfo.InvariantCulture;
+        var legacyKey=SamVideoArchive.Hash(SamAdaptiveLiveService.Protocol+"\n"+Sha+"\n"+scene.Key+"\n"+
+            plan.VerifySourcePts(f.Runtime.Pts)+"\n"+plan.RequestedTargetCoreFrames.ToString(inv)+"\n"+
+            plan.MaxInFlight.ToString(inv)+"\n"+plan.PartCount.ToString(inv)+"\n"+
+            plan.BilledFrames.ToString(inv)+"\n"+plan.EstimatedSamCostUsd.ToString("R",inv)+
+            "\nNATIVE_PACKET_COPY_V1:"+JsonSerializer.Serialize(plan.Windows));
+        // Recreate an archived pre-upgrade failure entirely inside the fake store.
+        await File.WriteAllTextAsync(contextPath,JsonSerializer.Serialize(context with{PrincipalReference=null}));
+        await File.WriteAllTextAsync(Path.Combine(folder,"batch-report.json"),
+            JsonSerializer.Serialize(failed with{PlanSha256=legacyKey}));
+        async Task Set(string name,string field,string value){
+            var path=Path.Combine(folder,name);var d=System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(path))!;
+            d[field]=value;await File.WriteAllTextAsync(path,d.ToJsonString());
+        }
+        await Set("batch-started.json","planSha256",legacyKey);
+        await Set(Path.Combine("part-00","attempt-started.json"),"promptSha256",
+            SamVideoArchive.Hash(SamAdaptiveGroundedPlan.BuildPrompt(scene,windows.Single())));
+        var paths=new[]{"batch-context.json","batch-report.json","batch-started.json",Path.Combine("part-00","attempt-started.json")};
+        var before=new Dictionary<string,string>();
+        foreach(var name in paths)before[name]=await File.ReadAllTextAsync(Path.Combine(folder,name));
+        var retry=await f.Service.StageRetryQuoteAsync("study","baseline",default);
+        Assert.NotNull(retry);Assert.NotEqual(legacyKey,retry.PlanSha256);f.Transport.Fail=false;
+        var child=await f.Service.RunStageRetryAsync("study","baseline",new(){
+            FailedBatchId=retry.FailedBatchId,NewBatchId=retry.NewBatchId,
+            VideoSha256=retry.VideoSha256,PlanSha256=retry.PlanSha256,ModelApiToken=Token,
+            MaximumEstimatedCostUsd=retry.EstimatedSamUsd,ConfirmPotentialSecondCharge=true,
+            ConfirmVideoTransfer=true},default);
+        var upgraded=await SamVideoArchive.ReadJsonAsync<SamAdaptiveBatchContext>(
+            Path.Combine(f.Store,"batches",child.BatchId,"batch-context.json"),default);
+        Assert.NotNull(upgraded.PrincipalReference);Assert.Equal(1,f.Transport.LastPrompt.Split("<|box;").Length-1);
+        Assert.Equal(2,f.Transport.Calls);
+        foreach(var name in paths)Assert.Equal(before[name],await File.ReadAllTextAsync(Path.Combine(folder,name)));
+        Assert.NotNull(await f.Service.ReadPlaybackAsync("study","baseline",child.BatchId,default));
+    }
+
     private static SamAdaptiveLiveRunRequest Request(SamAdaptiveLiveQuote q,double? maximum=null,string? batchId=null,bool retry=false,double? combined=null,int? concurrency=null)=>new(){
         MaxInFlight=concurrency??q.SimultaneousRequests,ModelApiToken=Token,VideoSha256=q.SourceSha256,SceneKey=q.SparkSceneKey,PlanSha256=q.PlanSha256,
         ClientBatchId=batchId??q.SuggestedBatchId,MaximumSamCostUsd=maximum??q.TotalSamEstimatedUsd,RecoveryFromBatchId=q.RecoveryFromBatchId,Mode=q.Mode,SceneRunId=q.SceneRunId,

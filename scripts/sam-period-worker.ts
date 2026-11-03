@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {decodeSamVideoResponse} from '../ui/src/app/sam-video-evidence';
 import {verifiedSamSceneTracks, validSamTarget} from '../ui/src/app/sam-playback';
 import {periodReportPayload} from '../ui/src/app/sam-period';
+import {assessSamTracking} from '../ui/src/app/sam-tracking-quality';
 
 async function main() {
   // Trusted local worker. No network, token, model code or user-provided file paths.
@@ -31,6 +32,9 @@ async function main() {
   const width=track?.frameWidth??input.sourceWidth,height=track?.frameHeight??input.sourceHeight;
   if(!Number.isFinite(width)||!Number.isFinite(height)||width<1||height<1)
     throw Error('SOURCE_DIMENSIONS_MISSING');
+  if(input.operation==='tracking-review-diagnostics') {
+    process.stdout.write(JSON.stringify(assessSamTracking(track??null,receipt.framePtsSeconds,receipt.scene?.seeds??[])));return;
+  }
   if(input.operation==='suspension-review-diagnostics') {
     process.stdout.write(JSON.stringify({diagnostics:samSuspensionDiagnostics(archive,track??null),
       current:track?resolveSamSuspension(archive,track):null}));return;
