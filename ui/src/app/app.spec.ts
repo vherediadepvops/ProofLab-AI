@@ -65,11 +65,13 @@ describe('ProofLab Competition Research Lab', () => {
     expect(fixture.componentInstance.workspace()).toBe('home');
     expect(Array.from(root.querySelectorAll('aside.sidebar .nav')).map(x=>x.textContent?.trim()))
       .toEqual(['Inicio','Laboratorio','Configuración']);
-    expect(root.querySelectorAll('.home-v3-step').length).toBe(5);
+    expect(root.querySelectorAll('.home-v4-step').length).toBe(5);
     expect(root.textContent).toContain('evidencia científica.');
+    expect(root.querySelector('.home-v4-feature img[src="/home-real-pendulum.webp"]')).not.toBeNull();
+    expect(root.querySelector('.home-v4-feature img[src="/home-pendulum-board.webp"]')).not.toBeNull();
     expect(root.textContent).toContain('Preparar');
     expect(root.textContent).toContain('Comprobar');
-    expect((root.querySelector('.home-v3 .studio-primary') as HTMLButtonElement)?.textContent).toContain('Abrir laboratorio');
+    expect((root.querySelector('.home-v4 .studio-primary') as HTMLButtonElement)?.textContent).toContain('Abrir laboratorio');
     expect(root.querySelector('app-pendulum-zone-one')).toBeNull();
     expect(root.querySelector('input[type="password"]')?.closest('[hidden]')).not.toBeNull();
     http.expectNone(r=>r.url.includes('/api/math'));
