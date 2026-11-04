@@ -219,7 +219,7 @@ export class App implements OnInit {
   readonly connection = inject(LabConnection);
   readonly labOpened = signal(false);
   private readonly api = apiOrigin(5391);
-  readonly language = signal<Language>('es');
+  readonly language = signal<Language>('en');
   readonly words = computed(() => COPY[this.language()]);
   readonly workspace = signal<'home' | 'settings' | 'math' | 'physics' | 'meta' | 'pendulum'>('home');
   readonly mathProblems = signal<MathProblem[]>([]);
@@ -239,7 +239,7 @@ export class App implements OnInit {
   readonly metaAvailable = signal(false);
   readonly running = signal(false);
   readonly error = signal('');
-  readonly question = signal('¿Cómo afecta la longitud del péndulo a su período?');
+  readonly question = signal('How does changing the pendulum length affect its period?');
   readonly aiAnswer = signal('');
   readonly imageDataUri = signal('');
   readonly segmentation = signal('');

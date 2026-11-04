@@ -18,7 +18,8 @@ describe('ProofLab Competition Research Lab', () => {
 
   function initialize(leanAvailable = false, metaEnabled = false): { app: App; root: HTMLElement; controller: HttpTestingController; fixture: any } {
     const fixture = TestBed.createComponent(App);
-    // Legacy mission tests explicitly select the preserved hidden workspace.
+    fixture.componentInstance.setLanguage('es');
+    // Legacy mission tests explicitly select Spanish and the preserved hidden workspace.
     // The juror-facing default is now Pendulum only.
     fixture.componentInstance.workspace.set('math');
     fixture.detectChanges();
@@ -64,14 +65,14 @@ describe('ProofLab Competition Research Lab', () => {
     const root=fixture.nativeElement as HTMLElement;
     expect(fixture.componentInstance.workspace()).toBe('home');
     expect(Array.from(root.querySelectorAll('aside.sidebar .nav')).map(x=>x.textContent?.trim()))
-      .toEqual(['Inicio','Laboratorio','Configuración']);
+      .toEqual(['Home','Laboratory','Settings']);
     expect(root.querySelectorAll('.home-v4-step').length).toBe(5);
-    expect(root.textContent).toContain('evidencia científica.');
+    expect(root.textContent).toContain('scientific evidence.');
     expect(root.querySelector('.home-v4-feature img[src="/home-real-pendulum.webp"]')).not.toBeNull();
     expect(root.querySelector('.home-v4-feature img[src="/home-pendulum-board.webp"]')).not.toBeNull();
-    expect(root.textContent).toContain('Preparar');
-    expect(root.textContent).toContain('Comprobar');
-    expect((root.querySelector('.home-v4 .studio-primary') as HTMLButtonElement)?.textContent).toContain('Abrir laboratorio');
+    expect(root.textContent).toContain('Prepare');
+    expect(root.textContent).toContain('Verify');
+    expect((root.querySelector('.home-v4 .studio-primary') as HTMLButtonElement)?.textContent).toContain('Open laboratory');
     expect(root.querySelector('app-pendulum-zone-one')).toBeNull();
     expect(root.querySelector('input[type="password"]')?.closest('[hidden]')).not.toBeNull();
     http.expectNone(r=>r.url.includes('/api/math'));
