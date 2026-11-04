@@ -3,12 +3,10 @@ namespace ProofLab.Api;
 /// <summary>A reviewed body reference, optionally paired with an independently observed initial interior point.</summary>
 public sealed record SamPrincipalReference(string Protocol,SamSceneSeed Seed,
     int CandidateCount,int[] RejectedFrameIndices,
-    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SamScenePoint? InitialBodyPoint=null,
-    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SamInitialBodyPointConfirmation? HumanConfirmation=null);
+    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SamScenePoint? InitialBodyPoint=null);
 
 public static class SamPrincipalReferencePolicy
 {
-    public const string HumanPointProtocol="SAM_HUMAN_CONFIRMED_INITIAL_BODY_POINT_V4";
     public const string InitialPointProtocol="SAM_INITIAL_BODY_POINT_WITH_CLEAR_REFERENCES_V3";
     public const string LegacyProtocol="SAM_SINGLE_PRINCIPAL_REFERENCE_V1";
     public const string Protocol="SAM_SINGLE_PRINCIPAL_REFERENCE_V2";
@@ -66,21 +64,10 @@ public static class SamPrincipalReferencePolicy
             candidates.Where(s=>!credible.Contains(s)).Select(s=>s.Frame).Order().ToArray(),point);
     }
 
-    public static SamPrincipalReference Confirm(SamSceneDefinition scene,SamAdaptiveWindow window,
-        SamInitialBodyPointConfirmation confirmation)
-    {
-        SamInitialBodyPointPolicy.Validate(confirmation,scene);
-        var selected=Select(scene,window);
-        if(selected.InitialBodyPoint is null)
-            throw new InvalidDataException("Human selection requires an observed initial body point.");
-        return selected with{Protocol=HumanPointProtocol,InitialBodyPoint=confirmation.Point,HumanConfirmation=confirmation};
-    }
-
     public static string BuildPrompt(SamSceneDefinition scene,SamAdaptiveWindow window,
         SamPrincipalReference reference)
     {
-        var expected=reference.HumanConfirmation is {} human
-            ?Confirm(scene,window,human):Select(scene,window);
+        var expected=Select(scene,window);
         if(reference.Protocol!=expected.Protocol || reference.Seed!=expected.Seed || reference.InitialBodyPoint!=expected.InitialBodyPoint ||
            reference.CandidateCount!=expected.CandidateCount || reference.RejectedFrameIndices is null ||
            !reference.RejectedFrameIndices.SequenceEqual(expected.RejectedFrameIndices))

@@ -8,7 +8,6 @@ public sealed class SamAdaptiveLiveRunRequest
     public string ModelApiToken { get; init; }="";
     public string? Mode { get; init; }
     public string? SceneRunId { get; init; }
-    public string? InitialBodyPointConfirmationId {get;init;}
     public string VideoSha256 { get; init; }="";
     public string SceneKey { get; init; }="";
     public string PlanSha256 { get; init; }="";
@@ -38,10 +37,7 @@ public sealed record SamAdaptiveLiveQuote(
     bool ReducedForSparseSparkSeeds,string? RecoveryFromBatchId=null,
     double ContinuousRetryEstimatedUsd=0,double MaximumSamWithRetryEstimatedUsd=0,
     string Mode="api-meta-cache",string? SceneRunId=null,
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] SamPrincipalReference? PrincipalReference=null,
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingDefault)] bool RequiresInitialBodyPointConfirmation=false,
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] SamInitialBodyPointConfirmationView? InitialBodyPointConfirmation=null,
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? InitialBodyPointConfirmationId=null);
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] SamPrincipalReference? PrincipalReference=null);
 
 public sealed record SamAdaptiveBatchContext(SamSceneDefinition Scene,int TargetCoreFrames,int MaxInFlight,string? RecoveryFromBatchId=null,SamAdaptiveWindow[]? NativeWindows=null,string? AutomaticRetryOfBatchId=null,string Mode="api-meta-cache",string? SceneRunId=null,
     string? StudyId=null,string? VideoRole=null,string? SourceVideoId=null,

@@ -49,10 +49,6 @@
     <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveEndpoints.cs" Link="SamAdaptiveEndpoints.cs" />
     <Compile Include="../../src/ProofLab.Api/SamPrincipalReference.cs" Link="SamPrincipalReference.cs" />
     <Compile Include="../../src/ProofLab.Api/VisibleBodyPoint.cs" Link="VisibleBodyPoint.cs" />
-    <Compile Include="../../src/ProofLab.Api/SamInitialBodyPointConfirmation.cs" Link="SamInitialBodyPointConfirmation.cs" />
-    <Compile Include="../../src/ProofLab.Api/SamInitialBodyPointReview.cs" Link="SamInitialBodyPointReview.cs" />
-    <Compile Include="../../src/ProofLab.Api/SamInitialReferenceEndpoints.cs" Link="SamInitialReferenceEndpoints.cs" />
-    <Compile Include="../../src/ProofLab.Api/AssemblyInitialReference.cs" Link="AssemblyInitialReference.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamAdaptiveGroundedPlan.cs"
              Link="SamAdaptiveGroundedPlan.cs" />
     <Compile Include="..\..\src\ProofLab.Api\SamManualApiTokenPolicy.cs"
