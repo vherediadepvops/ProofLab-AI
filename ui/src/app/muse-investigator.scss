@@ -1,4 +1,13 @@
 :host{display:block;margin-top:16px;color:#edf3fb}
+.length-choice{margin:16px 0;padding:16px;background:#112b29;border:1px solid #346b5e;border-radius:10px}
+.length-choice>label{display:block;color:#ecfff7;font-size:14px;font-weight:600;line-height:1.5}
+.length-choice .current-length{margin-top:0;color:#b0d7cb}
+.length-choice .current-length strong{color:#a9f0d8}
+.length-input{display:flex;align-items:center;gap:10px;margin:12px 0;max-width:210px}
+.length-input input{width:100%;min-width:0;box-sizing:border-box;font-size:20px;background:#091e20;border:1px solid #75baa6;border-radius:7px;color:#effff9;padding:10px}
+.length-input input:focus-visible{outline:2px solid #8dedd1;outline-offset:2px}
+.length-input span{color:#bbdfd2}.length-choice .warning:empty{display:none}
+.length-choice .predict-action{max-width:100%;white-space:normal}
 .v93-spark-head,.v93-contrast-head{margin:-12px -12px 0;padding:20px;border:1px solid #4c4d75;background:linear-gradient(115deg,#1b2037,#141d30);border-radius:11px;color:#f3f0ff}
 .v93-spark-kicker{display:block;color:#c5b3ff;letter-spacing:1px;font-size:10px;font-weight:700}
 .v93-spark-head h2{font-size:clamp(20px,2vw,27px);margin:10px 0 7px;line-height:1.3}

@@ -47,7 +47,9 @@ public sealed class MuseReviewWorkflowTests
             var value=JsonSerializer.SerializeToElement(input,Json);
             var analysis=value.GetProperty("archive").GetProperty("receipt").GetProperty("analysisId").GetString();
             return Task.FromResult(JsonSerializer.Serialize(new {
-                source=new {analysisId=analysis,objectId="0"},
+                source=new {analysisId=analysis,objectId="0",studyId=value.GetProperty("studyId"),role="baseline",
+                    originalVideoSha256=value.GetProperty("videoSha256"),pivotRevisionId=value.GetProperty("pivotRevisionId"),
+                    providerResponseSha256=value.GetProperty("archive").GetProperty("receipt").GetProperty("responseJsonSha256")},
                 input=new {framePtsSeconds=new[]{0d,.1,.2},centroids=new[]{new{frameIndex=0,x=100d,y=100d}},
                     sourceWidth=640,sourceHeight=480,imageWidth=640,imageHeight=480,pivot=new{x=.5,y=.1}},
                 assessment=new {status="CANDIDATE",periodSeconds=1.415,statisticalStandardUncertaintySeconds=.001,
@@ -61,8 +63,11 @@ public sealed class MuseReviewWorkflowTests
         public Task<KnotProviderResult> EvaluateAsync(string input,string token,CancellationToken ct) {
             Calls++;Assert.Equal(Token,token);
             var text=new MuseText("Hipótesis condicional.","Conditional hypothesis.");
+            using var supplied=JsonDocument.Parse(input);
+            var option=supplied.RootElement.GetProperty("experimentOptions")[0];
             var answer=new MuseInvestigatorAnswer("PROPOSE_EXPERIMENT",text,text,text,text,text,
-                .8,1.415*Math.Sqrt(1.6),4,new("PENDULUM_COMPATIBLE",text));
+                option.GetProperty("nextLengthMeters").GetDouble(),option.GetProperty("periodSeconds").GetDouble(),
+                4,new("PENDULUM_COMPATIBLE",text));
             var raw=JsonSerializer.Serialize(new {id="synthetic-muse",model=MuseExperimentPolicy.Model,status="completed",
                 output=new[]{new{type="message",content=new[]{new{type="output_text",text=JsonSerializer.Serialize(answer,Json)}}}},
                 usage=new{input_tokens=1000,output_tokens=100}},Json);
@@ -102,8 +107,8 @@ public sealed class MuseReviewWorkflowTests
             var review=new DirectorHumanReview(DateTimeOffset.UtcNow,runtime.Source.Sha256,true,"SYNTHETIC_SAVED_HUMAN_REVIEW");
             await File.WriteAllTextAsync(StudyFile("human-review.json"),JsonSerializer.Serialize(review,Json));
         }
-        public async Task<MuseExperimentState> Evaluate() {
-            var observation=await Service.PrepareAsync(Study,Request,Ct);
+        public async Task<MuseExperimentState> Evaluate(MusePrepareRequest? request=null) {
+            var observation=await Service.PrepareAsync(Study,request??Request,Ct);
             return await Service.EvaluateAsync(Study,new(observation.Id,Token,true,true,.05),Ct);
         }
         public long ObservationCount() {
@@ -115,13 +120,16 @@ public sealed class MuseReviewWorkflowTests
     }
 
     [Fact]
-    public async Task AutomaticInterpretationThenSavedReviewFreezesTheSameAnswerAndSurvivesReload() {
+    public async Task LegacyInterpretationRequiresExplicitChoiceButAnAlreadyFrozenLegacyAnswerSurvivesReload() {
         using var f=new Fixture();await f.Initialize();var before=await f.Evaluate();
         Assert.Null(before.Prediction);
         var original=before.Observation!;
         Assert.False(JsonDocument.Parse(original.PayloadJson).RootElement.GetProperty("humanObjectReviewed").GetBoolean());
         await f.Review();
         Assert.Equal(original,await f.Service.PrepareAsync(Study,f.Request,Ct));
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.FreezeAsync(Study,new(original.Id,before.Evaluation!.ResponseId),Ct));
+        // Simulate an immutable prediction stored by the previous release.
+        f.Store.Freeze(original,before.Evaluation!);
         var frozen=await f.Service.FreezeAsync(Study,new(original.Id,before.Evaluation!.ResponseId),Ct);
         Assert.Equal(original,frozen.Observation);Assert.Equal(before.Evaluation,frozen.Evaluation);
         Assert.NotNull(frozen.Prediction);Assert.Equal(1,f.ObservationCount());Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Worker.Calls);
@@ -134,7 +142,7 @@ public sealed class MuseReviewWorkflowTests
 
     [Fact]
     public async Task FreezeWithoutSavedReviewRemainsBlocked() {
-        using var f=new Fixture();await f.Initialize();var before=await f.Evaluate();
+        using var f=new Fixture();await f.Initialize();var before=await f.Evaluate(f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.8});
         await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.FreezeAsync(Study,
             new(before.Observation!.Id,before.Evaluation!.ResponseId),Ct));
         Assert.Null(f.Service.State(Study).Prediction);Assert.Equal(1,f.ObservationCount());
@@ -142,13 +150,13 @@ public sealed class MuseReviewWorkflowTests
 
     [Fact]
     public async Task ChangedParametersCannotFreezeAndDoNotAppendABlankObservation() {
-        using var f=new Fixture();await f.Initialize();var before=await f.Evaluate();await f.Review();
+        using var f=new Fixture();await f.Initialize();var before=await f.Evaluate(f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.8});await f.Review();
         var node=JsonNode.Parse(await File.ReadAllTextAsync(f.StudyFile("session.json")))!;
         node["baselineLengthMeters"]=.6;await File.WriteAllTextAsync(f.StudyFile("session.json"),node.ToJsonString());
         await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.FreezeAsync(Study,
             new(before.Observation!.Id,before.Evaluation!.ResponseId),Ct));
         Assert.Equal(1,f.ObservationCount());Assert.Equal(1,f.Worker.Calls);Assert.Equal(1,f.Transport.Calls);
-        Assert.Equal(before.Evaluation,f.Service.State(Study).Evaluation);Assert.Null(f.Service.State(Study).Prediction);
+        Assert.Equal(before.Evaluation,f.Service.State(Study,"prediction").Evaluation);Assert.Null(f.Service.State(Study).Prediction);
     }
 
     [Fact]
@@ -161,6 +169,9 @@ public sealed class MuseReviewWorkflowTests
         Assert.Equal(key,f.Store.LatestObservation(Study)!.Id);
         var recovered=f.Service.State(Study);Assert.Equal(original,recovered.Observation);Assert.Equal(before.Evaluation,recovered.Evaluation);
         Assert.Equal(original,await f.Service.PrepareAsync(Study,f.Request,Ct));
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.FreezeAsync(Study,new(original.Id,before.Evaluation!.ResponseId),Ct));
+        // Simulate an immutable prediction stored by the previous release.
+        f.Store.Freeze(original,before.Evaluation!);
         var frozen=await f.Service.FreezeAsync(Study,new(original.Id,before.Evaluation!.ResponseId),Ct);
         Assert.Equal(original.Id,frozen.Prediction!.ObservationId);Assert.Equal(2,f.ObservationCount());
         Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Worker.Calls);Assert.NotNull(f.Store.Observation(key));
@@ -213,4 +224,102 @@ public sealed class MuseReviewWorkflowTests
         Assert.False(MuseObservationIdentity.MatchesCurrent(original with {PayloadJson=payload.ToJsonString(Json)},
             JsonSerializer.SerializeToElement(current,Json)));
     }
+    [Fact]
+    public async Task ExplicitPredictionKeepsOriginalInterpretationAndFreezesOnlyChosenLength() {
+        using var f=new Fixture();await f.Initialize();var interpretation=await f.Evaluate();
+        Assert.Null(f.Service.State(Study,"prediction").Observation);
+        var chosen=await f.Service.PrepareAsync(Study,f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.6},Ct);
+        Assert.NotEqual(interpretation.Observation!.Id,chosen.Id);
+        var evaluated=await f.Service.EvaluateAsync(Study,new(chosen.Id,Token,true,true,.05),Ct);
+        Assert.Equal(.6,evaluated.Evaluation!.Answer.NextLengthMeters);
+        Assert.Equal(interpretation.Evaluation,f.Service.State(Study).Evaluation);
+        Assert.Equal(chosen,f.Service.State(Study,"prediction").Observation);
+        await f.Review();
+        var frozen=await f.Service.FreezeAsync(Study,new(chosen.Id,evaluated.Evaluation.ResponseId),Ct);
+        Assert.Equal(chosen.Id,frozen.Prediction!.ObservationId);
+        using var payload=JsonDocument.Parse(frozen.Prediction.PayloadJson);
+        Assert.Equal(.6,payload.RootElement.GetProperty("prediction").GetProperty("nextLengthMeters").GetDouble());
+        Assert.Equal(interpretation.Observation,f.Service.State(Study).Observation);
+        Assert.Equal(interpretation.Evaluation,f.Service.State(Study).Evaluation);
+        Assert.Equal(frozen.Prediction,f.Service.State(Study).Prediction);
+        Assert.Equal(frozen.Prediction,f.Service.State(Study,"prediction").Prediction);
+        Assert.Equal(chosen,new MuseExperimentStore(new Env(f.Root)).PredictionDraft(Study));
+        var reviewed=await f.Service.ConfirmTrackingReviewAsync(Study,new(true,f.Request),Ct);
+        Assert.True(reviewed.HumanReview!.BobConfirmed);
+        Assert.Equal(interpretation.Evaluation,f.Service.State(Study).Evaluation);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.PrepareAsync(Study,
+            f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.9},Ct));
+        Assert.Equal(2,f.Transport.Calls);
+    }
+
+    [Fact]
+    public async Task ChangingChosenLengthDoesNotReuseAnAnswerForAnotherLengthAndCanRecoverExactCachedChoice() {
+        using var f=new Fixture();await f.Initialize();await f.Review();
+        var first=await f.Service.PrepareAsync(Study,f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.6},Ct);
+        var evaluated=await f.Service.EvaluateAsync(Study,new(first.Id,Token,true,true,.05),Ct);
+        var second=await f.Service.PrepareAsync(Study,f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.8},Ct);
+        Assert.NotEqual(first.Id,second.Id);Assert.Null(f.Service.State(Study,"prediction").Evaluation);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.FreezeAsync(Study,new(first.Id,evaluated.Evaluation!.ResponseId),Ct));
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.EvaluateAsync(Study,new(first.Id,Token,true,true,.05),Ct));
+        var recovered=await f.Service.PrepareAsync(Study,f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.6},Ct);
+        Assert.Equal(first,recovered);Assert.Equal(evaluated.Evaluation,f.Service.State(Study,"prediction").Evaluation);
+        Assert.Equal(first,new MuseExperimentStore(new Env(f.Root)).PredictionDraft(Study));
+        var reused=await f.Service.EvaluateAsync(Study,new(first.Id,Token,true,true,.05),Ct);
+        Assert.Equal(evaluated.Evaluation,reused.Evaluation);Assert.Equal(1,f.Transport.Calls);
+        Assert.Equal(2,f.ObservationCount());
+    }
+
+    [Fact]
+    public async Task ChosenSeventyToEightyCentimetersSupportsLessThanFifteenPercentChange() {
+        using var f=new Fixture();await f.Initialize();
+        var session=JsonNode.Parse(await File.ReadAllTextAsync(f.StudyFile("session.json")))!;
+        session["baselineLengthMeters"]=.7;await File.WriteAllTextAsync(f.StudyFile("session.json"),session.ToJsonString());
+        var choice=await f.Service.PrepareAsync(Study,f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.8},Ct);
+        var evaluated=await f.Service.EvaluateAsync(Study,new(choice.Id,Token,true,true,.05),Ct);
+        Assert.Equal(.8,evaluated.Evaluation!.Answer.NextLengthMeters);
+        Assert.Equal(1.415*Math.Sqrt(.8/.7),evaluated.Evaluation.Answer.PeriodSeconds!.Value,10);
+    }
+
+    [Theory]
+    [InlineData(null)][InlineData(.09)][InlineData(2.01)][InlineData(.5)]
+    public async Task MissingOutOfRangeOrUnchangedLengthCannotPreparePrediction(double? length) {
+        using var f=new Fixture();await f.Initialize();
+        await Assert.ThrowsAsync<ArgumentException>(()=>f.Service.PrepareAsync(Study,
+            f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=length},Ct));
+        Assert.Null(f.Service.State(Study,"prediction").Observation);
+        Assert.Equal(0,f.Worker.Calls);Assert.Equal(0,f.Transport.Calls);
+    }
+
+    [Fact]
+    public async Task ChoiceRequiresExplicitPurposeAndCannotBeChangedAfterVideoTwo() {
+        using var f=new Fixture();await f.Initialize();
+        await Assert.ThrowsAsync<ArgumentException>(()=>f.Service.PrepareAsync(Study,
+            f.Request with {PlannedFollowupLengthMeters=.8},Ct));
+        Assert.Throws<ArgumentException>(()=>f.Service.State(Study,"unknown"));
+        var prepared=await f.Service.PrepareAsync(Study,f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.8},Ct);
+        var evaluated=await f.Service.EvaluateAsync(Study,new(prepared.Id,Token,true,true,.05),Ct);
+        await f.Review();await f.Service.FreezeAsync(Study,new(prepared.Id,evaluated.Evaluation!.ResponseId),Ct);
+        var followup=JsonNode.Parse(await File.ReadAllTextAsync(f.StudyFile("baseline.json")))!;
+        followup["role"]="followup";followup["sha256"]=new string('b',64);followup["uploadedAtUtc"]=DateTimeOffset.UtcNow;
+        await File.WriteAllTextAsync(f.StudyFile("followup.json"),followup.ToJsonString());
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Service.PrepareAsync(Study,
+            f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.8},Ct));
+        Assert.Equal(1,f.Transport.Calls);
+    }
+
+    [Fact]
+    public async Task ChosenLengthIsAuthenticatedAndCannotBeSubstitutedByTheModel() {
+        using var f=new Fixture();await f.Initialize();
+        var choice=await f.Service.PrepareAsync(Study,f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.6},Ct);
+        using var payload=JsonDocument.Parse(choice.PayloadJson);
+        Assert.Equal(.6,payload.RootElement.GetProperty("identity").GetProperty("plannedFollowupLengthMeters").GetDouble());
+        using var input=JsonDocument.Parse(MuseExperimentPolicy.BuildInput(choice));
+        Assert.Equal(.6,input.RootElement.GetProperty("operatorSelectedLengthMeters").GetDouble());
+        Assert.Equal(1,input.RootElement.GetProperty("experimentOptions").GetArrayLength());
+        var text=new MuseText("Hipótesis condicional.","Conditional hypothesis.");
+        var wrong=new MuseInvestigatorAnswer("PROPOSE_EXPERIMENT",text,text,text,text,text,
+            .8,1.415*Math.Sqrt(1.6),4,new("PENDULUM_COMPATIBLE",text));
+        Assert.Throws<FormatException>(()=>MuseExperimentPolicy.Parse(JsonSerializer.Serialize(wrong,Json),payload.RootElement));
+    }
+
 }

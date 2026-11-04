@@ -2,7 +2,26 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 namespace ProofLab.Api;
 
-public sealed record MusePrepareRequest(string VideoSha256,string AnalysisId,string? PivotRevisionId,string? AdaptiveBatchId=null);
+public sealed record MusePrepareRequest(string VideoSha256,string AnalysisId,string? PivotRevisionId,string? AdaptiveBatchId=null,
+    string Purpose="interpretation",double? PlannedFollowupLengthMeters=null);
+
+/// <summary>Explicit prediction drafts are separate from the original interpretation.</summary>
+public static class MuseExperimentPurpose
+{
+    public const string Interpretation="interpretation",Prediction="prediction";
+    public static string Validate(string purpose) => purpose is Interpretation or Prediction
+        ?purpose:throw new ArgumentException("Unknown Muse purpose.");
+    public static string Of(JsonElement payload) => payload.GetProperty("identity").TryGetProperty("purpose",out var purpose)
+        ?Validate(purpose.GetString()??""):Interpretation;
+    public static string Of(MuseObservation observation) {
+        using var payload=JsonDocument.Parse(observation.PayloadJson);return Of(payload.RootElement);
+    }
+    public static void ValidateChosenLength(double? length,double? baseline) {
+        if(length is not double next || !double.IsFinite(next) || next is <.1 or >2 ||
+           baseline is not double first || !double.IsFinite(first) || first<=0 || Math.Abs(next-first)<=1e-6)
+            throw new ArgumentException("Choose a different second length between 0.1 and 2 meters.");
+    }
+}
 public sealed record MuseExperimentRunRequest(string ObservationId,string? ModelApiToken,
     bool ConfirmMeasuredDataTransfer,bool ConfirmPaidCall,double MaximumEstimatedCostUsd);
 public sealed record MuseText(string Es,string En);
@@ -130,8 +149,9 @@ public static class MuseExperimentPolicy
             throw new FormatException("Invalid measured period or length.");
         var lengths=observation.TryGetProperty("plannedFollowupLengthMeters",out var planned) &&
             planned.ValueKind==JsonValueKind.Number ? new[]{planned.GetDouble()} : new[]{1.6,1.5,.75}.Select(r=>Math.Round(l1*r,3)).ToArray();
+        var explicitChoice=MuseExperimentPurpose.Of(observation)==MuseExperimentPurpose.Prediction;
         return lengths
-            .Where(l=>l is >=.1 and <=2 && Math.Abs(l/l1-1)>=.15).Distinct()
+            .Where(l=>l is >=.1 and <=2 && (explicitChoice?Math.Abs(l-l1)>1e-6:Math.Abs(l/l1-1)>=.15)).Distinct()
             .Select(l=>new ExperimentOption(l,t1*Math.Sqrt(l/l1))).ToArray();
     }
 
@@ -228,6 +248,13 @@ public static class MuseExperimentPolicy
             },Json);
             json=node.ToJsonString(Json);
         }
+        if(MuseExperimentPurpose.Of(root)==MuseExperimentPurpose.Prediction) {
+            var node=System.Text.Json.Nodes.JsonNode.Parse(json)!;
+            node["purpose"]=MuseExperimentPurpose.Prediction;
+            node["operatorSelectedLengthMeters"]=root.GetProperty("plannedFollowupLengthMeters").GetDouble();
+            node["lengthChoiceInstruction"]="Use only the operator-selected length in experimentOptions. Do not substitute a different length or claim to have chosen it.";
+            json=node.ToJsonString(Json);
+        }
         if(json.Length>16000)throw new ArgumentException("Evidence summary exceeds the input limit.");
         return json;
     }
@@ -275,8 +302,9 @@ public static class MuseExperimentPolicy
             throw new FormatException("A length-based prediction requires a declared baseline length.");
         var l1=length.GetDouble();
         var t1=assessment.GetProperty("periodSeconds").GetDouble();
+        var explicitChoice=MuseExperimentPurpose.Of(observation)==MuseExperimentPurpose.Prediction;
         if(a.NextLengthMeters is not double l2 || !double.IsFinite(l2) || l2 is <.1 or >2 ||
-           Math.Abs(l2/l1-1)<.15 || a.TolerancePercent is not double tol ||
+           (explicitChoice?Math.Abs(l2-l1)<=1e-6:Math.Abs(l2/l1-1)<.15) || a.TolerancePercent is not double tol ||
            !double.IsFinite(tol) || tol is <1 or >10 || a.PeriodSeconds is not double predicted ||
            !double.IsFinite(predicted) || Math.Abs(predicted-t1*Math.Sqrt(l2/l1))>0.005)
             throw new FormatException("Invalid or inconsistent conditional prediction.");

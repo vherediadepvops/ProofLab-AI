@@ -337,7 +337,7 @@
   }
   @if(!guided() || presentation()==='predict' || presentation()==='compare') {
     @if(periodSource(); as researchSource) {
-      <app-muse-investigator [source]="researchSource" [language]="language()" (frozen)="researchFrozen.emit($event)"/>
+      <app-muse-investigator [source]="researchSource" [baselineLengthMeters]="physicalLengthMeters()" [language]="language()" (frozen)="researchFrozen.emit($event)"/>
     }
   }
   </aside>

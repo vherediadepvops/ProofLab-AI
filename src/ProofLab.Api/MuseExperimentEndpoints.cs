@@ -21,16 +21,16 @@ public static class MuseExperimentEndpoints
     public static void MapMuseExperimentEndpoints(this WebApplication app)
     {
         const string path="/api/science/director/pendulum/sessions/{id}/muse";
-        app.MapGet(path,(string id,MuseExperimentService service,HttpContext c)=>{
+        app.MapGet(path,(string id,string? purpose,MuseExperimentService service,HttpContext c)=>{
             c.Response.Headers.CacheControl="no-store";
-            return Local(c)?Safe(()=>Task.FromResult(Results.Ok(service.State(id)) as IResult)):
+            return Local(c)?Safe(()=>Task.FromResult(Results.Ok(service.State(id,purpose??MuseExperimentPurpose.Interpretation)) as IResult)):
                 Task.FromResult(Results.StatusCode(403));
         });
         app.MapPost(path+"/prepare",(string id,MusePrepareRequest request,MuseExperimentService service,HttpContext c,CancellationToken ct)=>{
             c.Response.Headers.CacheControl="no-store";
             if(!Local(c,true))return Task.FromResult(Results.StatusCode(403));
             if(c.Request.ContentLength is >4096)return Task.FromResult(Results.BadRequest());
-            return Safe(async()=>{await service.PrepareAsync(id,request,ct);return Results.Ok(service.State(id));});
+            return Safe(async()=>{await service.PrepareAsync(id,request,ct);return Results.Ok(service.State(id,request.Purpose));});
         });
         app.MapPost(path+"/evaluate",(string id,MuseExperimentRunRequest request,MuseExperimentService service,HttpContext c,CancellationToken ct)=>{
             c.Response.Headers.CacheControl="no-store";
@@ -60,10 +60,10 @@ public static class MuseExperimentEndpoints
             if(c.Request.ContentLength is >4096)return Task.FromResult(Results.BadRequest());
             return Safe(async()=>Results.Ok(await service.Evaluate(id,request,ct)));
         });
-        app.MapGet(path+"/report",(string id,MuseExperimentService service,HttpContext c)=>{
+        app.MapGet(path+"/report",(string id,string? purpose,MuseExperimentService service,HttpContext c)=>{
             c.Response.Headers.CacheControl="private, no-store";
             return Local(c)?Safe(()=>{
-                var data=service.State(id);
+                var data=service.State(id,purpose??MuseExperimentPurpose.Interpretation);
                 return Task.FromResult(Results.File(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(data,
                     new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)),
                     "application/json","prooflab-muse-"+id+".json") as IResult);

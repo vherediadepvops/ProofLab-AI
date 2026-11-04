@@ -35,10 +35,33 @@ public sealed class MuseExperimentTransport(IHttpClientFactory clients,ILogger<M
                         properties=new {
                             classification=new {type="string",@enum=new[]{"PENDULUM_COMPATIBLE","OTHER_MOTION","INCONCLUSIVE"}},
                             justification=bilingual}}}}};
+        var purpose=supplied.RootElement.TryGetProperty("purpose",out var stage)
+            ?MuseExperimentPurpose.Validate(stage.GetString()??""):MuseExperimentPurpose.Interpretation;
+        // This controls only new inference requests. Saved provider text, input
+        // identities and frozen predictions retain their original bytes.
+        var stageInstruction=purpose==MuseExperimentPurpose.Prediction?"""
+            Current stage: PREDICT_WITH_SELECTED_LENGTH.
+            The operator selected operatorSelectedLengthMeters. Use exactly that
+            length and the sole supplied experiment option. Explain this chosen
+            experiment; do not replace its length or claim that you selected it.
+            A proposal is not frozen until the user reviews and saves it.
+            """:"""
+            Current stage: UNDERSTAND_BASELINE_EVIDENCE.
+            The user has not yet chosen the next experiment in Predict.
+            In justification, phenomenon.justification and limitations explain
+            only the first video's measurements, physical interpretation and limits.
+            Do not mention a proposed second length, predicted second period or
+            future tolerance band in those fields. Do not claim that the next
+            experiment has been chosen or frozen. If useful, explain that the user
+            will select the next length in Predict.
+            The legacy hypothesis, protocol, falsification and numerical proposal
+            fields remain an internal candidate template for schema compatibility;
+            they are not a user-selected or frozen experiment.
+            """;
         var payload=new {model=MuseExperimentPolicy.Model,stream=false,store=false,
             max_output_tokens=MuseExperimentPolicy.MaximumOutputTokens,reasoning=new {effort="low"},
             text=new {format},input=new[]{
-                new {role="system",content=MuseExperimentPolicy.Prompt},
+                new {role="system",content=MuseExperimentPolicy.Prompt+"\n\n"+stageInstruction},
                 new {role="user",content=inputJson}}};
         var http=clients.CreateClient("meta");
         async Task<string> Post(string endpoint) {

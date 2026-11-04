@@ -64,7 +64,68 @@ function museObservationMatchesSource(observation:MuseState['observation'],sourc
 export class MuseInvestigator implements OnChanges,OnDestroy {
   readonly source=input.required<SamPeriodSource>();
   readonly language=input<'es'|'en'>('es');
+  readonly baselineLengthMeters=input<number|null>(null);
   readonly view=input<'research'|'interpretation'>('research');
+  readonly chosenLengthCm=signal<number|null>(null);
+  baselineLength():number|null {
+    const configured=this.baselineLengthMeters();
+    if(configured!==null && Number.isFinite(configured) && configured>0)return configured;
+    try {const value=JSON.parse(this.state()?.observation?.payloadJson??'{}').baselineLengthMeters;
+      return typeof value==='number' && Number.isFinite(value) && value>0?value:null;
+    } catch {return null;}
+  }
+  predictionLengthError():string|null {
+    const cm=this.chosenLengthCm();
+    if(cm===null)return null;
+    if(!Number.isFinite(cm)||cm<10||cm>200)
+      return this.es?'Ingresa una longitud entre 10 y 200 cm.':'Enter a length from 10 to 200 cm.';
+    const baseline=this.baselineLength();
+    if(baseline!==null && Math.abs(cm/100-baseline)<=1e-6)
+      return this.es?'Elige una longitud diferente a la primera prueba.':'Choose a different length from trial 1.';
+    return null;
+  }
+  changePredictionLength(value:string):void {
+    if(this.busy()||this.connection.busy()||this.state()?.prediction)return;
+    this.chosenLengthCm.set(value.trim()===''?null:Number(value));
+    this.reviewedPrediction.set(false);this.error.set('');
+    this.modelRunning.set(false);this.modelTime.set(0);
+    if(this.modelTimer!==null)clearInterval(this.modelTimer);
+    this.modelTimer=null;
+  }
+  predictionObservationMatchesSource():boolean {
+    const o=this.state()?.observation,cm=this.chosenLengthCm();
+    if(cm===null || this.predictionLengthError() || !museObservationMatchesSource(o??null,this.source()))return false;
+    try {const p=JSON.parse(o!.payloadJson);
+      return p.identity?.purpose==='prediction' &&
+        Math.abs(p.plannedFollowupLengthMeters-cm/100)<1e-8 &&
+        Math.abs(p.identity.plannedFollowupLengthMeters-cm/100)<1e-8;
+    } catch {return false;}
+  }
+  predictionEvaluationMatches():boolean {
+    const s=this.state(),e=s?.evaluation;
+    if(!e || !this.evaluationMatchesSource())return false;
+    if(s?.prediction)return s.prediction.observationId===s.observation?.id &&
+      s.prediction.responseId===e.responseId;
+    return this.predictionObservationMatchesSource() &&
+      (e.answer.decision!=='PROPOSE_EXPERIMENT' ||
+        (typeof e.answer.nextLengthMeters==='number' &&
+         Math.abs(e.answer.nextLengthMeters-this.chosenLengthCm()!/100)<1e-8));
+  }
+  canPredict():boolean {
+    return !this.interpretationView() && !this.isFollowup && !!this.state() &&
+      !this.busy() && !this.connection.busy() && !this.state()?.prediction &&
+      this.chosenLengthCm()!==null && !this.predictionLengthError() &&
+      this.connection.hasToken() && this.state()?.manualCallsPermitted!==false &&
+      !this.predictionEvaluationMatches() &&
+      !(this.predictionObservationMatchesSource() && !!this.state()?.attemptStatus);
+  }
+  async predictWithSpark():Promise<void> {
+    if(!this.canPredict())return;
+    const context=this.contextKey();
+    await this.prepare();
+    if(context!==this.contextKey() || this.error() || !this.predictionObservationMatchesSource())return;
+    if(this.canEvaluate())await this.evaluate();
+  }
   readonly autoInterpretation=input(false);
   readonly interpretationOpened=signal(false);
   readonly interpretationTab=signal<'summary'|'evidence'|'limits'|'record'>('summary');
@@ -92,7 +153,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   readonly comparisonModel=computed(()=>{
     const s=this.state(),e=s?.evaluation,o=s?.observation;
     if(this.isFollowup || !e||!o||e.answer.decision!=='PROPOSE_EXPERIMENT' ||
-       !this.evaluationMatchesSource())return null;
+       !this.predictionEvaluationMatches())return null;
     try{
       const v=JSON.parse(o.payloadJson),l1=v.baselineLengthMeters,
         t1=v.measurement?.assessment?.periodSeconds,
@@ -107,7 +168,11 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     const frozen=this.prediction(),evidence=this.contrast()?.evidence;
     if(!frozen || !evidence)return null;
     try{
-      const observed=JSON.parse(evidence.payloadJson)?.measurement?.assessment?.periodSeconds;
+      const payload=JSON.parse(evidence.payloadJson);
+      const measuredLength=payload.followupLengthMeters;
+      if(typeof measuredLength!=='number' || !Number.isFinite(measuredLength) ||
+         Math.abs(measuredLength-frozen.nextLengthMeters)>1e-6)return null;
+      const observed=payload.measurement?.assessment?.periodSeconds;
       const expected=frozen.periodSeconds,tolerance=frozen.tolerancePercent;
       if(typeof observed!=='number'||!Number.isFinite(observed)||observed<=0||
          !Number.isFinite(expected)||expected<=0||!Number.isFinite(tolerance)||tolerance<=0)return null;
@@ -200,7 +265,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     const serial=this.serial,source=this.source(),url=this.url()+'/'+kind,summary=this.statisticalSummary();
     this.downloading.set(true);this.downloadError.set(false);
     try {
-      const data=await firstValueFrom(this.http.get(url,{responseType:'blob'}));
+      const data=await firstValueFrom(this.http.get(url+(kind==='report' && !this.interpretationView()?'?purpose=prediction':''),{responseType:'blob'}));
       if(serial!==this.serial)return;
       // Keep every original evidence payload/hash unchanged; append a separate display derivation.
       const saved=JSON.parse(await data.text());
@@ -227,10 +292,11 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   get es():boolean{return this.language()==='es';}
   text(value:Bilingual):string{return this.es?value.es:value.en;}
   url():string{return apiOrigin(this.connection.port())+'/api/science/director/pendulum/sessions/'+this.source().studyId+'/muse';}
+  stateUrl():string{return this.url()+(this.interpretationView()?'':'?purpose=prediction');}
   interpretationView():boolean{return this.view()==='interpretation';}
   private contextKey():string {
     const s=this.source();
-    return JSON.stringify([this.connection.port(),s.studyId,s.role,s.originalVideoSha256,
+    return JSON.stringify([this.interpretationView()?'interpretation':'prediction',this.connection.port(),s.studyId,s.role,s.originalVideoSha256,
       s.analysisId,s.providerResponseSha256,s.providerModel,s.objectId,
       s.pivotRevisionId,s.pivotProvenance,s.adaptiveBatchId??null]);
   }
@@ -240,6 +306,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     this.interpretationContext=key;this.serial++;
     this.interpretationOpened.set(false);this.reviewedPrediction.set(false);
     this.state.set(null);this.contrast.set(null);this.followupLength.set(null);
+    this.chosenLengthCm.set(null);
     this.busy.set(null);this.error.set('');this.downloadError.set(false);
     return true;
   }
@@ -284,7 +351,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   async freezePrediction():Promise<void> {
     const s=this.state(),source=this.source();
     if(this.isFollowup || this.busy() || this.connection.busy() ||
-       !this.reviewedPrediction() || !s?.evaluation || !this.evaluationMatchesSource() ||
+       !this.reviewedPrediction() || !s?.evaluation || !this.predictionEvaluationMatches() ||
        s.prediction || s.evaluation.answer.decision!=='PROPOSE_EXPERIMENT' ||
        s.evaluation.answer.periodSeconds===null ||
        s.evaluation.answer.nextLengthMeters===null)return;
@@ -302,7 +369,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
       // one read, never a second freeze or provider request.
       if(serial===this.serial) {
         try {
-          const recovered=await firstValueFrom(this.http.get<MuseState>(url));
+          const recovered=await firstValueFrom(this.http.get<MuseState>(url+'?purpose=prediction'));
           if(serial===this.serial && recovered.prediction?.studyId===source.studyId &&
              recovered.prediction.observationId===s.evaluation.observationId &&
              recovered.prediction.responseId===s.evaluation.responseId) {
@@ -322,6 +389,14 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   }
   private accept(state:MuseState):void {
     this.state.set(state);
+    if(!this.interpretationView() && !this.isFollowup &&
+       (this.chosenLengthCm()===null || state.prediction)) {
+      try {const payload=JSON.parse(state.prediction?.payloadJson??state.observation?.payloadJson??'{}');
+        const length=state.prediction?payload.prediction?.nextLengthMeters:
+          payload.identity?.purpose==='prediction'?payload.plannedFollowupLengthMeters:null;
+        if(typeof length==='number' && Number.isFinite(length))this.chosenLengthCm.set(length*100);
+      } catch { /* An invalid record never supplies the editable choice. */ }
+    }
     // The interpretation view never unlocks prediction or bypasses the tracking review.
     if(!this.interpretationView())this.frozen.emit(state.prediction);
   }
@@ -332,7 +407,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     // Keep the current result visible while its server record is refreshed. Only a real
     // source change clears it; a slow or failed GET must not look like lost evidence.
     try {
-      const state=await firstValueFrom(this.http.get<MuseState>(url));
+      const state=await firstValueFrom(this.http.get<MuseState>(this.stateUrl()));
       if(serial===this.serial){this.accept(state);this.followupLength.set(this.prediction()?.nextLengthMeters??null);}
       if(serial===this.serial&&followup){
         const c=await firstValueFrom(this.http.get<NonNullable<ReturnType<typeof this.contrast>>>(url+'/contrast'));
@@ -344,11 +419,13 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   async prepare():Promise<void>{
     if(this.busy()||this.connection.busy()||this.state()?.prediction ||
        (this.interpretationView() && !this.interpretationOpened()))return;
+    if(!this.interpretationView() && (this.isFollowup || this.chosenLengthCm()===null || this.predictionLengthError()))return;
     const serial=++this.serial,source=this.source();
     this.busy.set('preparing');this.error.set('');
     try {
       const state=await firstValueFrom(this.http.post<MuseState>(this.url()+'/prepare',{
-        videoSha256:source.originalVideoSha256,analysisId:source.analysisId,pivotRevisionId:source.pivotRevisionId,adaptiveBatchId:source.adaptiveBatchId??null
+        videoSha256:source.originalVideoSha256,analysisId:source.analysisId,pivotRevisionId:source.pivotRevisionId,adaptiveBatchId:source.adaptiveBatchId??null,
+        ...(!this.interpretationView()?{purpose:'prediction',plannedFollowupLengthMeters:this.chosenLengthCm()!/100}:{})
       },{headers:this.headers}));
       if(serial===this.serial)this.accept(state);
     }catch{if(serial===this.serial)this.error.set(this.es
@@ -359,7 +436,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   canEvaluate():boolean {
     const s=this.state();
     return !this.busy()&&!this.connection.busy()&&!!s?.observation&&!s.evaluation&&!s.attemptStatus&&
-      (!this.interpretationView() || (this.interpretationOpened() && this.interpretationObservationMatchesSource()))&&
+      (this.interpretationView()?(this.interpretationOpened() && this.interpretationObservationMatchesSource()):this.predictionObservationMatchesSource())&&
       s.observation.analysisId===this.source().analysisId&&s.manualCallsPermitted&&this.connection.hasToken();
   }
   async evaluate():Promise<void> {
@@ -376,7 +453,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     }catch {
       if(serial===this.serial) {
         try {
-          const recovered=await firstValueFrom(this.http.get<MuseState>(url));
+          const recovered=await firstValueFrom(this.http.get<MuseState>(this.stateUrl()));
           if(serial===this.serial)this.accept(recovered);
         } catch {}
         if(serial===this.serial)this.error.set(this.es?'No se completó la evaluación. Revisa el intento guardado; no se reintentó automáticamente.':

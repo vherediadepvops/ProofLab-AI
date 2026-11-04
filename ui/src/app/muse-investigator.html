@@ -1,6 +1,6 @@
 <section class="muse-card" [class.interpretation-card]="interpretationView()" [attr.aria-busy]="!!busy()">
   <header><div><span class="eyebrow">Muse Spark</span>
-    <h3>{{interpretationView()?(es?'Interpretación de la evidencia':'Evidence interpretation'):isFollowup?(es?'Contraste de la predicción':'Prediction comparison'):(es?'Interpretación y próxima prueba':'Interpretation and next experiment')}}</h3></div>
+    <h3>{{interpretationView()?(es?'Interpretación de la evidencia':'Evidence interpretation'):isFollowup?(es?'Contraste de la predicción':'Prediction comparison'):(es?'Predice tu siguiente prueba':'Predict your next experiment')}}</h3></div>
     @if(!interpretationView() && state()?.prediction){<span class="lock">🔒 {{es?'Predicción congelada':'Prediction frozen'}}</span>}
   </header>
   @if(interpretationView()) {
@@ -30,8 +30,39 @@
       }
     }
   } @else {
-    <p class="intro">{{es?'Muse Spark interpreta las mediciones de SAM, la geometría y la incertidumbre para clasificar el movimiento y decidir si conviene otra prueba.':
-      'Muse Spark interprets SAM measurements, geometry and uncertainty to classify the motion and decide whether another experiment is appropriate.'}}</p>
+    <p class="intro">{{isFollowup?(es?'Compara la nueva medición con la predicción que guardaste.':'Compare the new measurement with your stored prediction.'):
+      (es?'Elige la longitud que usarás, pide la predicción a Spark y revísala antes de congelarla.':
+      'Choose the length you will use, ask Spark to predict, then review and freeze the prediction.')}}</p>
+    @if(!isFollowup && !state()?.prediction) {
+      <div class="length-choice">
+        @if(baselineLength(); as length) {
+          <p class="current-length">{{es?'Primera prueba:':'Trial 1:'}} <strong>{{number(length*100,1)}} cm</strong></p>
+        }
+        <label for="muse-next-length">{{es?'¿Qué pasaría si el segundo péndulo midiera…?':'What would happen if the second pendulum measured…?'}}</label>
+        <div class="length-input">
+          <input id="muse-next-length" type="number" min="10" max="200" step="any" inputmode="decimal"
+            [value]="chosenLengthCm() ?? ''" [disabled]="!!busy() || connection.busy()"
+            (input)="changePredictionLength($any($event.target).value)"
+            [attr.aria-invalid]="!!predictionLengthError()" aria-describedby="muse-length-help muse-length-error"/>
+          <span>cm</span>
+        </div>
+        <p id="muse-length-help" class="fine">{{es?'Mide desde la suspensión hasta el centro del plomo. Elige una longitud diferente, entre 10 y 200 cm.':
+          'Measure from the suspension to the center of the bob. Choose a different length, from 10 to 200 cm.'}}</p>
+        <p id="muse-length-error" class="warning" role="status">{{predictionLengthError() ?? ''}}</p>
+        <button class="primary predict-action" type="button" (click)="predictWithSpark()" [disabled]="!canPredict()">
+          {{busy()==='evaluating'?(es?'Spark está preparando la predicción…':'Spark is preparing the prediction…'):
+            (es?'Predecir con Spark':'Predict with Spark')}}
+        </button>
+        <p class="fine">{{es?'Nueva consulta: máximo estimado US$ 0,05. Usa las mediciones guardadas y la longitud que elegiste.':
+          'New request: estimated maximum US$ 0.05. Uses the saved measurements and your chosen length.'}}</p>
+        @if(!connection.hasToken()) {<button class="link" type="button" (click)="connection.openSettings()">{{es?'Configurar token':'Configure token'}}</button>}
+        @if(state()?.manualCallsPermitted===false) {<p class="warning">{{es?'El servidor no tiene cupo de envío disponible.':'The server has no available request allowance.'}}</p>}
+        @if(predictionObservationMatchesSource() && state()?.attemptStatus && !state()?.evaluation) {
+          <p class="warning">{{es?'Existe un intento registrado para esta longitud que requiere revisión. No se reintentará automáticamente.':
+            'A recorded attempt for this length requires review. It will not be retried automatically.'}}</p>
+        }
+      </div>
+    }
   }
   @if(busy()!=='freezing' ? busy() : null; as phase) {
     <app-lab-activity [label]="phase==='evaluating'?(es?'Muse está evaluando la evidencia…':'Muse is evaluating the evidence…'):
@@ -247,7 +278,7 @@
         <p class="fine">{{es?'Comprueba la longitud real. Se comparan las mediciones SAM con el margen congelado; no se modifica la hipótesis. Consultar autoriza enviar esas mediciones a Meta.':'Check the actual length. SAM measurements are compared with the frozen band; the hypothesis stays unchanged. Asking authorizes sending these measurements to Meta.'}}</p>
         @if(contrast()?.attemptStatus){<p class="warning">{{es?'Revisa el intento registrado; no se repite automáticamente.':'Inspect the recorded attempt; it is not retried automatically.'}}</p>}
       }
-    } @else if(s.evaluation; as evaluation) {
+    } @else if(s.evaluation && predictionEvaluationMatches() ? s.evaluation : null; as evaluation) {
       @if(comparisonModel(); as m) {
         <section class="v93-predict-board" aria-label="Pendulum prediction">
           <div class="v93-board-head">
@@ -277,8 +308,7 @@
             'Ideal mathematical model, not a second-video measurement.'}}</p>
         </section>
         <section class="v93-prediction-card">
-          <h3>{{es?'Si aumentamos la longitud, ¿aumentará el período?':
-            'If we increase length, does the period increase?'}}</h3>
+          <h3>{{es?'¿Qué pasaría al cambiar la longitud a':'What happens if we change the length to'}} {{number(m.l2*100,1)}} cm?</h3>
           <p>{{es?'Muse propone la hipótesis; ProofLab calcula T₂ = T₁ × √(L₂/L₁) usando la medición del video 1.':
             'Muse proposes the hypothesis; ProofLab computes T₂ = T₁ × √(L₂/L₁) using trial 1.'}}</p>
           <div class="v93-prediction-grid">
@@ -355,26 +385,8 @@
       </details>
       <button type="button" class="report" (click)="downloadReport('report')" [disabled]="downloading()">{{downloading()?(es?'Preparando descarga…':'Preparing download…'):(es?'Descargar acta e informe':'Download lab record and report')}}</button>
     } @else {
-      <div class="actions">
-        <button type="button" (click)="prepare()" [disabled]="!!busy()||connection.busy()">
-          {{s.observation?(es?'Actualizar evidencia':'Refresh evidence'):(es?'Preparar evidencia':'Prepare evidence')}}
-        </button>
-        @if(s.observation){
-          <button class="primary" type="button" (click)="evaluate()" [disabled]="!canEvaluate()">
-            {{es?'Consultar Muse · máx. US$ 0,05':'Ask Muse · max. US$ 0.05'}}
-          </button>
-        }
-      </div>
-      @if(s.observation){
-        <p class="fine">{{es?'Se enviarán mediciones y limitaciones, sin volver a subir el video. Al consultar confirmas ese envío y el costo máximo estimado.':
-          'Measurements and limitations will be sent without uploading the video again. Asking Muse confirms this transfer and estimated cost ceiling.'}}</p>
-        @if(!connection.hasToken()){<button class="link" type="button" (click)="connection.openSettings()">{{es?'Configurar token':'Configure token'}}</button>}
-        @if(!s.manualCallsPermitted){<p class="warning">{{es?'El servidor no tiene cupo de envío disponible.':'The server has no available request allowance.'}}</p>}
-        @if(s.attemptStatus){<p class="warning">{{es?'Existe un intento registrado que requiere revisión. No se harán reintentos automáticos.':
-          'A recorded attempt requires review. There will be no automatic retries.'}}</p>}
-      }
-      <p class="fine">{{es?'La clasificación del movimiento está pendiente de la respuesta de Muse Spark. El segundo video se habilita después de guardar una predicción válida en SQLite. Muse puede recomendar repetir la grabación o declarar el resultado inconcluso.':
-        'Motion classification is awaiting a response from Muse Spark. Video 2 is enabled after a valid prediction is stored in SQLite. Muse may recommend another recording or an inconclusive result.'}}</p>
+      <p class="fine">{{es?'La predicción aparecerá aquí después de consultar a Spark para la longitud elegida. Luego podrás revisarla y congelarla antes de subir la segunda prueba.':
+        'The prediction will appear here after asking Spark about your chosen length. Then review and freeze it before uploading trial 2.'}}</p>
     }
   }
   @if(statisticalSummary(); as stats) {

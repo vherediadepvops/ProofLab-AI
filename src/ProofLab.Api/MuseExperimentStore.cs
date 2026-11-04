@@ -34,6 +34,8 @@ public sealed class MuseExperimentStore
             CREATE TABLE IF NOT EXISTS muse_predictions(
               study_id TEXT PRIMARY KEY,observation_id TEXT NOT NULL,response_id TEXT NOT NULL,
               frozen TEXT NOT NULL,payload TEXT NOT NULL,payload_sha TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS muse_prediction_drafts(
+              study_id TEXT PRIMARY KEY,observation_id TEXT NOT NULL);
             CREATE TRIGGER IF NOT EXISTS muse_observation_no_update BEFORE UPDATE ON muse_observations
               BEGIN SELECT RAISE(ABORT,'Immutable observation'); END;
             CREATE TRIGGER IF NOT EXISTS muse_observation_no_delete BEFORE DELETE ON muse_observations
@@ -92,12 +94,36 @@ public sealed class MuseExperimentStore
         if(existing.PayloadSha256!=o.PayloadSha256)throw new InvalidDataException("Observation collision.");
         return existing;
     }
-    public MuseObservation? LatestObservation(string study)
+    public MuseObservation? LatestObservation(string study,string? purpose=null)
+    {
+        StudyId(study);if(purpose is not null)MuseExperimentPurpose.Validate(purpose);
+        using var db=Open();using var cmd=db.CreateCommand();
+        cmd.CommandText="SELECT id FROM muse_observations WHERE study_id=$s"+
+            (purpose is null?"":" AND COALESCE(json_extract(payload,'$.identity.purpose'),'interpretation')=$purpose")+
+            " ORDER BY created DESC LIMIT 1";
+        cmd.Parameters.AddWithValue("$s",study);
+        if(purpose is not null)cmd.Parameters.AddWithValue("$purpose",purpose);
+        return cmd.ExecuteScalar() is string id?Observation(id):null;
+    }
+    public MuseObservation? PredictionDraft(string study)
     {
         StudyId(study);using var db=Open();using var cmd=db.CreateCommand();
-        cmd.CommandText="SELECT id FROM muse_observations WHERE study_id=$s ORDER BY created DESC LIMIT 1";
+        cmd.CommandText="SELECT observation_id FROM muse_prediction_drafts WHERE study_id=$s";
         cmd.Parameters.AddWithValue("$s",study);
-        return cmd.ExecuteScalar() is string id?Observation(id):null;
+        if(cmd.ExecuteScalar() is not string id)return null;
+        var observation=Observation(id)??throw new InvalidDataException("Prediction draft evidence missing.");
+        if(observation.StudyId!=study || MuseExperimentPurpose.Of(observation)!=MuseExperimentPurpose.Prediction)
+            throw new InvalidDataException("Prediction draft identity mismatch.");
+        return observation;
+    }
+    public void SelectPredictionDraft(MuseObservation observation)
+    {
+        if(MuseExperimentPurpose.Of(observation)!=MuseExperimentPurpose.Prediction || Prediction(observation.StudyId) is not null)
+            throw new InvalidOperationException("Only an unfrozen explicit prediction can be selected.");
+        using var db=Open();using var cmd=db.CreateCommand();
+        cmd.CommandText="INSERT INTO muse_prediction_drafts VALUES($s,$o) ON CONFLICT(study_id) DO UPDATE SET observation_id=excluded.observation_id";
+        cmd.Parameters.AddWithValue("$s",observation.StudyId);cmd.Parameters.AddWithValue("$o",observation.Id);
+        cmd.ExecuteNonQuery();
     }
     public MuseObservation? CompletedBeforeHumanReview(MuseObservation current)
     {

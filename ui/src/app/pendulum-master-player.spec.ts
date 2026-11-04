@@ -174,7 +174,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     expect(received).toEqual([]);
     fixture.componentRef.setInput('presentation','predict');fixture.detectChanges();
     expect(panel.querySelector('app-muse-investigator')).toBeNull();
-    const recover=http.expectOne(endpoint);expect(recover.request.method).toBe('GET');
+    const recover=http.expectOne(endpoint+'?purpose=prediction');expect(recover.request.method).toBe('GET');
     recover.flush(state);for(let i=0;i<6;i++)await Promise.resolve();fixture.detectChanges();
     expect(received).toEqual([prediction]);
     http.expectNone(r=>r.method==='POST');fixture.destroy();http.verify();

@@ -10,8 +10,15 @@ describe('Muse investigator',()=>{
   const source:SamPeriodSource={studyId:'study',role:'baseline',originalVideoSha256:'video',
     analysisId:'analysis',providerResponseSha256:'response',providerModel:'sam-3.1',objectId:'0',
     pivotRevisionId:'pivot',pivotProvenance:'HUMAN_IMAGE'};
+  const scoped=base+'?purpose=prediction';
   const empty={observation:null,evaluation:null,prediction:null,attemptStatus:null,manualCallsPermitted:true,maximumEstimatedCostUsd:.05};
-  const prepared={...empty,observation:{id:'observation',analysisId:'analysis',payloadJson:'{}',payloadSha256:'sha'}};
+  const prepared={...empty,observation:{id:'observation',studyId:'study',videoSha256:'video',
+    analysisId:'analysis',payloadSha256:'sha',payloadJson:JSON.stringify({
+      identity:{studyId:'study',videoSha256:'video',analysisId:'analysis',responseSha256:'response',
+        pivotRevisionId:'pivot',adaptiveBatchId:null,purpose:'prediction',plannedFollowupLengthMeters:.8},
+      purpose:'prediction',plannedFollowupLengthMeters:.8,baselineLengthMeters:.5,
+      measurement:{source:{...source},assessment:{status:'CANDIDATE',periodSeconds:1.4,
+        statisticalStandardUncertaintySeconds:.001,usedCycles:10}}})}};
   let http:HttpTestingController;
   beforeEach(async()=>{
     await TestBed.configureTestingModule({imports:[MuseInvestigator],providers:[provideHttpClient(),provideHttpClientTesting()]}).compileComponents();
@@ -19,8 +26,8 @@ describe('Muse investigator',()=>{
   });
   afterEach(()=>http.verify());
   async function init(state:object=empty) {
-    const f=TestBed.createComponent(MuseInvestigator);f.componentRef.setInput('source',source);f.detectChanges();
-    http.expectOne(base).flush(state);await f.whenStable();f.detectChanges();return f;
+    const f=TestBed.createComponent(MuseInvestigator);f.componentRef.setInput('source',source);f.componentRef.setInput('baselineLengthMeters',.5);f.detectChanges();
+    http.expectOne(base+'?purpose=prediction').flush(state);await f.whenStable();f.detectChanges();return f;
   }
 
   for(const kind of ['report','contrast'] as const) {
@@ -30,7 +37,7 @@ describe('Muse investigator',()=>{
       const click=spyOn(HTMLAnchorElement.prototype,'click');
       const p=f.componentInstance.downloadReport(kind);
       void f.componentInstance.downloadReport(kind);
-      const request=http.expectOne(base+'/'+kind);
+      const request=http.expectOne(base+'/'+kind+(kind==='report'?'?purpose=prediction':''));
       expect(request.request.method).toBe('GET');
       expect(request.request.responseType).toBe('blob');
       request.flush(new Blob(['{"evidence":"stored"}'],{type:'application/json'}));await p;
@@ -54,8 +61,8 @@ describe('Muse investigator',()=>{
     field.type='password';field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';c.register(field);c.confirmToken();return c;
   }
   it('prepares only provenance and leaves paid processing disabled without a token',async()=>{
-    const f=await init();const p=f.componentInstance.prepare();
-    const r=http.expectOne(base+'/prepare');expect(r.request.body).toEqual({videoSha256:'video',analysisId:'analysis',pivotRevisionId:'pivot',adaptiveBatchId:null});
+    const f=await init();f.componentInstance.changePredictionLength('80');const p=f.componentInstance.prepare();
+    const r=http.expectOne(base+'/prepare');expect(r.request.body).toEqual({videoSha256:'video',analysisId:'analysis',pivotRevisionId:'pivot',adaptiveBatchId:null,purpose:'prediction',plannedFollowupLengthMeters:.8});
     expect(r.request.headers.get('X-ProofLab-Manual-Action')).toBe('muse-research');
     r.flush(prepared);await p;expect(f.componentInstance.canEvaluate()).toBeFalse();f.destroy();
   });
@@ -116,7 +123,7 @@ describe('Muse investigator',()=>{
     c.reviewedPrediction.set(true);const run=c.freezePrediction();
     http.expectOne(base+'/freeze').flush({}, {status:502,statusText:'Lost response'});
     await Promise.resolve();
-    const read=http.expectOne(base);expect(read.request.method).toBe('GET');
+    const read=http.expectOne(scoped);expect(read.request.method).toBe('GET');
     read.flush(committed?{...prepared,evaluation,prediction:frozen}:empty);
     await run;f.detectChanges();
     expect(c.state()?.evaluation?.responseId).toBe('saved-receipt');
@@ -145,7 +152,7 @@ describe('Muse investigator',()=>{
     const run=c.load();f.detectChanges();
     expect(c.state()?.evaluation?.responseId).toBe(state.evaluation.responseId);
     expect(f.nativeElement.textContent).toContain('compatible con un péndulo');
-    http.expectOne(base).flush({}, {status:503,statusText:'Unavailable'});await run;f.detectChanges();
+    http.expectOne(base+'?purpose=prediction').flush({}, {status:503,statusText:'Unavailable'});await run;f.detectChanges();
     expect(c.state()?.evaluation?.responseId).toBe(state.evaluation.responseId);
     expect(c.error()).toContain('No se pudo consultar');
     http.expectNone(r=>r.method==='POST');f.destroy();
@@ -153,13 +160,13 @@ describe('Muse investigator',()=>{
   it('reconciles a failed request with a read, never a second paid request',async()=>{
     token();const f=await init(prepared);const p=f.componentInstance.evaluate();
     http.expectOne(base+'/evaluate').flush({}, {status:502,statusText:'Failed'});
-    await Promise.resolve();http.expectOne(base).flush({...prepared,attemptStatus:'FAILED_REQUIRES_RECONCILIATION'});
+    await Promise.resolve();http.expectOne(base+'?purpose=prediction').flush({...prepared,attemptStatus:'FAILED_REQUIRES_RECONCILIATION'});
     await p;expect(f.componentInstance.canEvaluate()).toBeFalse();expect(f.componentInstance.error()).toContain('no se reintentó');f.destroy();
   });
   it('does not accept an old source response after a different video is selected',async()=>{
-    const f=await init();const p=f.componentInstance.prepare();const old=http.expectOne(base+'/prepare');
+    const f=await init();f.componentInstance.changePredictionLength('80');const p=f.componentInstance.prepare();const old=http.expectOne(base+'/prepare');
     f.componentRef.setInput('source',{...source,studyId:'next'});f.detectChanges();
-    const next=http.expectOne(base.replace('/study/','/next/'));next.flush(empty);await f.whenStable();
+    const next=http.expectOne(scoped.replace('/study/','/next/'));next.flush(empty);await f.whenStable();
     old.flush(prepared);await p;expect(f.componentInstance.state()?.observation).toBeNull();f.destroy();
   });
   it('keeps an inconclusive real response visible without a prediction or upload unlock',async()=>{
@@ -168,7 +175,7 @@ describe('Muse investigator',()=>{
       answer:{decision:'INCONCLUSIVE',justification:t,limitations:t,protocol:t,hypothesis:t,falsification:t}}});
     expect(f.nativeElement.textContent).toContain('Inconcluso');expect(f.componentInstance.prediction()).toBeNull();
     f.componentRef.setInput('language','en');f.detectChanges();http.expectNone(base);await f.whenStable();f.detectChanges();
-    expect(f.nativeElement.textContent).toContain('Interpretation and next experiment');f.destroy();
+    expect(f.nativeElement.textContent).toContain('Spark');f.destroy();
   });
   function response(classification?:'PENDULUM_COMPATIBLE'|'OTHER_MOTION'|'INCONCLUSIVE',analysisId='analysis') {
     const t={es:'Justificación científica registrada.',en:'Recorded scientific justification.'};
@@ -177,23 +184,23 @@ describe('Muse investigator',()=>{
         observationId:'observation',studyId:'study',rawResponseSha256:'hash',tokenCostEstimateUsd:.001,
         answer:{decision:classification==='OTHER_MOTION'?'INCONCLUSIVE':'PROPOSE_EXPERIMENT',
           justification:t,limitations:t,protocol:t,hypothesis:t,falsification:t,
-          nextLengthMeters:null,periodSeconds:null,tolerancePercent:null,
+          nextLengthMeters:.8,periodSeconds:1.79,tolerancePercent:5,
           ...(classification?{phenomenon:{classification,justification:{
             es:'Spark interpreta la trayectoria medida por SAM.',en:'Spark interprets the trajectory measured by SAM.'}}}:{})}}};
   }
   it('waits for Spark instead of classifying from local measurements or preparing evidence',async()=>{
     const f=await init(prepared);
-    expect(f.nativeElement.textContent).toContain('La clasificación del movimiento está pendiente');
+    expect(f.componentInstance.canEvaluate()).toBeFalse();
     expect(f.componentInstance.phenomenon()).toBeNull();
     expect(f.nativeElement.querySelector('.decision')).toBeNull();
-    expect(f.nativeElement.querySelectorAll('section').length).toBe(1);f.destroy();
+    expect(f.nativeElement.querySelector('.v93-predict-board')).toBeNull();f.destroy();
   });
   it('attributes the recorded phenomenon and justification to Muse Spark in ES and EN',async()=>{
     const recorded=response('PENDULUM_COMPATIBLE'),f=await init(recorded);
     expect(f.nativeElement.querySelector('.decision').textContent).toContain('Muse Spark: compatible con un péndulo');
     expect(f.nativeElement.textContent).toContain('Spark interpreta la trayectoria medida por SAM.');
     expect(f.nativeElement.textContent).toContain('Experimento propuesto');
-    expect(f.nativeElement.querySelectorAll('section').length).toBe(1);
+    expect(f.nativeElement.querySelector('.v93-predict-board')).not.toBeNull();
     f.componentRef.setInput('language','en');f.detectChanges();http.expectNone(base);
     await f.whenStable();f.detectChanges();
     expect(f.nativeElement.querySelector('.decision').textContent).toContain('Muse Spark: consistent with a pendulum');
@@ -217,8 +224,7 @@ describe('Muse investigator',()=>{
   });
   it('does not present a previous analysis classification as belonging to the current video',async()=>{
     const f=await init(response('PENDULUM_COMPATIBLE','previous-analysis'));
-    expect(f.nativeElement.querySelector('.decision').textContent).toContain('Evaluación de un análisis anterior');
-    expect(f.nativeElement.textContent).toContain('no clasifica el video actual');
+    expect(f.nativeElement.querySelector('.v93-freeze')).toBeNull();
     expect(f.componentInstance.phenomenon()).toBeNull();
     expect(f.nativeElement.textContent).not.toContain('Muse Spark: compatible con un péndulo');
     expect(f.componentInstance.canEvaluate()).toBeFalse();f.destroy();
@@ -228,7 +234,7 @@ describe('Muse investigator',()=>{
     recorded.observation.videoSha256='another-video';
     const f=await init(recorded);
     expect(f.componentInstance.phenomenon()).toBeNull();
-    expect(f.nativeElement.textContent).toContain('no clasifica el video actual');f.destroy();
+    expect(f.nativeElement.querySelector('.v93-freeze')).toBeNull();f.destroy();
   });
 
 });
@@ -244,8 +250,8 @@ describe('Muse complete second-video workflow',()=>{
   afterEach(()=>http.verify());
   async function init(contrast:object=empty){
     const c=TestBed.inject(LabConnection),field=document.createElement('input');field.type='password';field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';c.register(field);c.confirmToken();
-    const f=TestBed.createComponent(MuseInvestigator);f.componentRef.setInput('source',source);f.detectChanges();
-    http.expectOne(base).flush(state);await Promise.resolve();http.expectOne(base+'/contrast').flush(contrast);await f.whenStable();f.detectChanges();return f;
+    const f=TestBed.createComponent(MuseInvestigator);f.componentRef.setInput('source',source);f.componentRef.setInput('baselineLengthMeters',.5);f.detectChanges();
+    http.expectOne(base+'?purpose=prediction').flush(state);await Promise.resolve();http.expectOne(base+'/contrast').flush(contrast);await f.whenStable();f.detectChanges();return f;
   }
   it('binds segmented second-video evidence before making exactly one manual inference',async()=>{
     const f=await init();expect(f.componentInstance.canContrast()).toBeFalse();
@@ -269,7 +275,7 @@ describe('Muse complete second-video workflow',()=>{
     const original={...state.prediction,studyId:'study',observationId:'baseline-o',responseId:'receipt',frozenAtUtc:'2026-10-30',
       payloadJson:JSON.stringify({prediction:{baselineLengthMeters:.5,nextLengthMeters:.8,periodSeconds:1.4*Math.sqrt(1.6),tolerancePercent:5}})};
     const f=await init({...empty,evidence:{...evidence,payloadJson:JSON.stringify({analysisId:'batch',sourceSha256:'second',
-      measurement:{assessment:{...assessment,periodSeconds:1.78,usedCycles:8}}})}});
+      followupLengthMeters:.8,measurement:{assessment:{...assessment,periodSeconds:1.78,usedCycles:8}}})}});
     f.componentInstance.state.set({...state,prediction:original,observation:{id:'baseline-o',analysisId:'baseline',payloadSha256:'hash',
       payloadJson:JSON.stringify({measurement:{assessment}})}});f.detectChanges();
     expect(f.nativeElement.textContent).toContain('Video 1 · solo repetibilidad');
@@ -282,6 +288,14 @@ describe('Muse complete second-video workflow',()=>{
     expect(f.nativeElement.querySelector('.v93-band svg')).not.toBeNull();
     expect(f.nativeElement.textContent).toContain('Predicción frente a medición del segundo video');
     f.destroy();
+  });
+  it('withholds the comparison band when the actual second length differs from the frozen one',async()=>{
+    const f=await init({...empty,evidence:{...evidence,payloadJson:JSON.stringify({analysisId:'batch',sourceSha256:'second',
+      followupLengthMeters:.6,numericalVerdict:'INCONCLUSIVE',measurement:{assessment:{status:'CANDIDATE',periodSeconds:1.79}}})}});
+    expect(f.componentInstance.verifiedComparison()).toBeNull();
+    expect(f.nativeElement.querySelector('.v93-band')).toBeNull();
+    expect(f.componentInstance.prediction()?.nextLengthMeters).toBe(.8);
+    http.expectNone(r=>r.method==='POST');f.destroy();
   });
   it('reconciles a failed contrast without resending to Meta',async()=>{
     const f=await init({...empty,evidence});const run=f.componentInstance.evaluateContrast();
@@ -494,7 +508,7 @@ describe('Muse interpretation in Understand',()=>{
     expect(component.state()?.prediction?.sha256).toBe(state.prediction.sha256);
     expect(component.canEvaluate()).toBeFalse();
     fixture.componentRef.setInput('view','research');fixture.detectChanges();
-    http.expectNone(base);await fixture.whenStable();fixture.detectChanges();
+    http.expectOne(base+'?purpose=prediction').flush(state);await fixture.whenStable();fixture.detectChanges();
     expect(received).toEqual([state.prediction]);
     http.expectNone(r=>r.method==='POST');fixture.destroy();
   });
@@ -505,7 +519,7 @@ describe('Muse interpretation in Understand',()=>{
     understand.destroy();
     const predict=TestBed.createComponent(MuseInvestigator);
     predict.componentRef.setInput('source',source);predict.detectChanges();
-    http.expectOne(base).flush(state);await predict.whenStable();predict.detectChanges();
+    http.expectOne(base+'?purpose=prediction').flush(state);await predict.whenStable();predict.detectChanges();
     expect(predict.componentInstance.state()?.prediction).toEqual(original);
     expect(predict.nativeElement.textContent).toContain('Predicción congelada');predict.destroy();
     const back=init();back.componentRef.setInput('autoInterpretation',true);back.detectChanges();
@@ -597,5 +611,160 @@ describe('Muse interpretation in Understand',()=>{
     expect(fixture.nativeElement.textContent).toContain(words.limitations.es);
     expect(fixture.componentInstance.prediction()).toBeNull();expect(received).toEqual([]);
     http.expectNone(r=>r.method==='POST');fixture.destroy();
+  });
+});
+
+describe('Muse prediction for a user-selected length',()=>{
+  const source:SamPeriodSource={studyId:'chosen-study',role:'baseline',originalVideoSha256:'baseline-video',
+    analysisId:'baseline-analysis',providerResponseSha256:'sam-receipt',providerModel:'sam-3.1',objectId:'0',
+    pivotRevisionId:'reviewed-pivot',pivotProvenance:'HUMAN_IMAGE',adaptiveBatchId:'baseline-analysis'};
+  const base='http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+source.studyId+'/muse';
+  const scope=base+'?purpose=prediction';
+  const empty={observation:null,evaluation:null,prediction:null,attemptStatus:null,
+    manualCallsPermitted:true,maximumEstimatedCostUsd:.05};
+  function prepared(length=.7){
+    return {...empty,observation:{id:'chosen-'+length,studyId:source.studyId,
+      videoSha256:source.originalVideoSha256,analysisId:source.analysisId,payloadSha256:'prepared-receipt',
+      payloadJson:JSON.stringify({purpose:'prediction',baselineLengthMeters:.5,plannedFollowupLengthMeters:length,
+        identity:{purpose:'prediction',studyId:source.studyId,videoSha256:source.originalVideoSha256,
+          analysisId:source.analysisId,responseSha256:source.providerResponseSha256,
+          pivotRevisionId:source.pivotRevisionId,adaptiveBatchId:source.adaptiveBatchId,
+          plannedFollowupLengthMeters:length},measurement:{source:{...source},assessment:{
+          status:'CANDIDATE',periodSeconds:1.4,statisticalStandardUncertaintySeconds:.001,usedCycles:10}}})}};
+  }
+  function saved(length=.7){
+    const p=prepared(length),t={es:'Predicción solicitada para '+length*100+' cm.',en:'Prediction requested for '+length*100+' cm.'};
+    return {...p,evaluation:{studyId:source.studyId,observationId:p.observation.id,
+      model:'muse-spark-1.3',responseId:'prediction-receipt-'+length,rawResponseSha256:'provider-receipt',tokenCostEstimateUsd:.001,
+      answer:{decision:'PROPOSE_EXPERIMENT',justification:t,limitations:t,protocol:t,hypothesis:t,falsification:t,
+        nextLengthMeters:length,periodSeconds:1.4*Math.sqrt(length/.5),tolerancePercent:5,
+        phenomenon:{classification:'PENDULUM_COMPATIBLE',justification:t}}}};
+  }
+  let http:HttpTestingController;
+  beforeEach(async()=>{
+    await TestBed.configureTestingModule({imports:[MuseInvestigator],providers:[provideHttpClient(),provideHttpClientTesting()]}).compileComponents();
+    http=TestBed.inject(HttpTestingController);
+  });
+  afterEach(()=>http.verify());
+  function token(){
+    const c=TestBed.inject(LabConnection),field=document.createElement('input');
+    field.type='password';field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';c.register(field);c.confirmToken();return c;
+  }
+  async function init(state:object=empty){
+    const f=TestBed.createComponent(MuseInvestigator);f.componentRef.setInput('source',source);
+    f.componentRef.setInput('baselineLengthMeters',.5);f.detectChanges();
+    const r=http.expectOne(scope);expect(r.request.method).toBe('GET');r.flush(state);
+    await f.whenStable();f.detectChanges();return f;
+  }
+  async function ticks(){for(let i=0;i<8;i++)await Promise.resolve();}
+  it('asks for a length before making any new prediction and rejects unsupported or unchanged values',async()=>{
+    token();const f=await init(),c=f.componentInstance;
+    expect(c.chosenLengthCm()).toBeNull();expect(c.canPredict()).toBeFalse();
+    expect(f.nativeElement.querySelector('.v93-freeze')).toBeNull();
+    for(const value of ['', '0', '9', '201', '50', 'invalid']){
+      c.changePredictionLength(value);f.detectChanges();
+      expect(c.canPredict()).withContext(value).toBeFalse();await c.predictWithSpark();
+      http.expectNone(r=>r.method==='POST');
+    }
+    f.destroy();
+  });
+  it('sends 70 cm as 0.7 m, submits only once, and requires a separate freeze',async()=>{
+    token();const f=await init(),c=f.componentInstance;c.changePredictionLength('70');f.detectChanges();
+    expect(c.canPredict()).toBeTrue();expect(f.nativeElement.textContent).toContain('Predecir con Spark');
+    const run=c.predictWithSpark();void c.predictWithSpark();
+    const p=http.expectOne(base+'/prepare');expect(p.request.body).toEqual({
+      videoSha256:source.originalVideoSha256,analysisId:source.analysisId,pivotRevisionId:source.pivotRevisionId,
+      adaptiveBatchId:source.adaptiveBatchId,purpose:'prediction',plannedFollowupLengthMeters:.7});
+    p.flush(prepared());await ticks();const paid=http.expectOne(base+'/evaluate');
+    expect(paid.request.body.observationId).toBe(prepared().observation.id);
+    expect(paid.request.body.confirmPaidCall).toBeTrue();expect(paid.request.body.maximumEstimatedCostUsd).toBe(.05);
+    paid.flush(saved());await run;f.detectChanges();
+    expect(c.predictionEvaluationMatches()).toBeTrue();expect(c.comparisonModel()?.l2).toBe(.7);
+    expect(c.state()?.prediction).toBeNull();expect(f.nativeElement.textContent).toContain('Congelar predicción');
+    http.expectNone(base+'/freeze');f.destroy();
+  });
+  it('accepts a deliberately smaller or nearby different length instead of silently replacing it with 80 cm',async()=>{
+    token();const f=await init(),c=f.componentInstance;
+    for(const value of ['40','51']){
+      c.changePredictionLength(value);expect(c.canPredict()).withContext(value).toBeTrue();
+    }
+    expect(c.chosenLengthCm()).toBe(51);http.expectNone(r=>r.method==='POST');f.destroy();
+  });
+  it('invalidates the displayed proposal and review when the user changes the target length',async()=>{
+    token();const f=await init(saved()),c=f.componentInstance;
+    expect(c.chosenLengthCm()).toBe(70);expect(c.predictionEvaluationMatches()).toBeTrue();
+    c.reviewedPrediction.set(true);c.changePredictionLength('90');f.detectChanges();
+    expect(c.reviewedPrediction()).toBeFalse();expect(c.predictionEvaluationMatches()).toBeFalse();
+    expect(c.comparisonModel()).toBeNull();expect(f.nativeElement.querySelector('.v93-freeze')).toBeNull();
+    c.reviewedPrediction.set(true);await c.freezePrediction();http.expectNone(base+'/freeze');
+    expect(c.canPredict()).toBeTrue();f.destroy();
+  });
+  it('will not freeze an automatic or mismatched-length proposal as a user-selected prediction',async()=>{
+    for(const mismatch of ['automatic','different-length','foreign-source']){
+      const wrong=saved();const payload=JSON.parse(wrong.observation.payloadJson);
+      if(mismatch==='automatic'){delete payload.identity.purpose;delete payload.purpose;}
+      if(mismatch==='different-length')payload.identity.plannedFollowupLengthMeters=.8;
+      if(mismatch==='foreign-source')payload.measurement.source.objectId='another-object';
+      wrong.observation.payloadJson=JSON.stringify(payload);
+      const f=await init(wrong),c=f.componentInstance;c.changePredictionLength('70');c.reviewedPrediction.set(true);
+      expect(c.predictionEvaluationMatches()).withContext(mismatch).toBeFalse();
+      await c.freezePrediction();http.expectNone(base+'/freeze');f.destroy();
+    }
+  });
+  it('does not call Spark when evidence preparation fails',async()=>{
+    token();const f=await init(),c=f.componentInstance;c.changePredictionLength('70');
+    const run=c.predictWithSpark();http.expectOne(base+'/prepare').flush({}, {status:409,statusText:'Conflict'});
+    await run;expect(c.error()).toBeTruthy();expect(c.busy()).toBeNull();
+    http.expectNone(base+'/evaluate');f.destroy();
+  });
+  it('recovers the submitted prediction scope after an uncertain response without paying again',async()=>{
+    token();const f=await init(),c=f.componentInstance;c.changePredictionLength('70');
+    const run=c.predictWithSpark();http.expectOne(base+'/prepare').flush(prepared());await ticks();
+    http.expectOne(base+'/evaluate').flush({}, {status:502,statusText:'Interrupted'});await ticks();
+    http.expectOne(scope).flush({...prepared(),attemptStatus:'FAILED_REQUIRES_RECONCILIATION'});
+    await run;expect(c.canPredict()).toBeFalse();http.expectNone(r=>r.method==='POST');f.destroy();
+  });
+  it('keeps interpretation and the chosen prediction separate when returning between stages',async()=>{
+    const draft=saved(),f=await init(draft),c=f.componentInstance;
+    const original=saved(.8),payload=JSON.parse(original.observation.payloadJson);
+    delete payload.identity.purpose;delete payload.purpose;original.observation.payloadJson=JSON.stringify(payload);
+    original.evaluation.responseId='original-interpretation';
+    original.evaluation.answer.justification={es:'INTERPRETACIÓN ORIGINAL CONSERVADA',en:'ORIGINAL INTERPRETATION PRESERVED'};
+    f.componentRef.setInput('view','interpretation');f.componentRef.setInput('autoInterpretation',true);f.detectChanges();
+    http.expectOne(base).flush(original);await f.whenStable();f.detectChanges();
+    expect(c.state()?.evaluation?.responseId).toBe('original-interpretation');
+    expect(f.nativeElement.textContent).toContain('INTERPRETACIÓN ORIGINAL CONSERVADA');
+    expect(f.nativeElement.querySelector('.v93-freeze')).toBeNull();
+    f.componentRef.setInput('view','research');f.detectChanges();
+    http.expectOne(scope).flush(draft);await f.whenStable();f.detectChanges();
+    expect(c.state()?.evaluation?.responseId).toBe(draft.evaluation.responseId);
+    expect(c.chosenLengthCm()).toBe(70);expect(c.comparisonModel()?.l2).toBe(.7);
+    expect(f.nativeElement.textContent).not.toContain('INTERPRETACIÓN ORIGINAL CONSERVADA');
+    http.expectNone(r=>r.method==='POST');f.destroy();
+  });
+  it('locks the selected length during preparation and inference and ignores a late result for another source',async()=>{
+    token();const f=await init(),c=f.componentInstance;c.changePredictionLength('70');
+    const run=c.predictWithSpark(),p=http.expectOne(base+'/prepare');
+    c.changePredictionLength('90');expect(c.chosenLengthCm()).toBe(70);
+    p.flush(prepared());await ticks();const paid=http.expectOne(base+'/evaluate');
+    c.changePredictionLength('90');expect(c.chosenLengthCm()).toBe(70);
+    const changed={...source,analysisId:'replacement-analysis',providerResponseSha256:'replacement-receipt'};
+    f.componentRef.setInput('source',changed);f.detectChanges();http.expectOne(scope).flush(empty);
+    await f.whenStable();paid.flush(saved());await run;f.detectChanges();
+    expect(c.state()?.evaluation).toBeNull();expect(c.chosenLengthCm()).toBeNull();
+    expect(c.predictionEvaluationMatches()).toBeFalse();expect(f.nativeElement.querySelector('.v93-freeze')).toBeNull();
+    http.expectNone(r=>r.method==='POST');f.destroy();
+  });
+  it('keeps a frozen legacy prediction immutable on reload',async()=>{
+    const p=saved(.8),frozen={studyId:source.studyId,observationId:p.observation.id,responseId:p.evaluation.responseId,
+      frozenAtUtc:'2026-11-04T04:00:00Z',sha256:'frozen-receipt',payloadJson:JSON.stringify({
+        prediction:{nextLengthMeters:.8,periodSeconds:p.evaluation.answer.periodSeconds,tolerancePercent:5}})};
+    const payload=JSON.parse(p.observation.payloadJson);delete payload.purpose;delete payload.identity.purpose;
+    p.observation.payloadJson=JSON.stringify(payload);
+    token();const f=await init({...p,prediction:frozen}),c=f.componentInstance;
+    c.changePredictionLength('70');await c.predictWithSpark();
+    expect(c.prediction()?.nextLengthMeters).toBe(.8);expect(c.state()?.prediction?.sha256).toBe('frozen-receipt');
+    expect(c.canPredict()).toBeFalse();expect(f.nativeElement.textContent).toContain('Predicción congelada');
+    http.expectNone(r=>r.method==='POST');f.destroy();
   });
 });

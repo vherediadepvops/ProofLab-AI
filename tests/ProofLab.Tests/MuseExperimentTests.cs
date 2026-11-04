@@ -235,6 +235,40 @@ public sealed class MuseExperimentTests
         Assert.False(p.RootElement.TryGetProperty("tools",out _));Assert.Equal(4096,p.RootElement.GetProperty("max_output_tokens").GetInt32());
         Assert.Equal("synthetic-not-provider",MuseExperimentTransport.Validate(r.Raw).ProviderResponseId);
     }
+    [Theory]
+    [InlineData(null)][InlineData("interpretation")][InlineData("prediction")]
+    public async Task NewInferenceUsesStageSpecificInstructionsWithoutChangingSuppliedEvidence(string? purpose) {
+        var data=System.Text.Json.Nodes.JsonNode.Parse(Input())!;
+        if(purpose is not null)data["purpose"]=purpose;
+        if(purpose=="prediction") {
+            data["operatorSelectedLengthMeters"]=.6;
+            data["experimentOptions"]=JsonSerializer.SerializeToNode(new[]{new MuseExperimentPolicy.ExperimentOption(.6,1.415*Math.Sqrt(1.2))},Json);
+        }
+        var input=data.ToJsonString();
+        var handler=new Handler();
+        await new MuseExperimentTransport(new Factory(handler)).EvaluateAsync(input,Token,CancellationToken.None);
+        Assert.Equal(2,handler.Payloads.Count);
+        Assert.Equal(handler.Payloads[0],handler.Payloads[1]);
+        using var sent=JsonDocument.Parse(handler.Payloads[1]);
+        var messages=sent.RootElement.GetProperty("input");
+        Assert.Equal(input,messages[1].GetProperty("content").GetString());
+        var prompt=messages[0].GetProperty("content").GetString()!;
+        Assert.StartsWith(MuseExperimentPolicy.Prompt,prompt);
+        if(purpose=="prediction") {
+            Assert.Contains("PREDICT_WITH_SELECTED_LENGTH",prompt);
+            Assert.Contains("Use exactly that",prompt);
+            Assert.DoesNotContain("UNDERSTAND_BASELINE_EVIDENCE",prompt);
+            var lengthOptions=sent.RootElement.GetProperty("text").GetProperty("format").GetProperty("schema")
+                .GetProperty("properties").GetProperty("nextLengthMeters").GetProperty("enum");
+            Assert.Equal(2,lengthOptions.GetArrayLength());Assert.Equal(.6,lengthOptions[0].GetDouble());
+        } else {
+            Assert.Contains("UNDERSTAND_BASELINE_EVIDENCE",prompt);
+            Assert.Contains("Do not mention a proposed second length",prompt);
+            Assert.Contains("justification, phenomenon.justification and limitations",prompt);
+            Assert.DoesNotContain("PREDICT_WITH_SELECTED_LENGTH",prompt);
+        }
+    }
+
     [Theory][InlineData(25000,false)][InlineData(1000,true)]
     public async Task OverBudgetOrFailedCountDoesNotInferOrRetry(int count,bool fail) {
         var h=new Handler(count,fail);
