@@ -1,5 +1,41 @@
 # ProofLab AI — Meta Hackathon 2026
 
+## Try ProofLab AI
+
+**[Launch the live platform](https://prooflab-ai.com/)** · [Read this guide in Español](README.es.md)
+
+ProofLab AI turns videos of physical experiments into measurements, testable predictions and evidence that can be reviewed. The three-minute pendulum demo shows how we compare an initial observation with a second real recording.
+
+## Watch the demo in your language 🌎
+
+| Language | Video demonstration |
+| --- | --- |
+| 🇺🇸 English | [Watch the 3-minute demo](https://youtu.be/75i78EO8xZo) |
+| 🇪🇸 Español | [Ver demostración de 3 minutos](https://youtu.be/D1O1ZFvc0q0) |
+| 🇧🇷 Português | [Assistir à demonstração de 3 minutos](https://youtu.be/EXuD3RJayIk) |
+| 🇨🇳 简体中文 | [观看三分钟演示](https://youtu.be/quHyAHKxzZ8) |
+
+*These links are language versions of the same project demonstration; they do not imply that every interface screen is available in four languages.*
+
+## How ProofLab AI works 🔬
+
+**Real experiment video** → **SAM object tracking** → **ProofLab measurements and graphs** → **Muse Spark scientific interpretation** → **Lock a prediction** → **Analyze a second real video and compare it with the predeclared tolerance**.
+
+- **SAM:** identifies and tracks the experimental object in the recording.
+- **ProofLab:** derives motion measurements from observed positions and timestamps.
+- **Muse Spark:** interprets the results, evidence and limitations.
+- **Prediction and verification:** preserve the prediction *before* the second trial, then compare measured results with the predefined tolerance.
+
+Measurements and model interpretations have different roles. This remains a research prototype, not a guarantee of universal scientific accuracy. See the [evaluation protocol](docs/EVALUATION.md) and [documented results and limitations](docs/RESULTS.md).
+
+## Support ProofLab AI ❤️
+
+Built in Peru 🇵🇪 for the Meta Global AI Developer Hackathon 2026.
+
+If the project interests you, **[like, comment on and repost our demo on X](https://x.com/vherediaE/status/2118103090998260005)**. Your feedback helps more people discover evidence-based experimentation.
+
+---
+
 **Edge testing:** [reproducible workflow and tools](docs/EDGE-TESTING.en.md).
 
 **Competition edition — created October 26, 2026 after the official kickoff.**
