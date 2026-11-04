@@ -30,6 +30,14 @@ Producción comienza vacía por decisión del propietario. No se migra `demo-vid
 El botón de ejemplo local se omite en producción hasta contar con un conjunto público de demostración.
 Production starts empty; upload a new video after generating a recovery code.
 
+### Galería pública autorizada / Authorized public gallery — 04/11/2026
+
+Excepción expresa a la regla de no migrar videos de desarrollo: el propietario autorizó publicar ocho grabaciones originales para descargarlas desde Inicio. La UI `c51c507` está en `/opt/prooflab/releases/c51c507-pendulum-downloads`, con API `2c32ebe` intacta. Los archivos públicos residen fuera de Git y de `.private`, en `/var/lib/prooflab/public/pendulum-videos/19b9ac32fa0e`; `web/pendulum-videos` es un enlace simbólico a ese directorio.
+
+Toda release posterior debe conservar ese enlace y las ocho miniaturas `web/pendulum-video-posters/*.webp` (fuentes en `ui/public/pendulum-video-posters/`). Las descargas mantienen exactamente los nombres `10CM_15G_272.4g.MOV`, `20CM_15G_272.4g.MOV`, `30CM_15G_272.4g.MOV`, `40CM_15G_272.4g.MOV`, `50CM_15G_272.4g.MOV`, `60CM_15G_272.4g.MOV`, `70CM_15G_272.4g.MOV` y `80CM_15G_272.4g.MOV`. Conservar bytes y metadatos originales, conforme a la elección explícita del propietario de publicarlos intactos; no recomprimir, sustituir ni trasladar los MOV a Git o a los datos privados. El `manifest.json` del directorio público registra nombre, tamaño y SHA-256. Tras cada publicación, comprobar que las ocho descargas y miniaturas siguen accesibles con MIME, tamaño y HTTP Range correctos.
+
+English: this explicitly authorized public set is the exception to the development-fixture restriction. Preserve each release's `web/pendulum-videos` symlink to the immutable public directory and all eight poster assets. Keep original MOV bytes, metadata and exact filenames; MOVs remain outside Git and private session storage. Verify the public manifest hashes and download/thumbnail availability after deployment.
+
 ## Actualizar / Update
 
 1. Probar cambios localmente. No ejecutar llamadas Meta como parte del despliegue.
