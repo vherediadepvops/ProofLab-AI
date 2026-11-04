@@ -7,6 +7,7 @@ import { firstValueFrom } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LabConnection } from './lab-connection';
 import { WorkspaceSettings } from './workspace-settings';
+import { PendulumVideoDownloads } from './pendulum-video-downloads';
 import { ResearchWorkflow } from './research-workflow';
 import { PendulumZoneOne } from './pendulum-zone-one';
 import { decodeSamResponse, type SamVisualization } from './sam-visualization';
@@ -208,7 +209,7 @@ const COPY = {
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, ResearchWorkflow, PendulumZoneOne, WorkspaceSettings],
+  imports: [CommonModule, FormsModule, ResearchWorkflow, PendulumZoneOne, WorkspaceSettings, PendulumVideoDownloads],
   templateUrl: './app.html',
   styleUrls: ['./app.scss', './app-studio.scss', './app-home-v4.scss']
 })

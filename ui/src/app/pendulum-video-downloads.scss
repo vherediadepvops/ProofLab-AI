@@ -1,0 +1,24 @@
+:host{display:block;margin-top:32px;color:#eaf5fa}
+*,*::before,*::after{box-sizing:border-box}
+.downloads-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:20px}
+.downloads-kicker{margin:0 0 8px;color:#67e8d6;font-size:10px;font-weight:750;letter-spacing:1.7px}
+h2{margin:0;font-size:clamp(21px,2vw,27px);line-height:1.25;letter-spacing:-.4px}
+.downloads-heading>p{margin:0;max-width:360px;color:#a8c2d0;font-size:13px;line-height:1.6}
+.video-download-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;list-style:none;margin:0;padding:0}
+.video-download-grid li{min-width:0}
+.pendulum-video-download{display:block;height:100%;border:1px solid #2d5065;border-radius:14px;background:#102331;color:inherit;text-decoration:none;overflow:hidden;transition:border-color .18s,box-shadow .18s}
+.video-poster{position:relative;aspect-ratio:4/5;overflow:hidden;background:#07141f}
+.video-poster img{display:block;width:100%;height:100%;object-fit:contain}
+.video-length{position:absolute;top:12px;left:12px;border:1px solid #8bdccd60;border-radius:6px;padding:5px 9px;background:#092a2bd9;color:#d8fff4;font-size:12px;font-weight:700}
+.video-download-icon{position:absolute;left:50%;top:50%;display:grid;place-items:center;width:58px;height:58px;transform:translate(-50%,-50%);border:1px solid #e7fffa9c;border-radius:50%;background:#082b38ad;box-shadow:0 4px 18px #0006;color:#effffc;backdrop-filter:blur(5px);transition:background .18s,border-color .18s}
+.video-download-icon svg{width:26px;height:26px;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.video-caption{padding:15px 14px 14px;border-top:1px solid #244458}
+.video-filename{display:block;font-size:12px;font-weight:650;line-height:1.6;overflow-wrap:anywhere}
+.video-download-label{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px;color:#73e9cf;font-size:12px;font-weight:650}
+.video-download-label span{font-size:19px;line-height:1}
+.pendulum-video-download:hover{border-color:#58c8b3;box-shadow:0 8px 24px #0003}
+.pendulum-video-download:hover .video-download-icon,.pendulum-video-download:focus-visible .video-download-icon{background:#11675ce8;border-color:#a2ffdf}
+.pendulum-video-download:focus-visible{outline:3px solid #87ffe1;outline-offset:4px;border-color:#87ffe1}
+@media(max-width:1100px){.video-download-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.video-poster{aspect-ratio:1/1}.downloads-heading{align-items:flex-start}}
+@media(max-width:580px){:host{margin-top:26px}.downloads-heading{display:block}.downloads-heading>p{margin-top:10px}.video-download-grid{grid-template-columns:1fr;gap:18px}.video-poster{aspect-ratio:4/5;max-height:460px}.video-caption{padding:15px}.video-filename{font-size:13px}}
+@media(prefers-reduced-motion:reduce){.pendulum-video-download,.video-download-icon{transition:none}}

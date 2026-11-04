@@ -119,6 +119,11 @@
             <strong>{{language()==='es'?'Observaciones reales. Conclusiones con evidencia.':'Real observations. Evidence-based conclusions.'}}</strong>
             <span>{{language()==='es'?'Muse Spark · SAM · cálculo reproducible':'Muse Spark · SAM · reproducible computation'}}</span>
           </div>
+          @defer (on viewport) {
+            <app-pendulum-video-downloads [language]="language()" />
+          } @placeholder {
+            <div class="home-videos-placeholder" style="min-height:8rem" aria-hidden="true"></div>
+          }
         </section>
       }
       <section class="settings-view" [hidden]="workspace()!=='settings'"><app-workspace-settings [language]="language()" /></section>
