@@ -21,16 +21,41 @@ public sealed class MuseExperimentService(
             observation is null?null:store.AttemptStatus(observation.Id),access.ManualTokenCallsPermitted);
     }
 
+    public async Task<DirectorSession> ConfirmTrackingReviewAsync(string id,
+        DirectorHumanReviewRequest request,CancellationToken ct)
+    {
+        DirectorBaselineReviewPolicy.RequireHuman(request.BobConfirmed);
+        if(request.SamEvidence is null)
+            return await director.ConfirmBaselineAsync(id,request.BobConfirmed,ct);
+        using var held=store.LockStudy(id);
+        // Reuse the authenticated archive and native SAM measurement. This path
+        // never invokes a provider and does not overwrite the prior Muse answer.
+        var frozen=store.Prediction(id);
+        var saved=frozen is null?null:store.Observation(frozen.ObservationId)
+            ??throw new FileNotFoundException("Frozen Muse evidence missing.");
+        var observation=saved is null?await PrepareAsync(id,request.SamEvidence,ct):
+            await PrepareAsync(id,request.SamEvidence,ct,saved,forFrozenBaselineReview:true);
+        var evidence=DirectorBaselineReviewPolicy.FromSamObservation(id,request.SamEvidence,observation);
+        return await director.ConfirmSamBaselineAsync(id,request.BobConfirmed,evidence,ct);
+    }
+
     public Task<MuseObservation> PrepareAsync(string id,MusePrepareRequest request,CancellationToken ct)
         =>PrepareAsync(id,request,ct,null);
 
     private async Task<MuseObservation> PrepareAsync(string id,MusePrepareRequest request,CancellationToken ct,
-        MuseObservation? expected)
+        MuseObservation? expected,bool forFrozenBaselineReview=false)
     {
         MuseExperimentStore.StudyId(id);
         var study=await director.ReadAsync(id,ct);
-        if(study.Baseline is null || study.Followup is not null || store.Prediction(id) is not null)
+        var frozen=store.Prediction(id);
+        if(study.Baseline is null ||
+           !forFrozenBaselineReview && (study.Followup is not null || frozen is not null))
             throw new InvalidOperationException("Research requires baseline evidence before video two.");
+        // Older sessions may have a frozen prediction without the separate
+        // human acknowledgement. Validate that exact saved baseline, preserving
+        // its answer and prediction even if video two is already present.
+        if(forFrozenBaselineReview && (expected is null || frozen?.ObservationId!=expected.Id || expected.StudyId!=id))
+            throw new InvalidOperationException("Review requires the original frozen baseline evidence.");
         var archive=request.AdaptiveBatchId is null ? await sam.ReadArchiveAsync(id,"baseline",ct)
             : await adaptive.ReadPlaybackAsync(id,"baseline",request.AdaptiveBatchId,ct);
         if(archive.Receipt.OriginalVideoSha256!=request.VideoSha256 ||

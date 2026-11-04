@@ -20,7 +20,6 @@ public sealed record DirectorStartRequest(
     bool IncludeSecondTrial = true,
     string FollowUpMode = "recommended",
     double? SelectedFollowUpLengthMeters = null);
-public sealed record DirectorHumanReviewRequest(bool BobConfirmed);
 public sealed record DirectorVideoEvidence(
     string Role, string VideoId, string OriginalFilename, long Bytes,
     string Sha256, DateTimeOffset UploadedAtUtc,
@@ -441,17 +440,22 @@ public sealed partial class PendulumDirectorWorkflow(
         }
     }
 
-    public async Task<DirectorSession> ConfirmBaselineAsync(string id,
-        bool bobConfirmed, CancellationToken ct)
+    public Task<DirectorSession> ConfirmBaselineAsync(string id,
+        bool bobConfirmed,CancellationToken ct)=>ConfirmBaselineAsync(id,bobConfirmed,null,ct);
+
+    internal Task<DirectorSession> ConfirmSamBaselineAsync(string id,bool bobConfirmed,
+        ValidatedSamBaselineReview evidence,CancellationToken ct)=>ConfirmBaselineAsync(id,bobConfirmed,evidence,ct);
+
+    private async Task<DirectorSession> ConfirmBaselineAsync(string id,
+        bool bobConfirmed,ValidatedSamBaselineReview? samEvidence,CancellationToken ct)
     {
-        if(!bobConfirmed)
-            throw new ArgumentException("A human must review the tracked object first.");
+        DirectorBaselineReviewPolicy.RequireHuman(bobConfirmed);
         var before=await ReadAsync(id,ct);
         if(before.PreparationPending)
             throw new InvalidOperationException("Confirm preparation before reviewing the analysis.");
         if(before.Baseline is null || before.Proposal is not null)
             throw new ArgumentException("Review requires the first video before a proposal.");
-        if(before.HumanReview is null)
+        if(samEvidence is null && before.HumanReview is null)
             await EnsureLocalEvidenceAsync(id,"baseline",ct);
         await gate.WaitAsync(ct);
         try
@@ -461,9 +465,10 @@ public sealed partial class PendulumDirectorWorkflow(
                 throw new InvalidOperationException("Confirm preparation before reviewing the analysis.");
             if(session.Baseline is null || session.Proposal is not null)
                 throw new ArgumentException("Review requires the first video before a proposal.");
-            if(session.Baseline.Spectral is not { } localPeriod ||
-               !PendulumDirectorProtocol.HasUsableInitialSignal(localPeriod))
-                throw new ArgumentException("No usable local period; manual review is required.");
+            if(samEvidence is null)
+                DirectorBaselineReviewPolicy.RequireLocalPeriod(session.Baseline.Spectral);
+            else if(samEvidence.StudyId!=id || samEvidence.VideoSha256!=session.Baseline.Sha256)
+                throw new InvalidDataException("SAM review source changed before saving.");
             if(session.HumanReview is not null) return session;
             var review = new DirectorHumanReview(DateTimeOffset.UtcNow,
                 session.Baseline.Sha256,true,

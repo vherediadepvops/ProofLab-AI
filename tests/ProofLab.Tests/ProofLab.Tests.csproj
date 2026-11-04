@@ -94,6 +94,7 @@
     <Compile Include="..\..\src\ProofLab.Api\MuseExperimentContracts.cs" Link="MuseExperimentContracts.cs" />
     <Compile Include="..\..\src\ProofLab.Api\MuseExperimentStore.cs" Link="MuseExperimentStore.cs" />
     <Compile Include="../../src/ProofLab.Api/MuseObservationIdentity.cs" Link="MuseObservationIdentity.cs" />
+    <Compile Include="../../src/ProofLab.Api/DirectorBaselineReview.cs" Link="DirectorBaselineReview.cs" />
     <Compile Include="..\..\src\ProofLab.Api\MuseExperimentTransport.cs" Link="MuseExperimentTransport.cs" />
   </ItemGroup>
 <ItemGroup><Compile Include="../../src/ProofLab.Api/SamCacheQuality.cs" Link="SamCacheQuality.cs" /></ItemGroup><ItemGroup><Compile Include="../../src/ProofLab.Api/MetaProviderErrors.cs" Link="MetaProviderErrors.cs" /></ItemGroup></Project>

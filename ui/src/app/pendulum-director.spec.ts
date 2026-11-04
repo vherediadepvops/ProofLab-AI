@@ -230,6 +230,9 @@ describe('ProofLab physical workbench and guided flagship experiment', () => {
     expect(rootEl.textContent).toContain('SHA-256');
     expect(rootEl.querySelectorAll('input[type=file]').length).toBe(1);
     http.expectNone(r=>r.url.includes('/meta/'));
+    // The background preparation request is independent of the review/proposal.
+    for(const pending of http.match(r=>r.method==='GET'&&r.url.endsWith('/video/baseline/preparation')))
+      if(!pending.cancelled)pending.flush({state:'READY',phase:'references',referenceFrames:50});
     http.verify();
   });
 

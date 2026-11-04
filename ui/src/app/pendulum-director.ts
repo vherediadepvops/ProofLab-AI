@@ -11,6 +11,9 @@ import { buildNormalizedVideoOverlay, type NormalizedOverlay } from './pendulum-
 
 type Language = 'es' | 'en';
 type Stage = 'baseline' | 'followup';
+export interface DirectorSamReviewEvidence {
+  videoSha256:string;analysisId:string;adaptiveBatchId:string|null;pivotRevisionId:string|null;
+}
 interface Point { timeSeconds: number; position: number }
 interface Motion {
   framesAnalyzed: number; detectedFrames: number;
@@ -554,8 +557,8 @@ export class PendulumDirector implements OnInit {
     }
   }
 
-  async confirm():Promise<void>{
-    await this.action('review-baseline',{bobConfirmed:this.checkedVideo()},
+  async confirm(samEvidence?:DirectorSamReviewEvidence):Promise<void>{
+    await this.action('review-baseline',{bobConfirmed:this.checkedVideo(),...(samEvidence?{samEvidence}:{})},
       this.es?'No se pudo registrar la revisión del video.':'Could not confirm visual review.');
   }
 

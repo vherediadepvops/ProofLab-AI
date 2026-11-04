@@ -488,10 +488,9 @@ app.MapGet("/api/science/director/pendulum/sessions/{id}/video/{role}/preparatio
 });
 app.MapPost("/api/science/director/pendulum/sessions/{id}/review-baseline",
     async (string id,DirectorHumanReviewRequest request,
-        PendulumDirectorWorkflow director,CancellationToken ct) =>
+        MuseExperimentService muse,CancellationToken ct) =>
 {
-    try {return Results.Ok(await director.ConfirmBaselineAsync(id,
-        request.BobConfirmed,ct));}
+    try {return Results.Ok(await muse.ConfirmTrackingReviewAsync(id,request,ct));}
     catch(ArgumentException ex){return Results.BadRequest(new {error=ex.Message});}
     catch(FileNotFoundException){return Results.NotFound(new {error="Session not found."});}
     catch(InvalidDataException ex){return Results.Json(new {error=ex.Message},statusCode:409);}

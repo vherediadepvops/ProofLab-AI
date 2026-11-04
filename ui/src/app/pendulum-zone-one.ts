@@ -125,9 +125,19 @@ export class PendulumZoneOne extends PendulumDirector {
     const session=this.session();if(!session)return;
     if(!session.humanReview && (!this.checkedVideo() || this.previewState()!=='ready'))return;
     const port=this.connection.port(),sha=session.baseline?.sha256;
+    const selected=this.roleSelections.baseline;
+    if(!selected)return;
+    const source=this.currentPlayer?.periodSource();
+    // Bind the acknowledgement to the displayed SAM archive and saved manual pivot.
+    // The API derives and validates the period; no browser measurement is submitted.
+    if(source && (source.studyId!==session.id || source.role!=='baseline' ||
+       source.originalVideoSha256!==sha || source.analysisId!==selected.analysisId ||
+       (source.adaptiveBatchId??null)!==(selected.adaptiveBatchId??null)))return;
     this.advancingToPrediction.set(true);
     try {
-      if(!session.humanReview)await this.confirm();
+      if(!session.humanReview)await this.confirm({videoSha256:selected.sourceSha256,
+        analysisId:selected.analysisId,adaptiveBatchId:selected.adaptiveBatchId??null,
+        pivotRevisionId:source?.pivotRevisionId??null});
     } finally {this.advancingToPrediction.set(false);}
     if(this.session()?.id===session.id && this.session()?.baseline?.sha256===sha &&
        this.connection.port()===port && this.session()?.humanReview)this.setJourneyStep(4);

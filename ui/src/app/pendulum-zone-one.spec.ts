@@ -783,18 +783,46 @@ describe('Clean wide Pendulum Zone 1 for the hackathon jury', () => {
     http.expectNone(r=>r.url.includes('/muse/evaluate')||r.url.includes('/sam/baseline/manual'));
     await verifyHttp(http);fixture.destroy();
   });
+  it('reviews the selected SAM archive when the old local tracker has no period',async()=>{
+    const {component,http,fixture,root}=await init(false);
+    const baseline={...video,localEvidenceStatus:'READY' as const,
+      spectral:{periodSeconds:null,fitRSquared:0,status:'INCONCLUSIVE_REQUIRES_MANUAL_REVIEW'}};
+    component.session.set({...session,baseline,humanReview:null});
+    component.acceptProcessed({studyId:session.id,videoRole:'baseline',sourceSha256:video.sha256,
+      analysisId:'f'.repeat(32),adaptiveBatchId:'f'.repeat(32),port:5391});
+    component.onPlaybackReady(true);component.flowStep.set(3);
+    fixture.detectChanges();
+    component.onPlaybackReady(true);component.previewState.set('ready');component.checkedVideo.set(true);
+    fixture.detectChanges();
+    const button=root.querySelector('.verification-strip button') as HTMLButtonElement;
+    expect(button.disabled).toBeFalse();
+    expect(root.textContent).not.toContain('falta un período local confiable');
+    const next=component.continueToPrediction();
+    const review=http.expectOne(studyUrl+'/'+session.id+'/review-baseline');
+    expect(review.request.body).toEqual({bobConfirmed:true,samEvidence:{videoSha256:video.sha256,
+      analysisId:'f'.repeat(32),adaptiveBatchId:'f'.repeat(32),pivotRevisionId:null}});
+    review.flush({...session,baseline,humanReview:{bobConfirmed:true,reviewedAtUtc:'2026-11-03T00:00:00Z'}});
+    await next;expect(component.flowStep()).toBe(4);
+    expect(component.session()?.baseline?.spectral?.periodSeconds).toBeNull();
+    http.expectNone(r=>r.url.includes('/muse/evaluate')||r.url.includes('/sam/baseline/manual'));
+    for(const pending of http.match(r=>r.method==='GET'&&r.url.endsWith('/batches/'+'f'.repeat(32)+'/evidence')))
+      pending.flush({}, {status:404,statusText:'Fixture playback not loaded'});
+    await verifyHttp(http);fixture.destroy();
+  });
   it('shows review progress, ignores double clicks and keeps failures on Understand',async()=>{
     const {component,http,fixture,root}=await init(false);
     component.session.set({...session,baseline:video,humanReview:null});
     component.flowStep.set(3);component.previewState.set('ready');component.checkedVideo.set(true);
-    spyOn(component,'hasVerifiedResult').and.returnValue(true);
-    component.playbackReady.set(true);
+    component.acceptProcessed({studyId:session.id,videoRole:'baseline',sourceSha256:video.sha256,analysisId:'f'.repeat(32),port:5391});
+    component.onPlaybackReady(true);
     const next=component.continueToPrediction();
     expect(component.advancingToPrediction()).toBeTrue();expect(component.flowBusy()).toBeTrue();
     fixture.detectChanges();
     expect(root.querySelector('.journey-advance-activity')?.textContent).toContain('Guardando revisión');
     const button=root.querySelector('.verification-strip button') as HTMLButtonElement;
     expect(button.disabled).toBeTrue();expect(button.textContent).toContain('Abriendo Predecir');
+    for(const step of Array.from(root.querySelectorAll<HTMLButtonElement>('.journey-step')))
+      expect(step.disabled).toBeTrue();
     await component.continueToPrediction();
     http.expectOne(studyUrl+'/'+session.id+'/review-baseline').flush({}, {status:503,statusText:'Unavailable'});
     await next;fixture.detectChanges();
