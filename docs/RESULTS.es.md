@@ -1,11 +1,54 @@
 # Resultados — investigación del péndulo en ProofLab AI
 
 **Meta Global AI Developer Hackathon 2026 · Indie Developer · Push the Frontier**
-**Resultados históricos recopilados el 3 de noviembre de 2026.** [English](RESULTS.md) · [Protocolo de evaluación](EVALUATION.es.md).
+**Resultados del 30 de octubre y conciliación nueva de producción del 4 de noviembre de 2026.** [English](RESULTS.md) · [Protocolo de evaluación](EVALUATION.es.md).
 
 **Interpretación:** son observaciones documentadas durante el desarrollo y la evaluación, **no estadísticas de precisión auditadas independientemente** ni demostración de un descubrimiento. La campaña de diez casos utilizó videos reales anteriores, un control negativo deliberado y un control sintético.
 
-## Resumen
+## Nueva campaña: 25 contrastes con grabaciones reales existentes (4 de noviembre de 2026)
+
+**Fuente:** los 25 códigos de recuperación distintos aportados por el propietario se consultaron en **solo lectura** mediante HTTPS GET en `https://prooflab-ai.com`, respaldado por la persistencia de AWS Lightsail (SQLite y archivos). Esto **no** fue acceso directo al archivo SQLite de AWS ni auditoría de recibos o respuestas crudas de Meta. Los códigos se mantienen privados porque permiten recuperar sesiones.
+
+**Comprobación:** los **25/25** registros devolvieron video inicial, video de seguimiento, predicción Muse congelada y evaluación del contraste con estado `COMPLETED`. Se verificaron **18 dentro de la banda práctica ±5 %**, **6 fuera** y **1 inconcluso**. Estas categorías no son 25 aciertos ni una tasa de precisión física del 72 %.
+
+| Pareja de videos (cm) | T₁ observado (s) | T₂ predicho congelado (s) | T₂ observado (s) | Diferencia | Veredicto |
+|---|---:|---:|---:|---:|---|
+| 50→80 | 1,457416 | 1,843501 | 1,816953 | −1,44 % | Dentro |
+| 30→60 | 1,146180 | 1,620944 | 1,584520 | −2,25 % | Dentro |
+| 20→40 | 0,962780 | 1,361576 | 1,310054 | −3,78 % | Dentro |
+| 40→70 | 1,310054 | 1,733039 | 1,700859 | −1,86 % | Dentro |
+| 20→30 | 0,962786 | 1,179167 | 1,146172 | −2,80 % | Dentro |
+| 20→50 | 0,962790 | 1,522305 | 1,457424 | −4,26 % | Dentro |
+| 20→60 | 0,962785 | 1,667593 | 1,584553 | −4,98 % | Dentro |
+| 20→70 | 0,962790 | 1,801216 | 1,700904 | −5,57 % | Fuera |
+| 20→80 | 0,962786 | 1,925572 | 1,816956 | −5,64 % | Fuera |
+| 30→40 | 1,146179 | 1,323494 | 1,310066 | −1,01 % | Dentro |
+| 30→50 | 1,146183 | 1,479715 | 1,457433 | −1,51 % | Dentro |
+| 30→70 | 1,146163 | 1,750793 | 1,700876 | −2,85 % | Dentro |
+| 30→80 | 1,146177 | 1,871699 | 1,816953 | −2,92 % | Dentro |
+| 40→50 | 1,310060 | 1,464691 | 1,457446 | −0,49 % | Dentro |
+| 40→60 | 1,310069 | 1,604501 | 1,584534 | −1,24 % | Dentro |
+| 40→80 | 1,310054 | 1,852696 | — | — | Inconcluso |
+| 50→60† | 1,457394 | 1,784936 | 1,584539 | −11,23 % | Fuera |
+| 50→70 | 1,457453 | 1,724482 | 1,700863 | −1,37 % | Dentro |
+| 60→70 | 1,584567 | 1,711527 | 1,700871 | −0,62 % | Dentro |
+| 60→80 | 1,584525 | 1,829652 | 1,816965 | −0,69 % | Dentro |
+| 70→80 | 1,700897 | 1,818335 | 1,816948 | −0,08 % | Dentro |
+| 10→20 | 0,713668 | 1,009279 | 0,962787 | −4,61 % | Dentro |
+| 10→30 | 0,713714 | 1,236189 | 1,146177 | −7,28 % | Fuera |
+| 10→40 | 0,713674 | 1,427349 | 1,310047 | −8,22 % | Fuera |
+| 10→50 | 0,713724 | 1,595935 | 1,457416 | −8,68 % | Fuera |
+
+**Lectura de las cifras:** T₁ y T₂ observados son estimaciones del video guardadas en producción; T₂ predicho procede de la predicción Muse congelada y no de la columna teórica del Excel. Diferencia = `100 × (T₂ observado / T₂ predicho − 1)` (redondeada a 2 decimales). La banda ±5 % es práctica y predeclarada, **no** un intervalo de confianza ni una certificación de exactitud independiente. Los períodos válidos del segundo video tienen estado `CANDIDATE` en el estimador.
+
+**Incidencias conservadas sin corregir el historial:**
+
+- **† Archivo 50→60 cm:** la sesión declara longitud inicial de **40 cm**, aunque el video inicial es `50CM_15G_272.4g.MOV`. La predicción empleó la longitud **declarada** de 40 cm y quedó **−11,23 %** fuera de banda; no atribuir esa discrepancia a un fallo físico demostrado.
+- **40→80 cm:** segundo video **inconcluso** por `GAPS`, `TOO_FEW_CYCLES` y `LOW_COVERAGE` (cobertura **3,07 %**). Sin T₂ observado válido. Muse conservó `INCONCLUSIVE`.
+- Las 25 parejas reutilizan **ocho grabaciones existentes** (etiquetas nominales de 10 a 80 cm); no son 25 filmaciones físicas independientes. Las parejas 10→60, 10→70 y 10→80 cm no se incluyeron en la tanda de 25 elegida por el propietario.
+- Longitud efectiva, pivote, perspectiva/cámara, incertidumbre sistemática y cronología de filmación **no** están calibradas o verificadas independientemente. No se publican identificadores recuperables, recibos, respuestas crudas de Meta, videos privados ni SQLite. Esta lectura GET **no envió nuevas solicitudes a Meta**.
+
+## Campaña histórica del 30 de octubre — resumen
 
 | Métrica | Resultado registrado | Alcance |
 |---|---|---|
@@ -76,4 +119,4 @@ La versión superó **153 pruebas .NET y 101 Angular**, compilación/publicació
 - **Privado:** videos originales, respuestas completas de Meta, recibos, bitácoras por caso y SQLite. No se incluyen credenciales, medios privados ni historiales sensibles.
 - **Límite:** se pueden repetir pruebas y cálculos publicados, pero **los diez casos con Meta no pueden reproducirse íntegramente con los archivos públicos actuales**.
 
-**Próxima evidencia necesaria:** calibración física independiente, una segunda grabación efectivamente posterior a la predicción congelada y pruebas reales con Meta para el último flujo. Este documento no ejecutó inferencias ni experimentos nuevos.
+**Próxima evidencia necesaria:** calibración física independiente, conciliación de recibos de cada caso, una segunda grabación realmente posterior a la predicción congelada e incertidumbre sistemática completa. La revisión del 4 de noviembre leyó registros ya existentes por GET; no ejecutó inferencias nuevas.
