@@ -1,4 +1,7 @@
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { MuseInvestigator } from './muse-investigator';
+import { LabConnection } from './lab-connection';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import type { KinematicRevision } from './pendulum-kinematics';
@@ -180,6 +183,110 @@ describe('One-clock three-view pendulum laboratory',()=>{
     http.expectNone(r=>r.method==='POST');fixture.destroy();http.verify();
   });
 
+  it('enables automatic comparison only in the allowed final step and passes the declared length',()=>{
+    const {fixture,component}=init(),http=TestBed.inject(HttpTestingController);
+    const source={studyId:study,role:'followup',originalVideoSha256:sha,analysisId:'e'.repeat(32),
+      providerResponseSha256:'f'.repeat(64),providerModel:'sam-3.1' as const,objectId:'1',
+      pivotRevisionId:null,pivotProvenance:'SYNTHETIC_TEST',adaptiveBatchId:null};
+    spyOn(component,'periodSource').and.returnValue(source);
+    spyOn(MuseInvestigator.prototype,'ngOnChanges').and.stub();
+    fixture.componentRef.setInput('videoRole','followup');
+    fixture.componentRef.setInput('physicalLengthMeters',.6);
+    fixture.componentRef.setInput('presentation','compare');fixture.detectChanges();
+    const child=()=>fixture.debugElement.query(By.directive(MuseInvestigator)).componentInstance as MuseInvestigator;
+    expect(child().autoContrast()).toBeFalse();expect(child().followupLengthMeters()).toBe(.6);
+    fixture.componentRef.setInput('autoContrastAllowed',true);fixture.detectChanges();
+    expect(child().autoContrast()).toBeFalse(); // an unknown pivot state cannot start comparison
+    component.pivotRestoration.set('ready');fixture.detectChanges();
+    expect(child().autoContrast()).toBeTrue();
+    fixture.componentRef.setInput('presentation','predict');fixture.detectChanges();
+    expect(child().autoContrast()).toBeFalse();
+    fixture.componentRef.setInput('presentation','source');fixture.detectChanges();
+    expect(fixture.debugElement.query(By.directive(MuseInvestigator))).toBeNull();
+    http.match(()=>true).forEach(r=>r.flush(null));fixture.destroy();http.verify();
+  });
+
+  async function comparisonWithPendingPivot(){
+    const context=init(),{fixture,component}=context,http=TestBed.inject(HttpTestingController);
+    const field=document.createElement('input');field.type='password';field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';
+    const connection=TestBed.inject(LabConnection);connection.register(field);connection.confirmToken();
+    fixture.componentRef.setInput('studyId',study);fixture.componentRef.setInput('videoSha256',sha);
+    fixture.componentRef.setInput('videoRole','followup');fixture.componentRef.setInput('presentation','compare');
+    fixture.componentRef.setInput('physicalLengthMeters',.6);fixture.componentRef.setInput('autoContrastAllowed',true);
+    fixture.detectChanges();
+    const pivot=http.expectOne(r=>r.method==='GET'&&r.url.endsWith('/kinematics/followup'));
+    http.expectOne(r=>r.method==='GET'&&r.url.endsWith('/sam/followup/evidence')).flush({
+      state:{status:'CACHED_META_SAM_3_1_RESPONSE_REQUIRES_VISUAL_REVIEW',sourceSha256:sha,
+        provenance:'META_SAM_3_1_CACHED_PROVIDER_OUTPUT'},
+      receipt:{model:'sam-3.1',concept:'metal pendulum bob',analysisId:'e'.repeat(32),
+        responseJsonSha256:'f'.repeat(64),originalVideoSha256:sha,
+        providerEvidenceStatus:'COMPLETED_PROVIDER_RESPONSE_REQUIRES_VISUAL_REVIEW',
+        framePtsSeconds:[0,.016,.032],sourceFrameCount:3},
+      rawResponseJson:JSON.stringify({model:'sam-3.1',status:'completed',
+        output:[{content:[{type:'output_text',text:''}]}]})
+    });
+    // The archive parser is lazy; deliberately leave the independent pivot GET unresolved.
+    for(let i=0;i<30 && !component.samVerified();i++){
+      await new Promise<void>(resolve=>setTimeout(resolve,10));fixture.detectChanges();
+    }
+    expect(component.samVerified()).toBeTrue();expect(component.periodSource()?.pivotRevisionId).toBeNull();
+    const endpoint='http://127.0.0.1:5391/api/science/director/pendulum/sessions/'+study+'/muse';
+    const state={observation:null,evaluation:null,attemptStatus:null,manualCallsPermitted:true,
+      maximumEstimatedCostUsd:.05,prediction:{studyId:study,observationId:'baseline',responseId:'saved-prediction',
+        frozenAtUtc:'2026-11-04T06:00:00Z',sha256:'saved-prediction-sha',payloadJson:JSON.stringify({
+          prediction:{baselineLengthMeters:.5,nextLengthMeters:.6,periodSeconds:1.6,tolerancePercent:5}})}};
+    const ticks=async()=>{for(let i=0;i<8;i++){await Promise.resolve();fixture.detectChanges();}};
+    const restoreMuse=async()=>{
+      http.expectOne(endpoint+'?purpose=prediction').flush(state);await ticks();
+      http.expectOne(endpoint+'/contrast').flush({evidence:null,evaluation:null,attemptStatus:null});await ticks();
+    };
+    await restoreMuse();
+    expect(component.pivotRestoration()).toBe('loading');expect(component.autoContrastReady()).toBeFalse();
+    expect(fixture.nativeElement.querySelector('.comparison-pivot-status')?.textContent).toContain('Recuperando');
+    http.expectNone(r=>r.method==='POST');
+    return {...context,http,pivot,endpoint,ticks,restoreMuse};
+  }
+
+  it('waits for a delayed saved pivot before preparing immutable automatic comparison evidence',async()=>{
+    const {fixture,component,http,pivot,endpoint,ticks,restoreMuse}=await comparisonWithPendingPivot();
+    pivot.flush({...revision,role:'followup'});await ticks();
+    expect(component.pivotRestoration()).toBe('ready');
+    expect(component.periodSource()?.pivotRevisionId).toBe('QA_REVISION');
+    // The final pivot identity reloads the saved comparison before any preparation.
+    http.expectNone(r=>r.method==='POST');await restoreMuse();
+    const prepare=http.expectOne(endpoint+'/contrast/prepare');
+    expect(prepare.request.body.pivotRevisionId).toBe('QA_REVISION');
+    expect(prepare.request.body.analysisId).toBe('e'.repeat(32));
+    expect(prepare.request.body.followupLengthMeters).toBe(.6);
+    prepare.flush({}, {status:409,statusText:'Offline regression stop'});await ticks();
+    http.expectNone(endpoint+'/contrast/evaluate');fixture.destroy();http.verify();
+  });
+
+  it('allows automatic comparison without a saved pivot only after its absence is confirmed',async()=>{
+    const {fixture,component,http,pivot,endpoint,ticks}=await comparisonWithPendingPivot();
+    pivot.flush({}, {status:404,statusText:'Not Found'});await ticks();
+    expect(component.pivotRestoration()).toBe('ready');expect(component.autoContrastReady()).toBeTrue();
+    const prepare=http.expectOne(endpoint+'/contrast/prepare');expect(prepare.request.body.pivotRevisionId).toBeNull();
+    prepare.flush({}, {status:409,statusText:'Offline regression stop'});await ticks();
+    http.expectNone(endpoint+'/contrast/evaluate');fixture.destroy();http.verify();
+  });
+
+  for(const invalid of ['unavailable','mismatched'] as const)it('blocks automatic comparison after '+invalid+' pivot restoration and offers a read-only recovery',async()=>{
+    const {fixture,component,http,pivot,endpoint,ticks}=await comparisonWithPendingPivot();
+    if(invalid==='unavailable')pivot.flush({}, {status:503,statusText:'Unavailable'});
+    else pivot.flush(revision); // a baseline pivot must never complete followup restoration
+    await ticks();
+    expect(component.pivotRestoration()).toBe('failed');expect(component.autoContrastReady()).toBeFalse();
+    http.expectNone(r=>r.method==='POST');
+    const retry=fixture.nativeElement.querySelector('.comparison-pivot-status button') as HTMLButtonElement;
+    expect(retry.textContent).toContain('Recuperar suspensión');retry.click();await ticks();
+    const recovery=http.expectOne(r=>r.method==='GET'&&r.url.endsWith('/kinematics/followup'));
+    expect(component.pivotRestoration()).toBe('loading');http.expectNone(r=>r.method==='POST');
+    recovery.flush({}, {status:404,statusText:'Not Found'});await ticks();
+    http.expectOne(endpoint+'/contrast/prepare').flush({}, {status:409,statusText:'Offline regression stop'});
+    await ticks();http.expectNone(endpoint+'/contrast/evaluate');fixture.destroy();http.verify();
+  });
+
   function init(){
     const fixture=TestBed.createComponent(PendulumMasterPlayer);
     fixture.componentRef.setInput('videoUrl','http://127.0.0.1:5391/test.mp4');
@@ -279,7 +386,7 @@ describe('One-clock three-view pendulum laboratory',()=>{
     fixture.componentRef.setInput('studyId',study);fixture.componentRef.setInput('videoSha256',sha);
     fixture.detectChanges();
     const pendingPivot=http.expectOne(r=>r.url.endsWith('/kinematics/baseline'));
-    flushNoSamCache(http);await fixture.whenStable();
+    flushNoSamCache(http);for(let i=0;i<6;i++)await Promise.resolve();
     const controller=new AbortController();
     (component as unknown as {exportController:AbortController}).exportController=controller;
     component.exportingVideo.set(true);
@@ -795,11 +902,13 @@ describe('One-clock three-view pendulum laboratory',()=>{
     fixture.detectChanges();
     const latest=http.expectOne(r=>r.method==='GET'&&r.url.endsWith('/kinematics/followup'));
     old.flush(revision);
+    for(let i=0;i<6;i++)await Promise.resolve();
+    expect(component.pivotRestoration()).toBe('loading');
     latest.flush({error:'No pivot'},{status:404,statusText:'Not Found'});
     flushNoSamCache(http);
     await fixture.whenStable();
     expect(component.pivotRevision()).toBeNull();
-    expect(component.pivotMode()).toBeFalse();
+    expect(component.pivotMode()).toBeFalse();expect(component.pivotRestoration()).toBe('ready');
     http.verify();fixture.destroy();
   });
 

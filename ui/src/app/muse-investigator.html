@@ -206,7 +206,7 @@
         </section>
       }
       @if(contrast()?.evaluation; as result){
-        @if(contrastMatches()) {
+        @if(contrastEvaluationMatches()) {
           <section class="v93-contrast-head">
             <span class="v93-spark-kicker">✦ Muse Spark · {{es?'CONTRASTE DE EVIDENCIAS':'EVIDENCE COMPARISON'}}</span>
             <h3>{{contrastVerdict()}}</h3>
@@ -268,15 +268,13 @@
             'This response belongs to another analysis and is not shown as a current result.'}}</p>
         }
       } @else {
-        <div class="actions">
-          <label>{{es?'Longitud del segundo experimento (m)':'Second experiment length (m)'}}
-            <input type="number" min="0.1" max="2" step="0.01" [value]="followupLength()" [disabled]="!!contrast()?.evidence||!!busy()" (change)="followupLength.set(+$any($event.target).value)"/>
-          </label>
-          <button type="button" (click)="prepareContrast()" [disabled]="!!busy()||connection.busy()||!!contrast()?.evidence">{{es?'Verificar contraste':'Verify comparison'}}</button>
-          @if(contrast()?.evidence){<button type="button" class="primary" (click)="evaluateContrast()" [disabled]="!canContrast()">{{es?'Consultar Muse · máx. US$ 0,05':'Ask Muse · max. US$ 0.05'}}</button>}
-        </div>
-        <p class="fine">{{es?'Comprueba la longitud real. Se comparan las mediciones SAM con el margen congelado; no se modifica la hipótesis. Consultar autoriza enviar esas mediciones a Meta.':'Check the actual length. SAM measurements are compared with the frozen band; the hypothesis stays unchanged. Asking authorizes sending these measurements to Meta.'}}</p>
-        @if(contrast()?.attemptStatus){<p class="warning">{{es?'Revisa el intento registrado; no se repite automáticamente.':'Inspect the recorded attempt; it is not retried automatically.'}}</p>}
+        @if(!busy()) {<p class="fine" role="status" aria-live="polite">{{comparisonStatus()}}</p>}
+        @if(followupLength(); as length){<p class="fine">{{es?'Longitud registrada para la segunda prueba:':'Recorded length for trial 2:'}} <strong>{{number(length*100,1)}} cm</strong></p>}
+        @if(!connection.hasToken()){<button class="link" type="button" (click)="connection.openSettings()">{{es?'Configurar token':'Configure token'}}</button>}
+        @if(error() || contrast()?.attemptStatus || contrastSubmitted()) {
+          <button type="button" class="report" (click)="refreshContrastStatus()" [disabled]="!!busy()||connection.busy()">{{es?'Actualizar estado guardado':'Refresh saved status'}}</button>
+          <p class="fine">{{es?'Solo consulta el registro; no vuelve a llamar a Meta.':'Only reads the record; it does not call Meta again.'}}</p>
+        }
       }
     } @else if(s.evaluation && predictionEvaluationMatches() ? s.evaluation : null; as evaluation) {
       @if(comparisonModel(); as m) {

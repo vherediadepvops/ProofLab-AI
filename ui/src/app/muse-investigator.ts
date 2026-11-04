@@ -1,7 +1,7 @@
 import { apiOrigin } from './api-origin';
-import {Component,OnChanges,OnDestroy,SimpleChanges,inject,input,output,signal,computed} from '@angular/core';
+import {Component,OnChanges,OnDestroy,SimpleChanges,inject,input,output,signal,computed,effect,untracked} from '@angular/core';
 import {HttpClient,HttpHeaders} from '@angular/common/http';
-import {firstValueFrom} from 'rxjs';
+import {firstValueFrom,timeout} from 'rxjs';
 import {LabConnection} from './lab-connection';
 import {LabActivity} from './lab-activity';
 import type {SamPeriodSource} from './sam-period';
@@ -22,6 +22,17 @@ interface MuseState {
       hypothesis:Bilingual;falsification:Bilingual;phenomenon?:MusePhenomenon|null;nextLengthMeters:number|null;periodSeconds:number|null;tolerancePercent:number|null}};
   prediction:FrozenMusePrediction|null;attemptStatus:string|null;manualCallsPermitted:boolean;maximumEstimatedCostUsd:number;
 }
+interface MuseContrastState {
+  evidence:null|{studyId?:string;sha256:string;payloadJson:string};
+  evaluation:null|{evidenceSha256?:string;model?:string;rawResponseSha256?:string;responseId:string;
+    answer:{verdict:string;justification:Bilingual;limitations:Bilingual;nextStep:Bilingual}};
+  attemptStatus:string|null;
+}
+// Stage navigation destroys the component, but a started HTTP request continues.
+// Share only its promise for the exact evidence identity so a returning component
+// does not race a second prepare against the server's study lock.
+const contrastPreparations=new Map<string,Promise<MuseContrastState>>();
+const contrastEvaluations=new Map<string,{evidenceSha256:string;promise:Promise<MuseContrastState>}>();
 type MuseJsonObject=Record<string,unknown>;
 function museObject(value:unknown):MuseJsonObject|null {
   return value!==null && typeof value==='object' && !Array.isArray(value)
@@ -65,6 +76,9 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   readonly source=input.required<SamPeriodSource>();
   readonly language=input<'es'|'en'>('es');
   readonly baselineLengthMeters=input<number|null>(null);
+  readonly followupLengthMeters=input<number|null>(null);
+  // Only the visible Comprobar step may start the already-authorized comparison.
+  readonly autoContrast=input(false);
   readonly view=input<'research'|'interpretation'>('research');
   readonly chosenLengthCm=signal<number|null>(null);
   baselineLength():number|null {
@@ -205,8 +219,12 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   readonly connection=inject(LabConnection);
   private readonly http=inject(HttpClient);
   private serial=0;
+  private destroyed=false;
   readonly state=signal<MuseState|null>(null);
-  readonly contrast=signal<{evidence:null|{sha256:string;payloadJson:string};evaluation:null|{responseId:string;answer:{verdict:string;justification:Bilingual;limitations:Bilingual;nextStep:Bilingual}};attemptStatus:string|null}|null>(null);
+  readonly contrast=signal<MuseContrastState|null>(null);
+  private readonly contrastLoaded=signal(false);
+  private autoContrastRun='';
+  readonly contrastSubmitted=signal(false);
   readonly followupLength=signal<number|null>(null);
   readonly statisticalSummary=computed(()=>{
     const s=this.state(),o=s?.observation,source=this.source();
@@ -230,26 +248,142 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
       {minimumFractionDigits:digits,maximumFractionDigits:digits});
   }
   get isFollowup():boolean{return this.source().role==='followup';}
-  contrastMatches():boolean {try{const c=this.contrast(),p=JSON.parse(c!.evidence!.payloadJson);return p.analysisId===this.source().analysisId&&p.sourceSha256===this.source().originalVideoSha256;}catch{return false;}}
+  contrastMatches():boolean {
+    try {
+      const s=this.source(),e=this.contrast()?.evidence,f=this.state()?.prediction;
+      if(!e || !f || s.role!=='followup' || s.providerModel!=='sam-3.1' ||
+        ![s.studyId,s.analysisId,s.originalVideoSha256,s.providerResponseSha256,s.objectId,s.pivotProvenance,e.sha256,f.sha256].every(museText) ||
+        f.studyId!==s.studyId || e.studyId!==s.studyId)return false;
+      const p=JSON.parse(e.payloadJson),r=p.request,m=p.measurement?.source;
+      return p.studyId===s.studyId && p.analysisId===s.analysisId && p.sourceSha256===s.originalVideoSha256 &&
+        p.responseSha256===s.providerResponseSha256 && p.predictionSha256===f.sha256 &&
+        p.followupLengthMeters===this.followupLength() &&
+        r?.videoSha256===s.originalVideoSha256 && r.analysisId===s.analysisId &&
+        r.pivotRevisionId===s.pivotRevisionId && (r.adaptiveBatchId??null)===(s.adaptiveBatchId??null) &&
+        r.followupLengthMeters===p.followupLengthMeters &&
+        m?.studyId===s.studyId && m.role==='followup' && m.originalVideoSha256===s.originalVideoSha256 &&
+        m.analysisId===s.analysisId && m.providerResponseSha256===s.providerResponseSha256 &&
+        m.providerModel===s.providerModel && m.objectId===s.objectId &&
+        m.pivotRevisionId===s.pivotRevisionId && m.pivotProvenance===s.pivotProvenance;
+    } catch {return false;}
+  }
+  contrastEvaluationMatches():boolean {
+    const c=this.contrast(),e=c?.evaluation;
+    return this.contrastMatches() && !!e && e.evidenceSha256===c?.evidence?.sha256 &&
+      e.model==='muse-spark-1.3' && museText(e.responseId) && museText(e.rawResponseSha256);
+  }
+  private comparisonKey():string {return this.contextKey()+'|'+this.state()?.prediction?.sha256+'|'+this.followupLength();}
+  private comparisonMarker():string {return 'prooflab.muse-contrast-submitted.'+this.comparisonKey();}
+  private wasContrastSubmitted():boolean {
+    if(this.contrastSubmitted())return true;
+    try {return sessionStorage.getItem(this.comparisonMarker())==='submitted';}catch{return false;}
+  }
+  private markContrastSubmitted():void {
+    this.contrastSubmitted.set(true);
+    // Only a non-secret identity marker, never a token or scientific result. A reload
+    // may reconcile a lost response, but must not send the same request again.
+    try {sessionStorage.setItem(this.comparisonMarker(),'submitted');}catch{}
+  }
+  private readonly automaticComparison=effect(()=>{
+    this.autoContrast();this.source();this.view();this.followupLengthMeters();
+    this.state();this.contrast();this.contrastLoaded();this.busy();
+    this.connection.hasToken();this.connection.busy();
+    untracked(()=>{void this.runAutomaticContrast();});
+  });
+  private async runAutomaticContrast():Promise<void> {
+    if(this.destroyed || !this.autoContrast() || this.interpretationView() || !this.isFollowup || !this.contrastLoaded() ||
+      this.busy() || this.error() || !this.state()?.prediction || !this.followupLength())return;
+    const key=this.comparisonKey();
+    const running=contrastEvaluations.get(this.url()+'|'+key);
+    if(running && this.contrastMatches() && running.evidenceSha256===this.contrast()?.evidence?.sha256){
+      this.autoContrastRun=key;
+      await this.receiveContrastEvaluation(running.promise);
+      return;
+    }
+    if(this.connection.busy() || !this.connection.hasToken() || !this.state()?.manualCallsPermitted)return;
+    if(this.autoContrastRun===key || this.wasContrastSubmitted() || this.contrast()?.attemptStatus ||
+      this.contrast()?.evaluation || (this.contrast()?.evidence && !this.contrastMatches()))return;
+    this.autoContrastRun=key;
+    if(!this.contrast()?.evidence)await this.prepareContrast();
+    if(this.destroyed || key!==this.comparisonKey() || this.error())return;
+    if(!this.autoContrast() || this.connection.busy() || !this.connection.hasToken()){
+      this.autoContrastRun='';return;
+    }
+    if(this.canContrast())await this.evaluateContrast();
+  }
+  comparisonStatus():string {
+    if(this.contrastEvaluationMatches())return '';
+    if(this.contrast()?.evidence && !this.contrastMatches())return this.es?
+      'El contraste guardado pertenece a otra medición o predicción. No se enviará una nueva consulta automáticamente.':
+      'The saved comparison belongs to another measurement or prediction. No new request will be sent automatically.';
+    if(this.contrast()?.evaluation)return this.es?'No se pudo vincular la respuesta con la evidencia actual.':'The response could not be linked to the current evidence.';
+    if((this.contrast()?.attemptStatus || this.wasContrastSubmitted()) && this.connection.busy())return this.es?
+      'Muse está comparando las mediciones con tu predicción. La consulta ya está en curso.':
+      'Muse is comparing measurements with your prediction. The request is already in progress.';
+    if(this.contrast()?.attemptStatus || this.wasContrastSubmitted())return this.es?
+      'La consulta ya fue enviada. Recupera su estado guardado; no se repetirá automáticamente.':
+      'The request has already been sent. Check its saved status; it will not be repeated automatically.';
+    if(!this.state()?.prediction)return this.es?'Falta una predicción congelada para comparar.':'A frozen prediction is required for comparison.';
+    if(!this.connection.hasToken())return this.es?'Configura el token para completar automáticamente el contraste.':'Configure the token to complete the comparison automatically.';
+    if(!this.state()?.manualCallsPermitted)return this.es?'El servidor no permite nuevas consultas de pago.':'The server does not permit new paid requests.';
+    if(this.connection.busy())return this.es?'Esperando a que termine el procesamiento del video…':'Waiting for video processing to finish…';
+    return this.es?'El contraste se prepara automáticamente con las mediciones de la segunda prueba y la predicción guardada.':
+      'The comparison is prepared automatically using trial 2 measurements and the saved prediction.';
+  }
+  async refreshContrastStatus():Promise<void> {
+    this.autoContrastRun=this.comparisonKey();
+    await this.load();
+  }
   async prepareContrast():Promise<void>{
-    if(this.busy()||this.connection.busy()||!this.followupLength())return;
-    const serial=++this.serial,source=this.source();this.busy.set('preparing');this.error.set('');
-    try{const c=await firstValueFrom(this.http.post<NonNullable<ReturnType<typeof this.contrast>>>(this.url()+'/contrast/prepare',{
-      videoSha256:source.originalVideoSha256,analysisId:source.analysisId,pivotRevisionId:source.pivotRevisionId,
-      adaptiveBatchId:source.adaptiveBatchId??null,followupLengthMeters:this.followupLength()
-    },{headers:this.headers}));if(serial===this.serial)this.contrast.set(c);}
+    if(this.destroyed||!this.autoContrast()||!this.isFollowup||this.busy()||this.connection.busy()||!this.followupLength()||this.contrast()?.evidence)return;
+    const serial=++this.serial,source=this.source(),url=this.url()+'/contrast/prepare',key=url+'|'+this.comparisonKey();
+    this.busy.set('preparing');this.error.set('');
+    try{
+      let pending=contrastPreparations.get(key);
+      if(!pending){
+        pending=firstValueFrom(this.http.post<MuseContrastState>(url,{
+          videoSha256:source.originalVideoSha256,analysisId:source.analysisId,pivotRevisionId:source.pivotRevisionId,
+          adaptiveBatchId:source.adaptiveBatchId??null,followupLengthMeters:this.followupLength()
+        },{headers:this.headers}).pipe(timeout(60000)));
+        contrastPreparations.set(key,pending);
+        const release=()=>{if(contrastPreparations.get(key)===pending)contrastPreparations.delete(key);};
+        // Register both outcomes without creating an unhandled rejected finally promise.
+        void pending.then(release,release);
+      }
+      const c=await pending;if(!this.destroyed && serial===this.serial)this.contrast.set(c);
+    }
     catch{if(serial===this.serial)this.error.set(this.es?'No se pudo verificar el contraste. Revisa la predicción y el resultado SAM.':'Could not verify comparison. Check the prediction and SAM result.');}
     finally{if(serial===this.serial)this.busy.set(null);}
   }
-  canContrast():boolean{return !this.busy()&&!this.connection.busy()&&this.connection.hasToken()&&!!this.state()?.manualCallsPermitted&&this.contrastMatches()&&!this.contrast()?.evaluation&&!this.contrast()?.attemptStatus;}
+  canContrast():boolean{return this.autoContrast()&&this.isFollowup&&!this.interpretationView()&&!this.busy()&&!this.connection.busy()&&this.connection.hasToken()&&!!this.state()?.manualCallsPermitted&&this.contrastMatches()&&!this.contrast()?.evaluation&&!this.contrast()?.attemptStatus&&!this.wasContrastSubmitted();}
   async evaluateContrast():Promise<void>{
     if(!this.canContrast())return;const token=this.connection.tokenForManualRequest();if(!token)return;
-    const serial=++this.serial,url=this.url();this.busy.set('evaluating');this.connection.busy.set(true);this.error.set('');
-    try{const c=await firstValueFrom(this.http.post<NonNullable<ReturnType<typeof this.contrast>>>(url+'/contrast/evaluate',{
-      evidenceSha256:this.contrast()!.evidence!.sha256,modelApiToken:token,confirmMeasuredDataTransfer:true,confirmPaidCall:true,maximumEstimatedCostUsd:.05
-    },{headers:this.headers}));if(serial===this.serial)this.contrast.set(c);}
-    catch{if(serial===this.serial){try{this.contrast.set(await firstValueFrom(this.http.get<NonNullable<ReturnType<typeof this.contrast>>>(url+'/contrast')));}catch{}this.error.set(this.es?'El contraste no se completó. Revisa el intento registrado.':'Comparison did not complete. Inspect the recorded attempt.');}}
-    finally{this.connection.busy.set(false);if(serial===this.serial)this.busy.set(null);}
+    const url=this.url(),key=url+'|'+this.comparisonKey(),evidenceSha256=this.contrast()!.evidence!.sha256;
+    this.markContrastSubmitted();this.connection.busy.set(true);
+    const pending=firstValueFrom(this.http.post<MuseContrastState>(url+'/contrast/evaluate',{
+      evidenceSha256,modelApiToken:token,confirmMeasuredDataTransfer:true,confirmPaidCall:true,maximumEstimatedCostUsd:.05
+    },{headers:this.headers}).pipe(timeout(195000))).catch(()=>
+      firstValueFrom(this.http.get<MuseContrastState>(url+'/contrast').pipe(timeout(15000))));
+    const shared={evidenceSha256,promise:pending};contrastEvaluations.set(key,shared);
+    const release=()=>{if(contrastEvaluations.get(key)===shared)contrastEvaluations.delete(key);};
+    void pending.then(release,release);
+    try{await this.receiveContrastEvaluation(pending);}
+    // Only the original operation owns this shared lock. A mounted observer never releases it.
+    finally{this.connection.busy.set(false);}
+  }
+  private async receiveContrastEvaluation(pending:Promise<MuseContrastState>):Promise<void>{
+    const serial=++this.serial;this.busy.set('evaluating');this.error.set('');
+    try{
+      const c=await pending;if(!this.destroyed && serial===this.serial)this.contrast.set(c);
+    }catch{/* The shared operation already performed its single read-only reconciliation. */}
+    finally{
+      if(!this.destroyed && serial===this.serial){
+        if(!this.contrastEvaluationMatches())this.error.set(this.es?
+          'No se pudo confirmar el resultado. La consulta no se repetirá; puedes recuperar su estado guardado.':
+          'Could not confirm the result. The request will not be repeated; you can check its saved status.');
+        this.busy.set(null);
+      }
+    }
   }
   contrastVerdict():string {switch(this.contrast()?.evaluation?.answer.verdict){
     case 'WITHIN_PREDECLARED_BAND':return this.es?'Compatible con la predicción dentro del margen':'Consistent with the prediction within tolerance';
@@ -306,12 +440,14 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     this.interpretationContext=key;this.serial++;
     this.interpretationOpened.set(false);this.reviewedPrediction.set(false);
     this.state.set(null);this.contrast.set(null);this.followupLength.set(null);
+    this.contrastLoaded.set(false);this.contrastSubmitted.set(false);this.autoContrastRun='';
     this.chosenLengthCm.set(null);
     this.busy.set(null);this.error.set('');this.downloadError.set(false);
     return true;
   }
   ngOnChanges(changes:SimpleChanges):void {
     const changed=this.resetInterpretationContext();
+    if(this.isFollowup && changes['followupLengthMeters'])this.setComparisonLength();
     // Presentation changes do not change scientific evidence or cancel its pending save.
     if(this.interpretationView()) {
       if(this.state())this.interpretationOpened.set(true);
@@ -385,7 +521,7 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
   }
   ngOnDestroy():void{
     if(this.modelTimer!==null)clearInterval(this.modelTimer);
-    this.modelTimer=null;this.serial++;this.subscription.unsubscribe();
+    this.modelTimer=null;this.destroyed=true;this.serial++;this.subscription.unsubscribe();
   }
   private accept(state:MuseState):void {
     this.state.set(state);
@@ -400,6 +536,12 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     // The interpretation view never unlocks prediction or bypasses the tracking review.
     if(!this.interpretationView())this.frozen.emit(state.prediction);
   }
+  private setComparisonLength():void {
+    const actual=this.followupLengthMeters(),frozen=this.prediction()?.nextLengthMeters;
+    // Reuse the already declared length. A differing actual length stays different so
+    // the backend can report INCONCLUSIVE; never replace it with the frozen target.
+    this.followupLength.set(typeof actual==='number' && Number.isFinite(actual) && actual>0?actual:frozen??null);
+  }
   async load():Promise<void>{
     if(this.busy() || (this.interpretationView() && !this.interpretationOpened()))return;
     const serial=++this.serial,url=this.url(),followup=this.isFollowup;
@@ -407,11 +549,12 @@ export class MuseInvestigator implements OnChanges,OnDestroy {
     // Keep the current result visible while its server record is refreshed. Only a real
     // source change clears it; a slow or failed GET must not look like lost evidence.
     try {
-      const state=await firstValueFrom(this.http.get<MuseState>(this.stateUrl()));
-      if(serial===this.serial){this.accept(state);this.followupLength.set(this.prediction()?.nextLengthMeters??null);}
+      const state=await firstValueFrom(this.http.get<MuseState>(this.stateUrl()).pipe(timeout(15000)));
+      if(serial===this.serial){this.accept(state);this.setComparisonLength();}
       if(serial===this.serial&&followup){
-        const c=await firstValueFrom(this.http.get<NonNullable<ReturnType<typeof this.contrast>>>(url+'/contrast'));
-        if(serial===this.serial){this.contrast.set(c);if(c.evidence){try{this.followupLength.set(JSON.parse(c.evidence.payloadJson).followupLengthMeters);}catch{}}}
+        const c=await firstValueFrom(this.http.get<MuseContrastState>(url+'/contrast').pipe(timeout(15000)));
+        if(serial===this.serial){this.contrast.set(c);this.contrastLoaded.set(true);
+          this.contrastSubmitted.set(this.wasContrastSubmitted());}
       }
     } catch {if(serial===this.serial)this.error.set(this.es?'No se pudo consultar la bitácora de Muse.':'Could not load the Muse lab log.');}
     finally {if(serial===this.serial)this.busy.set(null);}

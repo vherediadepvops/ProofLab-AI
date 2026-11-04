@@ -336,8 +336,18 @@
     <app-muse-investigator period-interpretation [source]="researchSource" [language]="language()" [view]="'interpretation'" [autoInterpretation]="true"/>
   }
   @if(!guided() || presentation()==='predict' || presentation()==='compare') {
+    @if(presentation()==='compare' && videoRole()==='followup' && samVerified()) {
+      @if(pivotRestoration()==='loading') {
+        <p class="comparison-pivot-status" role="status">{{es?'Recuperando la suspensión guardada antes de comparar…':'Restoring the saved suspension before comparing…'}}</p>
+      } @else if(pivotRestoration()==='failed') {
+        <div class="comparison-pivot-status" role="alert">
+          <p>{{es?'No se pudo confirmar la suspensión guardada. El contraste espera su recuperación.':'The saved suspension could not be confirmed. Comparison is waiting for restoration.'}}</p>
+          <button type="button" (click)="retryPivotRestoration()" [disabled]="pivotSaving()">{{es?'Recuperar suspensión':'Restore suspension'}}</button>
+        </div>
+      }
+    }
     @if(periodSource(); as researchSource) {
-      <app-muse-investigator [source]="researchSource" [baselineLengthMeters]="physicalLengthMeters()" [language]="language()" (frozen)="researchFrozen.emit($event)"/>
+      <app-muse-investigator [source]="researchSource" [autoContrast]="autoContrastReady()" [followupLengthMeters]="videoRole()==='followup'?physicalLengthMeters():null" [baselineLengthMeters]="physicalLengthMeters()" [language]="language()" (frozen)="researchFrozen.emit($event)"/>
     }
   }
   </aside>

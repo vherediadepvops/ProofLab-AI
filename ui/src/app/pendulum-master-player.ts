@@ -15,7 +15,7 @@ import { SamPeriodPanel } from './sam-period-panel';
 import {MuseInvestigator,type FrozenMusePrediction} from './muse-investigator';
 import type { SamPeriodInput, SamPeriodSource } from './sam-period';
 import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timeout } from 'rxjs';
 import {
   type KinematicRevision, type KinematicFrame, type ImageSize, type ImagePivot, pivotFromClick,
   sampleAtTime, vectorAt, idealAngularSpeedAtAngle, measureCordAngle, type CordAngleMeasurement
@@ -51,6 +51,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   private readonly samPathCache=new Map<string,Path2D>();
   readonly samTrack=signal<SamPlaybackTrack|null>(null);
   readonly researchFrozen=output<FrozenMusePrediction|null>();
+  readonly autoContrastAllowed=input(false);
   readonly scene=signal<SceneDefinition|null>(null);
   readonly sceneTracks=signal<Record<string,SamPlaybackTrack>>({});
   private readonly manualPivotOverride=signal(false);
@@ -322,6 +323,12 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
   readonly pivotSaving = signal(false);
   readonly pivotError = signal('');
   readonly pivotRevision = signal<KinematicRevision|null>(null);
+  readonly pivotRestoration=signal<'idle'|'loading'|'ready'|'failed'>('idle');
+  // Comparison evidence is immutable. A fast SAM response must not freeze it
+  // before the slower saved-pivot read has established this video's geometry.
+  readonly autoContrastReady=computed(()=>this.autoContrastAllowed() &&
+    this.presentation()==='compare' && this.videoRole()==='followup' &&
+    this.pivotRestoration()==='ready' && !this.pivotMode() && !this.pivotSaving());
   readonly currentKinematics = signal<KinematicFrame|null>(null);
   readonly currentCordAngle = signal<CordAngleMeasurement|null>(null);
 
@@ -555,6 +562,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     this.setVerified(false);
     this.pivotRevision.set(null);this.currentKinematics.set(null);this.currentCordAngle.set(null);
     this.pivotMode.set(false);this.pivotError.set('');this.pivotSaving.set(false);
+    this.pivotRestoration.set('idle');
     this.samTrack.set(null);this.scene.set(null);this.sceneTracks.set({});this.manualPivotOverride.set(false);this.samPathCache.clear();this.sourceFramePts=[];this.periodReceipt.set(null);this.automaticSuspension.set(null);
     if(this.processingRequired() && !this.processedAnalysisId()) {
       this.samStatus.set('AWAITING_PROCESS');
@@ -564,6 +572,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     this.samStatus.set('CHECKING_SAM_CACHE');
     if(this.http && /^[a-f0-9]{32}$/i.test(this.studyId()) &&
        /^[a-f0-9]{64}$/i.test(this.videoSha256())) {
+      this.pivotRestoration.set('loading');
       void this.loadPivot(serial);
       void this.loadSam(samSerial);
     } else {
@@ -638,9 +647,10 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
 
   private async loadPivot(serial:number):Promise<void>{
     try{
-      const result=await firstValueFrom(this.http!.get<KinematicRevision>(this.pivotUrl()));
+      const result=await firstValueFrom(this.http!.get<KinematicRevision>(this.pivotUrl()).pipe(timeout(15000)));
       if(serial!==this.revisionSerial || this.disposed)return;
       if(!this.matchingRevision(result)){
+        this.pivotRestoration.set('failed');
         this.pivotError.set(this.es
           ? 'La revisión guardada no corresponde a este video.'
           : 'Stored pivot revision does not match this video.');
@@ -648,14 +658,27 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       }
       this.cancelVideoExport();
       this.pivotRevision.set(result);
+      this.pivotRestoration.set('ready');
       this.paintFrame(this.frameTime());
     }catch(error:unknown){
       if(serial!==this.revisionSerial || this.disposed)return;
-      if((error as {status?:number})?.status!==404)
+      if((error as {status?:number})?.status===404){
+        // Only a confirmed absence permits use of the automatic suspension.
+        this.pivotRestoration.set('ready');
+      }else{
+        this.pivotRestoration.set('failed');
         this.pivotError.set(this.es
           ? 'No se pudo recuperar el pivote guardado.'
           : 'Could not restore the saved pivot.');
+      }
     }
+  }
+
+  retryPivotRestoration():void {
+    if(this.pivotRestoration()!=='failed' || this.pivotSaving() || !this.http ||
+      !/^[a-f0-9]{32}$/i.test(this.studyId()) || !/^[a-f0-9]{64}$/i.test(this.videoSha256()))return;
+    this.pivotError.set('');this.pivotRestoration.set('loading');
+    void this.loadPivot(++this.revisionSerial);
   }
 
   acceptMetaPivot(revision:KinematicRevision):void {
@@ -664,6 +687,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
     ++this.revisionSerial; // a prior GET cannot overwrite the confirmed point
     this.masterVideo?.nativeElement.pause();
     this.manualPivotOverride.set(true);this.pivotRevision.set(revision);this.pivotMode.set(false);this.pivotError.set('');
+    this.pivotRestoration.set('ready');
     this.paintFrame(this.frameTime());
   }
 
@@ -698,7 +722,7 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
     const serial=++this.revisionSerial;
-    this.pivotSaving.set(true);
+    this.pivotSaving.set(true);this.pivotRestoration.set('loading');
     this.pivotError.set('');
     try{
       const result=await firstValueFrom(this.http.post<KinematicRevision>(
@@ -706,19 +730,22 @@ export class PendulumMasterPlayer implements AfterViewInit, OnChanges, OnDestroy
           videoSha256:this.videoSha256()}));
       if(serial!==this.revisionSerial || this.disposed)return;
       if(!this.matchingRevision(result)){
+        this.pivotRestoration.set('failed');
         this.pivotError.set(this.es
           ? 'Los resultados no corresponden a este video.'
           : 'Analysis response does not match this video.');
         return;
       }
       this.manualPivotOverride.set(true);this.pivotRevision.set(result);
-      this.pivotMode.set(false);
+      this.pivotRestoration.set('ready');this.pivotMode.set(false);
       this.paintFrame(this.frameTime());
     }catch{
-      if(serial===this.revisionSerial && !this.disposed)
+      if(serial===this.revisionSerial && !this.disposed){
+        this.pivotRestoration.set('failed');
         this.pivotError.set(this.es
           ? 'No se pudo registrar el pivote. Revisa el punto e inténtalo otra vez.'
           : 'Could not save the pivot. Check the point and retry.');
+      }
     }finally{
       if(serial===this.revisionSerial)this.pivotSaving.set(false);
     }

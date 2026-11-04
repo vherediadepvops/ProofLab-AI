@@ -179,6 +179,55 @@ describe('One complete-video SAM request and archived-result recovery',()=>{
   x.h.expectNone(r=>r.url.includes('/muse') && r.method==='POST');
   unlock(x);x.f.destroy();
  });
+ it('shows the read-only exact preflight while Spark is complete and SAM has not started',async()=>{
+  const x=setup();await check(x);const p=x.c.process();
+  x.h.expectOne(url+'/spark-once').flush(located);await tick();
+  const preflight=x.h.expectOne(url+'/preflight?mode=api-meta-cache');
+  await (x.c as any).pollSpark();
+  const rows=x.c.stageRows();
+  expect(rows.filter(r=>r.key.startsWith('spark-')).every(r=>r.state==='COMPLETED')).toBeTrue();
+  expect(rows.find(r=>r.key==='exact-preflight')?.state).toBe('IN_PROGRESS');
+  expect(rows.find(r=>r.key==='exact-preflight')?.label).toBe('Verificando preparación para SAM');
+  expect(rows.find(r=>r.key==='preparation')?.state).toBe('NOT_STARTED');
+  expect(rows.find(r=>r.key==='sam-0')?.state).toBe('NOT_STARTED');
+  x.h.expectNone(url+'/manual-batch');
+  preflight.flush(exact);await tick();
+  expect(x.c.stageRows().find(r=>r.key==='exact-preflight')?.state).toBe('COMPLETED');
+  x.h.expectOne(url+'/manual-batch').flush(done);await finalProgress(x);await p;
+  unlock(x);x.f.destroy();
+ });
+ it('marks an exact preflight failure and makes clear SAM was never submitted',async()=>{
+  const x=setup();await check(x);const p=x.c.process();
+  x.h.expectOne(url+'/spark-once').flush(located);await tick();
+  x.h.expectOne(url+'/preflight?mode=api-meta-cache').flush({error:'Unavailable'},{status:503,statusText:'Unavailable'});
+  await p;
+  expect(x.c.stageRows().find(r=>r.key==='exact-preflight')?.state).toBe('FAILED');
+  expect(x.c.stageRows().find(r=>r.key==='sam-0')?.state).toBe('NOT_STARTED');
+  expect(x.c.error()).toContain('Spark terminó');expect(x.c.error()).toContain('SAM no se envió');
+  expect(x.c.processing()).toBeFalse();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('discloses automatic followup comparison and its maximum cost before processing',async()=>{
+  const x=setup();x.f.componentRef.setInput('autoMuseAfterSam',true);
+  x.f.componentRef.setInput('videoRole','followup');x.f.detectChanges();
+  x.c.adaptiveQuote.set(exact as any);x.c.groundingQuote.set(located as any);x.c.preflight.set(media as any);x.c.readiness.set(access as any);
+  x.f.detectChanges();
+  const text=x.f.nativeElement.textContent;
+  expect(text).toContain('Procesar + interpretar con Muse');
+  expect(text).toContain('contraste automático después de SAM');
+  expect(text).toContain('Máximo adicional de Muse: US$ 0,05');
+  expect(text).toContain('Máximo combinado estimado: US$ 0.18');
+  x.c.selectSource('api',false);x.f.detectChanges();
+  expect(x.f.nativeElement.textContent).not.toContain('contraste automático después de SAM');
+  x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('reports whether the selected source allows API usage to its parent',()=>{
+  const x=setup(),emit=spyOn(x.c.apiUsageChanged,'emit');
+  x.c.selectSource('api',false);expect(emit).toHaveBeenCalledWith(false);
+  x.c.selectSource('api',true);expect(emit).toHaveBeenCalledWith(true);
+  const select=document.createElement('select');select.innerHTML='<option value="cache-only">Cache</option>';
+  x.c.selectMode({target:select} as unknown as Event);expect(emit.calls.mostRecent().args).toEqual([false]);
+  x.h.expectNone(()=>true);x.f.destroy();
+ });
  it('quotes one whole video and starts Spark then one SAM only after the click',async()=>{
   const x=setup();await check(x);
   expect(x.c.localApiPort()).toBe(5391);expect(x.c.canProcess()).toBeTrue();

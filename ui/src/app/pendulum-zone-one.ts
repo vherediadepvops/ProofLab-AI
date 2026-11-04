@@ -541,6 +541,7 @@ export class PendulumZoneOne extends PendulumDirector {
   }
 
   readonly activeTrial = signal<'baseline'|'followup'>('baseline');
+  readonly comparisonApiAllowed=signal(true);
   readonly registeringAndUploading = signal(false);
   readonly samRefreshNonce = signal(0);
   readonly connection=inject(LabConnection);

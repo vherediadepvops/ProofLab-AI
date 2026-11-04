@@ -39,7 +39,7 @@ public static class ResearchRecoveryEndpoints
                     {
                         try
                         {
-                            var frozen = ResearchFrozenSource.Resolve(muse.State(id), id, clip.Sha256)
+                            var frozen = ReadFrozenSource(muse, id, clip.Sha256)
                                 ?? throw new InvalidDataException("Frozen source missing.");
                             var artifact = frozen.AdaptiveBatchId is { } frozenBatch
                                 ? await adaptive.ReadPlaybackAsync(id, role, frozenBatch, ct)
@@ -84,5 +84,10 @@ public static class ResearchRecoveryEndpoints
             catch (ArgumentException) { return Results.BadRequest(); }
         });
     }
+    // Understand retains a separate interpretation. Recovery must bind to the
+    // immutable prediction's observation, never the presentation's default state.
+    public static ResearchFrozenSource? ReadFrozenSource(MuseExperimentService muse,string studyId,string videoSha)
+        =>ResearchFrozenSource.Resolve(muse.State(studyId,MuseExperimentPurpose.Prediction),studyId,videoSha);
+
     private static bool Local(HttpContext context) => ApiRequestAccess.Host(context);
 }

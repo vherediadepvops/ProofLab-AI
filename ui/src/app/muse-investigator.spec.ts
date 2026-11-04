@@ -239,69 +239,202 @@ describe('Muse investigator',()=>{
 
 });
 
-describe('Muse complete second-video workflow',()=>{
+describe('Muse automatic second-video workflow',()=>{
   const base='http://127.0.0.1:5391/api/science/director/pendulum/sessions/study/muse';
   const source:SamPeriodSource={studyId:'study',role:'followup',originalVideoSha256:'second',analysisId:'batch',adaptiveBatchId:'batch',providerResponseSha256:'raw',providerModel:'sam-3.1',objectId:'0',pivotRevisionId:null,pivotProvenance:'PIVOT_MISSING'};
-  const state={observation:null,evaluation:null,prediction:{sha256:'frozen',payloadJson:JSON.stringify({prediction:{nextLengthMeters:.8,periodSeconds:1.79,tolerancePercent:5}})},attemptStatus:null,manualCallsPermitted:true,maximumEstimatedCostUsd:.05};
+  const state={observation:null,evaluation:null,prediction:{studyId:'study',observationId:'baseline-o',responseId:'prediction-response',frozenAtUtc:'2026-11-04',sha256:'frozen',payloadJson:JSON.stringify({prediction:{baselineLengthMeters:.5,nextLengthMeters:.8,periodSeconds:1.4*Math.sqrt(1.6),tolerancePercent:5}})},attemptStatus:null,manualCallsPermitted:true,maximumEstimatedCostUsd:.05};
   const empty={evidence:null,evaluation:null,attemptStatus:null};
-  const evidence={sha256:'evidence',payloadJson:JSON.stringify({analysisId:'batch',sourceSha256:'second',followupLengthMeters:.8})};
+  const text={es:'CONTRASTE GUARDADO',en:'SAVED COMPARISON'};
+  function evidence(length=.8,s=source){return {studyId:s.studyId,sha256:'evidence',payloadJson:JSON.stringify({
+    studyId:s.studyId,analysisId:s.analysisId,sourceSha256:s.originalVideoSha256,responseSha256:s.providerResponseSha256,
+    predictionSha256:'frozen',followupLengthMeters:length,
+    request:{videoSha256:s.originalVideoSha256,analysisId:s.analysisId,pivotRevisionId:s.pivotRevisionId,
+      adaptiveBatchId:s.adaptiveBatchId??null,followupLengthMeters:length},
+    measurement:{source:{...s},assessment:{status:'CANDIDATE',periodSeconds:1.78,usedCycles:8,
+      statisticalStandardUncertaintySeconds:.001}}})};}
+  function completed(length=.8,s=source){return {evidence:evidence(length,s),attemptStatus:'COMPLETED',evaluation:{
+    evidenceSha256:'evidence',model:'muse-spark-1.3',rawResponseSha256:'provider-receipt',responseId:'contrast-response',
+    answer:{verdict:'INCONCLUSIVE',justification:text,limitations:text,nextStep:text}}};}
   let http:HttpTestingController;
-  beforeEach(async()=>{await TestBed.configureTestingModule({imports:[MuseInvestigator],providers:[provideHttpClient(),provideHttpClientTesting()]}).compileComponents();http=TestBed.inject(HttpTestingController);});
+  beforeEach(async()=>{
+    for(const key of Object.keys(sessionStorage))if(key.startsWith('prooflab.muse-contrast-submitted.'))sessionStorage.removeItem(key);
+    await TestBed.configureTestingModule({imports:[MuseInvestigator],providers:[provideHttpClient(),provideHttpClientTesting()]}).compileComponents();
+    http=TestBed.inject(HttpTestingController);
+  });
   afterEach(()=>http.verify());
-  async function init(contrast:object=empty){
-    const c=TestBed.inject(LabConnection),field=document.createElement('input');field.type='password';field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';c.register(field);c.confirmToken();
-    const f=TestBed.createComponent(MuseInvestigator);f.componentRef.setInput('source',source);f.componentRef.setInput('baselineLengthMeters',.5);f.detectChanges();
-    http.expectOne(base+'?purpose=prediction').flush(state);await Promise.resolve();http.expectOne(base+'/contrast').flush(contrast);await f.whenStable();f.detectChanges();return f;
+  function token(){const c=TestBed.inject(LabConnection),field=document.createElement('input');field.type='password';field.value='LLM_SYNTHETIC_OFFLINE_TEST_ONLY';c.register(field);c.confirmToken();return c;}
+  async function ticks(f?:ReturnType<typeof TestBed.createComponent<MuseInvestigator>>){for(let i=0;i<8;i++){await Promise.resolve();f?.detectChanges();}}
+  async function init(contrast:object=empty,automatic=false,withToken=true,actualLength:number|null=null){
+    if(withToken)token();
+    const f=TestBed.createComponent(MuseInvestigator);f.componentRef.setInput('source',source);
+    f.componentRef.setInput('autoContrast',automatic);f.componentRef.setInput('followupLengthMeters',actualLength);f.detectChanges();
+    http.expectOne(base+'?purpose=prediction').flush(state);await ticks(f);
+    http.expectOne(base+'/contrast').flush(contrast);await ticks(f);return f;
   }
-  it('binds segmented second-video evidence before making exactly one manual inference',async()=>{
-    const f=await init();expect(f.componentInstance.canContrast()).toBeFalse();
-    const prep=f.componentInstance.prepareContrast();const r=http.expectOne(base+'/contrast/prepare');
-    expect(r.request.body).toEqual({videoSha256:'second',analysisId:'batch',pivotRevisionId:null,adaptiveBatchId:'batch',followupLengthMeters:.8});
-    r.flush({...empty,evidence});await prep;expect(f.componentInstance.canContrast()).toBeTrue();
-    const run=f.componentInstance.evaluateContrast();void f.componentInstance.evaluateContrast();
-    const sent=http.expectOne(base+'/contrast/evaluate');expect(sent.request.body.evidenceSha256).toBe('evidence');
-    expect(sent.request.body.maximumEstimatedCostUsd).toBe(.05);
-    const t={es:'Evidencia insuficiente.',en:'Insufficient evidence.'};
-    sent.flush({evidence,evaluation:{responseId:'real-receipt',answer:{verdict:'INCONCLUSIVE',justification:t,limitations:t,nextStep:t}},attemptStatus:'COMPLETED'});
-    await run;f.detectChanges();expect(f.nativeElement.textContent).toContain('Contraste inconcluso');expect(f.componentInstance.canContrast()).toBeFalse();
-    expect(f.nativeElement.querySelectorAll('section').length).toBeGreaterThan(1);f.destroy();
-  });
-  it('does not use a comparison that belongs to another analysis',async()=>{
-    const f=await init({...empty,evidence:{...evidence,payloadJson:JSON.stringify({analysisId:'old',sourceSha256:'second',followupLengthMeters:.7})}});
-    expect(f.componentInstance.canContrast()).toBeFalse();expect(f.componentInstance.followupLength()).toBe(.7);f.destroy();
-  });
-  it('shows both 95% margins separately from the immutable tolerance and withholds global acceptance',async()=>{
-    const assessment={status:'CANDIDATE',periodSeconds:1.4,statisticalStandardUncertaintySeconds:.001,usedCycles:10};
-    const original={...state.prediction,studyId:'study',observationId:'baseline-o',responseId:'receipt',frozenAtUtc:'2026-10-30',
-      payloadJson:JSON.stringify({prediction:{baselineLengthMeters:.5,nextLengthMeters:.8,periodSeconds:1.4*Math.sqrt(1.6),tolerancePercent:5}})};
-    const f=await init({...empty,evidence:{...evidence,payloadJson:JSON.stringify({analysisId:'batch',sourceSha256:'second',
-      followupLengthMeters:.8,measurement:{assessment:{...assessment,periodSeconds:1.78,usedCycles:8}}})}});
-    f.componentInstance.state.set({...state,prediction:original,observation:{id:'baseline-o',analysisId:'baseline',payloadSha256:'hash',
-      payloadJson:JSON.stringify({measurement:{assessment}})}});f.detectChanges();
-    expect(f.nativeElement.textContent).toContain('Video 1 · solo repetibilidad');
-    expect(f.nativeElement.textContent).toContain('Video 2 · solo repetibilidad');
-    expect(f.nativeElement.textContent).toContain('p-valor global: no disponibles');
-    expect(f.componentInstance.statisticalSummary()?.comparison?.tolerancePercent).toBe(5);
-    expect(f.componentInstance.statisticalSummary()?.comparison?.globalPValue).toBeNull();
-    expect(f.componentInstance.state()?.prediction?.payloadJson).toBe(original.payloadJson);
-    expect(f.componentInstance.verifiedComparison()?.observed).toBe(1.78);
-    expect(f.nativeElement.querySelector('.v93-band svg')).not.toBeNull();
-    expect(f.nativeElement.textContent).toContain('Predicción frente a medición del segundo video');
-    f.destroy();
-  });
-  it('withholds the comparison band when the actual second length differs from the frozen one',async()=>{
-    const f=await init({...empty,evidence:{...evidence,payloadJson:JSON.stringify({analysisId:'batch',sourceSha256:'second',
-      followupLengthMeters:.6,numericalVerdict:'INCONCLUSIVE',measurement:{assessment:{status:'CANDIDATE',periodSeconds:1.79}}})}});
-    expect(f.componentInstance.verifiedComparison()).toBeNull();
-    expect(f.nativeElement.querySelector('.v93-band')).toBeNull();
-    expect(f.componentInstance.prediction()?.nextLengthMeters).toBe(.8);
+  it('automatically prepares the selected 80 cm and evaluates exactly once when Comprobar opens',async()=>{
+    const f=await init(empty,true),c=f.componentInstance;
+    const prep=http.expectOne(base+'/contrast/prepare');expect(prep.request.body).toEqual({
+      videoSha256:'second',analysisId:'batch',pivotRevisionId:null,adaptiveBatchId:'batch',followupLengthMeters:.8});
+    expect(c.busy()).toBe('preparing');prep.flush({...empty,evidence:evidence()});await ticks(f);
+    const paid=http.expectOne(base+'/contrast/evaluate');expect(paid.request.body.evidenceSha256).toBe('evidence');
+    expect(paid.request.body.confirmMeasuredDataTransfer).toBeTrue();expect(paid.request.body.confirmPaidCall).toBeTrue();
+    expect(paid.request.body.maximumEstimatedCostUsd).toBe(.05);expect(c.busy()).toBe('evaluating');
+    await c.evaluateContrast();http.expectNone(base+'/contrast/evaluate');
+    paid.flush(completed());await ticks(f);
+    expect(c.contrastEvaluationMatches()).toBeTrue();expect(f.nativeElement.textContent).toContain(text.es);
+    expect(f.nativeElement.textContent).not.toContain('Verificar contraste');expect(f.nativeElement.textContent).not.toContain('Consultar Muse');
+    expect(f.nativeElement.querySelector('input')).toBeNull();expect(TestBed.inject(LabConnection).busy()).toBeFalse();
     http.expectNone(r=>r.method==='POST');f.destroy();
   });
-  it('reconciles a failed contrast without resending to Meta',async()=>{
-    const f=await init({...empty,evidence});const run=f.componentInstance.evaluateContrast();
-    http.expectOne(base+'/contrast/evaluate').flush({}, {status:502,statusText:'Failed'});
-    await Promise.resolve();http.expectOne(base+'/contrast').flush({...empty,evidence,attemptStatus:'ATTEMPT_REQUIRES_INSPECTION'});
-    await run;expect(f.componentInstance.canContrast()).toBeFalse();expect(TestBed.inject(LabConnection).busy()).toBeFalse();f.destroy();
+  it('keeps hidden or legacy panels read only until the visible comparison is activated',async()=>{
+    const f=await init();http.expectNone(r=>r.method==='POST');expect(f.componentInstance.canContrast()).toBeFalse();
+    f.componentRef.setInput('autoContrast',true);f.detectChanges();await ticks(f);
+    http.expectOne(base+'/contrast/prepare').flush({...empty,evidence:evidence()});await ticks(f);
+    http.expectOne(base+'/contrast/evaluate').flush(completed());await ticks(f);f.destroy();
+  });
+  it('waits for SAM and for a token entered later without requiring another comparison button',async()=>{
+    const connection=TestBed.inject(LabConnection);connection.busy.set(true);
+    const f=await init(empty,true,false);http.expectNone(r=>r.method==='POST');
+    connection.busy.set(false);await ticks(f);http.expectNone(r=>r.method==='POST');
+    token();await ticks(f);http.expectOne(base+'/contrast/prepare').flush({...empty,evidence:evidence()});await ticks(f);
+    http.expectOne(base+'/contrast/evaluate').flush(completed());await ticks(f);
+    expect(f.componentInstance.contrastEvaluationMatches()).toBeTrue();f.destroy();
+  });
+  it('uses a saved answer on mount, stage return and reload without another provider request',async()=>{
+    for(let i=0;i<2;i++){
+      const f=await init(completed(),true);expect(f.nativeElement.textContent).toContain(text.es);
+      f.componentRef.setInput('autoContrast',false);f.detectChanges();f.componentRef.setInput('autoContrast',true);await ticks(f);
+      http.expectNone(r=>r.method==='POST');f.destroy();
+    }
+  });
+  it('reuses a delayed preparation across real component destruction and remount, then evaluates once',async()=>{
+    const first=await init(empty,true),pending=http.expectOne(base+'/contrast/prepare');
+    expect(first.componentInstance.busy()).toBe('preparing');first.destroy();
+    const returned=await init(empty,true,false);http.expectNone(base+'/contrast/prepare');
+    expect(returned.componentInstance.busy()).toBe('preparing');
+    pending.flush({...empty,evidence:evidence()});await ticks(returned);
+    const paid=http.expectOne(base+'/contrast/evaluate');paid.flush(completed());await ticks(returned);
+    expect(returned.componentInstance.contrastEvaluationMatches()).toBeTrue();
+    expect(returned.nativeElement.textContent).toContain(text.es);http.expectNone(r=>r.method==='POST');returned.destroy();
+  });
+  it('releases a failed shared preparation without a retry loop or a paid request',async()=>{
+    const first=await init(empty,true),pending=http.expectOne(base+'/contrast/prepare');first.destroy();
+    const returned=await init(empty,true,false);http.expectNone(base+'/contrast/prepare');
+    pending.flush({}, {status:409,statusText:'Preparation failed'});await ticks(returned);
+    expect(returned.componentInstance.error()).toBeTruthy();expect(returned.componentInstance.busy()).toBeNull();
+    returned.componentRef.setInput('language','en');await ticks(returned);http.expectNone(r=>r.method==='POST');returned.destroy();
+    // A new mount may retry a local preparation, never a previous provider attempt.
+    const next=await init(empty,true,false);http.expectOne(base+'/contrast/prepare').flush({...empty,evidence:evidence()});await ticks(next);
+    http.expectOne(base+'/contrast/evaluate').flush(completed());await ticks(next);
+    expect(next.componentInstance.contrastEvaluationMatches()).toBeTrue();next.destroy();
+  });
+  it('observes the in-flight comparison after remount and receives its answer without another click',async()=>{
+    const first=await init({...empty,evidence:evidence()},true),pending=http.expectOne(base+'/contrast/evaluate');first.destroy();
+    const returned=await init({...empty,evidence:evidence(),attemptStatus:'ATTEMPT_REQUIRES_INSPECTION'},true,false);
+    expect(returned.componentInstance.busy()).toBe('evaluating');
+    expect(returned.nativeElement.textContent).toContain('Muse está evaluando la evidencia');
+    http.expectNone(r=>r.method==='POST');pending.flush(completed());await ticks(returned);
+    expect(returned.componentInstance.contrastEvaluationMatches()).toBeTrue();expect(returned.nativeElement.textContent).toContain(text.es);
+    expect(TestBed.inject(LabConnection).busy()).toBeFalse();http.expectNone(r=>r.url.includes('/contrast'));returned.destroy();
+  });
+  it('shares one lost-reply reconciliation with a remounted observer without another provider call',async()=>{
+    const first=await init({...empty,evidence:evidence()},true),pending=http.expectOne(base+'/contrast/evaluate');first.destroy();
+    const returned=await init({...empty,evidence:evidence(),attemptStatus:'ATTEMPT_REQUIRES_INSPECTION'},true,false);
+    pending.flush({}, {status:502,statusText:'Interrupted'});await ticks(returned);
+    expect(TestBed.inject(LabConnection).busy()).toBeTrue();
+    http.expectOne(base+'/contrast').flush(completed());await ticks(returned);
+    expect(returned.componentInstance.contrastEvaluationMatches()).toBeTrue();expect(TestBed.inject(LabConnection).busy()).toBeFalse();
+    http.expectNone(r=>r.method==='POST');returned.destroy();
+  });
+  it('never starts a paid request if the saved-record GET fails',async()=>{
+    token();const f=TestBed.createComponent(MuseInvestigator);f.componentRef.setInput('source',source);f.componentRef.setInput('autoContrast',true);f.detectChanges();
+    http.expectOne(base+'?purpose=prediction').flush(state);await ticks(f);
+    http.expectOne(base+'/contrast').flush({}, {status:503,statusText:'Unavailable'});await ticks(f);
+    expect(f.componentInstance.error()).toBeTruthy();http.expectNone(r=>r.method==='POST');
+    const refresh=f.componentInstance.refreshContrastStatus();http.expectOne(base+'?purpose=prediction').flush(state);await ticks(f);
+    http.expectOne(base+'/contrast').flush(empty);await refresh;await ticks(f);
+    http.expectNone(r=>r.method==='POST');f.destroy();
+  });
+  it('does not retry an attempted request even when no answer is stored',async()=>{
+    const f=await init({...empty,evidence:evidence(),attemptStatus:'ATTEMPT_REQUIRES_INSPECTION'},true);
+    expect(f.componentInstance.canContrast()).toBeFalse();expect(f.nativeElement.textContent).toContain('no se repetirá automáticamente');
+    http.expectNone(r=>r.method==='POST');f.destroy();
+  });
+  it('blocks stale source, pivot, object, batch, frozen prediction and response receipts',async()=>{
+    const variants:[string,(p:any)=>void][]=[
+      ['study',p=>p.studyId='other'],['analysis',p=>p.analysisId='old'],['video',p=>p.sourceSha256='old'],
+      ['response',p=>p.responseSha256='old'],['prediction',p=>p.predictionSha256='old'],
+      ['pivot',p=>p.request.pivotRevisionId='old'],['batch',p=>p.request.adaptiveBatchId='old'],
+      ['object',p=>p.measurement.source.objectId='old'],['provenance',p=>p.measurement.source.pivotProvenance='old']
+    ];
+    for(const [name,mutate] of variants){
+      const stale=completed(),p=JSON.parse(stale.evidence.payloadJson);mutate(p);stale.evidence.payloadJson=JSON.stringify(p);
+      const f=await init(stale,true);expect(f.componentInstance.contrastMatches()).withContext(name).toBeFalse();
+      expect(f.nativeElement.textContent).withContext(name).not.toContain(text.es);http.expectNone(r=>r.method==='POST');f.destroy();
+    }
+    const wrong=completed();wrong.evaluation.evidenceSha256='old';const f=await init(wrong,true);
+    expect(f.componentInstance.contrastEvaluationMatches()).toBeFalse();expect(f.nativeElement.textContent).not.toContain(text.es);
+    http.expectNone(r=>r.method==='POST');f.destroy();
+  });
+  it('preserves an already declared different length so the backend cannot compare it as the frozen length',async()=>{
+    const f=await init(empty,true,true,.6),c=f.componentInstance;
+    const prep=http.expectOne(base+'/contrast/prepare');expect(prep.request.body.followupLengthMeters).toBe(.6);
+    prep.flush({...empty,evidence:evidence(.6)});await ticks(f);
+    http.expectOne(base+'/contrast/evaluate').flush(completed(.6));await ticks(f);
+    expect(c.followupLength()).toBe(.6);expect(c.prediction()?.nextLengthMeters).toBe(.8);
+    expect(c.verifiedComparison()).toBeNull();expect(f.nativeElement.querySelector('.v93-band')).toBeNull();f.destroy();
+  });
+  it('recovers a completed answer after a lost POST reply using a single read and no resend',async()=>{
+    const f=await init({...empty,evidence:evidence()},true);
+    http.expectOne(base+'/contrast/evaluate').flush({}, {status:502,statusText:'Interrupted'});await ticks(f);
+    http.expectOne(base+'/contrast').flush(completed());await ticks(f);
+    expect(f.componentInstance.error()).toBe('');expect(f.nativeElement.textContent).toContain(text.es);
+    http.expectNone(r=>r.method==='POST');f.destroy();
+  });
+  it('retains a submission marker across remount when neither reply nor reconciliation is available',async()=>{
+    let f=await init({...empty,evidence:evidence()},true);
+    http.expectOne(base+'/contrast/evaluate').flush({}, {status:502,statusText:'Interrupted'});await ticks(f);
+    http.expectOne(base+'/contrast').flush({}, {status:503,statusText:'Unavailable'});await ticks(f);
+    expect(f.componentInstance.error()).toBeTruthy();f.destroy();
+    f=await init({...empty,evidence:evidence()},true);expect(f.componentInstance.canContrast()).toBeFalse();
+    expect(f.nativeElement.textContent).toContain('Actualizar estado guardado');http.expectNone(r=>r.method==='POST');f.destroy();
+  });
+  it('bounds a hung provider request and its reconciliation without resending',async()=>{
+    jasmine.clock().install();
+    try {
+      const f=await init({...empty,evidence:evidence()},true),paid=http.expectOne(base+'/contrast/evaluate');
+      jasmine.clock().tick(195001);await ticks(f);expect(paid.cancelled).toBeTrue();
+      const reconcile=http.expectOne(base+'/contrast');jasmine.clock().tick(15001);await ticks(f);
+      expect(reconcile.cancelled).toBeTrue();expect(f.componentInstance.busy()).toBeNull();
+      expect(TestBed.inject(LabConnection).busy()).toBeFalse();expect(f.componentInstance.error()).toBeTruthy();
+      http.expectNone(r=>r.method==='POST');f.destroy();
+    } finally {jasmine.clock().uninstall();}
+  });
+  it('ignores an old response if the selected analysis changes while comparison is pending',async()=>{
+    const f=await init({...empty,evidence:evidence()},true),old=http.expectOne(base+'/contrast/evaluate');
+    const replacement={...source,analysisId:'replacement',adaptiveBatchId:'replacement',providerResponseSha256:'replacement-raw'};
+    f.componentRef.setInput('source',replacement);f.detectChanges();http.expectOne(base+'?purpose=prediction').flush(state);await ticks(f);
+    http.expectOne(base+'/contrast').flush(empty);await ticks(f);old.flush(completed());await ticks(f);
+    expect(f.componentInstance.contrast()?.evaluation).toBeNull();expect(f.nativeElement.textContent).not.toContain(text.es);
+    const prep=http.expectOne(base+'/contrast/prepare');expect(prep.request.body.analysisId).toBe('replacement');
+    prep.flush({...empty,evidence:evidence(.8,replacement)});await ticks(f);
+    http.expectOne(base+'/contrast/evaluate').flush(completed(.8,replacement));await ticks(f);f.destroy();
+  });
+  it('does not loop after a preparation failure or evaluate malformed prepared evidence',async()=>{
+    const f=await init(empty,true);http.expectOne(base+'/contrast/prepare').flush({}, {status:409,statusText:'Source changed'});await ticks(f);
+    expect(f.componentInstance.error()).toBeTruthy();f.componentRef.setInput('language','en');await ticks(f);
+    http.expectNone(r=>r.method==='POST');f.destroy();
+    const g=await init(empty,true),wrong=evidence();const p=JSON.parse(wrong.payloadJson);p.request.adaptiveBatchId='old';wrong.payloadJson=JSON.stringify(p);
+    http.expectOne(base+'/contrast/prepare').flush({...empty,evidence:wrong});await ticks(g);
+    expect(g.componentInstance.canContrast()).toBeFalse();http.expectNone(base+'/contrast/evaluate');g.destroy();
+  });
+  it('shows separate 95% margins without replacing the frozen practical tolerance',async()=>{
+    const f=await init({...empty,evidence:evidence()}),c=f.componentInstance;
+    c.state.set({...state,observation:{id:'baseline-o',analysisId:'baseline',payloadSha256:'hash',
+      payloadJson:JSON.stringify({measurement:{assessment:{status:'CANDIDATE',periodSeconds:1.4,statisticalStandardUncertaintySeconds:.001,usedCycles:10}}})}});f.detectChanges();
+    expect(f.nativeElement.textContent).toContain('Video 1 · solo repetibilidad');expect(f.nativeElement.textContent).toContain('Video 2 · solo repetibilidad');
+    expect(c.statisticalSummary()?.comparison?.tolerancePercent).toBe(5);expect(c.statisticalSummary()?.comparison?.globalPValue).toBeNull();
+    expect(c.verifiedComparison()?.observed).toBe(1.78);expect(f.nativeElement.querySelector('.v93-band svg')).not.toBeNull();f.destroy();
   });
 });
 

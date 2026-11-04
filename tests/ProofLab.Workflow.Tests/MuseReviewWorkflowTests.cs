@@ -29,9 +29,10 @@ public sealed class MuseReviewWorkflowTests
     }
     private sealed class Runtime:ISamVideoRuntime {
         public SamVideoSource Source {get;}=new(new string('a',64),"fixture-video","synthetic.mp4","h264",640,480,2);
+        public SamVideoSource FollowupSource {get;}=new(new string('b',64),"fixture-followup","synthetic-followup.mp4","h264",640,480,2);
         public bool LiveCallsPermitted=>true;
         public void ReserveOrThrow(){}
-        public Task<SamVideoSource> GetVerifiedSourceAsync(string studyId,string role,CancellationToken ct)=>Task.FromResult(Source);
+        public Task<SamVideoSource> GetVerifiedSourceAsync(string studyId,string role,CancellationToken ct)=>Task.FromResult(role=="followup"?FollowupSource:Source);
         public Task<double[]> ReadFramePtsAsync(string path,CancellationToken ct)=>Task.FromResult(Enumerable.Range(0,60).Select(i=>i/30d).ToArray());
         public Task CreateMp4Async(string source,string destination,CancellationToken ct)=>File.WriteAllTextAsync(destination,"SYNTHETIC TEST MEDIA",ct);
     }
@@ -41,13 +42,14 @@ public sealed class MuseReviewWorkflowTests
             =>Task.FromResult(new SamApiCompletedResult("""{"object":"response","model":"sam-3.1","status":"completed","output":[]}""","SYNTHETIC-NOT-PROVIDER",60));
     }
     private sealed class Worker:ISamPeriodWorker {
-        public int Calls;
+        public int Calls;public bool WrongRole;
         public Task<string> MeasureAsync(object input,CancellationToken ct) {
             Calls++;
             var value=JsonSerializer.SerializeToElement(input,Json);
             var analysis=value.GetProperty("archive").GetProperty("receipt").GetProperty("analysisId").GetString();
             return Task.FromResult(JsonSerializer.Serialize(new {
-                source=new {analysisId=analysis,objectId="0",studyId=value.GetProperty("studyId"),role="baseline",
+                source=new {analysisId=analysis,objectId="0",studyId=value.GetProperty("studyId"),
+                    role=WrongRole?"wrong-role":value.TryGetProperty("role",out var role)?role.GetString():"baseline",
                     originalVideoSha256=value.GetProperty("videoSha256"),pivotRevisionId=value.GetProperty("pivotRevisionId"),
                     providerResponseSha256=value.GetProperty("archive").GetProperty("receipt").GetProperty("responseJsonSha256")},
                 input=new {framePtsSeconds=new[]{0d,.1,.2},centroids=new[]{new{frameIndex=0,x=100d,y=100d}},
@@ -73,6 +75,25 @@ public sealed class MuseReviewWorkflowTests
                 usage=new{input_tokens=1000,output_tokens=100}},Json);
             return Task.FromResult(new KnotProviderResult(raw,"synthetic-muse",1000,100));
         }
+    }
+    private sealed class ContrastHandler:HttpMessageHandler {
+        public int Calls;public bool Fail;public bool Hold;
+        public TaskCompletionSource<bool> Entered {get;}=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> Release {get;}=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct) {
+            Calls++;Assert.Equal(Token,request.Headers.Authorization!.Parameter);Entered.TrySetResult(true);
+            if(Hold)await Release.Task.WaitAsync(ct);
+            if(Fail)return new(System.Net.HttpStatusCode.ServiceUnavailable){Content=new StringContent("Offline simulated failure")};
+            var text=new MuseText("Contraste condicional.","Conditional comparison.");
+            var answer=new MuseContrastAnswer("INCONCLUSIVE",text,text,text);
+            var raw=JsonSerializer.Serialize(new {id="synthetic-contrast",model=MuseExperimentPolicy.Model,status="completed",
+                output=new[]{new{type="message",content=new[]{new{type="output_text",text=JsonSerializer.Serialize(answer,Json)}}}},
+                usage=new{input_tokens=1000,output_tokens=100}},Json);
+            return new(System.Net.HttpStatusCode.OK){Content=new StringContent(raw,System.Text.Encoding.UTF8,"application/json")};
+        }
+    }
+    private sealed class ContrastFactory(ContrastHandler handler):IHttpClientFactory {
+        public HttpClient CreateClient(string name)=>new(handler,false);
     }
     private sealed class Fixture:IDisposable {
         public string Root {get;}=Path.Combine(AppContext.BaseDirectory,"muse-workflow-tests",Guid.NewGuid().ToString("N"));
@@ -110,6 +131,23 @@ public sealed class MuseReviewWorkflowTests
         public async Task<MuseExperimentState> Evaluate(MusePrepareRequest? request=null) {
             var observation=await Service.PrepareAsync(Study,request??Request,Ct);
             return await Service.EvaluateAsync(Study,new(observation.Id,Token,true,true,.05),Ct);
+        }
+        public MuseContrastService Contrast(ContrastHandler handler) {
+            var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> {
+                ["Meta:AllowPaidRequests"]="true",["Meta:CreditsConfirmedByOwner"]="true",["Meta:OwnerApprovedPaidRequests"]="true"
+            }).Build();
+            return new(Director,sam,null!,Worker,Store,new PendulumDirectorKinematicsStore(new Env(Root),Director),new Env(Root),
+                new MetaLiveAccess(config,new MetaCallSafetyBudget()),new MuseContrastTransport(new ContrastFactory(handler)));
+        }
+        public async Task<MuseContrastRequest> ReadyForContrast() {
+            var prediction=await Evaluate(Request with {Purpose="prediction",PlannedFollowupLengthMeters=.8});
+            await Review();await Service.FreezeAsync(Study,new(prediction.Observation!.Id,prediction.Evaluation!.ResponseId),Ct);
+            var source=runtime.FollowupSource;
+            var video=new DirectorVideoEvidence("followup",source.VideoId,"synthetic-followup.mp4",100000,
+                source.Sha256,DateTimeOffset.UtcNow,new("h264",640,480,2,30,"mp4"),null,null,false,false,"DEFERRED");
+            await File.WriteAllTextAsync(StudyFile("followup.json"),JsonSerializer.Serialize(video,Json));
+            var result=await sam.RunOnceAsync(Study,"followup",new(source.Sha256,true,true,.5,Mode:"api-meta"),Ct);
+            return new(source.Sha256,result.Receipt.AnalysisId!,null,.8);
         }
         public long ObservationCount() {
             using var db=new SqliteConnection(new SqliteConnectionStringBuilder {DataSource=Path.Combine(Root,".private","physics","muse-experiments.sqlite"),Pooling=false}.ToString());
@@ -320,6 +358,102 @@ public sealed class MuseReviewWorkflowTests
         var wrong=new MuseInvestigatorAnswer("PROPOSE_EXPERIMENT",text,text,text,text,text,
             .8,1.415*Math.Sqrt(1.6),4,new("PENDULUM_COMPATIBLE",text));
         Assert.Throws<FormatException>(()=>MuseExperimentPolicy.Parse(JsonSerializer.Serialize(wrong,Json),payload.RootElement));
+    }
+
+    [Theory]
+    [InlineData(true)][InlineData(false)]
+    public async Task RecoveryUsesFrozenPredictionObservationWhileUnderstandKeepsItsOwnInterpretation(bool explicitChoice) {
+        using var f=new Fixture();await f.Initialize();var interpretation=await f.Evaluate();
+        var selected=interpretation;
+        if(explicitChoice) {
+            var chosen=await f.Service.PrepareAsync(Study,
+                f.Request with {Purpose="prediction",PlannedFollowupLengthMeters=.6},Ct);
+            selected=await f.Service.EvaluateAsync(Study,new(chosen.Id,Token,true,true,.05),Ct);
+        }
+        await f.Review();
+        if(!explicitChoice) {
+            // A prediction frozen before explicit length selection was introduced.
+            f.Store.Freeze(selected.Observation!,selected.Evaluation!);
+        }
+        var frozen=await f.Service.FreezeAsync(Study,
+            new(selected.Observation!.Id,selected.Evaluation!.ResponseId),Ct);
+        var understand=f.Service.State(Study);
+        Assert.Equal(interpretation.Observation,understand.Observation);
+        Assert.Equal(interpretation.Evaluation,understand.Evaluation);
+        Assert.Equal(frozen.Prediction,understand.Prediction);
+        if(explicitChoice) {
+            Assert.NotEqual(understand.Observation!.Id,understand.Prediction!.ObservationId);
+            // This reproduces the old unscoped recovery failure.
+            Assert.Throws<InvalidDataException>(()=>ResearchFrozenSource.Resolve(understand,Study,f.Request.VideoSha256));
+        }
+        var providerCalls=f.Transport.Calls;var measurements=f.Worker.Calls;
+        var recovered=ResearchRecoveryEndpoints.ReadFrozenSource(f.Service,Study,f.Request.VideoSha256);
+        Assert.NotNull(recovered);Assert.Equal(selected.Observation.AnalysisId,recovered.AnalysisId);
+        Assert.Null(recovered.AdaptiveBatchId);
+        Assert.Equal(providerCalls,f.Transport.Calls);Assert.Equal(measurements,f.Worker.Calls);
+        Assert.Equal(interpretation.Evaluation,f.Service.State(Study).Evaluation);
+        Assert.Equal(frozen.Prediction,f.Store.Prediction(Study));
+        Assert.Throws<InvalidDataException>(()=>ResearchRecoveryEndpoints.ReadFrozenSource(f.Service,Study,new string('b',64)));
+    }
+
+    [Fact]
+    public async Task ContrastPrepareReusesExactEvidenceWithoutRemeasuringAndRejectsAnotherSelection() {
+        using var f=new Fixture();await f.Initialize();var request=await f.ReadyForContrast();
+        var transport=new ContrastHandler();var service=f.Contrast(transport);
+        var evidence=await service.Prepare(Study,request,Ct);var measurements=f.Worker.Calls;
+        Assert.Equal(evidence,await f.Contrast(transport).Prepare(Study,request,Ct));
+        Assert.Equal(measurements,f.Worker.Calls);Assert.Equal(0,transport.Calls);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>service.Prepare(Study,request with {FollowupLengthMeters=.7},Ct));
+        await Assert.ThrowsAsync<ArgumentException>(()=>service.Prepare(Study,request with {AnalysisId=new string('c',32)},Ct));
+        Assert.Equal(evidence,(await service.State(Study,Ct)).Evidence);
+    }
+
+    [Fact]
+    public async Task ContrastAcrossTwoTabsMakesOneInferenceAndReloadRecoversItWithoutPayment() {
+        using var f=new Fixture();await f.Initialize();var source=await f.ReadyForContrast();
+        var transport=new ContrastHandler{Hold=true};var service=f.Contrast(transport);
+        var evidence=await service.Prepare(Study,source,Ct);var measurements=f.Worker.Calls;
+        var request=new MuseContrastRunRequest(evidence.Sha256,Token,true,true,.05);
+        var first=service.Evaluate(Study,request,Ct);
+        await transport.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        try {await Assert.ThrowsAsync<IOException>(()=>f.Contrast(transport).Evaluate(Study,request,Ct));}
+        finally {transport.Release.TrySetResult(true);}
+        var complete=await first;
+        Assert.NotNull(complete.Evaluation);Assert.Equal("COMPLETED",complete.AttemptStatus);
+        Assert.Equal(complete,await f.Contrast(transport).Evaluate(Study,request,Ct));
+        Assert.Equal(complete,await f.Contrast(transport).State(Study,Ct));
+        Assert.Equal(1,transport.Calls);Assert.Equal(measurements,f.Worker.Calls);
+    }
+
+    [Fact]
+    public async Task FailedContrastAttemptIsRecordedAndNeverAutomaticallyRetried() {
+        using var f=new Fixture();await f.Initialize();var source=await f.ReadyForContrast();
+        var transport=new ContrastHandler{Fail=true};var service=f.Contrast(transport);
+        var evidence=await service.Prepare(Study,source,Ct);
+        var request=new MuseContrastRunRequest(evidence.Sha256,Token,true,true,.05);
+        await Assert.ThrowsAsync<HttpRequestException>(()=>service.Evaluate(Study,request,Ct));
+        var state=await service.State(Study,Ct);Assert.Null(state.Evaluation);Assert.NotNull(state.AttemptStatus);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Contrast(transport).Evaluate(Study,request,Ct));
+        Assert.Equal(1,transport.Calls);
+    }
+
+    [Fact]
+    public async Task ContrastRevalidatesCurrentVideoBeforeAnyPaidAdmission() {
+        using var f=new Fixture();await f.Initialize();var source=await f.ReadyForContrast();
+        var transport=new ContrastHandler();var service=f.Contrast(transport);
+        var evidence=await service.Prepare(Study,source,Ct);
+        var video=JsonNode.Parse(await File.ReadAllTextAsync(f.StudyFile("followup.json")))!;
+        video["sha256"]=new string('d',64);await File.WriteAllTextAsync(f.StudyFile("followup.json"),video.ToJsonString());
+        await Assert.ThrowsAsync<InvalidDataException>(()=>service.Evaluate(Study,new(evidence.Sha256,Token,true,true,.05),Ct));
+        Assert.Equal(0,transport.Calls);Assert.Null((await service.State(Study,Ct)).AttemptStatus);
+    }
+
+    [Fact]
+    public async Task ContrastRejectsMeasurementForTheWrongVideoRoleBeforePersistingIt() {
+        using var f=new Fixture();await f.Initialize();var source=await f.ReadyForContrast();f.Worker.WrongRole=true;
+        var transport=new ContrastHandler();var service=f.Contrast(transport);
+        await Assert.ThrowsAsync<InvalidDataException>(()=>service.Prepare(Study,source,Ct));
+        Assert.Null((await service.State(Study,Ct)).Evidence);Assert.Equal(0,transport.Calls);
     }
 
 }

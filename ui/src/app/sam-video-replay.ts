@@ -140,7 +140,7 @@ interface SamAdaptiveReport {
             }
             <div class="sam-buttons">
               <button type="button" class="sam-refresh" (click)="voidCheck()" [disabled]="!hasSource() || checking() || processing() || sending() || connection.busy()">{{!apiEnabled()?(es?'Actualizar caché':'Refresh cache'):(es?'Actualizar costo':'Refresh cost')}}</button>
-              <button type="button" class="sam-submit" (click)="process()" [disabled]="!canProcess()">{{processing() || connection.busy()?(es?'Procesando…':'Processing…'):autoMuseAfterSam()&&apiEnabled()&&videoRole()==='baseline'?(es?'Procesar + interpretar con Muse':'Process + interpret with Muse'):(es?'Procesar':'Process')}}</button>
+              <button type="button" class="sam-submit" (click)="process()" [disabled]="!canProcess()">{{processing() || connection.busy()?(es?'Procesando…':'Processing…'):autoMuseAfterSam()&&apiEnabled()?(es?'Procesar + interpretar con Muse':'Process + interpret with Muse'):(es?'Procesar':'Process')}}</button>
             </div>
             <fieldset class="sam-sources" [disabled]="sourcesLocked()">
               <legend>{{es?'Fuentes de procesamiento':'Processing sources'}}</legend>
@@ -148,9 +148,10 @@ interface SamAdaptiveReport {
               <label><input type="checkbox" [disabled]="sourcesLocked()" [checked]="cacheEnabled()" (change)="selectSource('cache',$any($event.target).checked)"/> {{es?'Caché + SQLite':'Cache + SQLite'}}</label>
             </fieldset>
             <small class="sam-source-help">{{sourceDescription()}}</small>
-            @if(autoMuseAfterSam() && apiEnabled() && videoRole()==='baseline' && !stageRetryQuote()) {
+            @if(autoMuseAfterSam() && apiEnabled() && !stageRetryQuote()) {
               <div class="sam-muse-consent" role="note">
-                <strong>✦ Muse Spark 1.3 · {{es?'interpretación automática después de SAM':'automatic interpretation after SAM'}}</strong>
+                <strong>✦ Muse Spark 1.3 · {{videoRole()==='followup'?(es?'contraste automático después de SAM':'automatic comparison after SAM'):(es?'interpretación automática después de SAM':'automatic interpretation after SAM')}}</strong>
+                <small>{{es?'Máximo adicional de Muse: US$ 0,05.':'Additional Muse maximum: US$ 0.05.'}}</small>
                 @if(displayedCost()>0){<small>{{es?'Máximo combinado estimado':'Estimated combined maximum'}}: US$ {{(displayedCost()+0.05).toFixed(2)}} · {{es?'no es una factura':'not an invoice'}}</small>}
               </div>
             }
@@ -166,7 +167,7 @@ interface SamAdaptiveReport {
                   'The previous Spark localization and prepared MP4 are reused. Earlier stages will not run again; Meta must process SAM again and may charge again.'}}</p>
                 <div class="sam-retry-price">{{es?'Costo máximo de un NUEVO intento SAM':'Maximum cost of a NEW SAM request'}}:
                   <strong>US$ {{costLabel(retry.estimatedSamUsd)}}</strong></div>
-                @if(autoMuseAfterSam() && videoRole()==='baseline'){
+                @if(autoMuseAfterSam()){
                   <p>{{es?'Al reintentar autorizas también la interpretación automática de Muse Spark con un máximo adicional de US$ 0,05; no se vuelve a enviar el video a Muse.':
                     'Retry also authorizes automatic Muse Spark interpretation, at most US$ 0.05 extra; video is not sent to Muse.'}}</p>
                   <small>{{es?'Máximo combinado estimado':'Estimated combined maximum'}}: US$ {{(retry.estimatedSamUsd+0.05).toFixed(2)}}</small>
@@ -469,8 +470,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private paidMode():'api-meta'|'api-meta-cache' {return this.cacheEnabled()?'api-meta-cache':'api-meta';}
   selectSource(source:'api'|'cache',selected:boolean):void {
     if(this.sourcesLocked())return;
-    const api=source==='api'?selected:this.apiEnabled(),cache=source==='cache'?selected:this.cacheEnabled();
+    const wasApiEnabled=this.apiEnabled();
+    const api=source==='api'?selected:wasApiEnabled,cache=source==='cache'?selected:this.cacheEnabled();
     this.mode.set(api?(cache?'api-meta-cache':'api-meta'):(cache?'cache-only':'none'));
+    if(wasApiEnabled!==this.apiEnabled())this.apiUsageChanged.emit(this.apiEnabled());
     this.closeTokenDialog();this.resetServerCheck();this.scheduleCheck();
   }
   sourceDescription():string {
@@ -491,6 +494,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private traceTicker:ReturnType<typeof setInterval>|null=null;
   private traceStartedAt=0;
   private sparkFinishedAt=0;
+  private exactPreflightStartedAt=0;
+  private exactPreflightFinishedAt=0;
+  private exactPreflightFailed=false;
   private samStartedAt=0;
   private samFinishedAt=0;
   private samWasReused=false;
@@ -538,6 +544,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.traceStartedAt=Date.now();this.traceClock.set(this.traceStartedAt);
     this.sparkFinishedAt=cached?this.traceStartedAt:0;this.viewStartedAt=0;this.viewFinishedAt=0;this.traceFailed=false;this.traceAwaitingRecovery=false;
     this.samStartedAt=0;this.samFinishedAt=0;this.samWasReused=cached;
+    this.exactPreflightStartedAt=0;this.exactPreflightFinishedAt=0;this.exactPreflightFailed=false;
     this.reviewStartedAt=0;this.reviewFinishedAt=0;this.reviewFailed=false;
     this.sparkWasNeeded=!cached && (this.segmentedMode()?!!this.adaptiveQuote()?.requiresNewSparkCall:this.groundingRequired());
     this.stopSparkPoll();this.sparkStages.set([]);
@@ -576,9 +583,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       state:sparkDone?'COMPLETED':this.traceFailed?'FAILED':'IN_PROGRESS',
       ms:this.sparkWasNeeded?Math.max(0,(this.sparkFinishedAt||now)-this.traceStartedAt):0},
       {key:'preparation',label:this.es?'Preparación del video':'Video preparation',
-       state:!sparkDone?'NOT_STARTED':phase==='PREPARING'||!p?(this.traceFailed?'FAILED':'IN_PROGRESS'):
+       state:!sparkDone || (this.exactPreflightStartedAt>0 && (!this.exactPreflightFinishedAt || this.exactPreflightFailed))?'NOT_STARTED':phase==='PREPARING'||!p?(this.traceFailed?'FAILED':'IN_PROGRESS'):
          phase==='FAILED'&&!p.started?'FAILED':'COMPLETED',
-       ms:p?.preparationElapsedMs??(sparkDone?Math.max(0,now-this.sparkFinishedAt):0)}];
+       ms:p?.preparationElapsedMs??(sparkDone && (!this.exactPreflightStartedAt || this.exactPreflightFinishedAt && !this.exactPreflightFailed)?Math.max(0,now-(this.exactPreflightFinishedAt||this.sparkFinishedAt)):0)}];
     if(this.sparkWasNeeded){
       const names=[['prepare','Preparar video','Prepare video'],['references','Extraer 50 imágenes','Extract 50 images'],['upload','Subir video a Spark','Upload video to Spark'],['inference','Respuesta de Spark','Spark response'],['verify','Validar respuesta','Validate response'],['target-review',this.hasContactAuditPlan()?'Verificar objeto y suspensión':'Verificar objeto con Spark',this.hasContactAuditPlan()?'Verify object and suspension':'Verify object with Spark']];
       const reviewOnly=this.sparkStages().some(s=>s.key==='target-review') && !this.sparkStages().some(s=>s.key==='inference');
@@ -596,6 +603,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       });
       rows.splice(0,1,...[...initial,...extra].map(([key,es,en])=>{const s=stages.find(x=>x.key===key);return {key:'spark-'+key,label:this.es?es:en,state:s?.state??'NOT_STARTED',ms:s?.elapsedMs??0,percent:s?.percent};}));
     }
+    if(this.exactPreflightStartedAt)rows.splice(rows.length-1,0,{
+      key:'exact-preflight',label:this.es?'Verificando preparación para SAM':'Verifying SAM preparation',
+      state:this.exactPreflightFailed?'FAILED':this.exactPreflightFinishedAt?'COMPLETED':'IN_PROGRESS',
+      ms:Math.max(0,(this.exactPreflightFinishedAt||now)-this.exactPreflightStartedAt)});
     if(!this.segmentedMode()){
       rows.splice(rows.length-1,1,{key:'sam',label:this.samWasReused?(this.es?'SAM · caché':'SAM · cache'):(this.es?'SAM · video completo':'SAM · full video'),
         state:this.samWasReused||this.samFinishedAt?'COMPLETED':!this.samStartedAt?'NOT_STARTED':this.traceFailed?'FAILED':'IN_PROGRESS',
@@ -859,7 +870,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   selectMode(event:Event):void {
     const mode=(event.target as HTMLSelectElement).value;
     if(this.sourcesLocked() || !['api-meta','api-meta-cache','api-meta-adaptive','cache-only','none'].includes(mode))return;
+    const wasApiEnabled=this.apiEnabled();
     this.mode.set(mode as SamMode);
+    if(wasApiEnabled!==this.apiEnabled())this.apiUsageChanged.emit(this.apiEnabled());
     this.resetServerCheck();
     this.scheduleCheck();
   }
@@ -896,6 +909,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly videoSha256=input('');
   readonly autoCheck=input(true);
   readonly cacheUpdated=output<SamProcessingSelection>();
+  readonly apiUsageChanged=output<boolean>();
   readonly processingReset=output<void>();
   private disposed=false;
   private scheduleCheck():void {
@@ -1476,6 +1490,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           located.scene.videoSha256!==sha || located.mode!==mode)throw Error('SPARK_TARGET_INCONCLUSIVE');
         const sceneRunId=located.evidence?.runId;
         if(mode==='api-meta' && !/^[a-f0-9]{32}$/.test(sceneRunId??''))throw Error('SPARK_RUN_MISSING');
+        // Spark has finished; this local check must remain visibly active before SAM starts.
+        this.sparkFinishedAt=Date.now();this.exactPreflightStartedAt=this.sparkFinishedAt;
+        this.traceClock.set(this.sparkFinishedAt);
         const exact=await firstValueFrom(this.http.get<SamAdaptiveQuote>(
           url+'/preflight?mode='+mode+(sceneRunId?'&sceneRunId='+encodeURIComponent(sceneRunId):'')).pipe(timeout(90000)));
         if(!current())return;
@@ -1484,10 +1501,11 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           exact.totalSamEstimatedUsd>approvedSam+1e-9 ||
           this.combinedSamCost(exact)>approvedCombined+1e-9)
           throw Error('SEGMENT_QUOTE_CHANGED');
+        this.exactPreflightFinishedAt=Date.now();
         quote=exact;this.adaptiveQuote.set(exact);this.groundingQuote.set(located);
       }
       void this.pollSpark();this.stopSparkPoll();
-      this.sparkFinishedAt=Date.now();this.traceClock.set(Date.now());
+      this.sparkFinishedAt ||= Date.now();this.traceClock.set(Date.now());
       this.processingPhase.set('sam');
       let polling=false;
       const poll=async()=>{
@@ -1542,6 +1560,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       if(current())this.cacheUpdated.emit(selection);
     }catch(e){
       if(current() && this.processingPhase()==='grounding'){
+        if(this.exactPreflightStartedAt){this.exactPreflightFailed=true;this.exactPreflightFinishedAt=Date.now();}
         sparkFailureProgressRead=true;
         this.stopSparkPoll();
         await this.pollSpark(); // Read the terminal stage, never retry the provider.
@@ -1555,7 +1574,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           code==='SEGMENT_QUOTE_CHANGED'?(this.es?
           'Spark terminó, pero cambió el presupuesto o la evidencia. SAM no se envió; actualiza el costo.':
           'Spark finished, but the quote or evidence changed. SAM was not sent; refresh the cost.'):
-          this.processingPhase()==='grounding'?this.groundingFailureMessage():
+          this.processingPhase()==='grounding'?(this.exactPreflightFailed?(this.es?
+            'Spark terminó, pero no se pudo verificar la preparación para SAM. SAM no se envió; revisa el estado antes de continuar.':
+            'Spark finished, but SAM preparation could not be verified. SAM was not sent; inspect status before continuing.'):this.groundingFailureMessage()):
           (this.adaptiveResult()?.automaticRetryOfBatchId || this.adaptiveResult()?.automaticRetryBatchId)?(this.es?
           'El reintento con el video completo también quedó inconcluso. No se harán más envíos automáticos. Puedes reproducir el original; los gráficos quedan pendientes.':
           'The whole-video retry was also inconclusive. No further automatic requests will be made. Original playback is available; overlays remain pending.'):
