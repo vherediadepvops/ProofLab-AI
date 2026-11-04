@@ -1,12 +1,12 @@
 # Localization and suspension review
 
-Current protocol: `SPARK_ORIGINAL_50_CONTACT_AUDIT_V3` (2026-11-03).
+Current protocol: `SPARK_ORIGINAL_50_VISIBLE_BODY_POINT_REVIEW_V5`. Suspension auditing retains `SPARK_ORIGINAL_50_CONTACT_AUDIT_V3`.
 
 ## Workflow
 
 1. Local preparation produces a compatible video and 50 original images spread across its timeline. It makes no Meta calls.
 2. The first Spark request receives the full video and those 50 labeled images. It proposes body boxes and suspension positions as image estimates.
-3. The second request reviews the body and suspension contact on nine original references (ordinals 0, 6, 12, 18, 24, 31, 37, 43 and 49). It receives nine full scenes with a grid and proposed suspension marker, each immediately followed by its matching body crop. There are no suspension crops or ×1.5/×3 rounds.
+3. The second request reviews the body and suspension contact on nine original references (ordinals 0, 6, 12, 18, 24, 31, 37, 43 and 49). It receives nine full scenes with a grid and proposed suspension marker, each immediately followed by its matching body crop. V5 tightens the frame-0 crop when a visible initial proposal has sufficient reported confidence; the other eight references retain their broad context. This remains the same review, with no additional images or requests. There are no suspension crops or ×1.5/×3 rounds.
 4. Review follows the loaded cord to its effective support contact across different times. It distinguishes that contact from knot/protractor centers, shadows and a moving lower loop. Spark returns the independently observed location, visibility and a short visual explanation. ProofLab computes whether it agrees with the candidate (CONFIRMED), changes position (CORRECTED), or is unusable (UNCERTAIN); that comparison is no longer delegated to the model. Contact coordinates always refer to the full scene; body boxes refer to their paired crop.
 5. SAM retains its single full-video request when the body is resolved. Suspension must pass review and geometric checks before producing angular values. An unresolved suspension can use existing manual marking; it does not trigger another automatic inference.
 
@@ -20,9 +20,9 @@ Agreement, reported confidence and review by the same model do not establish phy
 
 ## One principal SAM reference
 
-New reviews use `SAM_SINGLE_PRINCIPAL_REFERENCE_V2`. Spark explicitly reports whole-outline visibility, occlusion (such as a hand) and clipping. At least two complete, unobstructed, unclipped references with coherent geometry and size/aspect are required. Selection takes the earliest eligible reference, even if it follows the start of the video. Partial observations remain preserved but cannot initialize SAM. Its exact source frame and coordinates are retained; boxes are never invented or interpolated. Selection is an image heuristic, not a guarantee of object identity or physical accuracy.
+The box policy `SAM_SINGLE_PRINCIPAL_REFERENCE_V2` remains available to reconstruct its receipts and select complete references. Spark explicitly reports whole-outline visibility, occlusion (such as a hand) and clipping. At least two complete, unobstructed, unclipped references with coherent geometry and size/aspect are required. Selection takes the earliest eligible reference, even if it follows the start of the video. Partial observations remain preserved but cannot initialize SAM as complete boxes. V5 requires the admissible first-frame interior point described below. A complete box, even in the first frame, does not replace that V5 validation; earlier policies retain their own rules when reconstructing historical receipts. Its exact source frame and coordinates are retained; boxes are never invented or interpolated. Selection is an image heuristic, not a guarantee of object identity or physical accuracy.
 
-Only that box enters the SAM prompt. Other observations remain in the scene to corroborate reference selection and compare masks at their exact frames; they do not give SAM another starting reference. The policy and exact reference are bound to the quote and receipt. Historical receipts reconstruct the prompt actually sent.
+When the box policy is used, only that box enters the SAM prompt. Other observations remain in the scene to corroborate reference selection and compare masks at their exact frames; they do not give SAM another starting reference. The policy and exact reference are bound to the quote and receipt. Historical receipts reconstruct the prompt actually sent.
 
 ## Tracking continuity review
 
@@ -38,6 +38,10 @@ Two Spark requests remain: US$0.25 initial estimate and US$0.10 review (US$0.35 
 
 ### Visible point in the first source frame
 
-`SPARK_ORIGINAL_50_BODY_POINT_REVIEW_V4` adds an independently observed interior body pixel in original frame 0, using the same scene/crop pair and review request. A point can remain visible when a hand hides part of the outline; this does not make the box a complete-body reference or reconstruct hidden pixels. Ambiguous points must be marked invisible. A box center is never substituted.
+V5 reviews the interior pixel in original frame 0 introduced by `SPARK_ORIGINAL_50_BODY_POINT_REVIEW_V4`. In the tighter initial crop, Spark must identify the point material and a small rectangle entirely on a visible surface of the same body observed later. It must exclude hands, nails, cord, holes, shadows, background and added markings. The point is observed independently with clearance from every edge: it is not calculated as the rectangle center or copied from another frame. A hand can hide part of the outline without hiding all of the surface; this does not make a partial box a complete-body reference.
 
-The point maps from crop coordinates to native pixels and remains bound to verified response, image and scene provenance. With at least two clear observations of the same body, `SAM_INITIAL_BODY_POINT_WITH_CLEAR_REFERENCES_V3` submits that initial point as the sole tracking prompt; later boxes remain audit evidence. SAM receives the entire video starting at its first frame, without resets from later boxes. Without a usable point, V4 permits only a clear complete-body box in the first frame. If neither exists, it requests a visible initial reference and does not dispatch SAM; it never silently falls back to the backward path that failed in this case. Historical V2/V3 records retain their protocols and hashes. Suspension auditing continues to use V3.
+ProofLab maps the point and surface from crop to original coordinates and locally checks material, visibility, reported confidence, surface size, interior clearance of the exact native pixel sent to SAM, and agreement with the initial location. Unresolved identity or consistency produces `INITIAL_POINT_IDENTITY_UNRESOLVED` without sending SAM. These checks do not certify that every pixel belongs to the body or guarantee physical accuracy.
+
+The point remains bound to verified response, image and scene provenance. With at least two clear complete-body references, `SAM_INITIAL_BODY_POINT_WITH_CLEAR_REFERENCES_V3` submits the admissible initial point as the sole tracking prompt; later boxes remain audit evidence. SAM receives the entire video starting at its first frame, without resets from later boxes. Without a usable V5 point, SAM is not sent: coordinates are not invented and a box or later start is not activated automatically.
+
+Stored points from before V5 cannot authorize a new SAM request or a retry that reuses that reference. `SAM_INITIAL_REFERENCE_REVIEW_REQUIRED` asks the user to keep Meta API enabled, turn off Cache + SQLite, refresh the cost and confirm Process for a new review. Complete, valid saved SAM results remain available without new inference. Historical V2/V3/V4 protocols, hashes and responses are preserved and are not relabeled as V5 review. Suspension auditing continues to use V3.

@@ -102,8 +102,11 @@ public sealed class AssemblyTests
     }
     private sealed class FramesStub:IKnotFrames {
         public int Calls, BatchCalls, SuspensionMarks;
+        public bool RefuseCropOverwrite,FailCrop;
         public readonly List<KnotPoint> MarkedSuspensionCandidates=new();
         public async Task<byte[]> CropSuspensionAsync(string p,KnotFrame f,SuspensionCrop crop,string dest,CancellationToken ct) {
+            if(RefuseCropOverwrite && File.Exists(dest))throw new IOException("Synthetic FFmpeg -n: destination exists.");
+            if(FailCrop){await File.WriteAllTextAsync(dest,"partial failed crop",ct);throw new IOException("Synthetic crop failure.");}
             Assert.Equal(f.Sha256,Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(p,ct))).ToLowerInvariant());
             var bytes=Encoding.UTF8.GetBytes(new string('c',200));await File.WriteAllBytesAsync(dest,bytes,ct);return bytes;
         }
@@ -151,8 +154,8 @@ public sealed class AssemblyTests
         public int[] LastReviewOrdinals=[];public int LastReviewImageCount;
         public Task<KnotProviderResult> ReviewObjectAsync(ObjectReviewImage[] refs,byte[][] images,string token,CancellationToken ct) {
             ReviewCalls++;LastReviewOrdinals=refs.Select(r=>r.Ordinal).ToArray();LastReviewImageCount=images.Length;
-            var text=JsonSerializer.Serialize(new {observations=refs.Select(r=>new {frame=WrongReviewOrdinal?99:r.Ordinal,decision=ReviewUncertain?"UNCERTAIN":"CORRECTED",visible=!ReviewUncertain,whole_body_visible=!ReviewUncertain,occluded=ReviewUncertain,clipped=false,
-                x1=ReviewUncertain?0:(400*r.Frame.Width/1000-r.BodyCrop!.Left)*1000/r.BodyCrop.Width,y1=ReviewUncertain?0:(700*r.Frame.Height/1000-r.BodyCrop!.Top)*1000/r.BodyCrop.Height,x2=ReviewUncertain?0:(450*r.Frame.Width/1000-r.BodyCrop!.Left)*1000/r.BodyCrop.Width,y2=ReviewUncertain?0:(800*r.Frame.Height/1000-r.BodyCrop!.Top)*1000/r.BodyCrop.Height,confidence=ReviewUncertain?0:GroundingConfidence,visual_reason="The suspended body below the cord, not the cord."}),
+            var text=JsonSerializer.Serialize(new {observations=refs.Select(r=>new {frame=WrongReviewOrdinal?99:r.Ordinal,decision=(ReviewUncertain || CoarseCord && r.Ordinal==0 && r.InitialPointReviewProtocol is not null)?"UNCERTAIN":"CORRECTED",visible=!(ReviewUncertain || CoarseCord && r.Ordinal==0 && r.InitialPointReviewProtocol is not null),whole_body_visible=!(ReviewUncertain || CoarseCord && r.Ordinal==0 && r.InitialPointReviewProtocol is not null),occluded=(ReviewUncertain || CoarseCord && r.Ordinal==0 && r.InitialPointReviewProtocol is not null),clipped=false,
+                x1=(ReviewUncertain || CoarseCord && r.Ordinal==0 && r.InitialPointReviewProtocol is not null)?0:(400*r.Frame.Width/1000-r.BodyCrop!.Left)*1000/r.BodyCrop.Width,y1=(ReviewUncertain || CoarseCord && r.Ordinal==0 && r.InitialPointReviewProtocol is not null)?0:(700*r.Frame.Height/1000-r.BodyCrop!.Top)*1000/r.BodyCrop.Height,x2=(ReviewUncertain || CoarseCord && r.Ordinal==0 && r.InitialPointReviewProtocol is not null)?0:(450*r.Frame.Width/1000-r.BodyCrop!.Left)*1000/r.BodyCrop.Width,y2=(ReviewUncertain || CoarseCord && r.Ordinal==0 && r.InitialPointReviewProtocol is not null)?0:(800*r.Frame.Height/1000-r.BodyCrop!.Top)*1000/r.BodyCrop.Height,confidence=(ReviewUncertain || CoarseCord && r.Ordinal==0 && r.InitialPointReviewProtocol is not null)?0:GroundingConfidence,visual_reason="The suspended body below the cord, not the cord."}),
                 suspension=new {camera="STATIC",points=refs.Where(r=>r.SuspensionCrop is not null).Select(r=>new {frame=r.Ordinal,visible=true,x=500,y=333.25,confidence=.95,visual_reason="Visible fixed cord exit."})},
                 suspension_audit=new {camera="STATIC",points=refs.Where(r=>r.SuspensionCandidate is not null).Select(r=>new {
                     frame=r.Ordinal,
@@ -162,7 +165,16 @@ public sealed class AssemblyTests
                 target=new {status=GroundingStatus,justification=new {es="Cuerpo suspendido revisado.",en="Reviewed suspended body."}}});
             var payload=System.Text.Json.Nodes.JsonNode.Parse(text)!.AsObject();
             if(refs.All(r=>r.SuspensionCandidate is null))payload.Remove("suspension_audit");
-            else payload["body_interior_point"]=JsonSerializer.SerializeToNode(new {
+            else if(refs[0].InitialPointReviewProtocol==ObjectReviewPolicy.VisibleBodyPointProtocol) {
+                var r=refs[0];var crop=r.BodyCrop!;var visible=!ReviewUncertain && !CoarseCord;
+                double X(double x)=>(x*r.Frame.Width/1000-crop.Left)*1000/crop.Width;
+                double Y(double y)=>(y*r.Frame.Height/1000-crop.Top)*1000/crop.Height;
+                payload["body_interior_point"]=JsonSerializer.SerializeToNode(new {
+                    frame=0,visible,x=visible?X(425):0,y=visible?Y(750):0,confidence=visible?.95:0,
+                    visual_reason="Synthetic observed exposed body surface, excluding the hand.",material_point=visible?"BODY":"UNCERTAIN",
+                    visible_body_region=new{x1=visible?X(415):0,y1=visible?Y(730):0,x2=visible?X(435):0,y2=visible?Y(770):0}
+                });
+            } else payload["body_interior_point"]=JsonSerializer.SerializeToNode(new {
                 frame=0,visible=false,x=0,y=0,confidence=0,visual_reason="No initial interior point asserted by this offline fixture."
             });
             return Task.FromResult(new KnotProviderResult(Envelope(payload.ToJsonString()),"synthetic-not-provider",1000,100));
@@ -254,6 +266,25 @@ public sealed class AssemblyTests
             var reviewed=await RewriteHistoricalBodyReview(combined,ProgressiveSuspensionPolicy.BodyProtocol);
             return initial with {Evidence=reviewed,Scene=AssemblyPolicy.Ground(reviewed),Status=AssemblyPolicy.GroundingStatus(reviewed)};
         }
+        public async Task<ObjectReviewAttempt> HistoricalCrops(ObjectReviewAttempt attempt,string protocol,System.Text.Json.Nodes.JsonObject payload) {
+            var references=new List<ObjectReviewImage>();
+            foreach(var reference in attempt.References) {
+                var crop=ObjectReviewPolicy.BodyRegion(reference.Frame,reference.Candidate,protocol);
+                var pixels=await Frames.CropSuspensionAsync(Path.Combine(GroundFolder,$"frame-{reference.Ordinal}.jpg"),reference.Frame,crop,
+                    Path.Combine(GroundFolder,$"body-{reference.Ordinal}.jpg"),Ct);
+                var row=payload["observations"]!.AsArray().Single(x=>x!["frame"]!.GetValue<int>()==reference.Ordinal)!;
+                if(reference.Ordinal==0 && payload["body_interior_point"] is {} point && point["visible"]!.GetValue<bool>()) {
+                    point["x"]=(reference.BodyCrop!.Left+point["x"]!.GetValue<double>()*reference.BodyCrop.Width/1000-crop.Left)*1000/crop.Width;
+                    point["y"]=(reference.BodyCrop!.Top+point["y"]!.GetValue<double>()*reference.BodyCrop.Height/1000-crop.Top)*1000/crop.Height;
+                }
+                if(row["visible"]!.GetValue<bool>()) {
+                    foreach(var key in new[]{"x1","x2"})row[key]=(reference.BodyCrop!.Left+row[key]!.GetValue<double>()*reference.BodyCrop.Width/1000-crop.Left)*1000/crop.Width;
+                    foreach(var key in new[]{"y1","y2"})row[key]=(reference.BodyCrop!.Top+row[key]!.GetValue<double>()*reference.BodyCrop.Height/1000-crop.Top)*1000/crop.Height;
+                }
+                references.Add(reference with {InitialPointReviewProtocol=null,BodyCrop=crop with {Sha256=Convert.ToHexString(SHA256.HashData(pixels)).ToLowerInvariant()}});
+            }
+            return attempt with {Protocol=protocol,References=references.ToArray()};
+        }
         public async Task<AssemblyEvidence> RewriteHistoricalBodyReview(AssemblyEvidence draft,string protocol) {
             var root=GroundFolder;var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
             var attempt=JsonSerializer.Deserialize<ObjectReviewAttempt>(await File.ReadAllTextAsync(Path.Combine(root,"object-review-attempt.json")),options)!;
@@ -266,6 +297,7 @@ public sealed class AssemblyTests
             attempt=attempt with {Protocol=protocol,DraftResponseSha256=draft.ResponseSha256,References=refs.ToArray()};
             var payload=System.Text.Json.Nodes.JsonNode.Parse(AssemblyMetaTransport.OutputText(
                 await File.ReadAllTextAsync(Path.Combine(root,"object-review-response.json"))))!.AsObject();
+            attempt=await HistoricalCrops(attempt,protocol,payload);
             payload.Remove("suspension_audit");payload.Remove("body_interior_point");var raw=Envelope(payload.ToJsonString());
             var derived=ObjectReviewPolicy.Derive(draft,new(raw,"synthetic-not-provider",1000,100),attempt.References);
             Assert.Equal(protocol,derived.Derivation);Assert.Null(derived.Proposal.SuspensionAudit);
@@ -695,7 +727,7 @@ public sealed class AssemblyTests
         Assert.Equal("READY",result.Status);Assert.Equal(1,result.RequiredSparkCalls);
         Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(2,f.Transport.ReviewCalls);
         Assert.True(File.Exists(Directory.GetFiles(f.Root,"object-review-stages.json",SearchOption.AllDirectories).Single()));
-        Assert.All(result.Scene!.Seeds,seed=>Assert.Equal(1344,seed.Y1));
+        Assert.All(result.Evidence.Proposal.Observations.Where(o=>o.Visible),o=>Assert.InRange(o.Y1,699,701));
     }
     [Fact] public async Task SuspensionCropReceiptSurvivesReloadButRejectsChangedPixels() {
         using var f=new Fixture();var locator=f.Open();
@@ -759,10 +791,10 @@ public sealed class AssemblyTests
         using var f=new Fixture();f.Transport.FailOnZoom=1;
         var q=await f.Open().GroundingQuoteAsync("s","baseline",Ct,mode);
         Assert.Equal(2,q.RequiredSparkCalls);Assert.Equal(.35,q.MaximumEstimatedCostUsd);Assert.Equal(0,f.Transport.VideoCalls);
-        Assert.Equal(ObjectReviewPolicy.InitialBodyPointProtocol,q.LocalizationPlan);
+        Assert.Equal(ObjectReviewPolicy.VisibleBodyPointProtocol,q.LocalizationPlan);
         var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest() with {Mode=mode},Ct);
         Assert.Equal(50,result.Evidence!.Frames.Length);Assert.Equal(50,result.Evidence.Frames.Select(x=>x.Index).Distinct().Count());
-        Assert.Equal(ObjectReviewPolicy.InitialBodyPointProtocol,result.Evidence.Derivation);
+        Assert.Equal(ObjectReviewPolicy.VisibleBodyPointProtocol,result.Evidence.Derivation);
         Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(1,f.Transport.ReviewCalls);Assert.Equal(2,f.Runtime.Reservations);
         Assert.Equal(0,f.Transport.ZoomCalls);Assert.Empty(f.Transport.ZoomScales);Assert.Empty(Directory.GetDirectories(f.GroundFolder,"zoom-*"));
         Assert.Equal("CONSENSUS_ESTIMATE",result.Evidence.Proposal.Consensus!.Status);Assert.Null(result.Evidence.Proposal.ContactReviews);
@@ -855,20 +887,21 @@ public sealed class AssemblyTests
         Assert.Equal(0,f.Transport.VideoCalls);Assert.Equal(0,f.Runtime.Reservations);Assert.Equal(0,f.Frames.Calls);
     }
 
-    [Fact] public async Task DenseCordCandidateIsCorrectedBeforeSamWithoutLosingSuspensionConsensus() {
+    [Fact] public async Task ContradictoryInitialCordCandidateStopsBeforeSamWithoutLosingLaterBodyEvidence() {
         using var f=new Fixture();f.Transport.CoarseCord=true;
         var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
-        Assert.Equal("READY",result.Status);Assert.Equal(ObjectReviewPolicy.InitialBodyPointProtocol,result.Evidence!.Derivation);
+        Assert.Equal("INITIAL_POINT_IDENTITY_UNRESOLVED",result.Status);Assert.Null(result.Scene);
+        Assert.Equal(ObjectReviewPolicy.VisibleBodyPointProtocol,result.Evidence!.Derivation);
         Assert.Equal(50,result.Evidence.Proposal.Suspension.Points.Length);
         Assert.Equal("CONSENSUS_ESTIMATE",result.Evidence.Proposal.Consensus!.Status);
-        Assert.All(result.Scene!.Seeds,seed=>Assert.Equal(1344,seed.Y1));
+        Assert.All(result.Evidence.Proposal.Observations.Where(o=>o.Visible),o=>Assert.InRange(o.Y1,699,701));
         Assert.Equal(1,f.Transport.VideoCalls);Assert.Equal(1,f.Transport.ReviewCalls);
         var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
         var draft=JsonSerializer.Deserialize<AssemblyEvidence>(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"evidence.json")),options)!;
         Assert.All(draft.Proposal.Observations,o=>Assert.Equal(578,o.Y1));
         var attempt=JsonSerializer.Deserialize<ObjectReviewAttempt>(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"object-review-attempt.json")),options)!;
         Assert.Equal(9,attempt.References.Length);Assert.All(attempt.References,r=>Assert.Null(r.SuspensionCrop));
-        Assert.Equal(result.Scene.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
+        Assert.Null(await f.Open().TrackingAsync("s","baseline",Ct));
         await File.WriteAllTextAsync(Path.Combine(f.GroundFolder,$"body-{attempt.References[0].Ordinal}.jpg"),"tampered");
         await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().TrackingAsync("s","baseline",Ct));
     }
@@ -886,7 +919,7 @@ public sealed class AssemblyTests
         var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
         var attempt=JsonSerializer.Deserialize<ObjectReviewAttempt>(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"object-review-attempt.json")),options)!;
         var first=JsonSerializer.Deserialize<AssemblyVideoAttempt>(await File.ReadAllTextAsync(Path.Combine(f.GroundFolder,"attempt.json")),options)!;
-        Assert.Equal(ObjectReviewPolicy.InitialBodyPointProtocol,attempt.Protocol);Assert.Equal(9,attempt.References.Length);
+        Assert.Equal(ObjectReviewPolicy.VisibleBodyPointProtocol,attempt.Protocol);Assert.Equal(9,attempt.References.Length);
         Assert.All(attempt.References,r=> {Assert.Contains(r.Frame,first.Frames);Assert.Equal(r.Frame,result.Evidence.Frames[r.Ordinal]);Assert.NotNull(r.BodyCrop);Assert.Null(r.SuspensionCrop);
             Assert.Equal(result.Evidence.Proposal.Suspension.Points.Single(p=>p.Frame==r.Ordinal),r.SuspensionCandidate);});
         Assert.Equal(result.Scene!.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
@@ -1031,7 +1064,7 @@ public sealed class AssemblyTests
         using var f=new Fixture();f.Transport.AuditCorrected=true;
         var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
         var evidence=result.Evidence!;var audit=evidence.Proposal.SuspensionAudit!;
-        Assert.Equal(ObjectReviewPolicy.InitialBodyPointProtocol,evidence.Derivation);Assert.Equal(9,audit.Points.Length);
+        Assert.Equal(ObjectReviewPolicy.VisibleBodyPointProtocol,evidence.Derivation);Assert.Equal(9,audit.Points.Length);
         Assert.All(audit.Points,p=>{Assert.Equal("CORRECTED",p.Decision);Assert.Equal("FIXED_CORD_CONTACT",p.ReferenceKind);
             Assert.Equal(510,p.X);Assert.Equal(140,p.Y);Assert.Equal(evidence.Frames[p.Frame].TimeSeconds,p.TimeSeconds);});
         Assert.All(evidence.Proposal.Suspension.Points,p=>{Assert.Equal(500,p.X);Assert.Equal(133.3,p.Y);});
@@ -1110,7 +1143,9 @@ public sealed class AssemblyTests
             Assert.Contains("body_interior_point",schema.GetProperty("required").EnumerateArray().Select(x=>x.GetString()));
             var pointSchema=schema.GetProperty("properties").GetProperty("body_interior_point");
             Assert.Equal(0,pointSchema.GetProperty("properties").GetProperty("frame").GetProperty("enum")[0].GetInt32());
-            Assert.Contains("separate observation",body);Assert.Contains("Never calculate a box center",body);
+            Assert.Contains("material_point",pointSchema.GetProperty("required").EnumerateArray().Select(x=>x.GetString()));
+            Assert.Contains("visible_body_region",pointSchema.GetProperty("required").EnumerateArray().Select(x=>x.GetString()));
+            Assert.Contains("separate body observation",body);Assert.Contains("Do not calculate a rectangle center",body);
             var imageUrls=content.Where(c=>c.GetProperty("type").GetString()=="input_image").Select(c=>c.GetProperty("image_url").GetString()).ToArray();
             Assert.Equal(Enumerable.Range(0,9).SelectMany(i=>new[]{images[i],images[9+i]}).Select(bytes=>"data:image/jpeg;base64,"+Convert.ToBase64String(bytes)),imageUrls);
             return new(System.Net.HttpStatusCode.OK){Content=new StringContent(raw)};
@@ -1130,6 +1165,7 @@ public sealed class AssemblyTests
         var protocol=legacy?SuspensionAuditPolicy.LegacyProtocol:SuspensionAuditPolicy.Protocol;
         var payload=System.Text.Json.Nodes.JsonNode.Parse(AssemblyMetaTransport.OutputText(
             await File.ReadAllTextAsync(Path.Combine(root,"object-review-response.json"))))!.AsObject();
+        attempt=await f.HistoricalCrops(attempt,protocol,payload);
         payload.Remove("body_interior_point");
         if(legacy)foreach(var row in payload["suspension_audit"]!["points"]!.AsArray())row!["decision"]="CONFIRMED";
         var raw=Envelope(payload.ToJsonString());
@@ -1146,6 +1182,60 @@ public sealed class AssemblyTests
         Assert.Equal(old.ResponseSha256,quote.Evidence!.ResponseSha256);Assert.Null(quote.Evidence.Proposal.BodyInteriorPoint);
         foreach(var name in files)Assert.Equal(before[name],await File.ReadAllBytesAsync(Path.Combine(root,name)));
         Assert.Equal(1,f.Transport.ReviewCalls);Assert.Equal(2,f.Runtime.Reservations);
+    }
+
+    [Fact] public async Task HistoricalV4InteriorPointKeepsItsSceneAndRawBytesAfterV5IsIntroduced() {
+        using var f=new Fixture();var current=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var root=f.GroundFolder;var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var first=JsonSerializer.Deserialize<AssemblyEvidence>(await File.ReadAllTextAsync(Path.Combine(root,"evidence.json")),options)!;
+        var draft=DenseLocalizationPolicy.FromOriginal(first);
+        var attempt=JsonSerializer.Deserialize<ObjectReviewAttempt>(await File.ReadAllTextAsync(Path.Combine(root,"object-review-attempt.json")),options)!;
+        var payload=System.Text.Json.Nodes.JsonNode.Parse(AssemblyMetaTransport.OutputText(await File.ReadAllTextAsync(Path.Combine(root,"object-review-response.json"))))!.AsObject();
+        attempt=await f.HistoricalCrops(attempt,ObjectReviewPolicy.InitialBodyPointProtocol,payload);
+        var point=payload["body_interior_point"]!.AsObject();point.Remove("material_point");point.Remove("visible_body_region");
+        var raw=Envelope(payload.ToJsonString());
+        var old=ObjectReviewPolicy.Derive(draft,new(raw,"synthetic-not-provider",1000,100),attempt.References,ObjectReviewPolicy.InitialBodyPointProtocol);
+        await File.WriteAllTextAsync(Path.Combine(root,"object-review-attempt.json"),JsonSerializer.Serialize(attempt,options));
+        await File.WriteAllTextAsync(Path.Combine(root,"object-review-response.json"),raw);
+        await File.WriteAllTextAsync(Path.Combine(root,"body-reviewed-evidence.json"),JsonSerializer.Serialize(old,options));
+        var names=new[]{"object-review-attempt.json","object-review-response.json","body-reviewed-evidence.json"};
+        var before=names.ToDictionary(name=>name,name=>File.ReadAllBytes(Path.Combine(root,name)));
+        var expected=AssemblyPolicy.Ground(old)!;Assert.Null(expected.InitialPointReviewProtocol);
+        Assert.Equal(current.Scene!.InitialBodyPoint,expected.InitialBodyPoint);
+        Assert.DoesNotContain("safetyStatus",Encoding.UTF8.GetString(before["body-reviewed-evidence.json"]));
+        Assert.DoesNotContain("initialPointReviewProtocol",JsonSerializer.Serialize(expected,options));
+        var read=await f.Open().TrackingAsync("s","baseline",Ct);
+        Assert.Equal(expected.Key,read!.Key);Assert.Equal(JsonSerializer.Serialize(expected,options),JsonSerializer.Serialize(read,options));
+        Assert.Equal(old.ResponseSha256,(await f.Open().GroundingQuoteAsync("s","baseline",Ct)).Evidence!.ResponseSha256);
+        foreach(var name in names)Assert.Equal(before[name],await File.ReadAllBytesAsync(Path.Combine(root,name)));
+        Assert.Equal(1,f.Transport.ReviewCalls);Assert.Equal(2,f.Runtime.Reservations);
+    }
+
+    [Theory] [InlineData(false)] [InlineData(true)]
+    public async Task InterruptedInitialCropIsReplacedOnlyAfterSuccessfulDecodeWithoutOverwritingDecoderInput(bool fail) {
+        using var f=new Fixture();await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
+        var root=f.GroundFolder;
+        var originalResponse=await File.ReadAllBytesAsync(Path.Combine(root,"response.json"));
+        foreach(var name in new[]{"object-review-attempt.json","object-review-response.json","body-reviewed-evidence.json"})File.Delete(Path.Combine(root,name));
+        var cropPath=Path.Combine(root,"body-0.jpg");
+        await File.WriteAllTextAsync(cropPath,"preserved broad crop from interrupted earlier preparation");
+        var old=await File.ReadAllBytesAsync(cropPath);f.Frames.RefuseCropOverwrite=true;f.Frames.FailCrop=fail;
+        var request=f.GroundRequest() with {MaximumEstimatedCostUsd=ObjectReviewPolicy.EstimatedCostUsd};
+        if(fail) {
+            await Assert.ThrowsAsync<IOException>(()=>f.Open().GroundAsync("s","baseline",request,Ct));
+            Assert.Equal(old,await File.ReadAllBytesAsync(cropPath));
+            Assert.False(File.Exists(Path.Combine(root,"object-review-attempt.json")));
+            Assert.Equal(1,f.Transport.ReviewCalls);Assert.Equal(2,f.Runtime.Reservations);
+        } else {
+            var resumed=await f.Open().GroundAsync("s","baseline",request,Ct);
+            Assert.NotNull(resumed.Scene);Assert.Equal(ObjectReviewPolicy.VisibleBodyPointProtocol,resumed.Scene.InitialPointReviewProtocol);
+            Assert.NotEqual(old,await File.ReadAllBytesAsync(cropPath));
+            Assert.Equal(resumed.Scene.Key,(await f.Open().TrackingAsync("s","baseline",Ct))!.Key);
+            Assert.Equal(2,f.Transport.ReviewCalls);Assert.Equal(3,f.Runtime.Reservations);
+        }
+        Assert.Empty(Directory.GetFiles(root,"body-0-v5-*.jpg"));
+        Assert.Equal(originalResponse,await File.ReadAllBytesAsync(Path.Combine(root,"response.json")));
+        Assert.Equal(1,f.Transport.VideoCalls);
     }
 
     [Fact] public async Task ChangedBodyInteriorPointCannotBeReadAsAuthenticatedEvidence() {
@@ -1182,16 +1272,20 @@ public sealed class AssemblyTests
         var observation=payload["observations"]![0]!.AsObject();
         if(invalid=="missing-quality")observation.Remove("whole_body_visible");
         else observation[invalid=="occlusion"?"occluded":"clipped"]=true;
-        Assert.ThrowsAny<Exception>(()=>ObjectReviewPolicy.Parse(payload.ToJsonString(),draft,attempt.References,ObjectReviewPolicy.InitialBodyPointProtocol));
+        Assert.ThrowsAny<Exception>(()=>ObjectReviewPolicy.Parse(payload.ToJsonString(),draft,attempt.References,ObjectReviewPolicy.VisibleBodyPointProtocol));
     }
 
-    [Fact] public async Task PartialBodyIsRetainedAsEvidenceButCannotSeedTracking() {
+    [Fact] public async Task PartialBodyRequiresAnIndependentlyReviewedSafePointToSeedFrameZero() {
         using var f=new Fixture();var result=await f.Open().GroundAsync("s","baseline",f.GroundRequest(),Ct);
         var evidence=result.Evidence!;
         var rows=evidence.Proposal.BodyReferences!.Select((q,i)=>i==0?q with {WholeBodyVisible=false,Occluded=true}:q).ToArray();
         var changed=evidence with {Proposal=evidence.Proposal with {BodyReferences=rows}};
-        Assert.Equal("INITIAL_REFERENCE_UNRESOLVED",AssemblyPolicy.GroundingStatus(changed));
-        Assert.Null(AssemblyPolicy.Ground(changed));
+        // Partial whole-body visibility does not invalidate a separately observed safe material point.
+        Assert.Equal("READY",AssemblyPolicy.GroundingStatus(changed));
+        Assert.NotNull(AssemblyPolicy.Ground(changed));
+        var noPoint=changed with {Proposal=changed.Proposal with {BodyInteriorPoint=null}};
+        Assert.Equal("INITIAL_POINT_IDENTITY_UNRESOLVED",AssemblyPolicy.GroundingStatus(noPoint));
+        Assert.Throws<InvalidDataException>(()=>AssemblyPolicy.Ground(noPoint));
         Assert.Equal(evidence.Proposal.Observations,changed.Proposal.Observations);
         // Policy-level legacy branch. Archive tests separately authenticate the preserved V3 response.
         var legacy=changed with {Derivation=SuspensionAuditPolicy.Protocol,
@@ -1262,7 +1356,7 @@ public sealed class AssemblyTests
         var path=Path.Combine(f.GroundFolder,name);var text=await File.ReadAllTextAsync(path);
         var changed=name=="dense-localization-attempt.json"?text.Replace("\"maximumAttempts\":1","\"maximumAttempts\":3"):
             name=="dense-localization.json"?text.Replace("ORIGINAL_REFERENCES_COMPLETE","ZOOM_REVIEWS_COMPLETE"):
-            name=="object-review-attempt.json"?text.Replace(ObjectReviewPolicy.InitialBodyPointProtocol,ProgressiveSuspensionPolicy.BodyProtocol):text.Replace(DenseLocalizationPolicy.OriginalProtocol,ProgressiveSuspensionPolicy.Protocol);
+            name=="object-review-attempt.json"?text.Replace(ObjectReviewPolicy.VisibleBodyPointProtocol,ProgressiveSuspensionPolicy.BodyProtocol):text.Replace(DenseLocalizationPolicy.OriginalProtocol,ProgressiveSuspensionPolicy.Protocol);
         Assert.NotEqual(text,changed);await File.WriteAllTextAsync(path,changed);
         await Assert.ThrowsAsync<InvalidDataException>(()=>f.Open().TrackingAsync("s","baseline",Ct));
         Assert.Equal(2,f.Runtime.Reservations);Assert.Equal(0,f.Transport.ZoomCalls);

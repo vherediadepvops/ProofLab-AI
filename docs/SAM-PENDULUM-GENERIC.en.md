@@ -1,6 +1,8 @@
 # Pendulums of different shapes: Spark + SAM
 
-## Current update — November 2, 2026
+The current flow uses 50 initial images and a review of nine scene/body pairs, with V5 checks on the visible point in the first frame. See [Localization and suspension review](DENSE-LOCALIZATION.en.md) for current reference selection and compatibility with older records.
+
+## Historical update — November 2, 2026
 
 Dense Spark localization retains 50 references per round (up to 150 when all three rounds are needed). Before its boxes guide SAM, independent enlarged crops now verify the oscillating body. The review must distinguish the body from the cord, shadow and support, regardless of whether it is a plumb bob, ball, coin or nut.
 

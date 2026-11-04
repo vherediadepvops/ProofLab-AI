@@ -12,6 +12,81 @@ public sealed class SamAdaptiveLiveIntegrationTests
 {
     private const string Token="LLM_SYNTHETIC_LOCAL_TEST_KEY_1234567890";
     private static readonly string Sha=new('a',64);
+    [Theory]
+    [InlineData("SAM_SSE_OUTPUT_LIMIT_EXCEEDED",true)]
+    [InlineData("PRIVATE_PROVIDER_FREE_TEXT",false)]
+    public async Task FailureDiagnosticsAreBoundedAndUnsafeRetryRequiresNewReview(string code,bool known)
+    {
+        using var f=new Fixture();
+        f.Transport.InjectedFailure=new SamVideoSseException(code);
+        var failed=await f.Service.RunOnceAsync("study","baseline",Request(await f.Quote("api-meta",f.Scenes.ExactRunId)),default);
+        Assert.Equal(known?code:null,failed.FailureCode);
+        var file=Path.Combine(f.Store,"batches",failed.BatchId,"batch-report.json");
+        var saved=await File.ReadAllTextAsync(file);
+        var read=await f.Service.ReadReportAsync(failed.BatchId,default);
+        Assert.Equal(known?code:null,read!.FailureCode);
+        Assert.DoesNotContain("PRIVATE_PROVIDER_FREE_TEXT",JsonSerializer.Serialize(read));
+        if(known)await Assert.ThrowsAsync<SamInitialReferenceReviewRequiredException>(
+            ()=>f.Service.StageRetryQuoteAsync("study","baseline",default));
+        else Assert.NotNull(await f.Service.StageRetryQuoteAsync("study","baseline",default));
+        Assert.Equal(saved,await File.ReadAllTextAsync(file));
+        Assert.Equal(1,f.Transport.Calls);Assert.Equal(1,f.Runtime.Reserved);
+    }
+    [Fact]
+    public async Task HistoricalInitialPointFailureCannotBePaidAgainWithoutNewReview()
+    {
+        using var f=new Fixture();
+        var draft=Scene();draft=draft with{InitialBodyPoint=new(0,30,40),
+            BodyReferences=draft.Seeds.Select(s=>new AssemblyBodyReferenceQuality(s.Frame,true,false,false)).ToArray()};
+        f.Scenes.Scene=draft with{Key=AssemblyPolicy.DefinitionKey(draft)};
+        f.Scenes.Runs[f.Scenes.ExactRunId]=f.Scenes.Scene;
+        // Independent historical archive fixture: new paid execution must not be
+        // used to manufacture a receipt from a now-disallowed initial point.
+        var quote=await f.Quote("api-meta",f.Scenes.ExactRunId);
+        var failed=await WriteHistoricalInitialPointFailure(f,quote);
+        var before=Directory.GetFiles(Path.Combine(f.Store,"batches",failed.BatchId),"*",SearchOption.AllDirectories).ToDictionary(x=>x,File.ReadAllBytes);
+        await Assert.ThrowsAsync<SamInitialReferenceReviewRequiredException>(
+            ()=>f.Service.StageRetryQuoteAsync("study","baseline",default));
+        Assert.NotNull(await f.Service.ReadReportAsync(failed.BatchId,default));
+        foreach(var item in before)Assert.Equal(item.Value,await File.ReadAllBytesAsync(item.Key));
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
+    }
+    [Theory]
+    [InlineData("baseline","api-meta-cache")]
+    [InlineData("followup","api-meta-cache")]
+    [InlineData("baseline","api-meta")]
+    [InlineData("followup","api-meta")]
+    public async Task NewLegacyInitialPointSubmissionRequiresV5BeforePreparationOrPayment(string role,string mode)
+    {
+        using var f=new Fixture(useLocalPreparation:true);
+        var draft=Scene() with {InitialBodyPoint=new(0,30,40),BodyReferences=Scene().Seeds.Select(s=>new AssemblyBodyReferenceQuality(s.Frame,true,false,false)).ToArray()};
+        f.Scenes.Scene=draft with {Key=AssemblyPolicy.DefinitionKey(draft)};
+        f.Scenes.Runs[f.Scenes.ExactRunId]=f.Scenes.Scene;
+        var quote=await f.Service.PreflightAsync("study",role,53,1,default,mode,mode=="api-meta"?f.Scenes.ExactRunId:null);
+        Assert.Equal("SAM_INITIAL_REFERENCE_REVIEW_REQUIRED",quote.Provenance);
+        Assert.True(quote.RequiresNewSparkCall);Assert.False(quote.ExistingSparkSceneVerified);Assert.False(quote.CanRunWithManualToken);
+        Assert.Equal(f.Scenes.Scene.Key,quote.SparkSceneKey);
+        await Assert.ThrowsAsync<SamInitialReferenceReviewRequiredException>(()=>f.Service.RunOnceAsync("study",role,Request(quote),default));
+        Assert.Equal(0,f.Clips.Preparations);Assert.Equal(0,f.LocalPreparation!.SamCopies);
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
+        Assert.False(Directory.Exists(Path.Combine(f.Store,"batches")));
+    }
+    [Fact]
+    public async Task CompleteLegacyInitialPointArchiveAndOwnedCacheRemainReadableWithoutNewPayment()
+    {
+        using var f=new Fixture();
+        var draft=Scene() with {InitialBodyPoint=new(0,30,40),BodyReferences=Scene().Seeds.Select(s=>new AssemblyBodyReferenceQuality(s.Frame,true,false,false)).ToArray()};
+        f.Scenes.Scene=draft with {Key=AssemblyPolicy.DefinitionKey(draft)};
+        var historical=await WriteHistoricalBatch(f,1,owned:true);
+        var before=Directory.GetFiles(Path.Combine(f.Store,"batches",historical.Report.BatchId),"*",SearchOption.AllDirectories).ToDictionary(x=>x,File.ReadAllBytes);
+        var playback=await f.Service.ReadPlaybackAsync("study","baseline",historical.Report.BatchId,default);
+        Assert.Equal(667,playback.Receipt.SourceFrameCount);Assert.True(playback.Derivation!.SeamsVerified);
+        Assert.Equal(historical.Report.BatchId,(await f.Service.LatestOwnedResultAsync("study","baseline",default))!.BatchId);
+        var quote=await f.Quote();Assert.True(quote.RequiresNewSparkCall);
+        foreach(var item in before)Assert.Equal(item.Value,await File.ReadAllBytesAsync(item.Key));
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);Assert.Equal(0,f.Clips.Preparations);
+    }
+
     [Fact]
     public async Task MissingSceneHasReadOnlyUpperBoundAndThenAnExactGroundedQuote()
     {
@@ -248,8 +323,27 @@ public sealed class SamAdaptiveLiveIntegrationTests
         await Assert.ThrowsAsync<ArgumentException>(()=>f.Service.PreflightAsync("study","baseline",53,13,default));
     }
 
+    private static async Task<SamAdaptiveLiveReport> WriteHistoricalInitialPointFailure(Fixture f,SamAdaptiveLiveQuote quote)
+    {
+        var scene=f.Scenes.Scene!;var now=DateTimeOffset.UtcNow;
+        var folder=Path.Combine(f.Store,"batches",quote.SuggestedBatchId);Directory.CreateDirectory(Path.Combine(folder,"part-00"));
+        var json=new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        Task Write(string name,object value)=>File.WriteAllTextAsync(Path.Combine(folder,name),JsonSerializer.Serialize(value,json));
+        await Write("batch-context.json",new SamAdaptiveBatchContext(scene,53,1,
+            NativeWindows:[new(0,0,quote.SourceFrames,0,quote.SourceFrames)],Mode:"api-meta",SceneRunId:f.Scenes.ExactRunId,
+            StudyId:"study",VideoRole:"baseline",SourceVideoId:"synthetic",PrincipalReference:quote.PrincipalReference));
+        await Write("batch-started.json",new {batchId=quote.SuggestedBatchId,studyId="study",videoRole="baseline",sourceVideoId="synthetic",sourceSha256=Sha,
+            sceneKey=scene.Key,planSha256=quote.PlanSha256,protocol=SamAdaptiveLiveService.Protocol,expectedParts=1,approvedByOwner=true,model="sam-3.1",noAutomaticRetry=true});
+        await Write("part-00/provider-dispatch.json",new {part=0,mayBeBillable=true,syntheticHistoricalFixture=true});
+        await Write("part-00/failure.json",new {status="SAM_PART_PROVIDER_HTTP_FAILURE"});
+        var report=new SamAdaptiveLiveReport(quote.SuggestedBatchId,"PARTIAL_PROVIDER_ATTEMPTS_REQUIRE_MANUAL_RECONCILIATION",Sha,scene.Key,
+            quote.PlanSha256,1,1,0,1,0,quote.SourceFrames,quote.BillableFrames,quote.TotalSamEstimatedUsd,null,null,null,now,now,
+            "SYNTHETIC_HISTORICAL_ARCHIVE_NO_PROVIDER_DISPATCH");
+        await Write("batch-report.json",report);return report;
+    }
+
     private static async Task<(SamAdaptiveLiveReport Report,SamAdaptiveLiveQuote Quote)> WriteHistoricalBatch(
-        Fixture f,int parts,bool inconclusive=false,string? automaticParent=null)
+        Fixture f,int parts,bool inconclusive=false,string? automaticParent=null,bool owned=false)
     {
         var json=new JsonSerializerOptions(JsonSerializerDefaults.Web);
         var inv=System.Globalization.CultureInfo.InvariantCulture;
@@ -262,20 +356,24 @@ public sealed class SamAdaptiveLiveIntegrationTests
         Assert.Equal(parts,plan.PartCount);
         if(automaticParent is not null)Assert.Equal(1,parts);
         var ptsSha=plan.VerifySourcePts(f.Runtime.Pts);
+        var principal=scene.InitialBodyPoint is not null?SamPrincipalReferencePolicy.Select(scene,plan.Windows.Single()):null;
         var id=automaticParent is null?Guid.NewGuid().ToString("N"):
             SamVideoArchive.Hash("ONE_CONTINUOUS_RETRY_V1:"+automaticParent)[..32];
         var key=SamVideoArchive.Hash(SamAdaptiveLiveService.Protocol+"\n"+Sha+"\n"+scene.Key+"\n"+ptsSha+"\n"+
             plan.RequestedTargetCoreFrames.ToString(inv)+"\n"+plan.MaxInFlight.ToString(inv)+"\n"+
             plan.PartCount.ToString(inv)+"\n"+plan.BilledFrames.ToString(inv)+"\n"+
             plan.EstimatedSamCostUsd.ToString("R",inv)+"\nNATIVE_PACKET_COPY_V1:"+JsonSerializer.Serialize(plan.Windows)+
-            (automaticParent is null?"":"\nONE_AUTHORIZED_CONTINUOUS_RETRY_V1:"+automaticParent));
+            (automaticParent is null?"":"\nONE_AUTHORIZED_CONTINUOUS_RETRY_V1:"+automaticParent)+
+            (principal is null?"":"\nPRINCIPAL_REFERENCE:"+JsonSerializer.Serialize(principal)));
         var folder=Path.Combine(f.Store,"batches",id);Directory.CreateDirectory(folder);
         var now=DateTimeOffset.UtcNow;
         Task Write(string path,object value)=>File.WriteAllTextAsync(path,JsonSerializer.Serialize(value,json));
         await Write(Path.Combine(folder,"batch-context.json"),new SamAdaptiveBatchContext(
-            scene,53,plan.MaxInFlight,null,plan.Windows.ToArray(),automaticParent));
+            scene,53,plan.MaxInFlight,null,plan.Windows.ToArray(),automaticParent,
+            StudyId:owned?"study":null,VideoRole:owned?"baseline":null,SourceVideoId:owned?"synthetic":null,PrincipalReference:principal));
         await Write(Path.Combine(folder,"batch-started.json"),new{
             batchId=id,createdAtUtc=now,expectedParts=parts,sourceSha256=Sha,sceneKey=scene.Key,
+            studyId=owned?"study":null,videoRole=owned?"baseline":null,sourceVideoId=owned?"synthetic":null,
             planSha256=key,protocol=SamAdaptiveLiveService.Protocol,quotedMaximumUsd=plan.EstimatedSamCostUsd,
             approvedByOwner=true,model="sam-3.1",confirmOneContinuousRetry=false,
             maximumCombinedSamCostUsd=plan.EstimatedSamCostUsd,noAutomaticRetry=true,
@@ -292,7 +390,7 @@ public sealed class SamAdaptiveLiveIntegrationTests
             var responseSha=SamVideoArchive.Hash(raw);
             var receipt=new SamAdaptivePartReceipt(w.Part,w.InputStart,w.InputEndExclusive,w.CoreStart,w.CoreEndExclusive,
                 w.InputFrames,w.BilledFrames,Sha,scene.Key,ptsSha,Sha,
-                SamVideoArchive.Hash(SamAdaptiveGroundedPlan.BuildPrompt(scene,w)),responseSha,"synthetic-"+w.Part,null,now,
+                SamVideoArchive.Hash(principal is null?SamAdaptiveGroundedPlan.BuildPrompt(scene,w):SamPrincipalReferencePolicy.BuildPrompt(scene,w,principal)),responseSha,"synthetic-"+w.Part,null,now,
                 "COMPLETED_PROVIDER_STREAM_PENDING_HUMAN_VISUAL_REVIEW");
             await File.WriteAllTextAsync(Path.Combine(directory,"response.json"),raw);
             await Write(Path.Combine(directory,"receipt.json"),receipt);

@@ -5,7 +5,8 @@ namespace ProofLab.Api;
 public sealed record ObjectReviewImage(int Ordinal,KnotFrame Frame,AssemblyObservation Candidate,string MarkedSha256,
     [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SuspensionCrop? SuspensionCrop=null,
     [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SuspensionCrop? BodyCrop=null,
-    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] KnotPoint? SuspensionCandidate=null);
+    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] KnotPoint? SuspensionCandidate=null,
+    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? InitialPointReviewProtocol=null);
 public sealed record SuspensionCrop(int Left,int Top,int Width,int Height,string Sha256);
 public sealed record ObjectReviewAttempt(string Protocol,string SourceSha256,string DraftResponseSha256,
     string EvidenceKey,ObjectReviewImage[] References,DateTimeOffset CreatedAtUtc,double EstimatedCostUsd);
@@ -18,6 +19,8 @@ public static class ObjectReviewPolicy
     public const string DenseBodyProtocol="SPARK_DENSE_BODY_CROPS_V4";
     // The object-point extension does not change the independent V3 suspension audit.
     public const string InitialBodyPointProtocol="SPARK_ORIGINAL_50_BODY_POINT_REVIEW_V4";
+    public const string VisibleBodyPointProtocol="SPARK_ORIGINAL_50_VISIBLE_BODY_POINT_REVIEW_V5";
+    public static bool IsInitialPointReview(string? protocol)=>protocol is InitialBodyPointProtocol or VisibleBodyPointProtocol;
     public const double EstimatedCostUsd=.10;
     public const string Prompt="""
         Independently audit candidate boxes for ONE suspended experimental body across these ordered images.
@@ -86,6 +89,30 @@ public static class ObjectReviewPolicy
         visual_reason explains the actual visible material/feature selected. Confidence is not calibrated.
         """;
 
+    public const string VisibleBodyPointPrompt="""
+        Independently inspect the paired INITIAL BODY CROP, original ordinal=0, source frame=0.
+        This crop is tighter than the other eight body crops. Use its labeled 0..1000 grid ONLY.
+        Return body_interior_point with frame, visible, x, y, confidence, visual_reason,
+        material_point (BODY, HAND, CORD, BACKGROUND or UNCERTAIN), and visible_body_region {x1,y1,x2,y2}.
+        First distinguish the experimental body from fingers, thumb, fingernail, hand and cord.
+        Compare its material and attachment with the clear later body images, but locate this point independently.
+        Draw a SMALL RECTANGLE entirely on an ACTUALLY VISIBLE SOLID SURFACE of the body in frame 0.
+        EVERY pixel of that rectangle must belong to the body: exclude hand, nail, cord, holes, shadows,
+        background, synthetic grid lines and labels. It is a safe visible surface, NOT the whole-body outline.
+        Select an independently observed interior pixel with a clear margin from EVERY rectangle edge.
+        Do not calculate a rectangle center, copy later coordinates, extrapolate hidden material,
+        or assume that the crop center or the coarse location is the object. The coarse proposal can be wrong.
+        All x/y and rectangle coordinates are normalized 0..1000 WITHIN THIS INITIAL BODY CROP.
+        Never use full-scene coordinates or rendered JPEG pixel coordinates for this answer.
+        A hand may hide the upper outline while a lower body surface remains usable: keep occluded=true
+        and whole_body_visible=false in the separate body observation; do not invent the complete outline.
+        material_point=BODY and visible=true only when point AND entire safe rectangle unambiguously
+        belong to the same body seen later. Explicitly describe the material and which nearby occluder is excluded.
+        Otherwise report the competing material (HAND/CORD/BACKGROUND) or UNCERTAIN, visible=false,
+        x=y=confidence=0 and all visible_body_region coordinates=0. Do not guess or force an answer.
+        Confidence is not a calibrated probability. A visible surface does not establish center of mass or accuracy.
+        """;
+
     public const string FullSceneContactPrompt="""
         In the SAME review, independently audit the upper suspension in EVERY full-scene image.
         The hollow YELLOW square is an UNTRUSTED initial candidate, not evidence of the true contact.
@@ -110,8 +137,19 @@ public static class ObjectReviewPolicy
         Body observations still use their BODY CROP coordinates; suspension_audit always uses FULL scene.
         """;
 
-    public static SuspensionCrop BodyRegion(KnotFrame f,AssemblyObservation candidate)
+    public static SuspensionCrop BodyRegion(KnotFrame f,AssemblyObservation candidate,string? reviewProtocol=null)
     {
+        if(reviewProtocol==VisibleBodyPointProtocol && f.Index==0 && candidate.Frame==0 &&
+           candidate.Visible && candidate.Confidence>=.8 && candidate.X2>candidate.X1 && candidate.Y2>candidate.Y1) {
+            // Magnify the observed first-frame target, keeping half a body-width margin on each side.
+            // This is only a search crop; neither its center nor the coarse box becomes a tracking point.
+            var tightWidth=Math.Min(f.Width,Math.Max(64,(int)Math.Ceiling((candidate.X2-candidate.X1)*f.Width/1000*2)));
+            var tightHeight=Math.Min(f.Height,Math.Max(64,(int)Math.Ceiling((candidate.Y2-candidate.Y1)*f.Height/1000*2)));
+            var x=(candidate.X1+candidate.X2)*f.Width/2000;
+            var y=(candidate.Y1+candidate.Y2)*f.Height/2000;
+            return new(Math.Clamp((int)Math.Round(x-tightWidth/2d),0,f.Width-tightWidth),
+                Math.Clamp((int)Math.Round(y-tightHeight/2d),0,f.Height-tightHeight),tightWidth,tightHeight,"");
+        }
         // Broad context around an untrusted coarse location; no expected physical trajectory.
         // Extra vertical context includes a body when a coarse proposal picked part of its cord.
         var center=candidate.Visible?new KnotPoint(candidate.Frame,true,(candidate.X1+candidate.X2)/2,
@@ -206,7 +244,7 @@ public static class ObjectReviewPolicy
             throw new FormatException("Invalid visual review decision.");
         var observations=new List<AssemblyObservation>();
         var quality=new List<AssemblyBodyReferenceQuality>();
-        var withInteriorPoint=auditProtocol==InitialBodyPointProtocol;
+        var withInteriorPoint=IsInitialPointReview(auditProtocol);
         var suspensionProtocol=withInteriorPoint?SuspensionAuditPolicy.Protocol:auditProtocol;
         var independent=suspensionProtocol==SuspensionAuditPolicy.Protocol;
         if(suspensionProtocol is not (SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol))throw new FormatException("Unknown contact review protocol.");
@@ -290,16 +328,17 @@ public static class ObjectReviewPolicy
             audit=SuspensionAuditPolicy.Parse(root.GetProperty("suspension_audit"),draft,images.Select(i=>i.Ordinal).ToArray(),suspensionProtocol);
         }
         if(withInteriorPoint && !audited)throw new FormatException("A body interior point requires the authenticated original-frame review.");
-        var interiorPoint=withInteriorPoint?ParseInteriorPoint(root.GetProperty("body_interior_point"),images):null;
+        var interiorPoint=withInteriorPoint?ParseInteriorPoint(root.GetProperty("body_interior_point"),images,auditProtocol==VisibleBodyPointProtocol):null;
         return draft.Proposal with {Observations=observations.OrderBy(x=>x.Frame).ToArray(),Suspension=suspension,
             SuspensionAudit=audit,BodyReferences=independent?quality.OrderBy(q=>q.Frame).ToArray():null,
             BodyInteriorPoint=interiorPoint,Target=new(status!,new(es!,en!))};
     }
 
-    private static AssemblyBodyInteriorPoint ParseInteriorPoint(JsonElement point,ObjectReviewImage[] images)
+    private static AssemblyBodyInteriorPoint ParseInteriorPoint(JsonElement point,ObjectReviewImage[] images,bool visibleSurface=false)
     {
         try {
-            string[] expected=["frame","visible","x","y","confidence","visual_reason"];
+            string[] expected=visibleSurface?["frame","visible","x","y","confidence","visual_reason","material_point","visible_body_region"]:
+                ["frame","visible","x","y","confidence","visual_reason"];
             if(point.ValueKind!=JsonValueKind.Object)throw new FormatException("A body interior point decision is required.");
             var names=point.EnumerateObject().Select(p=>p.Name).ToArray();
             if(names.Length!=expected.Length || names.Distinct(StringComparer.Ordinal).Count()!=names.Length ||
@@ -318,8 +357,26 @@ public static class ObjectReviewPolicy
             if(frame.Width<2 || frame.Height<2 || crop.Left<0 || crop.Top<0 || crop.Width<1 || crop.Height<1 ||
                 crop.Left+crop.Width>frame.Width || crop.Top+crop.Height>frame.Height)
                 throw new FormatException("Invalid body interior point crop geometry.");
-            return new(0,visible,visible?(crop.Left+x*crop.Width/1000)*1000/frame.Width:0,
+            var result=new AssemblyBodyInteriorPoint(0,visible,visible?(crop.Left+x*crop.Width/1000)*1000/frame.Width:0,
                 visible?(crop.Top+y*crop.Height/1000)*1000/frame.Height:0,c,reason!);
+            if(!visibleSurface)return result;
+            var material=point.GetProperty("material_point").GetString();
+            if(material is not ("BODY" or "HAND" or "CORD" or "BACKGROUND" or "UNCERTAIN"))
+                throw new FormatException("Unknown initial point material.");
+            var region=point.GetProperty("visible_body_region");
+            var namesRegion=region.EnumerateObject().Select(p=>p.Name).ToArray();
+            string[] required=["x1","y1","x2","y2"];
+            if(namesRegion.Length!=4 || namesRegion.Distinct().Count()!=4 || required.Any(k=>!namesRegion.Contains(k)))
+                throw new FormatException("Visible body region fields do not match the protocol.");
+            var values=required.Select(k=>region.GetProperty(k).GetDouble()).ToArray();
+            if(values.Any(v=>!double.IsFinite(v)||v<0||v>1000) || (!visible && values.Any(v=>v!=0)))
+                throw new FormatException("Invalid visible body surface coordinates.");
+            double MapX(double v)=>(crop.Left+v*crop.Width/1000)*1000/frame.Width;
+            double MapY(double v)=>(crop.Top+v*crop.Height/1000)*1000/frame.Height;
+            result=result with {MaterialPoint=material,
+                VisibleBodyRegion=visible?new(MapX(values[0]),MapY(values[1]),MapX(values[2]),MapY(values[3])):new(0,0,0,0),
+                InitialCandidate=initial[0].Candidate};
+            return result with {SafetyStatus=VisibleBodyPointPolicy.Eligibility(result,frame)};
         } catch(Exception error) when(error is InvalidOperationException or KeyNotFoundException or OverflowException or JsonException) {
             throw new FormatException("Invalid body interior point response.",error);
         }
@@ -328,7 +385,7 @@ public static class ObjectReviewPolicy
     public static AssemblyEvidence Derive(AssemblyEvidence draft,KnotProviderResult review,ObjectReviewImage[] images,string? reviewProtocol=null)
     {
         AssemblyMetaTransport.ValidateReceipt(review.Raw,review.ProviderResponseId,review.InputTokens,review.OutputTokens);
-        var auditProtocol=reviewProtocol==InitialBodyPointProtocol?InitialBodyPointProtocol:
+        var auditProtocol=IsInitialPointReview(reviewProtocol)?reviewProtocol!:
             reviewProtocol==SuspensionAuditPolicy.Protocol?SuspensionAuditPolicy.Protocol:SuspensionAuditPolicy.LegacyProtocol;
         var proposal=Parse(AssemblyMetaTransport.OutputText(review.Raw),draft,images,auditProtocol);
         var protocol=images.Any(i=>i.SuspensionCandidate is not null)?auditProtocol:images.Any(i=>i.BodyCrop is not null)?(draft.Derivation==DenseLocalizationPolicy.OriginalProtocol?DenseLocalizationPolicy.OriginalBodyProtocol:draft.Derivation==ProgressiveSuspensionPolicy.Protocol?ProgressiveSuspensionPolicy.BodyProtocol:draft.Derivation==ProgressiveSuspensionPolicy.LegacyProtocol?ProgressiveSuspensionPolicy.LegacyBodyProtocol:draft.Derivation==DenseLocalizationPolicy.Protocol?DenseBodyProtocol:Protocol):images.Any(i=>i.SuspensionCrop is not null)?SuspensionProtocol:LegacyProtocol;
@@ -349,6 +406,11 @@ public sealed partial class AssemblyMetaTransport
         var bodies=references.Where(r=>r.BodyCrop is not null).ToArray();
         if(bodies.Length!=0 && bodies.Length!=references.Length)throw new ArgumentException("Every body needs its exact crop.");
         var audited=references.Any(r=>r.SuspensionCandidate is not null);
+        var visibleSurface=references.Any(r=>r.InitialPointReviewProtocol==ObjectReviewPolicy.VisibleBodyPointProtocol);
+        if(references.Any(r=>r.InitialPointReviewProtocol is not null &&
+            (r.InitialPointReviewProtocol!=ObjectReviewPolicy.VisibleBodyPointProtocol || r.Ordinal!=0 || r.Frame.Index!=0)) ||
+            (visibleSurface && (!audited || references.Count(r=>r.InitialPointReviewProtocol is not null)!=1)))
+            throw new ArgumentException("Initial visible-body review protocol correspondence changed.");
         if(audited && (references.Length!=9 || bodies.Length!=9 || references.Any(r=>r.SuspensionCandidate is null || r.SuspensionCrop is not null)))
             throw new ArgumentException("Nine full-scene contact audits required.");
         var content=new List<object>{new {type="input_text",text=bodies.Length>0?ObjectReviewPolicy.BodyCropPrompt:ObjectReviewPolicy.Prompt}};
@@ -357,7 +419,7 @@ public sealed partial class AssemblyMetaTransport
                 throw new ArgumentException("The reviewed first source frame is required for its interior point.");
             content.Add(new {type="input_text",text=ObjectReviewPolicy.BodyQualityPrompt});
             content.Add(new {type="input_text",text=ObjectReviewPolicy.FullSceneContactPrompt});
-            content.Add(new {type="input_text",text=ObjectReviewPolicy.InitialBodyPointPrompt});
+            content.Add(new {type="input_text",text=visibleSurface?ObjectReviewPolicy.VisibleBodyPointPrompt:ObjectReviewPolicy.InitialBodyPointPrompt});
         }
         for(var i=0;i<references.Length;i++) {
             var r=references[i];
@@ -365,7 +427,7 @@ public sealed partial class AssemblyMetaTransport
             if(r.SuspensionCandidate is {} candidate)content.Add(new {type="input_text",text=FormattableString.Invariant($"SUSPENSION CANDIDATE for ordinal={r.Ordinal}: visible={candidate.Visible}; x={candidate.X:R}; y={candidate.Y:R}, FULL scene normalized 0..1000. This proposal can be wrong. Return independent suspension_audit coordinates over this FULL scene.")});
             content.Add(new {type="input_image",image_url="data:image/jpeg;base64,"+Convert.ToBase64String(images[i])});
             if(audited) {
-                content.Add(new {type="input_text",text=$"PAIRED BODY CROP: same original ordinal={r.Ordinal}. Inspect the whole outline and hand occlusion here. Body box coordinates use this crop only; suspension coordinates use the preceding full scene."});
+                content.Add(new {type="input_text",text=$"PAIRED {(visibleSurface && r.Ordinal==0?"INITIAL ":"")}BODY CROP: same original ordinal={r.Ordinal}. Native crop size {r.BodyCrop!.Width}x{r.BodyCrop.Height}; all body coordinates use its normalized grid 0..1000, not pixel counts or the preceding full scene. Inspect the whole outline and hand occlusion here; suspension coordinates use the preceding full scene."});
                 content.Add(new {type="input_image",image_url="data:image/jpeg;base64,"+Convert.ToBase64String(images[references.Length+i])});
             }
         }
@@ -403,10 +465,19 @@ public sealed partial class AssemblyMetaTransport
             required=new[]{"frame","reference_kind","visible","x","y","confidence","visual_reason"},properties=new {
                 frame=new {type="integer"},reference_kind=new {type="string",@enum=new[]{"FIXED_CORD_CONTACT","MOVING_CONTACT","UNCLEAR"}},visible=new {type="boolean"},
                 x=new {type="number"},y=new {type="number"},confidence=new {type="number"},visual_reason=new {type="string"}}}}}};
-        if(audited)properties["body_interior_point"]=new {type="object",additionalProperties=false,
-            required=new[]{"frame","visible","x","y","confidence","visual_reason"},properties=new {
-                frame=new {type="integer",@enum=new[]{0}},visible=new {type="boolean"},
-                x=new {type="number"},y=new {type="number"},confidence=new {type="number"},visual_reason=new {type="string"}}};
+        if(audited) {
+            var pointProperties=new Dictionary<string,object> {
+                ["frame"]=new {type="integer",@enum=new[]{0}},["visible"]=new {type="boolean"},
+                ["x"]=new {type="number"},["y"]=new {type="number"},["confidence"]=new {type="number"},["visual_reason"]=new {type="string"}};
+            if(visibleSurface) {
+                pointProperties["material_point"]=new {type="string",@enum=new[]{"BODY","HAND","CORD","BACKGROUND","UNCERTAIN"}};
+                pointProperties["visible_body_region"]=new {type="object",additionalProperties=false,
+                    required=new[]{"x1","y1","x2","y2"},properties=new {
+                        x1=new {type="number"},y1=new {type="number"},x2=new {type="number"},y2=new {type="number"}}};
+            }
+            properties["body_interior_point"]=new {type="object",additionalProperties=false,
+                required=pointProperties.Keys.ToArray(),properties=pointProperties};
+        }
         var payload=new {model=AssemblyPolicy.Model,stream=false,store=false,max_output_tokens=8192,reasoning=new {effort="medium"},
             input=new[]{new {type="message",role="user",content}},text=new {format=new {type="json_schema",name="visual_body_and_exit_verification",strict=true,
                 schema=new {type="object",additionalProperties=false,required=properties.Keys.ToArray(),properties}}}};

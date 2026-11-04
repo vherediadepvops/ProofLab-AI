@@ -216,6 +216,11 @@ public sealed partial class SamAdaptiveLiveService(
                 NewPrincipalReference(scene,plan,recoveryFromBatchId,automaticParent)));
     }
 
+    // This gate applies only to NEW paid submissions, never archive playback.
+    // A historical point lacks the V5 material/surface audit even if its old receipt is intact.
+    private static bool RequiresInitialPointReview(SamSceneDefinition? scene)=>
+        scene?.InitialBodyPoint is not null && scene.InitialPointReviewProtocol!=ObjectReviewPolicy.VisibleBodyPointProtocol;
+
     public async Task<SamAdaptiveLiveQuote> PreflightAsync(
         string studyId,string role,int targetCoreFrames,int maxInFlight,CancellationToken ct,string? mode=null,string? sceneRunId=null)
     {
@@ -241,12 +246,14 @@ public sealed partial class SamAdaptiveLiveService(
         RequireSingleOriginal(plan,pts.Length);
         var ptsSha=plan.VerifySourcePts(pts);
         var principal=scene is null?null:NewPrincipalReference(scene,plan,recovery);
+        var requiresPointReview=RequiresInitialPointReview(scene);
         return new(Protocol,source.Sha256.ToLowerInvariant(),scene?.Key??"",
             ptsSha,PlanKey(source.Sha256,scene?.Key??"PENDING_SPARK",ptsSha,plan,recovery,principalReference:principal),
             Guid.NewGuid().ToString("N"),pts.Length,plan.PartCount,
             plan.MaxInFlight,plan.SubmittedFrames,plan.BilledFrames,
-            plan.EstimatedSamCostUsd,0.50,null,access.ManualTokenCallsPermitted,
-            scene is not null,scene is null,
+            plan.EstimatedSamCostUsd,0.50,null,access.ManualTokenCallsPermitted && !requiresPointReview,
+            scene is not null && !requiresPointReview,scene is null || requiresPointReview,
+            requiresPointReview?"SAM_INITIAL_REFERENCE_REVIEW_REQUIRED":
             scene is null?"SINGLE_FULL_VIDEO_PENDING_SPARK_NO_INFERENCE_SENT":
                 principal is not null?"ONE_PRINCIPAL_SPARK_REFERENCE; OTHER_REFERENCES_RETAINED; FULL_ORIGINAL_VIDEO; ONE_SAM_REQUEST; NO_AUTOMATIC_RETRY":
                 "VERIFIED_SPARK_SEEDS; FULL_ORIGINAL_VIDEO; ONE_SAM_REQUEST; NO_AUTOMATIC_RETRY",
@@ -310,6 +317,7 @@ public sealed partial class SamAdaptiveLiveService(
         {
             var (source,scene,pts,plan,key)=await Context(
                 studyId,role,request.TargetCoreFrames,request.MaxInFlight,ct,request.RecoveryFromBatchId,automaticParent,mode,request.SceneRunId);
+            if(RequiresInitialPointReview(scene))throw new SamInitialReferenceReviewRequiredException();
             var exact=automaticParent is null?await PreflightAsync(studyId,role,
                 request.TargetCoreFrames,request.MaxInFlight,ct,mode,request.SceneRunId):AutomaticQuote(source,scene,pts,plan,automaticParent);
             if(request.ConfirmOneContinuousRetry && (automaticParent is not null || exact.ContinuousRetryEstimatedUsd<=0 ||
@@ -576,6 +584,7 @@ public sealed partial class SamAdaptiveLiveService(
                 derived?.FramesWithMasks,derived?.SeamsVerified,
                 created,DateTimeOffset.UtcNow,
                 "Each SAM request was independently archived; no fictitious human/scientific approval. Any authorized whole-video retry has a separate linked receipt.",automaticParent);
+            report=await WithFailureCodeAsync(report,CancellationToken.None);
             await WriteJson(Path.Combine(folder,"batch-report.json"),
                 report,CancellationToken.None);
             return report;
@@ -670,9 +679,26 @@ public sealed partial class SamAdaptiveLiveService(
     {
         if(!ValidBatchId(batchId))throw new ArgumentException("Invalid batch ID.");
         var path=Path.Combine(BatchDir(batchId),"batch-report.json");
-        return File.Exists(path)?
-            await SamVideoArchive.ReadJsonAsync<SamAdaptiveLiveReport>(path,ct):
-            null;
+        if(!File.Exists(path))return null;
+        var report=await SamVideoArchive.ReadJsonAsync<SamAdaptiveLiveReport>(path,ct);
+        // Enrich the response without rewriting immutable historical reports.
+        return await WithFailureCodeAsync(report,ct);
+    }
+    private async Task<SamAdaptiveLiveReport> WithFailureCodeAsync(SamAdaptiveLiveReport report,CancellationToken ct)
+    {
+        if(report.FailedParts<1)return report with{FailureCode=null};
+        for(var part=0;part<Math.Min(report.Parts,64);part++) {
+            var path=Path.Combine(BatchDir(report.BatchId),$"part-{part:00}","failure.json");
+            if(!File.Exists(path) || new FileInfo(path).Length>64_000)continue;
+            try {
+                using var json=JsonDocument.Parse(await File.ReadAllTextAsync(path,ct));
+                if(json.RootElement.TryGetProperty("protocolCode",out var code) &&
+                   code.ValueKind==JsonValueKind.String && code.GetString()=="SAM_SSE_OUTPUT_LIMIT_EXCEEDED")
+                    return report with{FailureCode="SAM_SSE_OUTPUT_LIMIT_EXCEEDED"};
+            }catch(JsonException){}catch(IOException){}
+        }
+        // Never expose free-text provider errors, prompts or partial masks.
+        return report with{FailureCode=null};
     }
     public async Task<SamAdaptiveProgress> ReadProgressAsync(
         string batchId,CancellationToken ct)

@@ -3,6 +3,8 @@ using System.Text.Json;
 
 namespace ProofLab.Api;
 
+public sealed class SamInitialReferenceReviewRequiredException() : InvalidOperationException("SAM_INITIAL_REFERENCE_REVIEW_REQUIRED");
+
 // No token is ever included in a record or persisted to storage.
 public sealed class SamStageRetryRequest
 {
@@ -65,6 +67,10 @@ public sealed partial class SamAdaptiveLiveService
         var selected=reports.OrderByDescending(x=>x.Report.RecordedAtUtc).FirstOrDefault();
         var latest=selected.Report;
         if(latest is null)return null;
+        if(latest.FailedParts>0 && (latest.FailureCode=="SAM_SSE_OUTPUT_LIMIT_EXCEEDED" ||
+           (selected.Context.Scene.InitialBodyPoint is not null &&
+            selected.Context.Scene.InitialPointReviewProtocol!=ObjectReviewPolicy.VisibleBodyPointProtocol)))
+            throw new SamInitialReferenceReviewRequiredException();
         // The manual retry itself may have completed while the browser was closed.
         // Recover that same claimed child without offering another paid call.
         var latestStarted=Path.Combine(BatchDir(latest.BatchId),"batch-started.json");

@@ -89,7 +89,7 @@ describe('Processing source checkboxes',()=>{
     x.h.expectNone(r=>r.method==='POST');x.f.destroy();
   });
   it('describes the combined object and contact audit in ES and EN without adding a Spark request or zoom budget',async()=>{
-    for(const protocol of ['SPARK_ORIGINAL_50_CONTACT_AUDIT_V2','SPARK_ORIGINAL_50_CONTACT_AUDIT_V3','SPARK_ORIGINAL_50_BODY_POINT_REVIEW_V4']){
+    for(const protocol of ['SPARK_ORIGINAL_50_CONTACT_AUDIT_V2','SPARK_ORIGINAL_50_CONTACT_AUDIT_V3','SPARK_ORIGINAL_50_BODY_POINT_REVIEW_V4','SPARK_ORIGINAL_50_VISIBLE_BODY_POINT_REVIEW_V5']){
     const x=setup(true);
     await checkFresh(x,freshQuote,{...sparkQuote,localizationPlan:protocol});
     for(const language of ['es','en']){
@@ -118,6 +118,44 @@ describe('Processing source checkboxes',()=>{
       expect(x.c.error()).toContain(language==='es'?'SAM no se envió':'SAM was not sent');
       x.h.expectNone(r=>r.method==='POST');x.f.destroy();
     }
+  });
+  it('stops before SAM when V5 cannot establish initial point identity and keeps the reason visible',async()=>{
+    for(const language of ['es','en']){
+      const x=setup(true);x.f.componentRef.setInput('language',language);await checkFresh(x);
+      const processing=x.c.process();
+      x.h.expectOne(pathIs(adaptive+'/spark-once')).flush({...sparkQuote,
+        localizationPlan:'SPARK_ORIGINAL_50_VISIBLE_BODY_POINT_REVIEW_V5',
+        status:'INITIAL_POINT_IDENTITY_UNRESOLVED',canRun:false,scene:null});
+      await processing;x.f.detectChanges();
+      expect(x.c.error()).toContain(language==='es'?'un punto dentro del objeto':'A point inside the object');
+      expect(x.c.error()).toContain(language==='es'?'nueva revisión de Spark':'new Spark review');
+      expect(x.c.error()).toContain(language==='es'?'SAM no se envió':'SAM was not sent');
+      expect(x.c.processBlockedReason()).toBe(x.c.error());expect(x.c.canProcess()).toBeFalse();
+      await x.c.process();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+    }
+  });
+  it('allows a fresh Spark review after a saved reference rejection and a read-only cost refresh',async()=>{
+    const x=setup(true);await checkFresh(x);
+    // A failed report previously blocked Process. Refresh must discard that view,
+    // quote a fresh review, and still refuse reuse of the rejected reference.
+    x.c.adaptiveResult.set({...done,status:'PROVIDER_STREAM_FAILED',completedParts:0,failedParts:1,
+      failureCode:'SAM_SSE_OUTPUT_LIMIT_EXCEEDED',derivedFramesWithMasks:null,derivedSeamsVerified:null});
+    expect(x.c.canProcess()).toBeFalse();
+    let lookup=x.c.findStageRetry();
+    x.h.expectOne(adaptive+'/manual-stage-retry/quote').flush({code:'SAM_INITIAL_REFERENCE_REVIEW_REQUIRED'},
+      {status:409,statusText:'Conflict'});await lookup;
+    expect(x.c.canStageRetry()).toBeFalse();x.h.expectNone(r=>r.method==='POST');
+    await checkFresh(x);lookup=x.c.findStageRetry();
+    // Accept the historical error-shaped response as well as the real code field.
+    x.h.expectOne(adaptive+'/manual-stage-retry/quote').flush({error:'SAM_INITIAL_REFERENCE_REVIEW_REQUIRED'},
+      {status:409,statusText:'Conflict'});await lookup;
+    expect(x.c.canProcess()).toBeTrue();expect(x.c.canStageRetry()).toBeFalse();
+    expect(x.c.displayedCost()).toBeCloseTo(.374);
+    const processing=x.c.process(),spark=x.h.expectOne(pathIs(adaptive+'/spark-once'));
+    expect(spark.request.body.maximumEstimatedCostUsd).toBe(.35);
+    expect(spark.request.body.mode).toBe('api-meta');
+    spark.flush({...sparkQuote,status:'INITIAL_POINT_IDENTITY_UNRESOLVED',canRun:false,scene:null});
+    await processing;x.h.expectNone(r=>r.method==='POST');x.f.destroy();
   });
   it('keeps recorded historical zoom stages and their durations readable',async()=>{
     const x=setup(true);await checkFresh(x);
@@ -162,6 +200,44 @@ describe('Processing source checkboxes',()=>{
       else r.flush({...reusable,...(bad==='quality'?{quality:{usable:false,reason:'INSUFFICIENT'}}:{sourceSha256:'f'.repeat(64)})});
       metadata(x);await p;await x.c.process();expect(x.c.canProcess()).toBeFalse();expect(x.c.error()).not.toBe('');
       x.h.expectNone(()=>true);x.f.destroy();}
+  });
+  it('requires an explicit fresh review for a legacy point scene before another SAM charge',async()=>{
+    for(const language of ['es','en']){
+      const x=setup(true);x.f.componentRef.setInput('language',language);select(x,'cache',true);
+      const legacyQuote={...exactQuote,mode:'api-meta-cache',requiresNewSparkCall:true,
+        existingSparkSceneVerified:false,canRunWithManualToken:false,
+        provenance:'SAM_INITIAL_REFERENCE_REVIEW_REQUIRED'};
+      const legacySpark={...located,mode:'api-meta-cache',cacheHit:true,maximumEstimatedCostUsd:0};
+      const checking=x.c.check();x.h.expectOne(pathIs(sam+'/reusable')).flush(miss);metadata(x);await tick();
+      paidQuotes(x,'api-meta-cache',legacyQuote,legacySpark);await checking;x.f.detectChanges();
+      expect(x.c.canProcess()).toBeFalse();
+      expect(x.c.processBlockedReason()).toContain(language==='es'?'desactiva Caché + SQLite':'turn off Cache + SQLite');
+      expect(x.c.nextActionDescription()).toContain(language==='es'?'nueva revisión de Spark':'new Spark review');
+      await x.c.process();x.h.expectNone(r=>r.method==='POST');
+      // This user choice resets the old quote. Only a fresh quote and explicit
+      // Process click can authorize the new Spark review.
+      select(x,'cache',false);await checkFresh(x);
+      expect(x.c.canProcess()).toBeTrue();expect(x.c.displayedCost()).toBeCloseTo(.374);
+      x.h.expectNone(r=>r.method==='POST');
+      const processing=x.c.process(),spark=x.h.expectOne(pathIs(adaptive+'/spark-once'));
+      expect(spark.request.body.mode).toBe('api-meta');
+      spark.flush({...sparkQuote,status:'INITIAL_POINT_IDENTITY_UNRESOLVED',canRun:false,scene:null});
+      await processing;x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+    }
+  });
+  it('shows fresh-review instructions for a legacy point rejected at the paid batch boundary',async()=>{
+    for(const language of ['es','en']){
+      const x=setup(true);x.f.componentRef.setInput('language',language);select(x,'cache',true);
+      const checking=x.c.check();x.h.expectOne(pathIs(sam+'/reusable')).flush(miss);metadata(x);await tick();
+      paidQuotes(x,'api-meta-cache',{...exactQuote,mode:'api-meta-cache'},
+        {...located,mode:'api-meta-cache',cacheHit:true});await checking;
+      const processing=x.c.process();
+      x.h.expectOne(pathIs(adaptive+'/manual-batch')).flush({code:'SAM_INITIAL_REFERENCE_REVIEW_REQUIRED'},
+        {status:409,statusText:'Conflict'});await processing;
+      expect(x.c.error()).toContain(language==='es'?'desactiva Caché + SQLite':'turn off Cache + SQLite');
+      expect(x.c.canProcess()).toBeFalse();await x.c.process();
+      x.h.expectNone(()=>true);x.f.destroy();
+    }
   });
   it('keeps the mixed flow after a miss and propagates its mode',async()=>{
     const x=setup(true);select(x,'cache',true);const p=x.c.check();

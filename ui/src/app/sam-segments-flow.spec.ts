@@ -367,4 +367,65 @@ describe('One complete-video SAM request and archived-result recovery',()=>{
   expect(emit).toHaveBeenCalledOnceWith(jasmine.objectContaining({analysisId:next}));
   x.h.expectNone(r=>r.method==='POST');unlock(x);x.f.destroy();
  });
+ for(const language of ['es','en']){
+  it('requires a new Spark review instead of offering an invalid saved SAM retry in '+language,async()=>{
+   const x=setup();await check(x,exact,located);x.c.mode.set('api-meta');
+   x.f.componentRef.setInput('language',language);x.f.detectChanges();
+   const request=x.c.findStageRetry();
+   x.h.expectOne(url+'/manual-stage-retry/quote').flush({code:'SAM_INITIAL_REFERENCE_REVIEW_REQUIRED'},
+    {status:409,statusText:'Conflict'});await request;x.f.detectChanges();
+   expect(x.c.error()).toContain(language==='es'?'nueva revisión de Spark':'new Spark review');
+   expect(x.c.error()).toContain(language==='es'?'Actualiza el costo':'Refresh the cost');
+   expect(x.c.stageRetryQuote()).toBeNull();expect(x.c.canStageRetry()).toBeFalse();
+   await x.c.retryStage();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+  });
+  it('keeps a reference rejection actionable if it arrives when retry is clicked in '+language,async()=>{
+   const x=setup();await check(x,exact,located);x.c.mode.set('api-meta');
+   x.f.componentRef.setInput('language',language);x.f.detectChanges();
+   x.c.stageRetryQuote.set({failedBatchId:batch,newBatchId:'f'.repeat(32),videoSha256:sha,
+    sparkSceneKey:scene,sceneRunId:'3'.repeat(32),planSha256:key,frames:667,
+    targetCoreFrames:53,estimatedSamUsd:.1334,alreadyRequested:false,previousMayHaveBeenBilled:true});
+   const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.retryStage();
+   x.h.expectOne(url+'/manual-stage-retry').flush({code:'SAM_INITIAL_REFERENCE_REVIEW_REQUIRED'},
+    {status:409,statusText:'Conflict'});await p;
+   expect(x.c.error()).toContain(language==='es'?'nueva revisión de Spark':'new Spark review');
+   expect(x.c.stageRetryQuote()).toBeNull();expect(x.c.canStageRetry()).toBeFalse();
+   expect(emit).not.toHaveBeenCalled();await x.c.retryStage();
+   x.h.expectNone(()=>true);x.f.destroy();
+  });
+  it('explains oversized SAM output without treating partial measurements as usable in '+language,async()=>{
+   const x=setup();await check(x,exact,located);
+   x.f.componentRef.setInput('language',language);x.f.detectChanges();
+   const emit=spyOn(x.c.cacheUpdated,'emit'),p=x.c.process();
+   x.h.expectOne(url+'/manual-batch').flush({...done,status:'PROVIDER_STREAM_FAILED',
+    failureCode:'SAM_SSE_OUTPUT_LIMIT_EXCEEDED',completedParts:0,failedParts:1,
+    derivedFramesWithMasks:100,derivedSeamsVerified:false});
+   await finalProgress(x,true);await p;
+   expect(x.c.error()).toContain(language==='es'?'superó el tamaño permitido':'exceeded the allowed size');
+   expect(x.c.error()).toContain(language==='es'?'no se usarán sus mediciones':'measurements will not be used');
+   expect(x.c.error()).toContain(language==='es'?'puede haber consumido créditos':'may have consumed credits');
+   expect(emit).not.toHaveBeenCalled();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+  });
+  it('explains the saved output limit and new reference review together in '+language,async()=>{
+   const x=setup();await check(x,exact,located);x.c.mode.set('api-meta');
+   x.f.componentRef.setInput('language',language);x.f.detectChanges();
+   const next='f'.repeat(32);
+   x.c.stageRetryQuote.set({failedBatchId:batch,newBatchId:next,videoSha256:sha,
+    sparkSceneKey:scene,sceneRunId:'3'.repeat(32),planSha256:key,frames:667,
+    targetCoreFrames:53,estimatedSamUsd:.1334,alreadyRequested:true,previousMayHaveBeenBilled:true});
+   const emit=spyOn(x.c.cacheUpdated,'emit'),recovery=x.c.recoverStageRetry();
+   x.h.expectOne(url+'/batches/'+next+'/report').flush({...done,batchId:next,status:'PROVIDER_STREAM_FAILED',
+    failureCode:'SAM_SSE_OUTPUT_LIMIT_EXCEEDED',completedParts:0,failedParts:1,
+    derivedFramesWithMasks:null,derivedSeamsVerified:null});await recovery;
+   expect(x.c.error()).toContain(language==='es'?'superó el tamaño permitido':'exceeded the allowed size');
+   const lookup=x.c.findStageRetry();
+   x.h.expectOne(url+'/manual-stage-retry/quote').flush({code:'SAM_INITIAL_REFERENCE_REVIEW_REQUIRED'},
+    {status:409,statusText:'Conflict'});await lookup;
+   expect(x.c.error()).toContain(language==='es'?'superó el tamaño permitido':'exceeded the allowed size');
+   expect(x.c.error()).toContain(language==='es'?'nueva revisión de Spark':'new Spark review');
+   expect(emit).not.toHaveBeenCalled();expect(x.c.canStageRetry()).toBeFalse();
+   x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+  });
+ }
+
 });

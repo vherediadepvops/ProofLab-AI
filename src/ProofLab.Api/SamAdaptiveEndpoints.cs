@@ -136,6 +136,7 @@ public static class SamAdaptiveEndpoints
                 error="Original recording not found."});}
             catch(InvalidDataException){return Results.Conflict(new{
                 error="Video frames, timestamps or Spark source are inconsistent."});}
+            catch(SamInitialReferenceReviewRequiredException){return Results.Conflict(new{code="SAM_INITIAL_REFERENCE_REVIEW_REQUIRED"});}
             catch(InvalidOperationException){return Results.Conflict(new{
                 error="Adaptive request blocked: budget, credit, prior attempt, source or owner approval."});}
         });
@@ -152,6 +153,7 @@ public static class SamAdaptiveEndpoints
                 var quote=await service.StageRetryQuoteAsync(id,role,ct);
                 return quote is null?Results.NotFound():Results.Ok(quote);
             }
+            catch(SamInitialReferenceReviewRequiredException){return Results.Conflict(new{code="SAM_INITIAL_REFERENCE_REVIEW_REQUIRED"});}
             catch(ArgumentException){return Results.BadRequest();}
             catch(FileNotFoundException){return Results.NotFound();}
             catch(InvalidDataException){return Results.Conflict();}
@@ -170,6 +172,7 @@ public static class SamAdaptiveEndpoints
             if(!SamManualApiTokenPolicy.Accepts(request.ModelApiToken))
                 return Results.BadRequest(new{error="Manual Meta key invalid."});
             try{return Results.Ok(await service.RunStageRetryAsync(id,role,request,ct));}
+            catch(SamInitialReferenceReviewRequiredException){return Results.Conflict(new{code="SAM_INITIAL_REFERENCE_REVIEW_REQUIRED"});}
             catch(ArgumentException){return Results.BadRequest();}
             catch(FileNotFoundException){return Results.NotFound();}
             catch(InvalidDataException){return Results.Conflict(new{error="Stored SAM clip or source is inconsistent."});}

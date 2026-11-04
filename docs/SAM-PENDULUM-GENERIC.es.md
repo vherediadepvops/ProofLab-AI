@@ -1,6 +1,8 @@
 # Péndulos de distintas formas: Spark + SAM
 
-## Actualización vigente — 2 de noviembre de 2026
+El flujo vigente usa 50 imágenes iniciales y una revisión de nueve pares escena/cuerpo, con comprobación V5 del punto visible del primer fotograma. Consulta [Localización y revisión de la suspensión](DENSE-LOCALIZATION.es.md) para la selección actual y la compatibilidad de referencias antiguas.
+
+## Actualización histórica — 2 de noviembre de 2026
 
 La localización densa de Spark conserva sus 50 referencias por ronda (hasta 150 si necesita las tres rondas). Antes de usar sus cajas como indicaciones para SAM, ahora se comprueba el cuerpo oscilante con recortes ampliados independientes. La revisión debe distinguir el cuerpo de la cuerda, la sombra y el soporte, sin depender de que sea una plomada, pelota, moneda o tuerca.
 

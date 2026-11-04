@@ -6,7 +6,12 @@ namespace ProofLab.Api;
 
 public sealed record AssemblyObservation(int Frame,string Role,bool Visible,double X1,double Y1,
     double X2,double Y2,double Confidence);
-public sealed record AssemblyBodyInteriorPoint(int Frame,bool Visible,double X,double Y,double Confidence,string VisualReason);
+public sealed record AssemblyVisibleBodyRegion(double X1,double Y1,double X2,double Y2);
+public sealed record AssemblyBodyInteriorPoint(int Frame,bool Visible,double X,double Y,double Confidence,string VisualReason,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? MaterialPoint=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] AssemblyVisibleBodyRegion? VisibleBodyRegion=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? SafetyStatus=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] AssemblyObservation? InitialCandidate=null);
 public sealed record SamScenePoint(int Frame,int X,int Y);
 public sealed record AssemblyBodyReferenceQuality(int Frame,bool WholeBodyVisible,bool Occluded,bool Clipped);
 public sealed record AssemblyGroundingReason(string Es,string En);
@@ -51,7 +56,8 @@ public sealed record SamSceneDefinition(string Key,string VideoSha256,string Evi
     double? PivotX,double? PivotY,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? Origin=null,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] AssemblyBodyReferenceQuality[]? BodyReferences=null,
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] SamScenePoint? InitialBodyPoint=null)
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] SamScenePoint? InitialBodyPoint=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? InitialPointReviewProtocol=null)
 {
     public string Prompt => string.Join(" ",Seeds.GroupBy(s=>s.Frame).OrderBy(g=>g.Key).Select(g=>
         "<"+g.Key.ToString(CultureInfo.InvariantCulture)+"f>"+string.Join(",",g.OrderBy(s=>s.Role).Select(s=>
@@ -213,15 +219,20 @@ public static partial class AssemblyPolicy
     {
         var target=evidence.Proposal.Target ?? throw new InvalidDataException("Missing object grounding decision.");
         if(target.Status=="NOT_VISIBLE")return "NOT_VISIBLE";
-        if((evidence.Derivation is SuspensionAuditPolicy.Protocol or ObjectReviewPolicy.InitialBodyPointProtocol) && evidence.Proposal.Observations.Count(o=>
+        if((evidence.Derivation is SuspensionAuditPolicy.Protocol or ObjectReviewPolicy.InitialBodyPointProtocol or ObjectReviewPolicy.VisibleBodyPointProtocol) && evidence.Proposal.Observations.Count(o=>
             o.Role=="object" && o.Visible && o.Confidence>=.8 && evidence.Proposal.BodyReferences?.Any(q=>
                 q.Frame==o.Frame && q.WholeBodyVisible && !q.Occluded && !q.Clipped)==true)<2)return "AMBIGUOUS";
+        if(evidence.Derivation==ObjectReviewPolicy.VisibleBodyPointProtocol &&
+           (evidence.Proposal.BodyInteriorPoint is not {} safePoint || evidence.Frames.Length!=50 ||
+            safePoint.SafetyStatus!=VisibleBodyPointPolicy.Accepted ||
+            VisibleBodyPointPolicy.Eligibility(safePoint,evidence.Frames[0])!=VisibleBodyPointPolicy.Accepted))
+            return "INITIAL_POINT_IDENTITY_UNRESOLVED";
         if(evidence.Derivation==ObjectReviewPolicy.InitialBodyPointProtocol && target.Status=="CLEAR_SINGLE_OBJECT" &&
            evidence.Proposal.BodyInteriorPoint is not {Visible:true,Confidence:>=.8,Frame:0} &&
            !evidence.Proposal.Observations.Any(o=>o.Role=="object" && o.Frame==0 && o.Visible && o.Confidence>=.8 &&
                evidence.Proposal.BodyReferences?.Any(q=>q.Frame==0 && q.WholeBodyVisible && !q.Occluded && !q.Clipped)==true))
             return "INITIAL_REFERENCE_UNRESOLVED";
-        if(evidence.Proposal.Camera is not null && evidence.Derivation is not (ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol or ObjectReviewPolicy.InitialBodyPointProtocol))return DenseLocalizationPolicy.ObjectReady(evidence)?"READY":"AMBIGUOUS";
+        if(evidence.Proposal.Camera is not null && evidence.Derivation is not (ObjectReviewPolicy.DenseBodyProtocol or ProgressiveSuspensionPolicy.BodyProtocol or ProgressiveSuspensionPolicy.LegacyBodyProtocol or DenseLocalizationPolicy.OriginalBodyProtocol or SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol or ObjectReviewPolicy.InitialBodyPointProtocol or ObjectReviewPolicy.VisibleBodyPointProtocol))return DenseLocalizationPolicy.ObjectReady(evidence)?"READY":"AMBIGUOUS";
         return target.Status=="CLEAR_SINGLE_OBJECT" &&
             evidence.Proposal.Observations.Count(o=>o.Role=="object" && o.Visible && o.Confidence>=0.8)>=2
             ? "READY" : "AMBIGUOUS";
@@ -236,15 +247,15 @@ public static partial class AssemblyPolicy
                 evidence.VideoInput?.Scope is not ("FULL_VIDEO_REMUX_WITH_3_NATIVE_ANCHORS" or "FULL_VIDEO_REMUX_WITH_50_NATIVE_ANCHORS") ||
                 evidence.VideoInput.SourceSha256!=evidence.VideoSha256))
             throw new InvalidDataException("Wrong automatic grounding provenance.");
-        if(evidence.Derivation is SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol or ObjectReviewPolicy.InitialBodyPointProtocol) {
+        if(evidence.Derivation is SuspensionAuditPolicy.Protocol or SuspensionAuditPolicy.LegacyProtocol or ObjectReviewPolicy.InitialBodyPointProtocol or ObjectReviewPolicy.VisibleBodyPointProtocol) {
             var audit=evidence.Proposal.SuspensionAudit ?? throw new InvalidDataException("Audited scene lacks its suspension audit.");
-            if((audit.Protocol??SuspensionAuditPolicy.LegacyProtocol)!=(evidence.Derivation==ObjectReviewPolicy.InitialBodyPointProtocol?SuspensionAuditPolicy.Protocol:evidence.Derivation))
+            if((audit.Protocol??SuspensionAuditPolicy.LegacyProtocol)!=(ObjectReviewPolicy.IsInitialPointReview(evidence.Derivation)?SuspensionAuditPolicy.Protocol:evidence.Derivation))
                 throw new InvalidDataException("Contact audit protocol changed.");
             SuspensionAuditPolicy.Validate(audit,evidence);
         }
         else if(evidence.Proposal.SuspensionAudit is not null)
             throw new InvalidDataException("Suspension audit requires its explicit evidence protocol.");
-        if(evidence.Derivation is SuspensionAuditPolicy.Protocol or ObjectReviewPolicy.InitialBodyPointProtocol) {
+        if(evidence.Derivation is SuspensionAuditPolicy.Protocol or ObjectReviewPolicy.InitialBodyPointProtocol or ObjectReviewPolicy.VisibleBodyPointProtocol) {
             var quality=evidence.Proposal.BodyReferences;
             var observations=evidence.Proposal.Observations;
             if(quality is null || quality.Length!=observations.Length || quality.Select(q=>q.Frame).Distinct().Count()!=quality.Length ||
@@ -252,7 +263,7 @@ public static partial class AssemblyPolicy
                 throw new InvalidDataException("Complete-body review correspondence changed.");
             if(observations.Count(o=>o.Visible && o.Confidence>=.8 && quality.Any(q=>q.Frame==o.Frame && q.WholeBodyVisible && !q.Occluded && !q.Clipped))<2)return null;
         } else if(evidence.Proposal.BodyReferences is not null)throw new InvalidDataException("Body quality requires its explicit review protocol.");
-        if(evidence.Derivation==ObjectReviewPolicy.InitialBodyPointProtocol) {
+        if(ObjectReviewPolicy.IsInitialPointReview(evidence.Derivation)) {
             var point=evidence.Proposal.BodyInteriorPoint ?? throw new InvalidDataException("Initial body point review is missing.");
             if(point.Frame!=0 || evidence.Frames.Length!=50 || evidence.Frames[0].Index!=0 ||
                new[]{point.X,point.Y,point.Confidence}.Any(v=>!double.IsFinite(v)) || point.X is <0 or >=1000 ||
@@ -260,6 +271,12 @@ public static partial class AssemblyPolicy
                string.IsNullOrWhiteSpace(point.VisualReason) || point.VisualReason.Length>1000 ||
                (!point.Visible && (point.X!=0 || point.Y!=0 || point.Confidence!=0)))
                 throw new InvalidDataException("Initial body point correspondence changed.");
+            if(evidence.Derivation==ObjectReviewPolicy.VisibleBodyPointProtocol) {
+                if(point.MaterialPoint is null || point.VisibleBodyRegion is null || point.InitialCandidate is null ||
+                   point.SafetyStatus!=VisibleBodyPointPolicy.Eligibility(point,evidence.Frames[0]))
+                    throw new InvalidDataException("Visible body point safety correspondence changed.");
+            } else if(point.MaterialPoint is not null || point.VisibleBodyRegion is not null || point.SafetyStatus is not null || point.InitialCandidate is not null)
+                throw new InvalidDataException("Visible surface evidence requires its V5 protocol.");
         } else if(evidence.Proposal.BodyInteriorPoint is not null)
             throw new InvalidDataException("Initial body point requires its explicit review protocol.");
         if(GroundingStatus(evidence)!="READY")return null;
@@ -326,14 +343,15 @@ public static partial class AssemblyPolicy
             p.Status=="CANDIDATE_REQUIRES_HUMAN_CONFIRMATION";
         SamScenePoint? initialPoint=null;
         if(evidence.Proposal.BodyInteriorPoint is {Visible:true,Confidence:>=.8,Frame:0} bp &&
-           evidence.Derivation==ObjectReviewPolicy.InitialBodyPointProtocol && frames[0].Index==0)
+           ObjectReviewPolicy.IsInitialPointReview(evidence.Derivation) && frames[0].Index==0)
             initialPoint=new(0,(int)Math.Floor(bp.X*frames[0].Width/1000),(int)Math.Floor(bp.Y*frames[0].Height/1000));
         var draft=new SamSceneDefinition("",evidence.VideoSha256,evidence.CacheKey,evidence.ResponseSha256,
             frames[0].Width,frames[0].Height,evidence.Proposal.Arrangement,
             RoleNames.Where(roles.Contains).Select(r=>new SamSceneRole((Array.IndexOf(RoleNames,r)+1).ToString(CultureInfo.InvariantCulture),r)).ToArray(),
             seeds.OrderBy(s=>s.Frame).ThenBy(s=>s.Role).ToArray(),pivot?p.X:null,pivot?p.Y:null,
             BodyReferences:evidence.Proposal.BodyReferences?.Where(q=>seeds.Any(s=>s.Role=="object" && s.Frame==frames[q.Frame].Index))
-                .Select(q=>q with {Frame=frames[q.Frame].Index}).OrderBy(q=>q.Frame).ToArray(),InitialBodyPoint:initialPoint);
+                .Select(q=>q with {Frame=frames[q.Frame].Index}).OrderBy(q=>q.Frame).ToArray(),InitialBodyPoint:initialPoint,
+            InitialPointReviewProtocol:evidence.Derivation==ObjectReviewPolicy.VisibleBodyPointProtocol?evidence.Derivation:null);
         return draft with {Key=DefinitionKey(draft)};
     }
     public static string DefinitionKey(SamSceneDefinition d)=>KnotPolicy.Hash(JsonSerializer.Serialize(d with {Key=""}));
@@ -361,6 +379,9 @@ public static partial class AssemblyPolicy
             quality.Select(q=>q.Frame).Distinct().Count()!=quality.Length ||
             quality.Any(q=>!d.Seeds.Any(s=>s.Role=="object" && s.Frame==q.Frame) || (q.WholeBodyVisible && (q.Occluded || q.Clipped)))))
             throw new InvalidDataException("Body reference quality correspondence changed.");
+        if(d.InitialPointReviewProtocol is not null &&
+           (d.InitialPointReviewProtocol!=ObjectReviewPolicy.VisibleBodyPointProtocol || d.InitialBodyPoint is null))
+            throw new InvalidDataException("Initial point review protocol changed.");
         if(d.InitialBodyPoint is {} point && (d.Origin!=GroundingOrigin || d.BodyReferences is null ||
             point.Frame!=0 || point.X<0 || point.Y<0 || point.X>=d.Width || point.Y>=d.Height ||
             d.BodyReferences.Count(q=>q.WholeBodyVisible && !q.Occluded && !q.Clipped)<2))

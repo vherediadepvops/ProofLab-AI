@@ -37,7 +37,7 @@ interface GroundingQuote {
   cacheKey:string;videoSha256:string;maximumEstimatedCostUsd:number;
   cacheHit:boolean;priorAttempt:boolean;canRun:boolean;
   mode:SamMode;freshRequired:boolean;protocol:'ASSEMBLY_FULL_VIDEO_GROUNDING_V2';
-  status:'NEEDS_LOCALIZATION'|'READY'|'AMBIGUOUS'|'NOT_VISIBLE'|'PRIOR_ATTEMPT'|'INITIAL_REFERENCE_UNRESOLVED';
+  status:'NEEDS_LOCALIZATION'|'READY'|'AMBIGUOUS'|'NOT_VISIBLE'|'PRIOR_ATTEMPT'|'INITIAL_REFERENCE_UNRESOLVED'|'INITIAL_POINT_IDENTITY_UNRESOLVED';
   scene:GroundingScene|null;requiredSparkCalls?:number;visualReviewEstimatedCostUsd?:number;localizationPlan?:string;
   evidence?:{runId?:string|null}|null;
 }
@@ -61,7 +61,7 @@ interface SamAdaptiveQuote {
   idealPartsWithoutSparkCoverage:number;verifiedSparkSeedCount:number;
   reducedForSparseSparkSeeds:boolean;recoveryFromBatchId?:string|null;
   continuousRetryEstimatedUsd?:number;maximumSamWithRetryEstimatedUsd?:number;
-  mode?:'api-meta'|'api-meta-cache';sceneRunId?:string|null;
+  mode?:'api-meta'|'api-meta-cache';sceneRunId?:string|null;provenance?:string;
 }
 interface SamStageRetryQuote {
   failedBatchId:string;newBatchId:string;videoSha256:string;sparkSceneKey:string;
@@ -83,6 +83,7 @@ interface SamAdaptiveReport {
   failedParts:number;skippedParts:number;estimatedSamUsd:number;
   derivedFramesWithMasks:number|null;derivedSeamsVerified:boolean|null;
   automaticRetryOfBatchId?:string|null;automaticRetryBatchId?:string|null;automaticRetryStatus?:string|null;
+  failureCode?:string|null;
 }
 
 /**
@@ -655,11 +656,18 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         url+'/manual-stage-retry/quote').pipe(timeout(20000)));
       if(!this.disposed && this.serial===serial && url===this.adaptiveUrl() &&
         port===this.localApiPort() && sha===this.videoSha256() && this.validStageRetryQuote(q)){
-        this.stageRetryQuote.set(q);this.error.set('');
+        this.stageRetryQuote.set(q);this.error.set(this.specificProcessingError(this.adaptiveResult()?.failureCode)??'');
       }
-    }catch{
-      if(!this.disposed && this.serial===serial && url===this.adaptiveUrl())
+    }catch(e){
+      if(!this.disposed && this.serial===serial && url===this.adaptiveUrl()){
         this.stageRetryQuote.set(null);
+        if(this.processingFailureCode(e)==='SAM_INITIAL_REFERENCE_REVIEW_REQUIRED')this.requireFreshReferenceReview();
+        const message=this.specificProcessingError(e);
+        if(message){
+          const failure=this.specificProcessingError(this.adaptiveResult()?.failureCode);
+          this.error.set(failure && failure!==message?failure+' '+message:message);
+        }
+      }
     }
   }
   canStageRetry():boolean {
@@ -691,9 +699,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         this.cacheUpdated.emit({studyId:this.studyId(),videoRole:this.videoRole(),sourceSha256:sha,
           analysisId:report.batchId,adaptiveBatchId:report.batchId,port:this.localApiPort()});
         this.error.set('');
-      }else this.error.set(this.es?
+      }else this.error.set(this.specificProcessingError(report.failureCode)??(this.es?
         'El reintento SAM quedó inconcluso. No se enviará otra solicitud.':
-        'The SAM retry is inconclusive. No further request will be sent.');
+        'The SAM retry is inconclusive. No further request will be sent.'));
     }catch{this.error.set(this.es?
       'El reintento aún no tiene un informe final recuperable. Revisa su estado antes de cualquier otro análisis.':
       'The retry has no recoverable final report yet. Inspect its status before another analysis.');}
@@ -735,7 +743,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
             confirmPotentialSecondCharge:true,confirmVideoTransfer:true
           },{headers:{'X-ProofLab-Manual-Action':'sam-adaptive-stage-retry'}})
           .pipe(timeout(70*60*1000)));
-      }catch{
+      }catch(e){
+        // A rejected reference did not dispatch SAM and needs a new Spark review.
+        if(this.processingFailureCode(e)==='SAM_INITIAL_REFERENCE_REVIEW_REQUIRED')throw e;
         // A lost/blocked reply may coexist with a running paid operation.
         // Reconciliation is read-only and must never POST again.
         try{report=await firstValueFrom(this.http.get<SamAdaptiveReport>(
@@ -746,20 +756,24 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       await poll();
       if(!report || report.batchId!==q.newBatchId || report.sourceSha256!==sha ||
          report.sparkSceneKey!==q.sparkSceneKey || report.planSha256!==q.planSha256 ||
-         report.status!=='PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW' ||
+         report.parts!==1 || report.startedParts!==1)throw Error('STAGE_RETRY_INCOMPLETE');
+      this.adaptiveResult.set(report);
+      if(report.status!=='PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW' ||
          report.derivedSeamsVerified!==true || !(report.derivedFramesWithMasks!>0))
-        throw Error('STAGE_RETRY_INCOMPLETE');
-      this.adaptiveResult.set(report);this.processingPhase.set('validating');
+        throw Error(report.failureCode??'STAGE_RETRY_INCOMPLETE');
+      this.processingPhase.set('validating');
       this.viewStartedAt=Date.now();opened=true;
       const selection={studyId:this.studyId(),videoRole:this.videoRole(),sourceSha256:sha,
         analysisId:report.batchId,adaptiveBatchId:report.batchId,port};
       await this.interpretAfterSam(selection,token,current);
       if(current())this.cacheUpdated.emit(selection);
-    }catch{
+    }catch(e){
       if(current()){
-        this.error.set(this.es?
+        if(this.processingFailureCode(e)==='SAM_INITIAL_REFERENCE_REVIEW_REQUIRED')this.requireFreshReferenceReview();
+        this.error.set(this.specificProcessingError(e)??(this.es?
           'No se completó el reintento SAM. Consulta el resultado guardado; no se repetirá el envío. El intento anterior puede haber sido facturado.':
-          'The SAM retry did not complete. Inspect its saved result; no second retry will be sent. The previous attempt may have been billed.');
+          'The SAM retry did not complete. Inspect its saved result; no second retry will be sent. The previous attempt may have been billed.'));
+
         this.failProcessing();
       }
     }finally{
@@ -922,7 +936,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(!this.apiEnabled() || this.traceAwaitingRecovery)return false;
     if(this.segmentedMode()) {
       const quote=this.adaptiveQuote(),ready=this.readiness(),spark=this.groundingQuote();
-      if(this.adaptiveResult())return false;
+      if(this.adaptiveResult() || quote?.provenance==='SAM_INITIAL_REFERENCE_REVIEW_REQUIRED')return false;
       return !!quote && !!ready && this.validAdaptiveQuote(quote,this.videoSha256()) &&
         quote.sourceSha256===this.videoSha256() &&
         (quote.existingSparkSceneVerified || (quote.requiresNewSparkCall &&
@@ -1062,7 +1076,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       (quote.maximumEstimatedCostUsd>=.025 || quote.cacheHit) && quote.maximumEstimatedCostUsd<=1.1 &&
       quote.mode===this.mode() && quote.protocol==='ASSEMBLY_FULL_VIDEO_GROUNDING_V2' &&
       typeof quote.freshRequired==='boolean' &&
-      ['NEEDS_LOCALIZATION','READY','AMBIGUOUS','NOT_VISIBLE','PRIOR_ATTEMPT','INITIAL_REFERENCE_UNRESOLVED'].includes(quote.status) &&
+      ['NEEDS_LOCALIZATION','READY','AMBIGUOUS','NOT_VISIBLE','PRIOR_ATTEMPT','INITIAL_REFERENCE_UNRESOLVED','INITIAL_POINT_IDENTITY_UNRESOLVED'].includes(quote.status) &&
       (quote.status!=='READY' || (!quote.freshRequired && !!quote.scene &&
         /^[a-f0-9]{64}$/i.test(quote.scene.key) && quote.scene.videoSha256===this.videoSha256()));
   }
@@ -1160,7 +1174,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
   costLabel(value:number):string {return (Math.ceil(value*100-1e-8)/100).toFixed(2);}
   private hasContactAuditPlan():boolean {
-    return ['SPARK_ORIGINAL_50_CONTACT_AUDIT_V2','SPARK_ORIGINAL_50_CONTACT_AUDIT_V3','SPARK_ORIGINAL_50_BODY_POINT_REVIEW_V4'].includes(
+    return ['SPARK_ORIGINAL_50_CONTACT_AUDIT_V2','SPARK_ORIGINAL_50_CONTACT_AUDIT_V3','SPARK_ORIGINAL_50_BODY_POINT_REVIEW_V4','SPARK_ORIGINAL_50_VISIBLE_BODY_POINT_REVIEW_V5'].includes(
       this.groundingQuote()?.localizationPlan??'');
   }
   localizationPlanDescription():string {
@@ -1180,7 +1194,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       'Reintentar SAM utiliza las etapas anteriores y muestra el costo de una nueva inferencia; no pulses Procesar.':
       'Retry SAM reuses earlier stages and shows the cost of a new inference; do not click Process.';
     if(this.segmentedMode()){
-      const q=this.adaptiveQuote();
+      const q=this.adaptiveQuote(),referenceProblem=this.specificProcessingError(q?.provenance);
+      if(referenceProblem)return referenceProblem;
       return q?(this.es?
         'Procesar autoriza '+(q.requiresNewSparkCall?'localizar y verificar el objeto con Spark y enviar ':'usar la localización verificada y enviar ')+
         'el video completo en UNA solicitud SAM. Sin cortes ni reintentos automáticos.':
@@ -1205,6 +1220,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(this.traceAwaitingRecovery)return this.es?
       'Retoma el resultado con el código de recuperación antes de iniciar otro análisis.':
       'Resume the saved result with the recovery code before starting another analysis.';
+    const referenceProblem=this.specificProcessingError(this.adaptiveQuote()?.provenance)??
+      this.specificProcessingError(this.groundingQuote()?.status);
+    if(referenceProblem)return referenceProblem;
     if(this.mode()==='api-meta' && this.stageRetryQuote())return this.es?
       'El análisis SAM anterior falló. Usa Reintentar SAM para conservar las etapas completadas.':
       'The previous SAM analysis failed. Use Retry SAM to keep completed stages.';
@@ -1241,9 +1259,6 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     const g=this.groundingQuote();
     if(!this.validGrounding(g))return this.es?'No se pudo comprobar el costo de localización. Pulsa Actualizar costo.':
       'Could not check localization cost. Press Refresh cost.';
-    if(g.status==='INITIAL_REFERENCE_UNRESOLVED')return this.es?
-      'No se distinguió una parte del objeto en el primer fotograma. Empieza la grabación con el cuerpo visible y separado de la mano. SAM no se envió.':
-      'No part of the object was clearly identified in the first frame. Start recording with the body visible and away from the hand. SAM was not sent.';
     if(g.status==='AMBIGUOUS' || g.status==='NOT_VISIBLE')return this.es?
       'Spark no pudo localizar un único objeto visible. Repite la grabación con el objeto y su suspensión claramente visibles; no se enviará a SAM.':
       'Spark could not locate one visible object. Record again with the object and suspension clearly visible; SAM will not be sent.';
@@ -1262,6 +1277,42 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     if(!this.tokenEntered())return this.es?'Configura y confirma tu token Meta.':'Configure and confirm your Meta key.';
     if(!this.canOfferPaidRun())return this.es?'El servidor no permite esta solicitud. Actualiza el costo o revisa el estado.':'The server does not allow this request. Refresh the cost or inspect status.';
     return this.es?'Confirma la revisión del intento anterior antes de procesar.':'Confirm review of the previous attempt before processing.';
+  }
+  private requireFreshReferenceReview():void {
+    this.stageRetryQuote.set(null);
+    const quote=this.adaptiveQuote();
+    // Preserve a fresh Spark quote already offered by a cost refresh. Only
+    // invalidate the existing scene that the rejected SAM request would reuse.
+    if(quote?.existingSparkSceneVerified)this.adaptiveQuote.set({...quote,
+      requiresNewSparkCall:true,existingSparkSceneVerified:false,canRunWithManualToken:false,
+      provenance:'SAM_INITIAL_REFERENCE_REVIEW_REQUIRED'});
+  }
+  private processingFailureCode(error:unknown):string {
+    if(typeof error==='string')return error;
+    if(error instanceof HttpErrorResponse){
+      const body=error.error;
+      return typeof body?.code==='string'?body.code:typeof body?.error==='string'?body.error:'';
+    }
+    return error instanceof Error?error.message:'';
+  }
+  private specificProcessingError(error:unknown):string|null {
+    switch(this.processingFailureCode(error)){
+      case 'INITIAL_REFERENCE_UNRESOLVED':return this.es?
+        'No se distinguió una parte del objeto en el primer fotograma. Empieza la grabación con el cuerpo visible y separado de la mano. SAM no se envió.':
+        'No part of the object was clearly identified in the first frame. Start recording with the body visible and away from the hand. SAM was not sent.';
+      case 'INITIAL_POINT_IDENTITY_UNRESOLVED':return this.es?
+        'No se pudo confirmar un punto dentro del objeto en el primer fotograma. Revisa la referencia inicial y solicita una nueva revisión de Spark. SAM no se envió.':
+        'A point inside the object could not be confirmed in the first frame. Check the initial reference and request a new Spark review. SAM was not sent.';
+      case 'SAM_INITIAL_REFERENCE_REVIEW_REQUIRED':return this.cacheEnabled()?(this.es?
+        'La referencia inicial guardada necesita una nueva revisión de Spark antes de enviar a SAM. Deja API Meta activada y desactiva Caché + SQLite. Actualiza el costo y pulsa Procesar para autorizar la nueva revisión.':
+        'The saved initial reference needs a new Spark review before sending to SAM. Keep Meta API enabled and turn off Cache + SQLite. Refresh the cost and click Process to authorize the new review.'):(this.es?
+        'La referencia inicial guardada necesita una nueva revisión de Spark antes de enviar a SAM. Actualiza el costo y pulsa Procesar para revisar de nuevo; no se repetirá SAM con esa referencia.':
+        'The saved initial reference needs a new Spark review before sending to SAM. Refresh the cost and click Process to review again; SAM will not be repeated with that reference.');
+      case 'SAM_SSE_OUTPUT_LIMIT_EXCEEDED':return this.es?
+        'La respuesta de SAM superó el tamaño permitido. El resultado está incompleto y no se usarán sus mediciones. El intento puede haber consumido créditos.':
+        "SAM's response exceeded the allowed size. The result is incomplete and its measurements will not be used. The attempt may have consumed credits.";
+      default:return null;
+    }
   }
   private singleVideoLimitError(error:unknown):string|null {
     if(!(error instanceof HttpErrorResponse) || error.error?.error!=='SAM_SINGLE_VIDEO_FRAME_LIMIT')return null;
@@ -1320,7 +1371,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     }catch(e) {
       if(serial===this.serial){
         const status=(e as {status?:number})?.status;
-        this.error.set(this.singleVideoLimitError(e) ?? (status===404?(this.es?
+        this.error.set(this.specificProcessingError(e) ?? this.singleVideoLimitError(e) ?? (status===404?(this.es?
           'Este video no está disponible en el servidor seleccionado. Vuelve al servidor donde lo cargaste.':
           'This video is not available on the selected server. Use the server where it was uploaded.'):
           status===0?(this.es?'No se pudo conectar con la API local. Comprueba la conexión en Configuración.':
@@ -1339,6 +1390,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   }
 
   private recoverableAdaptiveReply(error:unknown):boolean {
+    if(this.processingFailureCode(error)==='SAM_INITIAL_REFERENCE_REVIEW_REQUIRED')return false;
     return error instanceof HttpErrorResponse
       ? error.status===0 || error.status===409 || error.status>=500
       : error instanceof Error && error.name==='TimeoutError';
@@ -1415,8 +1467,11 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           confirmImageTransfer:true,confirmVideoTransfer:true,confirmPaidCall:true
         },{headers:{'X-ProofLab-Manual-Action':'sam-adaptive-spark'}}).pipe(timeout(12*60*1000)));
         if(!current())return;
-        if(located.videoSha256===sha && located.mode===mode && located.status==='INITIAL_REFERENCE_UNRESOLVED')
-          throw Error('INITIAL_REFERENCE_UNRESOLVED');
+        if(located.videoSha256===sha && located.mode===mode &&
+          ['INITIAL_REFERENCE_UNRESOLVED','INITIAL_POINT_IDENTITY_UNRESOLVED'].includes(located.status)){
+          this.groundingQuote.set(located);
+          throw Error(located.status);
+        }
         if(located.videoSha256!==sha || located.status!=='READY' || !located.scene ||
           located.scene.videoSha256!==sha || located.mode!==mode)throw Error('SPARK_TARGET_INCONCLUSIVE');
         const sceneRunId=located.evidence?.runId;
@@ -1478,7 +1533,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       await poll();
       if(report.status!=='PROVIDER_PARTS_COMPLETE_DERIVED_MASKS_PENDING_HUMAN_REVIEW' ||
          report.derivedSeamsVerified!==true || !report.derivedFramesWithMasks)
-        throw Error('SEGMENT_RESULT_INCONCLUSIVE');
+        throw Error(report.failureCode??'SEGMENT_RESULT_INCONCLUSIVE');
       this.processingPhase.set('validating');this.viewStartedAt=Date.now();
       opened=true;
       const selection={studyId:this.studyId(),videoRole:this.videoRole(),
@@ -1493,15 +1548,13 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       }
       if(current()){
         const code=e instanceof Error?e.message:'';
-        this.error.set(this.singleVideoLimitError(e) ?? (code==='BATCH_ID_MISMATCH'?(this.es?
+        if(this.processingFailureCode(e)==='SAM_INITIAL_REFERENCE_REVIEW_REQUIRED')this.requireFreshReferenceReview();
+        this.error.set(this.specificProcessingError(e) ?? this.singleVideoLimitError(e) ?? (code==='BATCH_ID_MISMATCH'?(this.es?
           'El resultado guardado no coincide con este video y su solicitud. No se abrirán gráficos ni se enviará otro análisis; revisa el código de recuperación.':
           'The saved result does not match this video and request. No overlays will open and no new analysis will be sent; review the recovery code.'):
           code==='SEGMENT_QUOTE_CHANGED'?(this.es?
           'Spark terminó, pero cambió el presupuesto o la evidencia. SAM no se envió; actualiza el costo.':
           'Spark finished, but the quote or evidence changed. SAM was not sent; refresh the cost.'):
-          code==='INITIAL_REFERENCE_UNRESOLVED'?(this.es?
-          'No se distinguió una parte del objeto en el primer fotograma. Empieza la grabación con el cuerpo visible y separado de la mano. SAM no se envió.':
-          'No part of the object was clearly identified in the first frame. Start recording with the body visible and away from the hand. SAM was not sent.'):
           this.processingPhase()==='grounding'?this.groundingFailureMessage():
           (this.adaptiveResult()?.automaticRetryOfBatchId || this.adaptiveResult()?.automaticRetryBatchId)?(this.es?
           'El reintento con el video completo también quedó inconcluso. No se harán más envíos automáticos. Puedes reproducir el original; los gráficos quedan pendientes.':
@@ -1598,10 +1651,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           throw new Error('GROUNDING_RESULT_MISMATCH');
         this.groundingQuote.set(located);
         if(located.status!=='READY' || !located.scene) {
-          this.error.set(this.es?
-            (located.status==='INITIAL_REFERENCE_UNRESOLVED'?'No se distinguió una parte del objeto en el primer fotograma. Empieza la grabación con el cuerpo visible. SAM no se envió.':'Spark no pudo localizar el objeto con suficiente claridad. SAM no se envió. Revisa la grabación antes de otra prueba.'):
-            (located.status==='INITIAL_REFERENCE_UNRESOLVED'?
-            'No part of the object was clearly identified in the first frame. Start recording with the body visible. SAM was not sent.':
+          this.error.set(this.specificProcessingError(located.status)??(this.es?
+            'Spark no pudo localizar el objeto con suficiente claridad. SAM no se envió. Revisa la grabación antes de otra prueba.':
             'Spark could not locate the object clearly enough. SAM was not sent. Review the recording before another test.'));
           this.failProcessing();return;
         }
@@ -1648,7 +1699,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         const response=e as {status?:number;error?:{error?:unknown}};
         const noInference=this.processingPhase()==='grounding' && response?.status===409 &&
           response.error?.error==='GROUNDING_NO_INFERENCE_SENT_REVIEW_COST';
-        this.error.set(noInference?(this.es?
+        this.error.set(this.specificProcessingError(e)??(noInference?(this.es?
           'Spark no llegó a ejecutar la inferencia. Revisa el presupuesto o la conexión y actualiza el costo; SAM no se envió.':
           'Spark did not execute inference. Review the budget or connection and refresh the cost; SAM was not sent.'):
           changed?(this.es?
@@ -1658,7 +1709,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           'La localización con Spark no se completó. Puede existir una solicitud facturada. SAM no se envió; revisa el estado antes de otro intento.':
           'Spark localization did not complete. A request might have been billed. SAM was not sent; check status before another attempt.'):
           (this.es?'SAM no se completó. Puede existir una solicitud facturada. Revisa el estado; no reintentes automáticamente.':
-          'SAM did not complete. A request might have been billed. Check status; never auto-retry.'));
+          'SAM did not complete. A request might have been billed. Check status; never auto-retry.')));
         this.cacheStatus.set(null);this.groundingQuote.set(null);this.suspensionReviewQuote.set(null);this.failProcessing();
       }
     }finally{

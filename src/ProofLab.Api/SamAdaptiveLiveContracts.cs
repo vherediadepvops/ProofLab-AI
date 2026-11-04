@@ -67,7 +67,8 @@ public sealed record SamAdaptiveLiveReport(
     bool? DerivedSeamsVerified,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset RecordedAtUtc,string Note,string? AutomaticRetryOfBatchId=null,
-    string? AutomaticRetryBatchId=null,string? AutomaticRetryStatus=null);
+    string? AutomaticRetryBatchId=null,string? AutomaticRetryStatus=null,
+    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? FailureCode=null);
 
 public sealed record SamAdaptiveProgress(
     string BatchId,int Parts,int Started,int Completed,int Failed,
