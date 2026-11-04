@@ -13,6 +13,7 @@ public sealed class SamStageRetryRequest
     public string VideoSha256 { get; init; }="";
     public string PlanSha256 { get; init; }="";
     public string ModelApiToken { get; init; }="";
+    public string? InitialBodyPointConfirmationId {get;init;}
     public double MaximumEstimatedCostUsd { get; init; }
     public bool ConfirmPotentialSecondCharge { get; init; }
     public bool ConfirmVideoTransfer { get; init; }
@@ -21,7 +22,8 @@ public sealed class SamStageRetryRequest
 public sealed record SamStageRetryQuote(
     string FailedBatchId,string NewBatchId,string VideoSha256,string SparkSceneKey,
     string SceneRunId,string PlanSha256,int Frames,double EstimatedSamUsd,
-    int TargetCoreFrames,bool AlreadyRequested=false,bool PreviousMayHaveBeenBilled=true);
+    int TargetCoreFrames,bool AlreadyRequested=false,bool PreviousMayHaveBeenBilled=true,
+    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? InitialBodyPointConfirmationId=null);
 
 // A retry starts at the failed SAM *stage*, not at a frame in a partially received
 // provider stream. Meta may charge again. Never imply resumable mask generation.
@@ -35,7 +37,7 @@ public sealed partial class SamAdaptiveLiveService
         Hash("EXPLICIT_STAGE_RETRY_SINGLE_SAM_V1:"+parent)[..32];
 
     public async Task<SamStageRetryQuote?> StageRetryQuoteAsync(
-        string studyId,string role,CancellationToken ct)
+        string studyId,string role,CancellationToken ct,string? initialBodyPointConfirmationId=null)
     {
         if(role is not ("baseline" or "followup"))throw new ArgumentException("Invalid video role.");
         var source=await runtime.GetVerifiedSourceAsync(studyId,role,ct);
@@ -71,6 +73,10 @@ public sealed partial class SamAdaptiveLiveService
            (selected.Context.Scene.InitialBodyPoint is not null &&
             selected.Context.Scene.InitialPointReviewProtocol!=ObjectReviewPolicy.VisibleBodyPointProtocol)))
             throw new SamInitialReferenceReviewRequiredException();
+        initialBodyPointConfirmationId ??= selected.Context.PrincipalReference?.HumanConfirmation?.Id;
+        if(latest.FailedParts>0 && SamInitialBodyPointPolicy.RequiresConfirmation(selected.Context.Scene) &&
+           initialBodyPointConfirmationId is null)
+            throw new SamInitialBodyPointConfirmationRequiredException(selected.Context.SceneRunId,latest.BatchId,StageRetryId(latest.BatchId));
         // The manual retry itself may have completed while the browser was closed.
         // Recover that same claimed child without offering another paid call.
         var latestStarted=Path.Combine(BatchDir(latest.BatchId),"batch-started.json");
@@ -91,7 +97,7 @@ public sealed partial class SamAdaptiveLiveService
                 var completedContext=selected.Context;
                 return new(parentId!,latest.BatchId,source.Sha256,latest.SparkSceneKey,
                     completedContext.SceneRunId!,latest.PlanSha256,latest.TotalInputFrames,latest.EstimatedSamUsd,
-                    completedContext.TargetCoreFrames,true);
+                    completedContext.TargetCoreFrames,true,InitialBodyPointConfirmationId:completedContext.PrincipalReference?.HumanConfirmation?.Id);
             }
         }
         if(latest.Status!="PARTIAL_PROVIDER_ATTEMPTS_REQUIRE_MANUAL_RECONCILIATION" ||
@@ -117,7 +123,7 @@ public sealed partial class SamAdaptiveLiveService
            ctx.AutomaticRetryOfBatchId is not null || ctx.RecoveryFromBatchId is not null)return null;
         // Verify the exact original, original Spark run and full-video quote.
         var q=await PreflightAsync(studyId,role,ctx.TargetCoreFrames,1,ct,
-            PendulumSamCache.FreshMode,ctx.SceneRunId);
+            PendulumSamCache.FreshMode,ctx.SceneRunId,initialBodyPointConfirmationId);
         if(q.RequiresNewSparkCall || !q.ExistingSparkSceneVerified ||
            q.SourceSha256!=source.Sha256 || q.SparkSceneKey!=latest.SparkSceneKey ||
            q.SourceFrames!=latest.TotalInputFrames || q.Parts!=1 ||
@@ -133,7 +139,7 @@ public sealed partial class SamAdaptiveLiveService
         }
         return new(latest.BatchId,child,source.Sha256,latest.SparkSceneKey,
             ctx.SceneRunId!,q.PlanSha256,q.SourceFrames,q.TotalSamEstimatedUsd,
-            ctx.TargetCoreFrames,claimed);
+            ctx.TargetCoreFrames,claimed,InitialBodyPointConfirmationId:q.InitialBodyPointConfirmationId);
     }
 
     private async Task<SamAdaptiveClipManifest> ReusePreparedClipAsync(
@@ -184,7 +190,7 @@ public sealed partial class SamAdaptiveLiveService
             throw new InvalidOperationException("Explicit authorization or backend paid gate missing.");
         await workflowGate.WaitAsync(ct);
         try {
-            var quote=await StageRetryQuoteAsync(studyId,role,ct);
+            var quote=await StageRetryQuoteAsync(studyId,role,ct,request.InitialBodyPointConfirmationId);
             if(quote is null || quote.AlreadyRequested ||
                request.FailedBatchId!=quote.FailedBatchId ||
                request.NewBatchId!=quote.NewBatchId ||
@@ -203,6 +209,7 @@ public sealed partial class SamAdaptiveLiveService
             var run=new SamAdaptiveLiveRunRequest{
                 ModelApiToken=request.ModelApiToken,Mode=PendulumSamCache.FreshMode,
                 SceneRunId=quote.SceneRunId,VideoSha256=quote.VideoSha256,
+                InitialBodyPointConfirmationId=quote.InitialBodyPointConfirmationId,
                 SceneKey=quote.SparkSceneKey,PlanSha256=quote.PlanSha256,
                 ClientBatchId=quote.NewBatchId,MaximumSamCostUsd=request.MaximumEstimatedCostUsd,
                 TargetCoreFrames=quote.TargetCoreFrames,MaxInFlight=1,ConfirmPrivateVideoTransfer=true,

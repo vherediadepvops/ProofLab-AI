@@ -88,6 +88,34 @@ public sealed class SamAdaptiveLiveIntegrationTests
     }
 
     [Fact]
+    public async Task HistoricalV5OccludedInitialPointCannotBypassTheGateThroughStageRetry()
+    {
+        using var f=new Fixture();
+        var draft=Scene() with{InitialBodyPoint=new(0,187,1643),
+            InitialPointReviewProtocol=ObjectReviewPolicy.VisibleBodyPointProtocol,
+            BodyReferences=Scene().Seeds.Select(s=>new AssemblyBodyReferenceQuality(s.Frame,true,false,false)).ToArray()};
+        f.Scenes.Scene=draft with{Key=AssemblyPolicy.DefinitionKey(draft)};
+        f.Scenes.Runs[f.Scenes.ExactRunId]=f.Scenes.Scene;
+        var q=await f.Quote("api-meta",f.Scenes.ExactRunId);
+        Assert.True(q.RequiresInitialBodyPointConfirmation);
+        var failed=await WriteHistoricalInitialPointFailure(f,q);
+        var ex=await Assert.ThrowsAsync<SamInitialBodyPointConfirmationRequiredException>(()=>
+            f.Service.StageRetryQuoteAsync("study","baseline",default));
+        Assert.Equal(f.Scenes.ExactRunId,ex.SceneRunId);
+        Assert.Equal(failed.BatchId,ex.FailedBatchId);
+        Assert.Equal(SamVideoArchive.Hash("EXPLICIT_STAGE_RETRY_SINGLE_SAM_V1:"+failed.BatchId)[..32],ex.NewBatchId);
+        // The denied POST must preserve the same parent/child identity, without claiming it.
+        var post=await Assert.ThrowsAsync<SamInitialBodyPointConfirmationRequiredException>(()=>
+            f.Service.RunStageRetryAsync("study","baseline",new(){
+                FailedBatchId=failed.BatchId,NewBatchId=ex.NewBatchId!,VideoSha256=q.SourceSha256,
+                PlanSha256=q.PlanSha256,ModelApiToken=Token,MaximumEstimatedCostUsd=q.TotalSamEstimatedUsd,
+                ConfirmVideoTransfer=true,ConfirmPotentialSecondCharge=true},default));
+        Assert.Equal(ex.FailedBatchId,post.FailedBatchId);Assert.Equal(ex.NewBatchId,post.NewBatchId);
+        Assert.False(File.Exists(Path.Combine(f.Store,"batches",failed.BatchId,"manual-stage-retry.json")));
+        Assert.Equal(0,f.Transport.Calls);Assert.Equal(0,f.Runtime.Reserved);
+    }
+
+    [Fact]
     public async Task MissingSceneHasReadOnlyUpperBoundAndThenAnExactGroundedQuote()
     {
         using var f=new Fixture();f.Scenes.Scene=null;

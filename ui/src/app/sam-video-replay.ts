@@ -9,6 +9,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LabConnection } from './lab-connection';
 import type {SuspensionReview} from './sam-playback';
 import { LabActivity } from './lab-activity';
+import {SamInitialReferenceReview,type SamInitialReference,type SamBodyPoint} from './sam-initial-reference-review';
 import {
   decodeSamVideoResponse, type SamVideoEvidence, type SamVideoFrame
 } from './sam-video-evidence';
@@ -62,11 +63,19 @@ interface SamAdaptiveQuote {
   reducedForSparseSparkSeeds:boolean;recoveryFromBatchId?:string|null;
   continuousRetryEstimatedUsd?:number;maximumSamWithRetryEstimatedUsd?:number;
   mode?:'api-meta'|'api-meta-cache';sceneRunId?:string|null;provenance?:string;
+  requiresInitialBodyPointConfirmation?:boolean;initialBodyPointConfirmation?:SamInitialReference|null;
+  initialBodyPointConfirmationId?:string|null;
 }
+interface InitialReferenceResume {
+  studyId:string;role:'baseline'|'followup';sha:string;port:5391|5393|5398|5410;
+  mode:'api-meta'|'api-meta-cache';sceneRunId:string;approvedSam:number;approvedCombined:number;includeMuse:boolean;stageRetry?:boolean;failedBatchId?:string;
+  initialBodyPointConfirmationId?:string|null;
+}
+interface InitialReferencePending {context:InitialReferenceResume;quote:SamAdaptiveQuote;reference:SamInitialReference;}
 interface SamStageRetryQuote {
   failedBatchId:string;newBatchId:string;videoSha256:string;sparkSceneKey:string;
   sceneRunId:string;planSha256:string;frames:number;estimatedSamUsd:number;
-  targetCoreFrames:number;alreadyRequested:boolean;previousMayHaveBeenBilled:boolean;
+  targetCoreFrames:number;alreadyRequested:boolean;previousMayHaveBeenBilled:boolean;initialBodyPointConfirmationId?:string|null;
 }
 interface SamAdaptivePartProgress {
   part:number;state:string;events:number;deltas:number;outputChars:number;elapsedMs?:number;
@@ -94,9 +103,9 @@ interface SamAdaptiveReport {
 @Component({
   selector:'app-sam-video-replay',
   standalone:true,
-  imports:[LabActivity],
+  imports:[LabActivity,SamInitialReferenceReview],
   template:`
-    <section class="sam-stage3" [class.guided]="guided()" [attr.aria-busy]="sourcePending() || checking() || processing()">
+    <section class="sam-stage3" [class.guided]="guided()" [attr.aria-busy]="sourcePending() || checking() || (processing() && !referenceReview()) || referenceSaving()">
       <header class="sam-heading">
         <h2>{{guided()?(es?'Costo antes de analizar':'Cost before analysis'):(es?'Etapa 3 · SAM 3.1':'Stage 3 · SAM 3.1')}}</h2>
       </header>
@@ -140,7 +149,7 @@ interface SamAdaptiveReport {
             }
             <div class="sam-buttons">
               <button type="button" class="sam-refresh" (click)="voidCheck()" [disabled]="!hasSource() || checking() || processing() || sending() || connection.busy()">{{!apiEnabled()?(es?'Actualizar caché':'Refresh cache'):(es?'Actualizar costo':'Refresh cost')}}</button>
-              <button type="button" class="sam-submit" (click)="process()" [disabled]="!canProcess()">{{processing() || connection.busy()?(es?'Procesando…':'Processing…'):autoMuseAfterSam()&&apiEnabled()?(es?'Procesar + interpretar con Muse':'Process + interpret with Muse'):(es?'Procesar':'Process')}}</button>
+              <button type="button" class="sam-submit" (click)="process()" [disabled]="!canProcess()">{{referenceReview()?(es?'Confirma el punto del objeto':'Confirm the object point'):processing() || connection.busy()?(es?'Procesando…':'Processing…'):autoMuseAfterSam()&&apiEnabled()?(es?'Procesar + interpretar con Muse':'Process + interpret with Muse'):(es?'Procesar':'Process')}}</button>
             </div>
             <fieldset class="sam-sources" [disabled]="sourcesLocked()">
               <legend>{{es?'Fuentes de procesamiento':'Processing sources'}}</legend>
@@ -189,6 +198,16 @@ interface SamAdaptiveReport {
               </button>
             }
           </div>
+          @if(referenceReview(); as pending) {
+            @defer (when referenceReview()) {
+            <app-sam-initial-reference-review [reference]="pending.reference" [language]="language()"
+              [busy]="referenceSaving()" [continueAllowed]="canConfirmReference()" [samCost]="pending.quote.totalSamEstimatedUsd"
+              [includeMuse]="pending.context.includeMuse && autoMuseAfterSam()" (confirm)="confirmInitialReference($event)" (cancel)="cancelInitialReference()"/>
+            } @loading {<p role="status">{{es?'Cargando selector del objeto…':'Loading object selector…'}}</p>}
+            @error {<p role="alert">{{es?'No se pudo cargar el selector. Recarga la página para recuperar esta revisión.':'The selector could not load. Reload the page to recover this review.'}}</p>}
+            @if(!tokenEntered()){<button type="button" class="sam-reference-token" (click)="openTokenDialog()">{{es?'Registrar token Meta para continuar':'Enter Meta token to continue'}}</button>}
+            @if(error()){<p class="sam-reference-error" role="alert">{{error()}}</p>}
+          }
           @if(checking()) {
             <app-lab-activity class="sam-progress" [label]="es?'Calculando costo…':'Estimating cost…'"
               [detail]="cacheEnabled()?(es?'Comprobando fotogramas y caché. No se consumen créditos.':'Checking frames and cache. No credits are used.'):(es?'Comprobando el video y el costo de un análisis nuevo. No se consumen créditos.':'Checking the video and the cost of a new analysis. No credits are used.')"/>
@@ -440,7 +459,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   readonly processingStarted=output<void>();
   readonly processingFailed=output<void>();
   readonly processing=signal(false);
-  readonly processingPhase=signal<'grounding'|'sam'|'review'|'validating'|null>(null);
+  readonly processingPhase=signal<'grounding'|'sam'|'review'|'validating'|'reference-review'|null>(null);
+  readonly referenceReview=signal<InitialReferencePending|null>(null);
+  readonly referenceSaving=signal(false);
+  private referenceAttempt:{context:string;x:number;y:number;id:string}|null=null;
   private beginProcessing():void {
     this.processing.set(true);this.processingPhase.set('validating');this.connection.busy.set(true);this.processingStarted.emit();
   }
@@ -553,6 +575,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.traceTicker=setInterval(()=>this.traceClock.set(Date.now()),250);
   }
   stageStateLabel(state:string):string {
+    if(state==='AWAITING_CONFIRMATION')return this.es?'Esperando tu punto':'Waiting for your point';
     if(state==='RECOVERY_REQUIRED')return this.es?'Retomar con código':'Resume with code';
     return state==='SKIPPED'?(this.es?'No necesario':'Not needed'):state==='COMPLETED'?(this.es?'Listo':'Done'):state==='FAILED'?(this.es?'Falló':'Failed'):
       state==='IN_PROGRESS'?(this.es?'En curso':'Running'):(this.es?'Pendiente':'Pending');
@@ -583,9 +606,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       state:sparkDone?'COMPLETED':this.traceFailed?'FAILED':'IN_PROGRESS',
       ms:this.sparkWasNeeded?Math.max(0,(this.sparkFinishedAt||now)-this.traceStartedAt):0},
       {key:'preparation',label:this.es?'Preparación del video':'Video preparation',
-       state:!sparkDone || (this.exactPreflightStartedAt>0 && (!this.exactPreflightFinishedAt || this.exactPreflightFailed))?'NOT_STARTED':phase==='PREPARING'||!p?(this.traceFailed?'FAILED':'IN_PROGRESS'):
+       state:this.referenceReview()?'NOT_STARTED':!sparkDone || (this.exactPreflightStartedAt>0 && (!this.exactPreflightFinishedAt || this.exactPreflightFailed))?'NOT_STARTED':phase==='PREPARING'||!p?(this.traceFailed?'FAILED':'IN_PROGRESS'):
          phase==='FAILED'&&!p.started?'FAILED':'COMPLETED',
-       ms:p?.preparationElapsedMs??(sparkDone && (!this.exactPreflightStartedAt || this.exactPreflightFinishedAt && !this.exactPreflightFailed)?Math.max(0,now-(this.exactPreflightFinishedAt||this.sparkFinishedAt)):0)}];
+       ms:this.referenceReview()?0:p?.preparationElapsedMs??(sparkDone && (!this.exactPreflightStartedAt || this.exactPreflightFinishedAt && !this.exactPreflightFailed)?Math.max(0,now-(this.exactPreflightFinishedAt||this.sparkFinishedAt)):0)}];
     if(this.sparkWasNeeded){
       const names=[['prepare','Preparar video','Prepare video'],['references','Extraer 50 imágenes','Extract 50 images'],['upload','Subir video a Spark','Upload video to Spark'],['inference','Respuesta de Spark','Spark response'],['verify','Validar respuesta','Validate response'],['target-review',this.hasContactAuditPlan()?'Verificar objeto y suspensión':'Verificar objeto con Spark',this.hasContactAuditPlan()?'Verify object and suspension':'Verify object with Spark']];
       const reviewOnly=this.sparkStages().some(s=>s.key==='target-review') && !this.sparkStages().some(s=>s.key==='inference');
@@ -607,6 +630,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       key:'exact-preflight',label:this.es?'Verificando preparación para SAM':'Verifying SAM preparation',
       state:this.exactPreflightFailed?'FAILED':this.exactPreflightFinishedAt?'COMPLETED':'IN_PROGRESS',
       ms:Math.max(0,(this.exactPreflightFinishedAt||now)-this.exactPreflightStartedAt)});
+    if(this.referenceReview())rows.splice(rows.length-1,0,{key:'initial-reference',label:this.es?'Confirmar el cuerpo del objeto':'Confirm the object body',state:'AWAITING_CONFIRMATION',ms:0});
     if(!this.segmentedMode()){
       rows.splice(rows.length-1,1,{key:'sam',label:this.samWasReused?(this.es?'SAM · caché':'SAM · cache'):(this.es?'SAM · video completo':'SAM · full video'),
         state:this.samWasReused||this.samFinishedAt?'COMPLETED':!this.samStartedAt?'NOT_STARTED':this.traceFailed?'FAILED':'IN_PROGRESS',
@@ -672,6 +696,13 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     }catch(e){
       if(!this.disposed && this.serial===serial && url===this.adaptiveUrl()){
         this.stageRetryQuote.set(null);
+        const body=(e as HttpErrorResponse)?.error as {code?:string;sceneRunId?:string;failedBatchId?:string}|null;
+        const cost=this.preflight()?.estimatedCostUsd??0;
+        if(body?.code==='SAM_INITIAL_BODY_POINT_CONFIRMATION_REQUIRED' && /^[a-f0-9]{32}$/.test(body.sceneRunId??'') &&
+          /^[a-f0-9]{32}$/.test(body.failedBatchId??'') && cost>0 && cost<=.5){
+          await this.restoreReference({studyId:this.studyId(),role:this.videoRole(),sha,port,mode:'api-meta',sceneRunId:body!.sceneRunId!,
+            approvedSam:cost,approvedCombined:cost,includeMuse:this.autoMuseAfterSam(),stageRetry:true,failedBatchId:body!.failedBatchId!});return;
+        }
         if(this.processingFailureCode(e)==='SAM_INITIAL_REFERENCE_REVIEW_REQUIRED')this.requireFreshReferenceReview();
         const message=this.specificProcessingError(e);
         if(message){
@@ -717,7 +748,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       'El reintento aún no tiene un informe final recuperable. Revisa su estado antes de cualquier otro análisis.':
       'The retry has no recoverable final report yet. Inspect its status before another analysis.');}
   }
-  async retryStage():Promise<void> {
+  async retryStage(includeMuse?:boolean):Promise<void> {
     if(!this.canStageRetry() || !this.http)return;
     const q=this.stageRetryQuote()!,token=this.connection.tokenForManualRequest();
     if(!token)return;
@@ -726,13 +757,14 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       sha===this.videoSha256() && port===this.localApiPort() && this.mode()==='api-meta';
     // This explicit click authorizes one NEW potentially billable SAM request,
     // not a free continuation of the provider's incomplete SSE stream.
-    this.processAuthorizedMuse=this.autoMuseAfterSam() && this.videoRole()==='baseline';
+    const authorizedMuse=(includeMuse??this.autoMuseAfterSam()) && this.autoMuseAfterSam();
+    this.processAuthorizedMuse=authorizedMuse && this.videoRole()==='baseline';
     this.museAutoStatus.set('idle');
     this.processingReset.emit();this.beginProcessing();this.startStageTrace(true);
     this.stageRetryActive.set(true);this.processingPhase.set('sam');this.sending.set(true);
     this.adaptiveProgress.set(null);this.adaptiveResult.set(null);this.error.set('');
     this.stageRetryQuote.set({...q,alreadyRequested:true}); // fail closed on lost HTTP reply
-    let opened=false,polling=false;
+    let opened=false,polling=false;let pendingReference:InitialReferenceResume|null=null;
     const poll=async()=>{
       if(polling || !current())return;polling=true;
       try{
@@ -749,6 +781,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         report=await firstValueFrom(this.http.post<SamAdaptiveReport>(
           url+'/manual-stage-retry',{
             failedBatchId:q.failedBatchId,newBatchId:q.newBatchId,
+            ...(q.initialBodyPointConfirmationId?{initialBodyPointConfirmationId:q.initialBodyPointConfirmationId}:{}),
             videoSha256:sha,planSha256:q.planSha256,modelApiToken:token,
             maximumEstimatedCostUsd:q.estimatedSamUsd,
             confirmPotentialSecondCharge:true,confirmVideoTransfer:true
@@ -756,7 +789,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
           .pipe(timeout(70*60*1000)));
       }catch(e){
         // A rejected reference did not dispatch SAM and needs a new Spark review.
-        if(this.processingFailureCode(e)==='SAM_INITIAL_REFERENCE_REVIEW_REQUIRED')throw e;
+        if(['SAM_INITIAL_REFERENCE_REVIEW_REQUIRED','SAM_INITIAL_BODY_POINT_CONFIRMATION_REQUIRED'].includes(this.processingFailureCode(e)??''))throw e;
         // A lost/blocked reply may coexist with a running paid operation.
         // Reconciliation is read-only and must never POST again.
         try{report=await firstValueFrom(this.http.get<SamAdaptiveReport>(
@@ -779,7 +812,12 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       await this.interpretAfterSam(selection,token,current);
       if(current())this.cacheUpdated.emit(selection);
     }catch(e){
-      if(current()){
+      const body=(e as HttpErrorResponse)?.error as {code?:string;sceneRunId?:string;failedBatchId?:string}|null;
+      if(current() && body?.code==='SAM_INITIAL_BODY_POINT_CONFIRMATION_REQUIRED' && /^[a-f0-9]{32}$/.test(body.sceneRunId??'') && body.failedBatchId===q.failedBatchId){
+        pendingReference={studyId:this.studyId(),role:this.videoRole(),sha,port,mode:'api-meta',sceneRunId:body!.sceneRunId!,
+          approvedSam:q.estimatedSamUsd,approvedCombined:q.estimatedSamUsd,includeMuse:authorizedMuse,stageRetry:true,failedBatchId:q.failedBatchId};
+        this.saveReference(pendingReference);this.stageRetryQuote.set(null);this.stageRetryActive.set(false);
+      }else if(current()){
         if(this.processingFailureCode(e)==='SAM_INITIAL_REFERENCE_REVIEW_REQUIRED')this.requireFreshReferenceReview();
         this.error.set(this.specificProcessingError(e)??(this.es?
           'No se completó el reintento SAM. Consulta el resultado guardado; no se repetirá el envío. El intento anterior puede haber sido facturado.':
@@ -793,6 +831,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       this.processAuthorizedMuse=false;
       if(!opened || !current())this.finishProcessing();
     }
+    if(pendingReference && current())await this.restoreReference(pendingReference);
   }
   readonly museAutoStatus=signal<'idle'|'reading'|'preparing'|'evaluating'|'saved'|'failed'>('idle');
   private processAuthorizedMuse=false;
@@ -882,7 +921,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     this.connection.setPort(p);
   }
   private resetServerCheck():void {
-    this.serial++;
+    this.serial++;this.referenceReview.set(null);this.referenceSaving.set(false);this.referenceAttempt=null;
     if(this.processing() && !this.sending())this.finishProcessing();
     else this.processing.set(false);
     this.processingReset.emit();
@@ -1043,6 +1082,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
 
   get es():boolean {return this.language()==='es';}
   statusLabel():string {
+    if(this.referenceReview())return this.es?'Esperando tu confirmación':'Waiting for your confirmation';
     if(this.processing())return this.es?'Procesando':'Processing';
     if(!this.hasSource())return this.es?'Selecciona una fuente':'Select a source';
     if(this.checking())return this.cacheEnabled()?(this.es?'Verificando caché':'Checking cache'):(this.es?'Calculando costo':'Estimating cost');
@@ -1354,6 +1394,8 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
   private async checkAdaptive():Promise<void> {
     if(!this.hasSource() || !this.http || !this.studyId() || !this.videoSha256() ||
        this.processing() || this.checking() || this.sending())return;
+    const pending=this.savedReference();
+    if(pending && this.apiEnabled() && pending.mode===this.paidMode()){await this.restoreReference(pending);return;}
     const serial=++this.serial,mode=this.paidMode(),sha=this.videoSha256(),useCache=this.cacheEnabled(),useApi=this.apiEnabled();
     this.processingReset.emit();this.checking.set(true);this.error.set('');
     this.adaptiveQuote.set(null);this.adaptiveResult.set(null);this.groundingQuote.set(null);
@@ -1382,6 +1424,11 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         throw new Error('INVALID_ADAPTIVE_QUOTE');
       this.adaptiveQuote.set(quote);this.preflight.set(preflight);
       this.readiness.set(access);this.groundingQuote.set(spark);
+      if(quote.requiresInitialBodyPointConfirmation){
+        const context:InitialReferenceResume={studyId:this.studyId(),role:this.videoRole(),sha,port:this.localApiPort(),mode,
+          sceneRunId:quote.sceneRunId??'',approvedSam:quote.totalSamEstimatedUsd,approvedCombined:this.combinedSamCost(quote),includeMuse:this.autoMuseAfterSam()};
+        this.referenceMetadata(quote,context);this.beginProcessing();this.startStageTrace(true);this.pauseReference(quote,context);
+      }
     }catch(e) {
       if(serial===this.serial){
         const status=(e as {status?:number})?.status;
@@ -1398,7 +1445,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         this.checking.set(false);
         // Returning to the saved investigation checks the failed stage without
         // another click, using only read-only receipts. No Meta request is sent.
-        if(this.autoCheck() && this.mode()==='api-meta')void this.findStageRetry();
+        if(this.autoCheck() && this.mode()==='api-meta' && !this.referenceReview())void this.findStageRetry();
       }
     }
   }
@@ -1456,10 +1503,118 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
     return null;
   }
 
-  private async analyzeAdaptive():Promise<void> {
-    if(!this.apiEnabled() || !this.http || !this.canProcess() || !this.segmentedMode())return;
-    let quote=this.adaptiveQuote()!;
-    const approvedSam=quote.totalSamEstimatedUsd,approvedCombined=this.combinedSamCost(quote),spark=this.groundingQuote();
+  private referenceStorageKey():string{return 'prooflab.sam-initial-reference.v1.'+this.localApiPort()+'.'+this.studyId()+'.'+this.videoRole()+'.'+this.videoSha256();}
+  private referenceContextMatches(c:InitialReferenceResume):boolean{return !this.disposed && c.studyId===this.studyId() && c.role===this.videoRole() &&
+    c.sha===this.videoSha256() && c.port===this.localApiPort() && this.apiEnabled() && c.mode===this.paidMode() && /^[a-f0-9]{32}$/.test(c.sceneRunId);}
+  private saveReference(c:InitialReferenceResume):void{try{sessionStorage.setItem(this.referenceStorageKey(),JSON.stringify(c));}catch{/* The active review remains usable without browser storage. */}}
+  private forgetReference():void{try{sessionStorage.removeItem(this.referenceStorageKey());}catch{}}
+  private savedReference():InitialReferenceResume|null {
+    try{const raw=sessionStorage.getItem(this.referenceStorageKey());if(!raw || raw.length>2048)return null;
+      const c=JSON.parse(raw) as InitialReferenceResume;
+      return this.referenceContextMatches(c) && typeof c.includeMuse==='boolean' && Number.isFinite(c.approvedSam) && c.approvedSam>0 && c.approvedSam<=.5 &&
+        Number.isFinite(c.approvedCombined) && c.approvedCombined>=c.approvedSam && c.approvedCombined<=.5 &&
+        (!c.stageRetry || c.mode==='api-meta' && /^[a-f0-9]{32}$/.test(c.failedBatchId??'')) &&
+        (!c.initialBodyPointConfirmationId || /^[a-f0-9]{32}$/.test(c.initialBodyPointConfirmationId))?c:null;
+    }catch{return null;}
+  }
+  private referenceMetadata(q:SamAdaptiveQuote,c:InitialReferenceResume):SamInitialReference {
+    const r=q.initialBodyPointConfirmation;
+    if(!this.referenceContextMatches(c) || !this.validAdaptiveQuote(q,c.sha) || q.requiresNewSparkCall ||
+      q.sceneRunId!==c.sceneRunId || q.totalSamEstimatedUsd>c.approvedSam+1e-9 || this.combinedSamCost(q)>c.approvedCombined+1e-9 ||
+      !r || r.sceneRunId!==c.sceneRunId || r.videoSha256!==c.sha || r.sceneKey!==q.sparkSceneKey ||
+      !/^[a-f0-9]{64}$/.test(r.frame0Sha256) || !Number.isSafeInteger(r.width) || !Number.isSafeInteger(r.height) ||
+      r.width<2 || r.height<2 || r.width>8192 || r.height>8192)throw Error('INITIAL_REFERENCE_CONTEXT_CHANGED');
+    const image=(value:string):string=>{const u=new URL(value,this.apiAddress()),base=new URL(this.adaptiveUrl());
+      if(u.origin!==base.origin || !u.pathname.startsWith(base.pathname+'/initial-reference/'))throw Error('INITIAL_REFERENCE_IMAGE_INVALID');return u.href;};
+    return {...r,initialFrameUrl:image(r.initialFrameUrl),clearFrameUrl:r.clearFrameUrl?image(r.clearFrameUrl):null};
+  }
+  private pauseReference(q:SamAdaptiveQuote,c:InitialReferenceResume):void {
+    const reference=this.referenceMetadata(q,c);this.adaptiveQuote.set(q);this.saveReference(c);
+    this.referenceReview.set({context:c,quote:q,reference});this.referenceSaving.set(false);
+    this.processing.set(true);this.processingPhase.set('reference-review');this.sending.set(false);this.connection.busy.set(false);
+    this.stopSparkPoll();this.traceClock.set(Date.now());if(this.traceTicker!==null)clearInterval(this.traceTicker);this.traceTicker=null;
+  }
+  private async restoreReference(c:InitialReferenceResume):Promise<void> {
+    if(!this.http || !this.referenceContextMatches(c))return;
+    const serial=++this.serial;this.checking.set(true);this.error.set('');this.processingReset.emit();
+    try {
+      const [quote,media,access]=await Promise.all([
+        firstValueFrom(this.http.get<SamAdaptiveQuote>(this.adaptiveUrl()+'/initial-reference?mode='+c.mode+'&sceneRunId='+c.sceneRunId+
+          (c.initialBodyPointConfirmationId?'&initialBodyPointConfirmationId='+c.initialBodyPointConfirmationId:'')).pipe(timeout(30000))),
+        firstValueFrom(this.http.get<SamPreflight>(this.url()+'/preflight').pipe(timeout(90000))),
+        firstValueFrom(this.http.get<SamReadiness>(this.apiAddress()+'/api/meta/readiness').pipe(timeout(10000)))
+      ]);
+      if(serial!==this.serial || !this.referenceContextMatches(c))return;
+      if(media.sourceSha256!==c.sha)throw Error('INITIAL_REFERENCE_CONTEXT_CHANGED');
+      this.referenceMetadata(quote,c);
+      this.preflight.set(media);this.readiness.set(access);this.adaptiveQuote.set(quote);
+      this.beginProcessing();this.startStageTrace(true);this.pauseReference(quote,c);
+    }catch{if(serial===this.serial && this.referenceContextMatches(c))this.error.set(this.es?
+      'No se pudo recuperar la revisión pendiente. Actualiza para recuperarla; no se envió otra consulta a Spark ni a SAM.':
+      'The pending review could not be restored. Refresh to recover it; no new Spark or SAM request was sent.');}
+    finally{if(serial===this.serial)this.checking.set(false);}
+  }
+  canConfirmReference():boolean {
+    const p=this.referenceReview(),a=this.readiness();return !!p && this.referenceContextMatches(p.context) &&
+      !this.referenceSaving() && !this.sending() && !this.connection.busy() && this.tokenEntered() &&
+      a?.creditsConfirmedByOwner===true && a.ownerApprovedPaidRequests===true && a.paidRequestsSwitchEnabled===true && a.manualTokenCallsPermitted===true;
+  }
+  cancelInitialReference():void {
+    if(this.referenceSaving() || !this.referenceReview())return;
+    this.serial++;this.referenceReview.set(null);this.finishProcessing();this.processingReset.emit();
+    this.error.set(this.es?'Revisión pendiente guardada. Puedes retomarla con «Actualizar costo» sin repetir Spark.':'Pending review saved. Use Refresh cost to resume without repeating Spark.');
+  }
+  async confirmInitialReference(point:SamBodyPoint):Promise<void> {
+    if(!this.http || !this.canConfirmReference())return;
+    const pending=this.referenceReview()!,c=pending.context,r=pending.reference,serial=this.serial;
+    if(!Number.isSafeInteger(point.x)||!Number.isSafeInteger(point.y)||point.x<0||point.y<0||point.x>=r.width||point.y>=r.height)return;
+    const identity=JSON.stringify(c);
+    if(!this.referenceAttempt || this.referenceAttempt.context!==identity || this.referenceAttempt.x!==point.x || this.referenceAttempt.y!==point.y)
+      this.referenceAttempt={context:identity,...point,id:crypto.randomUUID().replace(/-/g,'')};
+    this.referenceSaving.set(true);this.connection.busy.set(true);this.error.set('');
+    let confirmed:SamAdaptiveQuote|null=null;
+    try {
+      const q=await firstValueFrom(this.http.post<SamAdaptiveQuote>(this.adaptiveUrl()+'/initial-reference',{
+        sceneRunId:c.sceneRunId,videoSha256:c.sha,sceneKey:r.sceneKey,frame0Sha256:r.frame0Sha256,
+        x:point.x,y:point.y,confirmBodyInterior:true,clientConfirmationId:this.referenceAttempt.id,mode:c.mode
+      },{headers:{'X-ProofLab-Manual-Action':'sam-initial-reference'}}).pipe(timeout(30000)));
+      if(serial!==this.serial || !this.referenceContextMatches(c) || this.referenceReview()!==pending)return;
+      this.referenceMetadata(q,c);
+      if(q.sparkSceneKey!==r.sceneKey || q.initialBodyPointConfirmation?.frame0Sha256!==r.frame0Sha256 ||
+        q.initialBodyPointConfirmation?.width!==r.width || q.initialBodyPointConfirmation?.height!==r.height)throw Error('INITIAL_REFERENCE_CONTEXT_CHANGED');
+      if(q.requiresInitialBodyPointConfirmation || !q.canRunWithManualToken || !/^[a-f0-9]{32}$/.test(q.initialBodyPointConfirmationId??''))throw Error('INITIAL_REFERENCE_NOT_CONFIRMED');
+      confirmed=q;this.adaptiveQuote.set(q);this.saveReference({...c,initialBodyPointConfirmationId:q.initialBodyPointConfirmationId});
+    }catch{if(serial===this.serial && this.referenceContextMatches(c))this.error.set(this.es?
+      'No se pudo confirmar el punto. Comprueba la referencia y vuelve a intentarlo; SAM no se envió.':
+      'The point could not be confirmed. Check the reference and try again; SAM was not sent.');}
+    finally{if(serial===this.serial){this.referenceSaving.set(false);this.connection.busy.set(false);}}
+    if(confirmed && serial===this.serial && this.referenceContextMatches(c)){
+      if(c.stageRetry){
+        this.referenceSaving.set(true);this.connection.busy.set(true);
+        try{
+          const retry=await firstValueFrom(this.http.get<SamStageRetryQuote>(this.adaptiveUrl()+'/manual-stage-retry/quote?initialBodyPointConfirmationId='+confirmed.initialBodyPointConfirmationId).pipe(timeout(30000)));
+          if(serial!==this.serial || !this.referenceContextMatches(c))return;
+          if(!this.validStageRetryQuote(retry) || retry.failedBatchId!==c.failedBatchId || retry.sceneRunId!==c.sceneRunId ||
+            retry.sparkSceneKey!==r.sceneKey || retry.estimatedSamUsd>c.approvedSam+1e-9 ||
+            retry.initialBodyPointConfirmationId!==confirmed.initialBodyPointConfirmationId)throw Error('STAGE_RETRY_QUOTE_CHANGED');
+          this.stageRetryQuote.set(retry);this.referenceReview.set(null);this.forgetReference();this.finishProcessing();
+          this.referenceSaving.set(false);
+          if(retry.alreadyRequested)await this.recoverStageRetry();else await this.retryStage(c.includeMuse);
+        }catch{if(serial===this.serial && this.referenceContextMatches(c))this.error.set(this.es?
+          'El punto se guardó, pero cambió el reintento pendiente. No se envió SAM. Actualiza el costo para revisar su estado.':
+          'The point was saved, but the pending retry changed. SAM was not sent. Refresh cost to review its status.');}
+        finally{if(serial===this.serial){this.referenceSaving.set(false);this.connection.busy.set(false);}}
+      }else{
+        this.referenceReview.set(null);this.processAuthorizedMuse=c.includeMuse && this.autoMuseAfterSam() && this.videoRole()==='baseline';
+        await this.analyzeAdaptive({...c,initialBodyPointConfirmationId:confirmed.initialBodyPointConfirmationId},confirmed);
+      }
+    }
+  }
+
+  private async analyzeAdaptive(resume?:InitialReferenceResume,resumedQuote?:SamAdaptiveQuote):Promise<void> {
+    if(!this.apiEnabled() || !this.http || (!resume&&!this.canProcess()) || (resume&&!this.referenceContextMatches(resume)) || !this.segmentedMode())return;
+    let quote=resumedQuote??this.adaptiveQuote()!;
+    const approvedSam=resume?.approvedSam??quote.totalSamEstimatedUsd,approvedCombined=resume?.approvedCombined??this.combinedSamCost(quote),spark=this.groundingQuote(),includeMuse=resume?.includeMuse??this.autoMuseAfterSam();
     const token=this.connection.tokenForManualRequest();
     if(!token)return;
     const sha=this.videoSha256(),url=this.adaptiveUrl(),port=this.localApiPort(),mode=this.paidMode();
@@ -1469,8 +1624,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       url===this.adaptiveUrl() && port===this.localApiPort();
     this.processingReset.emit();this.beginProcessing();this.sending.set(true);
     this.error.set('');this.adaptiveProgress.set(null);this.adaptiveResult.set(null);
-    this.startStageTrace();
-    let opened=false,sparkFailureProgressRead=false;
+    if(!resume)this.startStageTrace();
+    else if(this.traceTicker===null)this.traceTicker=setInterval(()=>this.traceClock.set(Date.now()),250);
+    let opened=false,paused=false,sparkFailureProgressRead=false;
     try {
       if(quote.requiresNewSparkCall){
         if(!spark || !spark.canRun)throw Error('SPARK_NOT_READY');
@@ -1506,6 +1662,10 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       }
       void this.pollSpark();this.stopSparkPoll();
       this.sparkFinishedAt ||= Date.now();this.traceClock.set(Date.now());
+      if(quote.requiresInitialBodyPointConfirmation){
+        const context:InitialReferenceResume={studyId:this.studyId(),role:this.videoRole(),sha,port,mode,sceneRunId:quote.sceneRunId??'',approvedSam,approvedCombined,includeMuse};
+        this.pauseReference(quote,context);paused=true;return;
+      }
       this.processingPhase.set('sam');
       let polling=false;
       const poll=async()=>{
@@ -1518,7 +1678,9 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
         finally{polling=false;}
       };
       this.adaptivePollHandle=setInterval(()=>{void poll();},2000);
+      if(resume)this.forgetReference(); // Once submitted, reconcile the durable batch; never replay from a review descriptor.
       const report=await firstValueFrom(this.http.post<SamAdaptiveReport>(url+'/manual-batch',{
+        ...(quote.initialBodyPointConfirmationId?{initialBodyPointConfirmationId:quote.initialBodyPointConfirmationId}:{}),
         modelApiToken:token,videoSha256:sha,sceneKey:quote.sparkSceneKey,mode,sceneRunId:quote.sceneRunId??null,
         planSha256:quote.planSha256,clientBatchId:quote.suggestedBatchId,
         maximumSamCostUsd:quote.totalSamEstimatedUsd,
@@ -1589,7 +1751,7 @@ export class SamVideoReplay implements OnChanges, OnDestroy {
       this.stopSparkPoll();
       if(this.adaptivePollHandle!==null)clearInterval(this.adaptivePollHandle);
       this.adaptivePollHandle=null;this.sending.set(false);
-      if(!opened || !current())this.finishProcessing();
+      if((!opened && !paused) || !current())this.finishProcessing();
       if(current() && this.mode()==='api-meta' && (this.adaptiveResult()?.failedParts??0)>0)
         void this.findStageRetry(); // read-only: never resubmit to Meta
     }

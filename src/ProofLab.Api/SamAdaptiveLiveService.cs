@@ -178,7 +178,7 @@ public sealed partial class SamAdaptiveLiveService(
 
     private async Task<(SamVideoSource Source,SamSceneDefinition Scene,
         double[] Pts,SamAdaptiveSegmentPlan Plan,string Key)> Context(
-        string studyId,string role,int target,int inFlight,CancellationToken ct,string? recoveryFromBatchId=null,string? automaticParent=null,string? mode=null,string? sceneRunId=null)
+        string studyId,string role,int target,int inFlight,CancellationToken ct,string? recoveryFromBatchId=null,string? automaticParent=null,string? mode=null,string? sceneRunId=null,string? initialBodyPointConfirmationId=null)
     {
         var selectedMode=PendulumSamCache.NormalizeMode(mode);
         if(selectedMode==PendulumSamCache.FreshMode && (sceneRunId is null || recoveryFromBatchId is not null))
@@ -211,9 +211,10 @@ public sealed partial class SamAdaptiveLiveService(
         }
         RequireSingleOriginal(plan,pts.Length);
         var ptsSha=plan.VerifySourcePts(pts);
+        var principal=await ResolvePrincipalAsync(studyId,role,source,scene,plan,sceneRunId,
+            initialBodyPointConfirmationId,ct,recoveryFromBatchId,automaticParent);
         return (source,scene,pts,plan,
-            PlanKey(source.Sha256.ToLowerInvariant(),scene.Key,ptsSha,plan,recoveryFromBatchId,automaticParent,
-                NewPrincipalReference(scene,plan,recoveryFromBatchId,automaticParent)));
+            PlanKey(source.Sha256.ToLowerInvariant(),scene.Key,ptsSha,plan,recoveryFromBatchId,automaticParent,principal));
     }
 
     // This gate applies only to NEW paid submissions, never archive playback.
@@ -222,7 +223,7 @@ public sealed partial class SamAdaptiveLiveService(
         scene?.InitialBodyPoint is not null && scene.InitialPointReviewProtocol!=ObjectReviewPolicy.VisibleBodyPointProtocol;
 
     public async Task<SamAdaptiveLiveQuote> PreflightAsync(
-        string studyId,string role,int targetCoreFrames,int maxInFlight,CancellationToken ct,string? mode=null,string? sceneRunId=null)
+        string studyId,string role,int targetCoreFrames,int maxInFlight,CancellationToken ct,string? mode=null,string? sceneRunId=null,string? initialBodyPointConfirmationId=null)
     {
         var selectedMode=PendulumSamCache.NormalizeMode(mode);
         if(sceneRunId is not null && !ValidBatchId(sceneRunId))throw new ArgumentException("Invalid Spark run identity.");
@@ -245,20 +246,30 @@ public sealed partial class SamAdaptiveLiveService(
         RequireSingleOriginal(ideal,pts.Length);
         RequireSingleOriginal(plan,pts.Length);
         var ptsSha=plan.VerifySourcePts(pts);
-        var principal=scene is null?null:NewPrincipalReference(scene,plan,recovery);
         var requiresPointReview=RequiresInitialPointReview(scene);
+        if(scene is not null && sceneRunId is null && SamInitialBodyPointPolicy.RequiresConfirmation(scene))
+            sceneRunId=await scenes.InitialReferenceRunAsync(studyId,role,scene,ct);
+        if(initialBodyPointConfirmationId is not null && scene is null)
+            throw new InvalidDataException("Confirmation cannot be used without its exact Spark scene.");
+        var principal=scene is null?null:await ResolvePrincipalAsync(studyId,role,source,scene,plan,
+            sceneRunId,initialBodyPointConfirmationId,ct,recovery);
+        var needsHuman=SamInitialBodyPointPolicy.RequiresConfirmation(scene) && principal?.HumanConfirmation is null;
+        var confirmationView=scene is not null && (needsHuman || principal?.HumanConfirmation is not null)
+            ?await ConfirmationViewAsync(studyId,role,scene,sceneRunId,initialBodyPointConfirmationId,ct):null;
         return new(Protocol,source.Sha256.ToLowerInvariant(),scene?.Key??"",
             ptsSha,PlanKey(source.Sha256,scene?.Key??"PENDING_SPARK",ptsSha,plan,recovery,principalReference:principal),
             Guid.NewGuid().ToString("N"),pts.Length,plan.PartCount,
             plan.MaxInFlight,plan.SubmittedFrames,plan.BilledFrames,
-            plan.EstimatedSamCostUsd,0.50,null,access.ManualTokenCallsPermitted && !requiresPointReview,
+            plan.EstimatedSamCostUsd,0.50,null,access.ManualTokenCallsPermitted && !requiresPointReview && !needsHuman,
             scene is not null && !requiresPointReview,scene is null || requiresPointReview,
             requiresPointReview?"SAM_INITIAL_REFERENCE_REVIEW_REQUIRED":
+            needsHuman?"SAM_INITIAL_BODY_POINT_CONFIRMATION_REQUIRED":
+            principal?.HumanConfirmation is not null?"HUMAN_CONFIRMED_INITIAL_BODY_POINT; SPARK_SCENE_UNCHANGED; FULL_ORIGINAL_VIDEO; ONE_SAM_REQUEST":
             scene is null?"SINGLE_FULL_VIDEO_PENDING_SPARK_NO_INFERENCE_SENT":
                 principal is not null?"ONE_PRINCIPAL_SPARK_REFERENCE; OTHER_REFERENCES_RETAINED; FULL_ORIGINAL_VIDEO; ONE_SAM_REQUEST; NO_AUTOMATIC_RETRY":
                 "VERIFIED_SPARK_SEEDS; FULL_ORIGINAL_VIDEO; ONE_SAM_REQUEST; NO_AUTOMATIC_RETRY",
             ideal.PartCount,scene?.Seeds.Count(x=>x.Role=="object")??0,
-            false,recovery,0,plan.EstimatedSamCostUsd,selectedMode,sceneRunId,principal);
+            false,recovery,0,plan.EstimatedSamCostUsd,selectedMode,sceneRunId,principal,needsHuman,confirmationView,initialBodyPointConfirmationId);
     }
 
     // Historical recovery archives keep their original prompts and hashes.
@@ -316,10 +327,12 @@ public sealed partial class SamAdaptiveLiveService(
         try
         {
             var (source,scene,pts,plan,key)=await Context(
-                studyId,role,request.TargetCoreFrames,request.MaxInFlight,ct,request.RecoveryFromBatchId,automaticParent,mode,request.SceneRunId);
+                studyId,role,request.TargetCoreFrames,request.MaxInFlight,ct,request.RecoveryFromBatchId,automaticParent,mode,request.SceneRunId,request.InitialBodyPointConfirmationId);
             if(RequiresInitialPointReview(scene))throw new SamInitialReferenceReviewRequiredException();
+            if(SamInitialBodyPointPolicy.RequiresConfirmation(scene) && request.InitialBodyPointConfirmationId is null)
+                throw new SamInitialBodyPointConfirmationRequiredException(request.SceneRunId);
             var exact=automaticParent is null?await PreflightAsync(studyId,role,
-                request.TargetCoreFrames,request.MaxInFlight,ct,mode,request.SceneRunId):AutomaticQuote(source,scene,pts,plan,automaticParent);
+                request.TargetCoreFrames,request.MaxInFlight,ct,mode,request.SceneRunId,request.InitialBodyPointConfirmationId):AutomaticQuote(source,scene,pts,plan,automaticParent);
             if(request.ConfirmOneContinuousRetry && (automaticParent is not null || exact.ContinuousRetryEstimatedUsd<=0 ||
                !double.IsFinite(request.MaximumCombinedSamCostUsd) ||
                request.MaximumCombinedSamCostUsd+1e-9<exact.MaximumSamWithRetryEstimatedUsd))
@@ -370,7 +383,8 @@ public sealed partial class SamAdaptiveLiveService(
             // Resolve and validate EVERY Spark-grounded prompt BEFORE
             // consuming a trial slot or reserving any potentially billable
             // provider request. A missing source-frame seed aborts the batch.
-            var principal=NewPrincipalReference(scene,plan,request.RecoveryFromBatchId,automaticParent);
+            var principal=await ResolvePrincipalAsync(studyId,role,source,scene,plan,request.SceneRunId,
+                request.InitialBodyPointConfirmationId,ct,request.RecoveryFromBatchId,automaticParent);
             var prompts=principal is not null
                 ?new[]{SamPrincipalReferencePolicy.BuildPrompt(scene,plan.Windows.Single(),principal)}
                 :automaticParent is null?await Prompts(scene,plan,plan.VerifySourcePts(pts),request.RecoveryFromBatchId,ct):
@@ -627,6 +641,11 @@ public sealed partial class SamAdaptiveLiveService(
         if(context.PrincipalReference is not null &&
            (plan.PartCount!=1 || context.RecoveryFromBatchId is not null || context.AutomaticRetryOfBatchId is not null))
             throw new InvalidDataException("Principal references require a single original-video batch.");
+        if(context.PrincipalReference?.HumanConfirmation is {} savedHuman){
+            var storedHuman=await ReadConfirmationAsync(studyId,role,source,scene,
+                context.SceneRunId,savedHuman.Id,ct,verifyFrame:false);
+            if(savedHuman!=storedHuman)throw new InvalidDataException("Archived human reference differs from its immutable confirmation.");
+        }
         var prompts=context.PrincipalReference is not null
             ?new[]{SamPrincipalReferencePolicy.BuildPrompt(scene,plan.Windows.Single(),context.PrincipalReference)}
             :context.AutomaticRetryOfBatchId is null?await Prompts(scene,plan,ptsSha,context.RecoveryFromBatchId,ct):

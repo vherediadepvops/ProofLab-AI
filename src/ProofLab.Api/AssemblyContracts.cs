@@ -65,6 +65,10 @@ public sealed record SamSceneDefinition(string Key,string VideoSha256,string Evi
             ";y2="+s.Y2+";w="+Width+";h="+Height+"|>"))));
 }
 public interface IAssemblyScenes {
+    Task<AssemblyInitialReferenceFrames?> InitialReferenceFramesAsync(string id,string role,string runId,CancellationToken ct)=>
+        Task.FromResult<AssemblyInitialReferenceFrames?>(null);
+    Task<string?> InitialReferenceRunAsync(string id,string role,SamSceneDefinition scene,CancellationToken ct)=>
+        Task.FromResult<string?>(null);
     Task<SamSceneDefinition?> TrackingRunAsync(string id,string role,string runId,CancellationToken ct)=>
         throw new NotSupportedException("Exact Spark run lookup is unavailable.");
     Task<SamSuspensionEvidence?> SuspensionRunAsync(string id,string role,string runId,SamSceneDefinition scene,CancellationToken ct)=>

@@ -283,6 +283,11 @@ public sealed class PendulumSamCache(
             if (!string.Equals(request.VideoSha256, video.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Video SHA-256 confirmation mismatch.");
             if (mode == CacheMode && latest is not null) return Artifact(latest);
+            // Legacy routes cannot bypass the initial-pixel review in the adaptive flow.
+            // Historical evidence remains readable above; a new ambiguous submission
+            // must use its exact Spark run and a separately confirmed native body point.
+            if (SamInitialBodyPointPolicy.RequiresConfirmation(scene))
+                throw new SamInitialReferenceReviewRequiredException();
             // Production requires an authenticated visual target before a new SAM call.
             // A real cache hit above remains free and requires no new grounding.
             if(scenes is not null && scene is null)

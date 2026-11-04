@@ -1,4 +1,4 @@
-import {TestBed} from '@angular/core/testing';
+import {TestBed,DeferBlockState} from '@angular/core/testing';
 import {provideHttpClient} from '@angular/common/http';
 import {HttpTestingController,provideHttpClientTesting} from '@angular/common/http/testing';
 import {SamVideoReplay} from './sam-video-replay';
@@ -26,7 +26,7 @@ const completedProgress={batchId:batch,parts:1,started:1,completed:1,failed:0,ph
  perPart:[{part:0,state:'COMPLETED',events:50,deltas:45,outputChars:1000,elapsedMs:11000}]};
 async function tick(){for(let i=0;i<12;i++)await Promise.resolve();}
 describe('One complete-video SAM request and archived-result recovery',()=>{
- beforeEach(async()=>{await TestBed.configureTestingModule({imports:[SamVideoReplay],
+ beforeEach(async()=>{for(const k of Object.keys(sessionStorage))if(k.startsWith('prooflab.sam-initial-reference.'))sessionStorage.removeItem(k);await TestBed.configureTestingModule({imports:[SamVideoReplay],
  providers:[provideHttpClient(),provideHttpClientTesting()]}).compileComponents();});
  afterEach(()=>TestBed.inject(HttpTestingController).verify());
  function setup(){
@@ -476,5 +476,115 @@ describe('One complete-video SAM request and archived-result recovery',()=>{
    x.h.expectNone(r=>r.method==='POST');x.f.destroy();
   });
  }
+
+ const sceneRun='7'.repeat(32),confirmation='6'.repeat(32),frame0='5'.repeat(64);
+ const reference={sceneRunId:sceneRun,videoSha256:sha,sceneKey:scene,frame0Sha256:frame0,width:1080,height:1920,
+   initialFrameUrl:url+'/initial-reference/image/0?sceneRunId='+sceneRun,
+   clearFrameUrl:url+'/initial-reference/image/150?sceneRunId='+sceneRun,clearFrameIndex:150,suggestedPoint:{frame:0,x:187,y:1643}};
+ const humanQuote={...exact,sceneRunId:sceneRun,canRunWithManualToken:false,requiresInitialBodyPointConfirmation:true,initialBodyPointConfirmation:reference};
+ const confirmedQuote={...humanQuote,canRunWithManualToken:true,requiresInitialBodyPointConfirmation:false,initialBodyPointConfirmationId:confirmation};
+ async function pauseAfterSpark(x:Context){
+   await check(x);const p=x.c.process();x.h.expectOne(url+'/spark-once').flush({...located,evidence:{runId:sceneRun}});await tick();
+   x.h.expectOne(url+'/preflight?mode=api-meta-cache&sceneRunId='+sceneRun).flush(humanQuote);await p;x.f.detectChanges();
+   for(const block of await x.f.getDeferBlocks())await block.render(DeferBlockState.Complete);x.f.detectChanges();
+ }
+ it('pauses after the exact Spark run, leaves SAM unsent and requires an explicit human point',async()=>{
+   const x=setup();await pauseAfterSpark(x);
+   expect(x.c.referenceReview()?.reference.sceneRunId).toBe(sceneRun);expect(x.c.processing()).toBeTrue();
+   expect(x.c.sending()).toBeFalse();expect(x.con.busy()).toBeFalse();expect(x.c.canProcess()).toBeFalse();
+   expect(x.c.stageRows().find(r=>r.key==='initial-reference')?.state).toBe('AWAITING_CONFIRMATION');
+   const panel=x.f.nativeElement.querySelector('app-sam-initial-reference-review');expect(panel).toBeTruthy();
+   expect(panel.querySelector('circle')).toBeNull();expect(panel.querySelector('button.confirm-reference').disabled).toBeTrue();
+   const saved=Object.keys(sessionStorage).filter(k=>k.startsWith('prooflab.sam-initial-reference.')).map(k=>sessionStorage.getItem(k)).join('');
+   expect(saved).toContain(sceneRun);expect(saved).not.toContain('SYNTHETIC');expect(saved).not.toContain('modelApiToken');
+   x.h.expectNone(r=>r.method==='POST');x.f.destroy();expect(x.con.busy()).toBeFalse();
+ });
+ it('opens an existing ambiguous scene without a stored descriptor or another Spark call',async()=>{
+   const x=setup();await check(x,humanQuote,{...located,evidence:{runId:sceneRun}});
+   expect(x.c.referenceReview()?.reference.sceneRunId).toBe(sceneRun);expect(x.c.canConfirmReference()).toBeTrue();
+   x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('confirms native body coordinates once and continues the same run with one SAM request',async()=>{
+   const x=setup();await pauseAfterSpark(x);const p=x.c.confirmInitialReference({x:205,y:1670});
+   void x.c.confirmInitialReference({x:210,y:1675});expect(x.con.busy()).toBeTrue();
+   const local=x.h.expectOne(url+'/initial-reference');expect(local.request.headers.get('X-ProofLab-Manual-Action')).toBe('sam-initial-reference');
+   expect(local.request.body).toEqual(jasmine.objectContaining({x:205,y:1670,sceneRunId:sceneRun,frame0Sha256:frame0,sceneKey:scene,confirmBodyInterior:true}));
+   expect(local.request.body.modelApiToken).toBeUndefined();local.flush(confirmedQuote);await tick();
+   const post=x.h.expectOne(url+'/manual-batch');expect(post.request.body.initialBodyPointConfirmationId).toBe(confirmation);
+   expect(post.request.body.sceneRunId).toBe(sceneRun);expect(post.request.body.maximumSamCostUsd).toBe(.1334);
+   post.flush(done);await finalProgress(x);await p;expect(x.c.referenceReview()).toBeNull();
+   x.h.expectNone(r=>r.url.includes('spark-once'));unlock(x);x.f.destroy();
+ });
+ it('preserves the original Muse choice across pause even if the parent input changes',async()=>{
+   const x=setup();await pauseAfterSpark(x);x.f.componentRef.setInput('autoMuseAfterSam',true);x.f.detectChanges();
+   expect(x.c.referenceReview()?.context.includeMuse).toBeFalse();
+   const p=x.c.confirmInitialReference({x:205,y:1670});x.h.expectOne(url+'/initial-reference').flush(confirmedQuote);await tick();
+   x.h.expectOne(url+'/manual-batch').flush(done);await finalProgress(x);await p;
+   x.h.expectNone(r=>r.url.includes('/muse'));unlock(x);x.f.destroy();
+ });
+ it('rejects a changed source, run, image host or increased quote after saving the point without sending SAM',async()=>{
+   const changes=[{sourceSha256:'9'.repeat(64)},{sceneRunId:'9'.repeat(32)},
+     {initialBodyPointConfirmation:{...reference,initialFrameUrl:'https://invalid.example/frame.png'}},
+     {totalSamEstimatedUsd:.2,maximumSamWithRetryEstimatedUsd:.2}];
+   for(const patch of changes){const x=setup();await check(x,humanQuote,located);
+     const p=x.c.confirmInitialReference({x:205,y:1670});x.h.expectOne(url+'/initial-reference').flush({...confirmedQuote,...patch});await p;
+     expect(x.c.referenceReview()).not.toBeNull();expect(x.c.error()).toContain('SAM no se envió');expect(x.con.busy()).toBeFalse();
+     x.h.expectNone(r=>r.method==='POST');x.c.cancelInitialReference();x.f.destroy();sessionStorage.clear();
+   }
+ });
+ it('restores a pending review after reload using only exact-run reads and no provider dispatch',async()=>{
+   const first=setup();await pauseAfterSpark(first);first.f.destroy();const x=setup(),p=x.c.check();
+   x.h.expectOne(url+'/initial-reference?mode=api-meta-cache&sceneRunId='+sceneRun).flush(humanQuote);
+   x.h.expectOne(root+'/sam/baseline/preflight').flush(media);x.h.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush(access);await p;x.f.detectChanges();
+   expect(x.c.referenceReview()).not.toBeNull();expect(x.c.processing()).toBeTrue();expect(x.con.busy()).toBeFalse();
+   expect(x.f.nativeElement.querySelector('button.confirm-reference').disabled).toBeTrue();
+   x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('does not leave a busy operation or expose a review when restored metadata no longer matches',async()=>{
+   const first=setup();await pauseAfterSpark(first);first.f.destroy();const x=setup(),p=x.c.check();
+   x.h.expectOne(url+'/initial-reference?mode=api-meta-cache&sceneRunId='+sceneRun).flush({...humanQuote,sceneRunId:'9'.repeat(32)});
+   x.h.expectOne(root+'/sam/baseline/preflight').flush(media);x.h.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush(access);await p;
+   expect(x.c.referenceReview()).toBeNull();expect(x.c.processing()).toBeFalse();expect(x.con.busy()).toBeFalse();
+   expect(x.c.error()).toContain('recuperar');x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('ignores a late point confirmation after the video changes and never submits the old SAM request',async()=>{
+   const x=setup();await pauseAfterSpark(x);const p=x.c.confirmInitialReference({x:205,y:1670}),post=x.h.expectOne(url+'/initial-reference');
+   x.f.componentRef.setInput('videoSha256','9'.repeat(64));x.f.detectChanges();post.flush(confirmedQuote);await p;
+   expect(x.c.referenceReview()).toBeNull();expect(x.c.referenceSaving()).toBeFalse();expect(x.con.busy()).toBeFalse();
+   x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ it('allows cancel and read-only recovery, requiring a fresh explicit point',async()=>{
+   const x=setup();await pauseAfterSpark(x);x.c.cancelInitialReference();expect(x.c.processing()).toBeFalse();expect(x.c.sourcesLocked()).toBeFalse();
+   const p=x.c.check();x.h.expectOne(url+'/initial-reference?mode=api-meta-cache&sceneRunId='+sceneRun).flush(humanQuote);
+   x.h.expectOne(root+'/sam/baseline/preflight').flush(media);x.h.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush(access);await p;
+   expect(x.c.referenceReview()).not.toBeNull();x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+
+ it('keeps the same local confirmation identity on retry without retrying Spark or SAM',async()=>{
+   const x=setup();await pauseAfterSpark(x);let p=x.c.confirmInitialReference({x:205,y:1670});
+   const first=x.h.expectOne(url+'/initial-reference'),localId=first.request.body.clientConfirmationId;
+   first.flush({}, {status:503,statusText:'Unavailable'});await p;expect(x.c.referenceReview()).not.toBeNull();
+   p=x.c.confirmInitialReference({x:205,y:1670});const second=x.h.expectOne(url+'/initial-reference');
+   expect(second.request.body.clientConfirmationId).toBe(localId);second.flush({}, {status:503,statusText:'Unavailable'});await p;
+   x.h.expectNone(r=>r.method==='POST');x.f.destroy();
+ });
+ for(const origin of ['GET','POST'])it('preserves the archived retry claim after '+origin+' asks for a body point',async()=>{
+   const x=setup();await check(x,exact,located);x.c.mode.set('api-meta');
+   const next='f'.repeat(32),plan='7'.repeat(64),retry={failedBatchId:batch,newBatchId:next,videoSha256:sha,sparkSceneKey:scene,
+     sceneRunId:sceneRun,planSha256:plan,frames:667,estimatedSamUsd:.1334,targetCoreFrames:53,alreadyRequested:false,previousMayHaveBeenBilled:true};
+   if(origin==='POST')x.c.stageRetryQuote.set(retry);
+   const p=origin==='GET'?x.c.findStageRetry():x.c.retryStage();
+   x.h.expectOne(url+(origin==='GET'?'/manual-stage-retry/quote':'/manual-stage-retry')).flush({
+     code:'SAM_INITIAL_BODY_POINT_CONFIRMATION_REQUIRED',sceneRunId:sceneRun,failedBatchId:batch,newBatchId:next}, {status:409,statusText:'Conflict'});await tick();
+   x.h.expectOne(url+'/initial-reference?mode=api-meta&sceneRunId='+sceneRun).flush({...humanQuote,mode:'api-meta'});
+   x.h.expectOne(root+'/sam/baseline/preflight').flush(media);x.h.expectOne('http://127.0.0.1:5391/api/meta/readiness').flush(access);await p;
+   expect(x.c.referenceReview()?.context.failedBatchId).toBe(batch);expect(x.c.referenceReview()?.context.stageRetry).toBeTrue();
+   const go=x.c.confirmInitialReference({x:205,y:1670});x.h.expectOne(url+'/initial-reference').flush({...confirmedQuote,mode:'api-meta'});await tick();
+   x.h.expectOne(url+'/manual-stage-retry/quote?initialBodyPointConfirmationId='+confirmation).flush({...retry,initialBodyPointConfirmationId:confirmation});await tick();
+   const post=x.h.expectOne(url+'/manual-stage-retry');expect(post.request.body.failedBatchId).toBe(batch);expect(post.request.body.newBatchId).toBe(next);
+   expect(post.request.body.initialBodyPointConfirmationId).toBe(confirmation);post.flush({...done,batchId:next,planSha256:plan});await tick();
+   x.h.expectOne(url+'/batches/'+next+'/progress').flush({...completedProgress,batchId:next});await go;
+   x.h.expectNone(r=>r.url.includes('/manual-batch')||r.url.includes('/spark-once'));unlock(x);x.f.destroy();
+ });
 
 });

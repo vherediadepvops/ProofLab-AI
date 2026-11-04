@@ -23,15 +23,16 @@ public static class SamAdaptiveEndpoints
     public static IEndpointRouteBuilder MapSamAdaptiveEndpoints(
         this IEndpointRouteBuilder app)
     {
+        app.MapSamInitialReferenceEndpoints();
         app.MapGet(Route+"/preflight",async (
-            string id,string role,int? targetCoreFrames,int? maxInFlight,string? mode,string? sceneRunId,
+            string id,string role,int? targetCoreFrames,int? maxInFlight,string? mode,string? sceneRunId,string? initialBodyPointConfirmationId,
             SamAdaptiveLiveService service,HttpContext ctx,CancellationToken ct)=>
         {
             if(!Loopback(ctx))return Results.StatusCode(403);
             try
             {
                 return Results.Ok(await service.PreflightAsync(
-                    id,role,targetCoreFrames??53,maxInFlight??0,ct,mode,sceneRunId));
+                    id,role,targetCoreFrames??53,maxInFlight??0,ct,mode,sceneRunId,initialBodyPointConfirmationId));
             }
             catch(ArgumentException ex) when(ex is SamSingleVideoFrameLimitException ||
                 ex.Message=="SAM video requires at least 50 source frames.")
@@ -136,6 +137,7 @@ public static class SamAdaptiveEndpoints
                 error="Original recording not found."});}
             catch(InvalidDataException){return Results.Conflict(new{
                 error="Video frames, timestamps or Spark source are inconsistent."});}
+            catch(SamInitialBodyPointConfirmationRequiredException ex){return Results.Conflict(new{code="SAM_INITIAL_BODY_POINT_CONFIRMATION_REQUIRED",sceneRunId=ex.SceneRunId,failedBatchId=ex.FailedBatchId,newBatchId=ex.NewBatchId});}
             catch(SamInitialReferenceReviewRequiredException){return Results.Conflict(new{code="SAM_INITIAL_REFERENCE_REVIEW_REQUIRED"});}
             catch(InvalidOperationException){return Results.Conflict(new{
                 error="Adaptive request blocked: budget, credit, prior attempt, source or owner approval."});}
@@ -144,15 +146,16 @@ public static class SamAdaptiveEndpoints
         // A separate, owner-initiated retry from the failed SAM stage only.
         // A read-only quote never repeats Spark or opens a billable request.
         app.MapGet(Route+"/manual-stage-retry/quote",async (
-            string id,string role,SamAdaptiveLiveService service,
+            string id,string role,string? initialBodyPointConfirmationId,SamAdaptiveLiveService service,
             HttpContext ctx,CancellationToken ct)=>
         {
             if(!Loopback(ctx))return Results.StatusCode(403);
             ctx.Response.Headers.CacheControl="no-store";
             try{
-                var quote=await service.StageRetryQuoteAsync(id,role,ct);
+                var quote=await service.StageRetryQuoteAsync(id,role,ct,initialBodyPointConfirmationId);
                 return quote is null?Results.NotFound():Results.Ok(quote);
             }
+            catch(SamInitialBodyPointConfirmationRequiredException ex){return Results.Conflict(new{code="SAM_INITIAL_BODY_POINT_CONFIRMATION_REQUIRED",sceneRunId=ex.SceneRunId,failedBatchId=ex.FailedBatchId,newBatchId=ex.NewBatchId});}
             catch(SamInitialReferenceReviewRequiredException){return Results.Conflict(new{code="SAM_INITIAL_REFERENCE_REVIEW_REQUIRED"});}
             catch(ArgumentException){return Results.BadRequest();}
             catch(FileNotFoundException){return Results.NotFound();}
@@ -172,6 +175,7 @@ public static class SamAdaptiveEndpoints
             if(!SamManualApiTokenPolicy.Accepts(request.ModelApiToken))
                 return Results.BadRequest(new{error="Manual Meta key invalid."});
             try{return Results.Ok(await service.RunStageRetryAsync(id,role,request,ct));}
+            catch(SamInitialBodyPointConfirmationRequiredException ex){return Results.Conflict(new{code="SAM_INITIAL_BODY_POINT_CONFIRMATION_REQUIRED",sceneRunId=ex.SceneRunId,failedBatchId=ex.FailedBatchId,newBatchId=ex.NewBatchId});}
             catch(SamInitialReferenceReviewRequiredException){return Results.Conflict(new{code="SAM_INITIAL_REFERENCE_REVIEW_REQUIRED"});}
             catch(ArgumentException){return Results.BadRequest();}
             catch(FileNotFoundException){return Results.NotFound();}
