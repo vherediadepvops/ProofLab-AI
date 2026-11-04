@@ -28,6 +28,8 @@ ProofLab AI turns videos of physical experiments into measurements, testable pre
 
 Measurements and model interpretations have different roles. This remains a research prototype, not a guarantee of universal scientific accuracy. See the [evaluation protocol](docs/EVALUATION.md) and [documented results and limitations](docs/RESULTS.md).
 
+**Submission evidence (4 November):** [What is verified, the 25-case workflow register and remaining gaps](docs/SUBMISSION-EVIDENCE-2026-11-04.md).
+
 ## Support ProofLab AI ❤️
 
 Built in Peru 🇵🇪 for the Meta Global AI Developer Hackathon 2026.
