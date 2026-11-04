@@ -1,5 +1,41 @@
 # ProofLab AI — Hackathon Meta 2026
 
+## Prueba ProofLab AI
+
+**[Abrir la plataforma](https://prooflab-ai.com/)** · [Read this guide in English](README.md)
+
+ProofLab AI transforma videos de experimentos físicos en mediciones, predicciones comprobables y evidencias que se pueden revisar. En la demostración de tres minutos, usamos un péndulo para comparar una primera observación con una segunda grabación real.
+
+## Mira la demostración en tu idioma 🌎
+
+| Idioma | Video de demostración |
+| --- | --- |
+| 🇪🇸 Español | [Ver demostración de 3 minutos](https://youtu.be/D1O1ZFvc0q0) |
+| 🇺🇸 English | [Watch the 3-minute demo](https://youtu.be/75i78EO8xZo) |
+| 🇧🇷 Português | [Assistir à demonstração de 3 minutos](https://youtu.be/EXuD3RJayIk) |
+| 🇨🇳 简体中文 | [观看三分钟演示](https://youtu.be/quHyAHKxzZ8) |
+
+*Los enlaces corresponden a versiones de la demostración en distintos idiomas; no significan que toda la interfaz esté traducida a los cuatro.*
+
+## ¿Cómo funciona ProofLab AI? 🔬
+
+**Video de un experimento real** → **Seguimiento del objeto con SAM** → **Mediciones y gráficas de ProofLab** → **Interpretación científica con Muse Spark** → **Predicción fijada** → **Análisis de un segundo video real y comparación con la tolerancia predefinida**.
+
+- **SAM:** identifica y sigue el objeto del experimento en la grabación.
+- **ProofLab:** calcula magnitudes del movimiento a partir de posiciones y marcas de tiempo observadas.
+- **Muse Spark:** interpreta los resultados, las evidencias y sus limitaciones.
+- **Predicción y verificación:** conserva la predicción *antes* de la segunda prueba y después compara los resultados con la tolerancia establecida previamente.
+
+Las mediciones y las interpretaciones de IA cumplen funciones distintas. Seguimos desarrollando un prototipo de investigación, sin afirmar precisión científica universal. Consulta el [protocolo de evaluación](docs/EVALUATION.es.md) y los [resultados y limitaciones documentados](docs/RESULTS.es.md).
+
+## Apoya ProofLab AI ❤️
+
+Desarrollado en Perú 🇵🇪 para el Meta Global AI Developer Hackathon 2026.
+
+Si te interesa el proyecto, **[dale Me gusta, comenta y republica nuestra demostración en X](https://x.com/vherediaE/status/2118103090998260005)**. Tus comentarios ayudan a que más personas descubran la experimentación basada en evidencias.
+
+---
+
 **Pruebas en Edge:** [guía reproducible y herramientas](docs/EDGE-TESTING.es.md).
 
 **Edición de competencia — creada el 26 de octubre de 2026 después de la inauguración oficial.**
