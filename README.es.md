@@ -28,6 +28,8 @@ ProofLab AI transforma videos de experimentos físicos en mediciones, prediccion
 
 Las mediciones y las interpretaciones de IA cumplen funciones distintas. Seguimos desarrollando un prototipo de investigación, sin afirmar precisión científica universal. Consulta el [protocolo de evaluación](docs/EVALUATION.es.md) y los [resultados y limitaciones documentados](docs/RESULTS.es.md).
 
+**Evidencias de la entrega (4 de noviembre):** [Resultados verificados, registro de 25 flujos y pendientes](docs/SUBMISSION-EVIDENCE-2026-11-04.es.md).
+
 ## Apoya ProofLab AI ❤️
 
 Desarrollado en Perú 🇵🇪 para el Meta Global AI Developer Hackathon 2026.
