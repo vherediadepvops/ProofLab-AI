@@ -1,0 +1,2029 @@
+{
+  "schemaVersion": "PROOFLAB_PUBLIC_PENDULUM_V1",
+  "description": "Sanitized historical pendulum comparisons from owner-selected 25 research sessions.",
+  "source": "GET-only from https://prooflab-ai.com on AWS Lightsail",
+  "observationType": "retrospective_reuse_of_eight_public_original_recordings",
+  "publicVideoManifest": "https://prooflab-ai.com/pendulum-videos/manifest.json",
+  "cases": [
+    {
+      "caseId": "PEND-01",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "50CM_15G_272.4g.MOV",
+          "sha256": "d96ed79114c0cbf8b49b72cb2efeff9d124fbd22f545f24facb24e30a64ed9d7",
+          "url": "https://prooflab-ai.com/pendulum-videos/50CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "80CM_15G_272.4g.MOV",
+          "sha256": "f58f4c5ab033ccbda8b168bd35c3bbdc4cca3efa10f468a2b06216808cdd468f",
+          "url": "https://prooflab-ai.com/pendulum-videos/80CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.5,
+        "followupLengthMeters": 0.8,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.4574157279702833,
+          "statisticalStandardUncertaintySeconds": 0.00042514689733898263,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 21,
+          "usedCycles": 11,
+          "totalFrames": 1913,
+          "usableFrames": 1913,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0015740618522489416,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.8169527349690506,
+          "statisticalStandardUncertaintySeconds": 0.00042842131063447307,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 17,
+          "usedCycles": 9,
+          "totalFrames": 1989,
+          "usableFrames": 1989,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0010844549411499992,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.843501279255385,
+        "lowerSeconds": 1.7513262152926157,
+        "upperSeconds": 1.9356763432181545,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -1.4401153167117875,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": false,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-02",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "30CM_15G_272.4g.MOV",
+          "sha256": "a956af8381d76c1208b229b531b4c02e2017862ba2cd090a641a5af47c996df5",
+          "url": "https://prooflab-ai.com/pendulum-videos/30CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "60CM_15G_272.4g.MOV",
+          "sha256": "f453404870dddc803f57ec06cf81b3f8c14694f13cd60b916dc9caa6a3fd16e2",
+          "url": "https://prooflab-ai.com/pendulum-videos/60CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.3,
+        "followupLengthMeters": 0.6,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.1461802960561598,
+          "statisticalStandardUncertaintySeconds": 0.0010266971070126284,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 26,
+          "usedCycles": 13,
+          "totalFrames": 1910,
+          "usableFrames": 1910,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.003900882591788795,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.5845204310567993,
+          "statisticalStandardUncertaintySeconds": 0.00040810717489521143,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 19,
+          "usedCycles": 10,
+          "totalFrames": 1874,
+          "usableFrames": 1874,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0012170617382219976,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.6209437196074306,
+        "lowerSeconds": 1.539896533627059,
+        "upperSeconds": 1.7019909055878022,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -2.2470421465004664,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-03",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "20CM_15G_272.4g.MOV",
+          "sha256": "ed9e7d6367114ed4427f8b8c8f0b810c9c6b28564d42e500cfcf0ee5c3c5228b",
+          "url": "https://prooflab-ai.com/pendulum-videos/20CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "40CM_15G_272.4g.MOV",
+          "sha256": "9efc6c491161d62463ff78c7051c9561afc486bcf5d70b072cea960458345a6f",
+          "url": "https://prooflab-ai.com/pendulum-videos/40CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.2,
+        "followupLengthMeters": 0.4,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 0.9627798141380778,
+          "statisticalStandardUncertaintySeconds": 0.0012427130368523477,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 31,
+          "usedCycles": 16,
+          "totalFrames": 1914,
+          "usableFrames": 1908,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.008341161743072197,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 1,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.3100539054451612,
+          "statisticalStandardUncertaintySeconds": 0.0006894379188407315,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 22,
+          "usedCycles": 11,
+          "totalFrames": 1858,
+          "usableFrames": 1858,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.003194222340127791,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.3615762707331174,
+        "lowerSeconds": 1.2934974571964615,
+        "upperSeconds": 1.4296550842697733,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -3.7840234436675946,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-04",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "40CM_15G_272.4g.MOV",
+          "sha256": "9efc6c491161d62463ff78c7051c9561afc486bcf5d70b072cea960458345a6f",
+          "url": "https://prooflab-ai.com/pendulum-videos/40CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "70CM_15G_272.4g.MOV",
+          "sha256": "968549c2dbe99d825caf217c7a5ea380d669882ecf22d7338a34bf4a7c88b2e5",
+          "url": "https://prooflab-ai.com/pendulum-videos/70CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.4,
+        "followupLengthMeters": 0.7,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.3100542872062582,
+          "statisticalStandardUncertaintySeconds": 0.0006917804028452578,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 22,
+          "usedCycles": 11,
+          "totalFrames": 1858,
+          "usableFrames": 1858,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0031921963015791874,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.7008589496673088,
+          "statisticalStandardUncertaintySeconds": 0.0004931753025495745,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 17,
+          "usedCycles": 9,
+          "totalFrames": 1839,
+          "usableFrames": 1839,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0012537385255832214,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.7330389239708723,
+        "lowerSeconds": 1.6463869777723286,
+        "upperSeconds": 1.819690870169416,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -1.856852368314399,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-05",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "20CM_15G_272.4g.MOV",
+          "sha256": "ed9e7d6367114ed4427f8b8c8f0b810c9c6b28564d42e500cfcf0ee5c3c5228b",
+          "url": "https://prooflab-ai.com/pendulum-videos/20CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "30CM_15G_272.4g.MOV",
+          "sha256": "a956af8381d76c1208b229b531b4c02e2017862ba2cd090a641a5af47c996df5",
+          "url": "https://prooflab-ai.com/pendulum-videos/30CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.2,
+        "followupLengthMeters": 0.3,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 0.9627860322207866,
+          "statisticalStandardUncertaintySeconds": 0.001240986816030878,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 31,
+          "usedCycles": 16,
+          "totalFrames": 1914,
+          "usableFrames": 1908,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.008342835511008017,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 1,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.1461718363743936,
+          "statisticalStandardUncertaintySeconds": 0.0010286547409262322,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 26,
+          "usedCycles": 13,
+          "totalFrames": 1910,
+          "usableFrames": 1910,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.003913056880181865,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.1791672552098655,
+        "lowerSeconds": 1.1202088924493723,
+        "upperSeconds": 1.2381256179703588,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -2.798196667155539,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-06",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "20CM_15G_272.4g.MOV",
+          "sha256": "ed9e7d6367114ed4427f8b8c8f0b810c9c6b28564d42e500cfcf0ee5c3c5228b",
+          "url": "https://prooflab-ai.com/pendulum-videos/20CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "50CM_15G_272.4g.MOV",
+          "sha256": "d96ed79114c0cbf8b49b72cb2efeff9d124fbd22f545f24facb24e30a64ed9d7",
+          "url": "https://prooflab-ai.com/pendulum-videos/50CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.2,
+        "followupLengthMeters": 0.5,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 0.9627901766133259,
+          "statisticalStandardUncertaintySeconds": 0.0012429784668291138,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 31,
+          "usedCycles": 16,
+          "totalFrames": 1914,
+          "usableFrames": 1908,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.008345239444325516,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 1,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.457423830677429,
+          "statisticalStandardUncertaintySeconds": 0.000431198029193895,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 21,
+          "usedCycles": 11,
+          "totalFrames": 1913,
+          "usableFrames": 1913,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0015878677875937745,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.5223049334669445,
+        "lowerSeconds": 1.4461896867935973,
+        "upperSeconds": 1.5984201801402917,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -4.262030645972703,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-07",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "20CM_15G_272.4g.MOV",
+          "sha256": "ed9e7d6367114ed4427f8b8c8f0b810c9c6b28564d42e500cfcf0ee5c3c5228b",
+          "url": "https://prooflab-ai.com/pendulum-videos/20CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "60CM_15G_272.4g.MOV",
+          "sha256": "f453404870dddc803f57ec06cf81b3f8c14694f13cd60b916dc9caa6a3fd16e2",
+          "url": "https://prooflab-ai.com/pendulum-videos/60CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.2,
+        "followupLengthMeters": 0.6,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 0.9627850062424459,
+          "statisticalStandardUncertaintySeconds": 0.0012432723385029354,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 31,
+          "usedCycles": 16,
+          "totalFrames": 1914,
+          "usableFrames": 1908,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.008341101545715903,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 1,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.584553459060979,
+          "statisticalStandardUncertaintySeconds": 0.0004353877652290083,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 19,
+          "usedCycles": 10,
+          "totalFrames": 1874,
+          "usableFrames": 1874,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.001244664157469873,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.667592547577435,
+        "lowerSeconds": 1.584212920198563,
+        "upperSeconds": 1.7509721749563067,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -4.979579012696433,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-08",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "20CM_15G_272.4g.MOV",
+          "sha256": "ed9e7d6367114ed4427f8b8c8f0b810c9c6b28564d42e500cfcf0ee5c3c5228b",
+          "url": "https://prooflab-ai.com/pendulum-videos/20CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "70CM_15G_272.4g.MOV",
+          "sha256": "968549c2dbe99d825caf217c7a5ea380d669882ecf22d7338a34bf4a7c88b2e5",
+          "url": "https://prooflab-ai.com/pendulum-videos/70CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.2,
+        "followupLengthMeters": 0.7,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 0.9627902085769615,
+          "statisticalStandardUncertaintySeconds": 0.001240707800972551,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 31,
+          "usedCycles": 16,
+          "totalFrames": 1914,
+          "usableFrames": 1908,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.00833191892798129,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 1,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.700904432686392,
+          "statisticalStandardUncertaintySeconds": 0.0005072817797275177,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 17,
+          "usedCycles": 9,
+          "totalFrames": 1839,
+          "usableFrames": 1839,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.001257691707395019,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.8012155479178058,
+        "lowerSeconds": 1.7111547705219154,
+        "upperSeconds": 1.8912763253136962,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "numericalVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "relativeDifferencePercent": -5.569078911592385,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-09",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "20CM_15G_272.4g.MOV",
+          "sha256": "ed9e7d6367114ed4427f8b8c8f0b810c9c6b28564d42e500cfcf0ee5c3c5228b",
+          "url": "https://prooflab-ai.com/pendulum-videos/20CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "80CM_15G_272.4g.MOV",
+          "sha256": "f58f4c5ab033ccbda8b168bd35c3bbdc4cca3efa10f468a2b06216808cdd468f",
+          "url": "https://prooflab-ai.com/pendulum-videos/80CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.2,
+        "followupLengthMeters": 0.8,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 0.9627861731965622,
+          "statisticalStandardUncertaintySeconds": 0.0012426386653867133,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 31,
+          "usedCycles": 16,
+          "totalFrames": 1914,
+          "usableFrames": 1908,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.008347517685298038,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 1,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.8169557977616877,
+          "statisticalStandardUncertaintySeconds": 0.0004055122032458603,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 17,
+          "usedCycles": 9,
+          "totalFrames": 1989,
+          "usableFrames": 1989,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0010810240862076355,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.9255723463931245,
+        "lowerSeconds": 1.829293729073468,
+        "upperSeconds": 2.021850963712781,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "numericalVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "relativeDifferencePercent": -5.640740989809667,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-10",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "30CM_15G_272.4g.MOV",
+          "sha256": "a956af8381d76c1208b229b531b4c02e2017862ba2cd090a641a5af47c996df5",
+          "url": "https://prooflab-ai.com/pendulum-videos/30CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "40CM_15G_272.4g.MOV",
+          "sha256": "9efc6c491161d62463ff78c7051c9561afc486bcf5d70b072cea960458345a6f",
+          "url": "https://prooflab-ai.com/pendulum-videos/40CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.3,
+        "followupLengthMeters": 0.4,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.1461792254163827,
+          "statisticalStandardUncertaintySeconds": 0.0010270260519960948,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 26,
+          "usedCycles": 13,
+          "totalFrames": 1910,
+          "usableFrames": 1910,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0038968574615157975,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.3100662573857862,
+          "statisticalStandardUncertaintySeconds": 0.0006882522943357324,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 22,
+          "usedCycles": 11,
+          "totalFrames": 1858,
+          "usableFrames": 1858,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.003194253866537317,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.3234937686674109,
+        "lowerSeconds": 1.2573190802340402,
+        "upperSeconds": 1.3896684571007816,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -1.0145503967989522,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-11",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "30CM_15G_272.4g.MOV",
+          "sha256": "a956af8381d76c1208b229b531b4c02e2017862ba2cd090a641a5af47c996df5",
+          "url": "https://prooflab-ai.com/pendulum-videos/30CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "50CM_15G_272.4g.MOV",
+          "sha256": "d96ed79114c0cbf8b49b72cb2efeff9d124fbd22f545f24facb24e30a64ed9d7",
+          "url": "https://prooflab-ai.com/pendulum-videos/50CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.3,
+        "followupLengthMeters": 0.5,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.1461825539226476,
+          "statisticalStandardUncertaintySeconds": 0.0010241754746228363,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 26,
+          "usedCycles": 13,
+          "totalFrames": 1910,
+          "usableFrames": 1910,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.003894601565576388,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.4574326482105284,
+          "statisticalStandardUncertaintySeconds": 0.0004368429978963584,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 21,
+          "usedCycles": 11,
+          "totalFrames": 1913,
+          "usableFrames": 1913,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0015861324786325026,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.4797153143519661,
+        "lowerSeconds": 1.4057295486343677,
+        "upperSeconds": 1.5537010800695645,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -1.5058752129761044,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-12",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "30CM_15G_272.4g.MOV",
+          "sha256": "a956af8381d76c1208b229b531b4c02e2017862ba2cd090a641a5af47c996df5",
+          "url": "https://prooflab-ai.com/pendulum-videos/30CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "70CM_15G_272.4g.MOV",
+          "sha256": "968549c2dbe99d825caf217c7a5ea380d669882ecf22d7338a34bf4a7c88b2e5",
+          "url": "https://prooflab-ai.com/pendulum-videos/70CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.3,
+        "followupLengthMeters": 0.7,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.1461632324669682,
+          "statisticalStandardUncertaintySeconds": 0.0010282844192106436,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 26,
+          "usedCycles": 13,
+          "totalFrames": 1910,
+          "usableFrames": 1910,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.003913297845326184,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.7008762961644452,
+          "statisticalStandardUncertaintySeconds": 0.0004979048378023981,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 17,
+          "usedCycles": 9,
+          "totalFrames": 1839,
+          "usableFrames": 1839,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0012582754223492833,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.7507932571850497,
+        "lowerSeconds": 1.6632535943257971,
+        "upperSeconds": 1.8383329200443024,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -2.851105395554343,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-13",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "30CM_15G_272.4g.MOV",
+          "sha256": "a956af8381d76c1208b229b531b4c02e2017862ba2cd090a641a5af47c996df5",
+          "url": "https://prooflab-ai.com/pendulum-videos/30CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "80CM_15G_272.4g.MOV",
+          "sha256": "f58f4c5ab033ccbda8b168bd35c3bbdc4cca3efa10f468a2b06216808cdd468f",
+          "url": "https://prooflab-ai.com/pendulum-videos/80CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.3,
+        "followupLengthMeters": 0.8,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.1461766259139194,
+          "statisticalStandardUncertaintySeconds": 0.0010268230279263007,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 26,
+          "usedCycles": 13,
+          "totalFrames": 1910,
+          "usableFrames": 1910,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0039001219190851416,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.816952795930276,
+          "statisticalStandardUncertaintySeconds": 0.0004307868453795143,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 17,
+          "usedCycles": 9,
+          "totalFrames": 1989,
+          "usableFrames": 1989,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0010782803648956441,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.871698592395985,
+        "lowerSeconds": 1.7781136627761858,
+        "upperSeconds": 1.9652835220157843,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -2.9249258768543562,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-14",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "40CM_15G_272.4g.MOV",
+          "sha256": "9efc6c491161d62463ff78c7051c9561afc486bcf5d70b072cea960458345a6f",
+          "url": "https://prooflab-ai.com/pendulum-videos/40CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "50CM_15G_272.4g.MOV",
+          "sha256": "d96ed79114c0cbf8b49b72cb2efeff9d124fbd22f545f24facb24e30a64ed9d7",
+          "url": "https://prooflab-ai.com/pendulum-videos/50CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.4,
+        "followupLengthMeters": 0.5,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.3100597664176374,
+          "statisticalStandardUncertaintySeconds": 0.0006915524349861939,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 22,
+          "usedCycles": 11,
+          "totalFrames": 1858,
+          "usableFrames": 1858,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.003189175585361081,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.4574461853174105,
+          "statisticalStandardUncertaintySeconds": 0.00043150172699790945,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 21,
+          "usedCycles": 11,
+          "totalFrames": 1913,
+          "usableFrames": 1913,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0015861950224412176,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.4646913461486668,
+        "lowerSeconds": 1.3914567788412333,
+        "upperSeconds": 1.5379259134561003,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -0.49465444377118084,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-15",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "40CM_15G_272.4g.MOV",
+          "sha256": "9efc6c491161d62463ff78c7051c9561afc486bcf5d70b072cea960458345a6f",
+          "url": "https://prooflab-ai.com/pendulum-videos/40CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "60CM_15G_272.4g.MOV",
+          "sha256": "f453404870dddc803f57ec06cf81b3f8c14694f13cd60b916dc9caa6a3fd16e2",
+          "url": "https://prooflab-ai.com/pendulum-videos/60CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.4,
+        "followupLengthMeters": 0.6,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.310069240725437,
+          "statisticalStandardUncertaintySeconds": 0.0006903627222982255,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 22,
+          "usedCycles": 11,
+          "totalFrames": 1858,
+          "usableFrames": 1858,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.003195183309196671,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.5845341507891337,
+          "statisticalStandardUncertaintySeconds": 0.0004166052454447819,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 19,
+          "usedCycles": 10,
+          "totalFrames": 1874,
+          "usableFrames": 1874,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.001244831422698531,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.604500583746352,
+        "lowerSeconds": 1.5242755545590343,
+        "upperSeconds": 1.6847256129336696,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -1.2444017259625184,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-16",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "40CM_15G_272.4g.MOV",
+          "sha256": "9efc6c491161d62463ff78c7051c9561afc486bcf5d70b072cea960458345a6f",
+          "url": "https://prooflab-ai.com/pendulum-videos/40CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "80CM_15G_272.4g.MOV",
+          "sha256": "f58f4c5ab033ccbda8b168bd35c3bbdc4cca3efa10f468a2b06216808cdd468f",
+          "url": "https://prooflab-ai.com/pendulum-videos/80CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.4,
+        "followupLengthMeters": 0.8,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.3100538722092496,
+          "statisticalStandardUncertaintySeconds": 0.0006908131204303924,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 22,
+          "usedCycles": 11,
+          "totalFrames": 1858,
+          "usableFrames": 1858,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0031924229645633787,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "INCONCLUSIVE",
+          "periodSeconds": null,
+          "statisticalStandardUncertaintySeconds": null,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 0,
+          "usedCycles": 0,
+          "totalFrames": 1989,
+          "usableFrames": 61,
+          "detectionCoverage": 0.030668677727501256,
+          "relativePeriodDrift": null,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 3,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.8526959535177105,
+        "lowerSeconds": 1.7600611558418249,
+        "upperSeconds": 1.9453307511935962,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "INCONCLUSIVE",
+        "numericalVerdict": "INCONCLUSIVE",
+        "relativeDifferencePercent": null,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [
+        "FOLLOWUP_PERIOD_MISSING"
+      ],
+      "numericComplete": false
+    },
+    {
+      "caseId": "PEND-17",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "50CM_15G_272.4g.MOV",
+          "sha256": "d96ed79114c0cbf8b49b72cb2efeff9d124fbd22f545f24facb24e30a64ed9d7",
+          "url": "https://prooflab-ai.com/pendulum-videos/50CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "60CM_15G_272.4g.MOV",
+          "sha256": "f453404870dddc803f57ec06cf81b3f8c14694f13cd60b916dc9caa6a3fd16e2",
+          "url": "https://prooflab-ai.com/pendulum-videos/60CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.4,
+        "followupLengthMeters": 0.6,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.4573938088674772,
+          "statisticalStandardUncertaintySeconds": 0.00039823181702253315,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 21,
+          "usedCycles": 11,
+          "totalFrames": 1913,
+          "usableFrames": 1913,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0015528072702603933,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.584539191470092,
+          "statisticalStandardUncertaintySeconds": 0.00041700635276294574,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 19,
+          "usedCycles": 10,
+          "totalFrames": 1874,
+          "usableFrames": 1874,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0012430389224141899,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.7849355930082962,
+        "lowerSeconds": 1.6956888133578814,
+        "upperSeconds": 1.874182372658711,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "numericalVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "relativeDifferencePercent": -11.227094261729631,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-18",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "50CM_15G_272.4g.MOV",
+          "sha256": "d96ed79114c0cbf8b49b72cb2efeff9d124fbd22f545f24facb24e30a64ed9d7",
+          "url": "https://prooflab-ai.com/pendulum-videos/50CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "70CM_15G_272.4g.MOV",
+          "sha256": "968549c2dbe99d825caf217c7a5ea380d669882ecf22d7338a34bf4a7c88b2e5",
+          "url": "https://prooflab-ai.com/pendulum-videos/70CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.5,
+        "followupLengthMeters": 0.7,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.4574533855852343,
+          "statisticalStandardUncertaintySeconds": 0.00044149003156269604,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 21,
+          "usedCycles": 11,
+          "totalFrames": 1913,
+          "usableFrames": 1913,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0015896940872259424,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.7008634567336296,
+          "statisticalStandardUncertaintySeconds": 0.0004925543184805462,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 17,
+          "usedCycles": 9,
+          "totalFrames": 1839,
+          "usableFrames": 1839,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0012541714811805551,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.7244821018541787,
+        "lowerSeconds": 1.6382579967614697,
+        "upperSeconds": 1.8107062069468878,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -1.3696080171057834,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-19",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "60CM_15G_272.4g.MOV",
+          "sha256": "f453404870dddc803f57ec06cf81b3f8c14694f13cd60b916dc9caa6a3fd16e2",
+          "url": "https://prooflab-ai.com/pendulum-videos/60CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "70CM_15G_272.4g.MOV",
+          "sha256": "968549c2dbe99d825caf217c7a5ea380d669882ecf22d7338a34bf4a7c88b2e5",
+          "url": "https://prooflab-ai.com/pendulum-videos/70CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.6,
+        "followupLengthMeters": 0.7,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.5845665368837523,
+          "statisticalStandardUncertaintySeconds": 0.00041391675434639065,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 19,
+          "usedCycles": 10,
+          "totalFrames": 1874,
+          "usableFrames": 1874,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0012257173993738058,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.7008713537242217,
+          "statisticalStandardUncertaintySeconds": 0.0004944347128602727,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 17,
+          "usedCycles": 9,
+          "totalFrames": 1839,
+          "usableFrames": 1839,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0012555306214463331,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.7115274741529556,
+        "lowerSeconds": 1.6259511004453078,
+        "upperSeconds": 1.7971038478606034,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -0.622608785991452,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-20",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "60CM_15G_272.4g.MOV",
+          "sha256": "f453404870dddc803f57ec06cf81b3f8c14694f13cd60b916dc9caa6a3fd16e2",
+          "url": "https://prooflab-ai.com/pendulum-videos/60CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "80CM_15G_272.4g.MOV",
+          "sha256": "f58f4c5ab033ccbda8b168bd35c3bbdc4cca3efa10f468a2b06216808cdd468f",
+          "url": "https://prooflab-ai.com/pendulum-videos/80CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.6,
+        "followupLengthMeters": 0.8,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.5845252273585695,
+          "statisticalStandardUncertaintySeconds": 0.00042535627959950517,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 19,
+          "usedCycles": 10,
+          "totalFrames": 1874,
+          "usableFrames": 1874,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0012561131795103197,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.8169651379983758,
+          "statisticalStandardUncertaintySeconds": 0.000426415557961659,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 17,
+          "usedCycles": 9,
+          "totalFrames": 1989,
+          "usableFrames": 1989,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0010801371110548995,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.8296521331064464,
+        "lowerSeconds": 1.7381695264511239,
+        "upperSeconds": 1.9211347397617689,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -0.6934102323882807,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-21",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "70CM_15G_272.4g.MOV",
+          "sha256": "968549c2dbe99d825caf217c7a5ea380d669882ecf22d7338a34bf4a7c88b2e5",
+          "url": "https://prooflab-ai.com/pendulum-videos/70CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "80CM_15G_272.4g.MOV",
+          "sha256": "f58f4c5ab033ccbda8b168bd35c3bbdc4cca3efa10f468a2b06216808cdd468f",
+          "url": "https://prooflab-ai.com/pendulum-videos/80CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.7,
+        "followupLengthMeters": 0.8,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.7008969109943004,
+          "statisticalStandardUncertaintySeconds": 0.0005092719175081379,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 17,
+          "usedCycles": 9,
+          "totalFrames": 1839,
+          "usableFrames": 1839,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0012535484793783005,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.8169482053542865,
+          "statisticalStandardUncertaintySeconds": 0.0004304834332822505,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 17,
+          "usedCycles": 9,
+          "totalFrames": 1989,
+          "usableFrames": 1989,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0010811124401383374,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.8183352831893724,
+        "lowerSeconds": 1.7274185190299036,
+        "upperSeconds": 1.9092520473488412,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -0.07628284221889992,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-22",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "10CM_15G_272.4g.MOV",
+          "sha256": "1039d2e0b74ab91980b24be954863ccfba685e11cc8f033ce455510112cb0487",
+          "url": "https://prooflab-ai.com/pendulum-videos/10CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "20CM_15G_272.4g.MOV",
+          "sha256": "ed9e7d6367114ed4427f8b8c8f0b810c9c6b28564d42e500cfcf0ee5c3c5228b",
+          "url": "https://prooflab-ai.com/pendulum-videos/20CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.1,
+        "followupLengthMeters": 0.2,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 0.7136682814118074,
+          "statisticalStandardUncertaintySeconds": 0.004855740025738798,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 12,
+          "usedCycles": 6,
+          "totalFrames": 1939,
+          "usableFrames": 1939,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.026936623380762064,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 0.962786824958113,
+          "statisticalStandardUncertaintySeconds": 0.00124162475141495,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 31,
+          "usedCycles": 16,
+          "totalFrames": 1914,
+          "usableFrames": 1908,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.008344288732699113,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 1,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.0092793626080767,
+        "lowerSeconds": 0.9588153944776728,
+        "upperSeconds": 1.0597433307384807,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "WITHIN_PREDECLARED_BAND",
+        "numericalVerdict": "WITHIN_PREDECLARED_BAND",
+        "relativeDifferencePercent": -4.606508304085644,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-23",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "10CM_15G_272.4g.MOV",
+          "sha256": "1039d2e0b74ab91980b24be954863ccfba685e11cc8f033ce455510112cb0487",
+          "url": "https://prooflab-ai.com/pendulum-videos/10CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "30CM_15G_272.4g.MOV",
+          "sha256": "a956af8381d76c1208b229b531b4c02e2017862ba2cd090a641a5af47c996df5",
+          "url": "https://prooflab-ai.com/pendulum-videos/30CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.1,
+        "followupLengthMeters": 0.3,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 0.7137137668717316,
+          "statisticalStandardUncertaintySeconds": 0.004824321237608742,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 12,
+          "usedCycles": 6,
+          "totalFrames": 1939,
+          "usableFrames": 1939,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.02685592131176868,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.1461767547986148,
+          "statisticalStandardUncertaintySeconds": 0.0010273479288542481,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 26,
+          "usedCycles": 13,
+          "totalFrames": 1910,
+          "usableFrames": 1910,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0038961812486032745,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.236188506283208,
+        "lowerSeconds": 1.1743790809690475,
+        "upperSeconds": 1.2979979315973686,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "numericalVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "relativeDifferencePercent": -7.281393656961555,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-24",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "10CM_15G_272.4g.MOV",
+          "sha256": "1039d2e0b74ab91980b24be954863ccfba685e11cc8f033ce455510112cb0487",
+          "url": "https://prooflab-ai.com/pendulum-videos/10CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "40CM_15G_272.4g.MOV",
+          "sha256": "9efc6c491161d62463ff78c7051c9561afc486bcf5d70b072cea960458345a6f",
+          "url": "https://prooflab-ai.com/pendulum-videos/40CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.1,
+        "followupLengthMeters": 0.4,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 0.713674297102107,
+          "statisticalStandardUncertaintySeconds": 0.0048262405073894584,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 12,
+          "usedCycles": 6,
+          "totalFrames": 1939,
+          "usableFrames": 1939,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.02689299062989515,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.310047202538411,
+          "statisticalStandardUncertaintySeconds": 0.000695754035751725,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 22,
+          "usedCycles": 11,
+          "totalFrames": 1858,
+          "usableFrames": 1858,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.003189178692065297,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.427348594204214,
+        "lowerSeconds": 1.3559811644940032,
+        "upperSeconds": 1.4987160239144246,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "numericalVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "relativeDifferencePercent": -8.218132006582579,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    },
+    {
+      "caseId": "PEND-25",
+      "sourceClass": "real-existing-recording-reused",
+      "integrityVerified": true,
+      "checked": [],
+      "sessionStage": "MUSE_FOLLOWUP_READY_FOR_SAM",
+      "publicVideos": {
+        "baseline": {
+          "file": "10CM_15G_272.4g.MOV",
+          "sha256": "1039d2e0b74ab91980b24be954863ccfba685e11cc8f033ce455510112cb0487",
+          "url": "https://prooflab-ai.com/pendulum-videos/10CM_15G_272.4g.MOV"
+        },
+        "followup": {
+          "file": "50CM_15G_272.4g.MOV",
+          "sha256": "d96ed79114c0cbf8b49b72cb2efeff9d124fbd22f545f24facb24e30a64ed9d7",
+          "url": "https://prooflab-ai.com/pendulum-videos/50CM_15G_272.4g.MOV"
+        }
+      },
+      "parameters": {
+        "baselineLengthMeters": 0.1,
+        "followupLengthMeters": 0.5,
+        "initialAngleDegrees": 15,
+        "bobMassGrams": 272.4
+      },
+      "observations": {
+        "baseline": {
+          "status": "CANDIDATE",
+          "periodSeconds": 0.713723874676567,
+          "statisticalStandardUncertaintySeconds": 0.004814838342844133,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 12,
+          "usedCycles": 6,
+          "totalFrames": 1939,
+          "usableFrames": 1939,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.02675644250463126,
+          "motionStatus": "RESOLVED_ARC",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        },
+        "followup": {
+          "status": "CANDIDATE",
+          "periodSeconds": 1.457415502341803,
+          "statisticalStandardUncertaintySeconds": 0.0004255129214107714,
+          "uncertaintyScope": "TYPE_A_REPEATABILITY_ONLY_NOT_TOTAL_OR_95_PERCENT_INTERVAL",
+          "completeCycles": 21,
+          "usedCycles": 11,
+          "totalFrames": 1913,
+          "usableFrames": 1913,
+          "detectionCoverage": 1,
+          "relativePeriodDrift": -0.0015793994861940796,
+          "motionStatus": "INCONCLUSIVE",
+          "issueCount": 0,
+          "method": "SAM_NATIVE_PTS_UPCROSSINGS_ALTERNATE_CYCLES_V2"
+        }
+      },
+      "frozenPrediction": {
+        "model": "muse-spark-1.3",
+        "periodSeconds": 1.5959351009413445,
+        "lowerSeconds": 1.5161383458942772,
+        "upperSeconds": 1.6757318559884118,
+        "tolerancePercent": 5,
+        "formula": null,
+        "frozenBeforeFollowupUpload": true
+      },
+      "contrast": {
+        "recordedVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "numericalVerdict": "OUTSIDE_PREDECLARED_BAND",
+        "relativeDifferencePercent": -8.679525785092224,
+        "evaluationStatus": "COMPLETED"
+      },
+      "review": {
+        "objectReviewedByHuman": true,
+        "pivotIndependentlyVerified": false,
+        "completeUncertaintyBudget": false
+      },
+      "conclusionClass": "OWNER_SUPPLIED_PREEXISTING_RECORDING",
+      "dataGaps": [],
+      "numericComplete": true
+    }
+  ],
+  "limitations": [
+    "Cases reuse eight earlier source videos and are not 25 independently filmed physical trials.",
+    "Stored period candidates and predeclared-band verdicts are not independent physical calibration.",
+    "Human pivot geometry and total systematic uncertainty remain unresolved wherever the record flags are false.",
+    "This curated catalog is not an import of the private operational .private storage or of provider receipts.",
+    "No inference was run while extracting these historical results."
+  ],
+  "statistics": {
+    "researchCases": 25,
+    "fullyNumeric": 24,
+    "withinRecordedBand": 18,
+    "outsideRecordedBand": 6,
+    "inconclusive": 1,
+    "publicSourceRecordings": 8
+  },
+  "extractedOn": "2026-11-04",
+  "importType": "standalone_readonly_catalog",
+  "privacy": "No recovery codes, raw private database, access tokens, private video, or provider receipts"
+}
