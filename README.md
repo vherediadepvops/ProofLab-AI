@@ -1,215 +1,95 @@
-# ProofLab AI — Meta Hackathon 2026
+# ProofLab AI — Turn the Real World into a Scientific Laboratory
 
-## Try ProofLab AI
+**Meta Global AI Developer Hackathon 2026 · Indie Developer · Push the Frontier · Built in Peru 🇵🇪**
 
-**[Launch the live platform](https://prooflab-ai.com/)** · [Read this guide in Español](README.es.md)
+Turn an ordinary experiment video into traceable motion measurements, a testable prediction, and a comparison with a second recording. **ProofLab AI is a working research prototype**, not a claim of a new physical law or independently certified measurement accuracy.
 
-ProofLab AI turns videos of physical experiments into measurements, testable predictions and evidence that can be reviewed. The three-minute pendulum demo shows how we compare an initial observation with a second real recording.
+**[Try the live laboratory](https://prooflab-ai.com/)** · **[Watch the English 3-minute demo](https://youtu.be/75i78EO8xZo)** · [Español](README.es.md) · [Public results](docs/RESULTS.md) · [Evaluation protocol](docs/EVALUATION.md)
 
-## Watch the demo in your language 🌎
+## Watch the three-minute demonstration 🌎
 
-| Language | Video demonstration |
+| Language | Demo |
 | --- | --- |
-| 🇺🇸 English | [Watch the 3-minute demo](https://youtu.be/75i78EO8xZo) |
-| 🇪🇸 Español | [Ver demostración de 3 minutos](https://youtu.be/D1O1ZFvc0q0) |
-| 🇧🇷 Português | [Assistir à demonstração de 3 minutos](https://youtu.be/EXuD3RJayIk) |
-| 🇨🇳 简体中文 | [观看三分钟演示](https://youtu.be/quHyAHKxzZ8) |
+| English | [Watch on YouTube](https://youtu.be/75i78EO8xZo) |
+| Español | [Ver en YouTube](https://youtu.be/D1O1ZFvc0q0) |
+| Português | [Assistir no YouTube](https://youtu.be/EXuD3RJayIk) |
+| 简体中文 | [观看演示](https://youtu.be/quHyAHKxzZ8) |
 
-*These links are language versions of the same project demonstration; they do not imply that every interface screen is available in four languages.*
+These are language versions of the **demonstration**; the application interface and scientific reports support **English and Spanish**, not all four languages.
 
-## How ProofLab AI works 🔬
+## From a video to a falsifiable experiment
 
-**Real experiment video** → **SAM object tracking** → **ProofLab measurements and graphs** → **Muse Spark scientific interpretation** → **Lock a prediction** → **Analyze a second real video and compare it with the predeclared tolerance**.
+1. **Prepare:** upload the first pendulum video and enter the measured string length, initial angle and bob mass. The original recording is retained with file identity and timestamps.
+2. **Analyze:** Meta **Muse Spark 1.3** grounds the experimental object in the video and reviews visual references; **SAM 3.1** segments and tracks it through the recording.
+3. **Understand:** ProofLab's **deterministic measurement engine** uses tracked geometry and original frame timestamps to estimate the observed oscillation period, angular position and angular velocity. Muse Spark interprets the evidence and limitations.
+4. **Predict:** the system validates and **freezes** a numerical prediction and practical tolerance *before the second video's analysis*. A person confirms the experimental proposal.
+5. **Compare:** the second recording is independently processed and its observed period is compared with the frozen prediction. The outcome can be **within tolerance, outside tolerance or inconclusive**.
 
-- **SAM:** identifies and tracks the experimental object in the recording.
-- **ProofLab:** derives motion measurements from observed positions and timestamps.
-- **Muse Spark:** interprets the results, evidence and limitations.
-- **Prediction and verification:** preserve the prediction *before* the second trial, then compare measured results with the predefined tolerance.
+The measurement engine **does not use the predicted period to fit the observed period**. SAM detections, calculated measurements, Muse interpretations, simulations and human review are kept distinct.
 
-Measurements and model interpretations have different roles. This remains a research prototype, not a guarantee of universal scientific accuracy. See the [evaluation protocol](docs/EVALUATION.md) and [documented results and limitations](docs/RESULTS.md).
+## Experimental results — updated 4 November 2026
 
-**Submission evidence (4 November):** [What is verified, the 25-case workflow register and remaining gaps](docs/SUBMISSION-EVIDENCE-2026-11-04.md). **[Public 25-case demo dataset](demo-data/README.md):** 18 stored within-band decisions, 6 outside, 1 inconclusive; inspect CSV/JSON or rebuild a standalone SQLite database without private credentials.
+A **read-only retrieval from the production application's stored records** confirmed 25 completed two-video contrast workflows. All 25 had both video identities, a frozen Muse prediction and a stored evaluation:
 
-## Support ProofLab AI ❤️
+| Saved outcome | Cases |
+| --- | ---: |
+| Within the predeclared ±5% practical band | **18** |
+| Outside the band | **6** |
+| Inconclusive | **1** |
+| **Total stored contrasts** | **25** |
 
-Built in Peru 🇵🇪 for the Meta Global AI Developer Hackathon 2026.
+These cases reused **eight previously recorded videos** labelled 10–80 cm; they are **not 25 independent or prospectively filmed experiments**, and 18/25 is **not a scientific accuracy rate**. In one outside-band case, the declared initial length did not match the recording label. The inconclusive case had only 3.07% second-video tracking coverage. No new Meta inference was made to retrieve these saved outcomes.
 
-If the project interests you, **[like, comment on and repost our demo on X](https://x.com/vherediaE/status/2118103090998260005)**. Your feedback helps more people discover evidence-based experimentation.
+A separate **30 October** research campaign recorded **10 comparisons**: 7 within their practical bands (including a synthetic control), 2 inconclusive and 1 deliberately incorrect-length negative control outside. This earlier cohort is **not additive evidence of independent filming**. Provider request counts and automated software tests are reported separately, without double counting.
 
----
+**[See all 25 per-pair results, failures and qualifications](docs/RESULTS.md)** · [Submission evidence](docs/SUBMISSION-EVIDENCE-2026-11-04.md) · [Evaluation and reproducibility](docs/EVALUATION.md)
 
-**Edge testing:** [reproducible workflow and tools](docs/EDGE-TESTING.en.md).
+**Public reproducibility pack:** [Sanitized 25-case CSV/JSON catalog and offline SQLite builder](demo-data/README.md). This standalone dataset lets judges inspect stored numerical outcomes without private recovery codes; it is not a replay of the original Meta inferences.
 
-**Competition edition — created October 26, 2026 after the official kickoff.**
+## How Meta's models are used
 
-ProofLab AI is an experimental **scientific evidence engine** for adult researchers, built for the
-*Push the Frontier* theme of the Meta Global AI Developer Hackathon. It uses physical
-measurements and the models provided by Meta to make testable predictions and
-help explain why data may agree or disagree with a scientific hypothesis.
+| Component | Responsibility |
+| --- | --- |
+| **Meta Muse Spark 1.3** | Multimodal scene and object interpretation, evidence assessment, hypothesis and follow-up planning, interpretation of the numerical comparison |
+| **Meta SAM 3.1** | Object segmentation masks and tracking across the original video frames |
+| **ProofLab measurement engine** | Original-timestamp trajectory/period calculations, quality checks, uncertainty indicators and reproducible reports; independent of model-generated numbers |
+| **ASP.NET Core (.NET 10), Angular 20, SQLite, FFmpeg** | Experiment workflow, immutable prediction, consent and cost gates, source integrity, evidence persistence and ES/EN interface |
 
-**Status (3 November 2026): functional research prototype, with scientific validation still in progress.** Real Muse Spark 1.3 and SAM 3.1 runs on pendulum recordings are documented. In the 30 October ten-case campaign, **7 results were within their predeclared practical bands, 2 inconclusive and 1 deliberate wrong-length negative control outside**. These were comparisons of six previously filmed recordings plus controls, **not ten independent prospective physical experiments**. No new scientific discovery or universal measurement accuracy is claimed.
+The documented **3 November** pipeline prepares a full-video MP4 and 50 original-frame references, uses one Spark object review, and sends one continuous full-video request to SAM. The estimated ceiling for **two Spark calls is US$0.35** under that documented plan; it is **not an invoice or a new accuracy result**. Existing segmented historical evidence remains readable.
 
-**Scope of the counts:** the ten-case research campaign is not the total number of Meta requests. A user-shared project usage snapshot for 28 October–3 November displayed **550 requests across all API keys and models**, not yet reconciled request-by-request with the private campaign ledgers. The [results register](docs/RESULTS.md) distinguishes those units and avoids double counting.
+Manual Meta requests require an API token, an explicit action and displayed cost consent, with backend authorization controls. The token is kept only in the session's password field and is cleared on request, connection change or reload; it is **not cleared after each successful request**. Failed paid requests are never retried automatically.
 
-**For judges:** [Live application](https://prooflab-ai.com) · **[Results, including failures](docs/RESULTS.md)** · **[Evaluation protocol and reproducibility](docs/EVALUATION.md)** · [Muse/SAM research workflow](docs/MUSE-INVESTIGATOR.en.md). **Español:** [README](README.es.md) · [Resultados](docs/RESULTS.es.md) · [Evaluación](docs/EVALUATION.es.md).
+[Detailed Muse/SAM workflow](docs/MUSE-INVESTIGATOR.en.md) · [Period estimator](docs/SAM-PERIOD.en.md) · [Production operations](docs/PRODUCTION-LINUX.md)
 
-The latest published no-zoom processing change was verified with local software and browser checks **without new Meta inferences**. Pivot/centre calibration and the full physical uncertainty budget remain open. The development milestones further below retain their historical dates and should not be read as the latest validation state.
+## Scientific integrity and known limitations
 
-**Navigation:** Home reserves space for future walkthrough videos; Laboratory keeps the pendulum experiment and its four views; Settings contains the single-use API key and local connection. Switching sections preserves the study. The key stays only in the session password field and is cleared after use, a mode/connection change or reload; it never enables billing by itself.
+- A practical **±5% tolerance band is not a 95% statistical confidence interval** or a measurement-accuracy certification.
+- Effective string length, physical pivot position, camera perspective and systematic uncertainty still require **independent calibration**. Statistical repeatability alone does not cover those errors.
+- Saved prediction timestamps establish ordering **inside the application**, not that the second physical recording was filmed after the prediction.
+- Full raw provider replies, private video files, database records and recovery codes are deliberately **not published**. Public software tests and methods can be examined, but the original live-model cases cannot all be replayed from public assets alone.
+- The latest processing changes have software/browser verification; that does **not** constitute new provider-backed scientific validation.
 
-## Video preparation and analysis (updated November 3, 2026)
+This project distinguishes an observed measurement, a generated interpretation, a synthetic control, a known theorem and a hypothesis. **No autonomous scientific discovery or universal physical accuracy is claimed.**
 
-The new-video pipeline now prepares a full-video MP4 and 50 original frames in the background after upload. The [3 November no-zoom release](https://github.com/vherediadepvops/ProofLab-AI/commit/b6512323e7f72f0d718af30be648c8a59baaf648) sends the original video and those 50 references to Spark, performs **one object review**, and then requests continuous SAM tracking. It quotes **two Spark calls, maximum US$0.35** instead of four calls and US$0.85 for the previous zoom-contact review plan. This is a quotation/engineering change, **not a newly demonstrated accuracy or actual charge**; no fresh Meta inference was run for that release.
+[Experimental protocol](docs/EVALUATION.md) · [Results with adverse outcomes](docs/RESULTS.md) · [Experiment provenance](docs/PROVENANCE.md)
 
-The Laboratory accepts the recording before the three physical inputs are complete. Upload waits for receipt and SHA-256, format/duration validation, a still thumbnail and study registration. The initial player shows that thumbnail; **Play original** loads the complete original recording. Next requires the registered original and confirmed length, initial angle (including 0°) and mass, without waiting for browser video decoding.
+## Code, documentation and local development
 
-New recordings explicitly defer the experimental local tracker and its spectral period calculation. These are computed only when a local consumer needs them (human baseline review, manual pivot analysis or local comparison), and saved in a source-linked companion record without rewriting the original video evidence. Existing embedded local evidence remains readable. An inconclusive local signal remains inconclusive. Spark/SAM continue to receive their original video inputs; the thumbnail does not replace the recording sent for analysis.
+**Open-source project code: [MIT License](LICENSE).** Third-party components retain their own terms, including the [Meta SAM parser license](ui/third-party/META-SAM-LICENSE.txt).
 
-New SAM analyses send **the complete video in one request**, without splitting it into segments or automatically retrying. The quote counts each frame once, subject to the existing billing minimum, and progress shows original preparation, SAM and verification. Spark localization, source/file SHA-256, display geometry, frame count and timestamps remain verified; a video outside single-request limits is rejected without splitting it. API Meta remains the initial selection; cache modes and previously segmented results remain readable. A manual recovery of an inconclusive result also uses a single complete-video request.
-
-When SAM fails after the MP4 upload, **Retry SAM** reuses the verified Spark localization and prepared full-video MP4 for this same investigation. It cannot resume partial SAM inference at the last frame: it is one NEW potentially billable request with the price shown before explicit owner action. The previous attempt may also have been billed. A durable one-use claim prevents duplicate sends, and a saved retry is recovered by GET. New batches bind study ID, video role and registered video ID: matching SHA-256 in a different study never authorizes a paid retry or automatic recovery. Historical unbound receipts remain readable but cannot authorize a new billable retry. Spark and initial video upload are never repeated automatically.
-
-The upload progress list reports only work performed during upload. It does not wait for browser playback or show deferred local calculations as unfinished upload stages. This removes work from the initial wait; transfer time still depends on file size and connection. API Meta / Cache + SQLite selection, explicit analysis consent and existing provider limits remain in force.
-
-In **Understand (step 3)**, Muse Spark follows the V9.3 mockup with **Summary, Evidence, Limits and Record** tabs. When **Meta API** is selected, **Process + interpret with Muse** authorizes SAM and, once verified video evidence is available, an automatic Muse Spark interpretation of the measurement summary (additional maximum **US$0.05**, not an invoice). The video is not resent to Muse, and a valid stored answer is recovered without another paid call. **Cache + SQLite only** makes no Meta requests. The interpretation persists in SQLite but **does not freeze a prediction**: in Predict a person must confirm tracking and freeze the hypothesis before video 2. Compare uses the immutable prediction and real second-video measurements, with limits and provenance, never the mockup?s fictitious scenarios. Manual consultation remains a controlled recovery option when an interpretation is missing; there are no automatic retries.
-
-## Competition provenance
-
-This is a **new project**, distinct from the pre-event private prototype at
-`C:\PROOFLAB-AI`. No pre-kickoff source files were copied into this codebase.
-All repository history represents work performed after the October 26 kickoff,
-following an official clarification from Cerebral Valley in Discord
-that development is permitted after the October 26 kickoff.
-
-The final submission must be public, original, and disclose exactly what was built
-during the event. Do not misrepresent demonstration data as physical evidence.
-
-## Implementation and historical milestones
-
-The items below document successive increments from October. Statements about what was **not yet** implemented during an earlier increment are historical, **not the current project status**. For present-day scientific evidence and limitations, use [Results](docs/RESULTS.md) and [Evaluation](docs/EVALUATION.md).
-
-- **Bilingual ES/EN responses:** Lean explanations, visible results, UI messages and generated reports follow the selected language without changing the underlying proof or triggering new billable requests. See [language policy](docs/LOCALIZATION.md).
-
-- **Scientific Method Engine (Mission 1):** five visible research stages, documented required fields, server-side gates, locally stored draft reports, human completeness acknowledgement, SHA-256 freeze and Markdown exports, plus a consolidated research report. These controls do **not** certify scientific validity. See [methodology](docs/SCIENTIFIC-METHOD.md).
-
-- **Linked Lean evidence (Mission 1):** deterministic proof cycles and manually selected tactics execute in a curated Lean 4 sandbox-free local verifier; genuine attempt IDs and hashes are required by stages 4–5 of a mathematics dossier, and the report includes those records. This is a known-theorem control, not a novel AI discovery. [Evidence workflow](docs/MISSION-001-EVIDENCE.md).
-- **Mission 1 — Mathematical Discovery (first working stage):** three curated known theorems, fixed Lean 4 tactics, real compiler verification, result hashes and private local attempt ledger. **No open problem has been solved.** See [Mission 1](docs/MISSION-001-MATH.md).
-- **Curated open conjecture (strong Goldbach):** dated sources, bounded finite checks through 2000, reproducible hashes, research-specific evidence ledger and bilingual reporting. **Not a Lean proof or new discovery.** See [open conjecture study](docs/MISSION-001-OPEN-RESEARCH.md), [agent tool contract](docs/MISSION-001-AGENT.md) and [future Lean sandbox design](docs/LEAN-SANDBOX.md).
-- **Mission 1 offline rehearsal (WITHOUT Muse Spark):** scripted flow connecting a bounded Goldbach check, rejected Lean `rfl` tactic, conditional `omega` retry, evidence/decision ledger and ES/EN dossier appendices. Reports still require declared human completeness review; no original mathematical discovery is claimed. [Offline protocol](docs/MISSION-001-OFFLINE-REHEARSAL.md).
-- **SQLite scientific experience memory:** stores genuine Lean outcomes and recalls earlier compatible proofs across research dossiers, while rechecking every recalled tactic to produce a new evidence ID. No AI inference, parameter learning or open-conjecture proof. [Scientific memory](docs/SCIENTIFIC-MEMORY.md). The [versioned SQL schema](src/ProofLab.Api/Database/001_scientific_experience.sql) lives in this repository; actual `.sqlite` data stays private.
-- **Bilingual guided research drafts (NO AI):** generate empty fields for stages 1–3 from curated Goldbach material and 4–5 from actual recorded evidence; a separate stage-4 control runs bounded Goldbach/known-Lean tools. Never overwrite user work or autoapprove; not a Goldbach proof. [Guided draft protocol](docs/MISSION-001-GUIDED-DRAFTS.md).
-
-- **Main jury UI · Pendulum (Meta-free):** focused **full-width** screen showing string length (cm), angle (degrees), bob mass (g), optional second trial and **four synchronized perspectives of one video** (combined vectors + ghost trail by default, original source, vectors-only and trail-only). The primary occupies 70% of the desktop width, and swapping any thumbnail with it preserves playback time and speed; optional 1.6× zoom with **mouse/touch drag and Fit**. After upload, **Select pivot** pauses/fits source video for a user click and retrieves SHA-linked angular measurements, ω/α/tangential/radial vectors, with observed-vs-ideal separation (NOT SAM, NOT calibrated m/s). [Zoom and pivot guide EN](docs/PENDULUM-ZOOM-PAN-KINEMATICS.md). Tall header, sidebar and old mathematical chart gallery are **hidden only in this primary route; all original code and private evidence are preserved**. Browser playback currently uses a 12FPS H.264 proxy; original MOV/MP4 bytes and SHA-256 remain intact. Tracking is NOT SAM 3.1 and the follow-up recommendation remains NON-AI local logic. **Select video is available immediately and after New study**: choosing a file automatically freezes the theoretical parameters before upload. [Focused UI EN](docs/PENDULUM-FOCUSED-UI.md) · [Four perspectives EN](docs/PENDULUM-STAGE2-FOCUSED-VIEWS.md) · [Master player EN](docs/PENDULUM-ZONE1-MASTER-PLAYER.md) · [Preserved mathematical model](docs/PENDULUM-MATHEMATICAL-WORKBENCH.md).
-
-- **Stage 3 SAM VIDEO parser (local / NON-BILLABLE):** decodes user-supplied completed SAM 3.1 video JSON with the official parser, stable frame/object IDs, mask-pixel centroids and an on-demand Zone 1 mask inspector. The manual inspector uses synthetic tests and does not authenticate SHA/PTS; the server workflow verifies those links. **No real pendulum SAM result or verified bob identity** yet. [Stage 3 guide](docs/SAM-VIDEO-STAGE3.md).
-
-- **Stage 3 authentic-SAM archive (before SQLite):** server-side original MOV SHA validation, stream-copy MP4 remux, frame-count/PTS comparisons and file SHA-256, one-call owner-approval and estimated-cost gates, durable provider receipt and no automatic retry. When a genuine cached response exists, the synchronized video renderer uses SAM mask centroids for deterministic vectors and ghost trails without another provider call. Historical FFmpeg signals remain clearly labeled NOT SAM. Real local 1920×1080 HEVC QA: 1,828 source/remux frames, 0 s maximum PTS difference, theoretical US$0.3656. **Paid calls OFF; no authentic SAM pendulum video result or scientific bob approval yet.** [Stage 3 cache guide EN](docs/SAM-VIDEO-CACHE-STAGE3.md).
-
-- **Stage 4, two SAM modes and SQLite:** **API Meta** requests a fresh analysis subject to authorization; **API Meta + cache** checks SQLite and reuses verified files without a key or Meta request on a HIT. Each execution keeps its ID, response and receipt; the player retrieves evidence through GET. Two-mode selector and local synthetic validation; no new SAM inference or bob validation was performed. [Contract and verification EN](docs/SAM-TWO-MODES-SQLITE.md).
-
-- .NET 10 ASP.NET Core API, with independent scientific prediction and evaluation.
-- Pendulum: small-angle prediction `T=2π√(L/g)` is kept separate from independent local motion estimates, based on rising crossings or a robust sinusoidal fit. **No predicted period is fed into the estimator; measured bob identity still requires visual validation.**
-- Rolling solid sphere on an incline: predicted `a=(5/7)g·sin(θ)` and
-  measured acceleration fitted from calibrated time-and-position observations.
-- Provenance labels distinguish synthetic, manually entered and tracking coordinates.
-- Angular 20 web UI, with Spanish/English switch, prediction, synthetic demonstrations
-  and JSON report export.
-- Meta Muse Spark 1.3 hypothesis-planning adapter over Chat Completions.
-- Meta SAM 3.1 image adapter and video workflow with official mask decoding and
-  verified evidence, tested on synthetic fixtures. SAM tracking of the real pendulum
-  has **not** yet been validated.
-- The Meta adapters are **disabled by default** until credits, billing, and
-  safe testing are confirmed.
-
-## Development workflow during the hackathon
-
-Implement and validate changes on the authorized PC. Publishing commits to GitHub is allowed; Actions workflows are manual-only and should run only when the owner explicitly requests CI. Do not run, rerun or wait for CI as a requirement for each change. Select local checks according to scope and report what was actually verified.
-
-## Prerequisites
-
-.NET SDK 10, Node.js 20+, npm. Use a Windows PC or equivalent environment.
-
-### Start the API
+**Prerequisites:** .NET SDK 10, Node.js and npm, and FFmpeg/FFprobe for video processing. For local development, install Angular dependencies before building the backend's video-measurement worker:
 
 ```powershell
-cd C:\PROOFLAB-AI-HACKATHON
+cd ui
+npm ci
+cd ..
 dotnet test tests/ProofLab.Tests/ProofLab.Tests.csproj
-dotnet run --project src/ProofLab.Api --urls http://127.0.0.1:5391
 ```
 
-### Start the web UI (second terminal)
+The main laboratory uses an ASP.NET Core API and Angular UI. Existing development defaults use ports **5391** and **4300**; **never start another instance on occupied ports**. Use isolated free ports and the [Edge local-testing guide](docs/EDGE-TESTING.en.md) when evaluating alongside another session. Testing a live Meta inference is **not required** for offline software tests.
 
-```powershell
-cd C:\PROOFLAB-AI-HACKATHON\ui
-npm.cmd ci
-npm.cmd start -- --host 127.0.0.1 --port 4300
-```
+Additional documentation: [Scientific method](docs/SCIENTIFIC-METHOD.md) · [Physical experiments](docs/EXPERIMENTS.md) · [Language policy](docs/LOCALIZATION.md) · [Historical pendulum player design](docs/PENDULUM-ZONE1-MASTER-PLAYER.md) · [Earlier mathematics/Lean research](docs/MISSION-001-MATH.md). These are **dated historical or parallel research modules**, not claims that all features are active in the present pendulum demonstration.
 
-Open `http://127.0.0.1:4300/` on the same computer.
+**Competition provenance:** the public competition codebase was created after the **26 October 2026** kickoff and is distinct from the pre-event private prototype. See [provenance](docs/PROVENANCE.md).
 
-### API routes
-
-| Route | Result |
-| --- | --- |
-| `GET /api/health` | Readiness and Meta usage gate |
-| `GET /api/meta/readiness` | Secret-free key, credit confirmation, consent and request-budget status |
-| `GET /api/research/stages` | Scientific method stage definitions and mandatory fields |
-| `POST /api/research` | Create a mathematical research dossier |
-| `POST /api/research/{id}/stages/{n}/draft` | Save a local report draft |
-| `POST /api/research/{id}/stages/{n}/muse-draft` | Gated Muse Spark suggestion, unverified and never autosaved |
-| `POST /api/research/{id}/stages/{n}/approve` | Lock a complete report after declared human review |
-| `GET /api/research/{id}/reports/{n}` | Download each stage report (Markdown) |
-| `GET /api/research/{id}/paper` | Download consolidated paper after all stages |
-| `GET /api/math/problems` | Known theorem control benchmarks |
-| `GET /api/math/status` | Lean availability and truthful research status |
-| `POST /api/math/verify` | Check a curated theorem via Lean 4, save local attempt record |
-| `POST /api/math/plan` | Muse Spark suggests research tactics, gated behind verified Meta credits |
-| `GET /api/science/experiments` | Supported physics experiments |
-| `POST /api/science/predict` | Scientific prediction |
-| `POST /api/science/evaluate` | Evaluation of timestamped observations |
-| `GET /api/science/synthetic/{kind}` | Clearly synthetic sample, never real evidence |
-| `POST /api/ai/plan` | Live Muse Spark planning; gated |
-| `POST /api/ai/segment-frame` | Live SAM 3.1 response; gated, raw grammar |
-
-Example prediction:
-
-```powershell
-Invoke-RestMethod -Uri http://127.0.0.1:5391/api/science/predict `
-  -Method Post -ContentType 'application/json' `
-  -Body '{"kind":"Pendulum","lengthMeters":0.5}'
-```
-
-Sample evaluation fields: `setup`, `observations` (array of
-`{"timeSeconds":0,"position":1.0}`), `origin` (`Simulated`,
-`ManuallyEntered`, or `TrackingCoordinates`). For the pendulum
-the position is a consistent horizontal coordinate; for rolling sphere it
-is **metres along the ramp**.
-
-### Enabling Meta API — only after verifying credit and permission
-
-The key belongs **only to the backend process** as `MODEL_API_KEY`, never Angular or GitHub. `GET /api/meta/readiness` reports key presence **without returning the secret**. Live calls require four simultaneous gates: key configured, `Meta:CreditsConfirmedByOwner=true`, `Meta:OwnerApprovedPaidRequests=true`, and `Meta:AllowPaidRequests=true`. The app also imposes **2 live Meta calls per process startup**, which is not a hard dollar cap. Billing credit status is not verified automatically. When genuinely authorized, the Goldbach interface can request unverified Muse Spark drafts, still requiring human review.
-
-**Step-by-step token instructions:** [Meta Model API connection EN](docs/META-API-CONNECTION.md).
-
-**Two model manual tests:** choose **Meta API Tests** in the sidebar. SAM 3.1 responses are now decoded locally from Meta's base85 mask format into a source-aligned mask/box overlay, and prior complete JSON responses can be replayed offline without another model call. Uses pinned `@meta-sam/parser@0.1.0` under Meta's SAM License, copied to `ui/third-party/META-SAM-LICENSE.txt`.  personally open a temporary/consented API session on `5393` using `scripts/Start-MetaTest.cmd`, submit **one request per click** to Muse Spark or SAM and view sanitized HTTP diagnostics. The main `5391` API remains payment-disabled. [English test guide](docs/META-MANUAL-TESTS.md). Do not enable charges until Billing credits and owner approval are confirmed. Spending alert emails are not hard limits.
-
-No Meta calls have been made as part of the implementation tests.
-
-## Roadmap
-
-**Research mission sequence:** (1) Mathematical Discovery → (2) Autonomous Physics Discovery → (3) Historical & Big Data Discovery → (4) Autonomous Research Director. All four share a future independently verifiable research ledger; only an initial part of Mission 1 is implemented today.
-
-
-1. For the main demo record **one 50 cm clip**, and optionally a follow-up after preregistering the prediction. Three repeats per length remain **optional advanced repeatability controls**. Independently time cycles manually.
-2. Integrate SAM 3.1 video upload + streamed masks using official Meta SAM parser.
-3. Connect masks to calibrated observations with timestamps and audit log.
-4. Run Muse Spark planning and interpretation using actual experiment results.
-5. Add rolling-sphere recordings and reproduce measurements.
-6. Publish a working demo, record a three-minute English video, and submit before
-   November 4, 2026 at 9 PM Peru time.
-
-See the bilingual project documentation: [English](docs/EXPERIMENTS.md) ·
-[Español](docs/EXPERIMENTS.es.md), [provenance](docs/PROVENANCE.md) ·
-[procedencia](docs/PROVENANCE.es.md).
-
-**Versión en español:** [README.es.md](README.es.md).
+**Support the project:** [ProofLab AI's demo on X](https://x.com/vherediaE/status/2118103090998260005).
