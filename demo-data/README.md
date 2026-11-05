@@ -1,6 +1,6 @@
 # ProofLab AI — Public pendulum demo data (4 November 2026)
 
-[Español](README.es.md) · [Main project](../README.md) · [Evidence scope](../docs/SUBMISSION-EVIDENCE-2026-11-04.md)
+[Español](README.es.md) · [Main project](../README.md) · [Judge installation guide](../JUDGE-SETUP.md) · [Evidence scope](../docs/SUBMISSION-EVIDENCE-2026-11-04.md)
 
 This is a **standalone, sanitized, reproducible result catalog**, extracted through read-only GET requests from ProofLab AI's AWS Lightsail production application. The owner selected **25 research records**. Their private recovery identifiers are intentionally **not published**; cases use aliases `PEND-01` through `PEND-25`.
 

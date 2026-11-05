@@ -1,6 +1,6 @@
 # ProofLab AI — Datos públicos de demostración del péndulo (4 de noviembre de 2026)
 
-[English](README.md) · [Proyecto](../README.es.md) · [Alcance de evidencias](../docs/SUBMISSION-EVIDENCE-2026-11-04.es.md)
+[English](README.md) · [Proyecto](../README.es.md) · [Guía de instalación](../JUDGE-SETUP.es.md) · [Alcance de evidencias](../docs/SUBMISSION-EVIDENCE-2026-11-04.es.md)
 
 Este es un **catálogo independiente, reproducible y sin datos privados**, extraído mediante consultas GET de solo lectura de la aplicación de ProofLab AI en AWS Lightsail. El propietario seleccionó **25 investigaciones**. Sus códigos de recuperación originales **no se publican**: se usan alias `PEND-01` a `PEND-25`.
 

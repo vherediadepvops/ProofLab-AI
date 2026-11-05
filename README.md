@@ -46,6 +46,8 @@ A separate **30 October** research campaign recorded **10 comparisons**: 7 withi
 
 **Public reproducibility pack:** [Sanitized 25-case CSV/JSON catalog and offline SQLite builder](demo-data/README.md). This standalone dataset lets judges inspect stored numerical outcomes without private recovery codes; it is not a replay of the original Meta inferences.
 
+**For judges: [Windows and Linux installation guide](JUDGE-SETUP.md)** · [Guía en español](JUDGE-SETUP.es.md). Includes a clean build, API/UI launch, offline smoke checks and the separate 25-case SQLite review catalog.
+
 ## How Meta's models are used
 
 | Component | Responsibility |

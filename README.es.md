@@ -46,6 +46,8 @@ Una campaña independiente en fecha, del **30 de octubre**, registró **10 compa
 
 **Paquete público reproducible:** [Catálogo anonimizado de 25 casos en CSV/JSON y generador SQLite sin conexión](demo-data/README.es.md). Permite al jurado consultar resultados numéricos almacenados sin códigos privados; no reproduce las inferencias originales de Meta.
 
+**Para el jurado: [guía de instalación Windows y Linux](JUDGE-SETUP.es.md)** · [English setup guide](JUDGE-SETUP.md). Incluye instalación limpia, arranque de API/web, comprobaciones sin Meta y generación de la SQLite de 25 casos por separado.
+
 ## Cómo utilizamos los modelos de Meta
 
 | Componente | Responsabilidad |
